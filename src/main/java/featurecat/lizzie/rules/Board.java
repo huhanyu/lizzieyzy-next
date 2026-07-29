@@ -6,6 +6,7 @@ import static java.util.Collections.singletonList;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineFollowController;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
@@ -1377,83 +1378,6 @@ public class Board {
       return true;
     }
     return false;
-  }
-
-  private BoardData createEditedCurrentBoardAnchor(BoardHistoryNode currentNode) {
-    if (currentNode == null || !currentNode.hasRemovedStone()) {
-      return null;
-    }
-    BoardData current = currentNode.getData();
-    if (!current.isMoveNode() && !current.isPassNode()) {
-      return null;
-    }
-    return SnapshotEngineRestore.snapshotFromCurrentBoard(current);
-  }
-
-  private BoardHistoryNode findReplaySnapshotAnchor(BoardHistoryNode node) {
-    BoardHistoryNode current = node;
-    while (true) {
-      if (isReplaySnapshotAnchor(current)) {
-        return current;
-      }
-      if (!current.previous().isPresent()) {
-        return null;
-      }
-      current = current.previous().get();
-    }
-  }
-
-  private boolean isReplaySnapshotAnchor(BoardHistoryNode node) {
-    BoardData data = node.getData();
-    if (!data.isSnapshotNode()) {
-      return false;
-    }
-    if (node.previous().isPresent()) {
-      return true;
-    }
-    if (data.moveNumber > 0 || data.lastMove.isPresent() || !data.blackToPlay) {
-      return true;
-    }
-    for (Stone stone : data.stones) {
-      if (stone.isBlack() || stone.isWhite()) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private ArrayList<Movelist> getReplayableMovesAfter(BoardHistoryNode snapshotAnchor) {
-    ArrayList<Movelist> movelist = new ArrayList<Movelist>();
-    BoardHistoryNode node = history.getCurrentHistoryNode();
-    while (node != snapshotAnchor && node.previous().isPresent()) {
-      BoardData data = node.getData();
-      if (data.isMoveNode()) {
-        int[] moveCoords = data.lastMove.get();
-        Movelist move = new Movelist();
-        move.x = moveCoords[0];
-        move.y = moveCoords[1];
-        move.isblack = data.lastMoveColor.isBlack();
-        move.movenum = data.moveNumber;
-        movelist.add(move);
-      } else if (isKnownPass(data)) {
-        Movelist move = new Movelist();
-        move.ispass = true;
-        move.isblack = data.lastMoveColor.isBlack();
-        movelist.add(move);
-      }
-      node = node.previous().get();
-    }
-    return movelist;
-  }
-
-  private SnapshotEngineRestore.RestoreLifecycle replaySnapshotToEngine(
-      Leelaz leelaz, BoardData snapshotData) {
-    SnapshotEngineRestore.RestoreLifecycle lifecycle =
-        SnapshotEngineRestore.beginExactSnapshotRestoreIfNeeded(leelaz, snapshotData);
-    if (lifecycle == null) {
-      throw new IllegalStateException("Engine restore requires snapshot data.");
-    }
-    return lifecycle;
   }
 
   private void sendEngineMove(Leelaz leelaz, boolean black, String move) {
@@ -2978,7 +2902,8 @@ public class Board {
         history.next();
         advanceContextRevision();
         history.getCurrentHistoryNode().placeExtraStones();
-        if (history.getCurrentHistoryNode().hasRemovedStone())
+        if (history.getCurrentHistoryNode().hasRemovedStone()
+            || history.getCurrentHistoryNode().getData().isSnapshotNode())
           history.getCurrentHistoryNode().clearAndSyncBoard(true);
         updateIsBest();
         notifyReadBoardLocalHistoryNavigation();
@@ -3047,29 +2972,13 @@ public class Board {
     syncEngineKomiToNonDefaultCurrentGame(engine);
     engine.sendCommand("clear_board");
     BoardHistoryNode currentNode = getHistory().getCurrentHistoryNode();
-    BoardData editedCurrentBoard = createEditedCurrentBoardAnchor(currentNode);
-    if (editedCurrentBoard != null) {
-      SnapshotEngineRestore.RestoreLifecycle lifecycle =
-          replaySnapshotToEngine(engine, editedCurrentBoard);
-      lifecycle.finishTailReplay();
-      if (wasPondering) engine.ponder();
+    Optional<ExactSnapshotEngineRestore.Completion> completion =
+        ExactSnapshotEngineRestore.restore(engine, currentNode, wasPondering);
+    if (completion.isPresent()) {
+      if (completion.get().shouldResumePonder()) engine.ponder();
       return;
     }
-    ArrayList<Movelist> replayMoves = fallbackMoves;
-    BoardHistoryNode snapshotAnchor = findReplaySnapshotAnchor(currentNode);
-    if (snapshotAnchor != null) {
-      SnapshotEngineRestore.RestoreLifecycle lifecycle =
-          replaySnapshotToEngine(engine, snapshotAnchor.getData());
-      replayMoves = getReplayableMovesAfter(snapshotAnchor);
-      try {
-        replayMovesToEngine(engine, replayMoves);
-      } finally {
-        lifecycle.finishTailReplay();
-      }
-      if (wasPondering) engine.ponder();
-      return;
-    }
-    replayMovesToEngine(engine, replayMoves);
+    replayMovesToEngine(engine, fallbackMoves);
     if (wasPondering) engine.ponder();
   }
 
@@ -3695,7 +3604,9 @@ public class Board {
       BoardData currentData = history.getData();
       boolean isPass = isKnownPass(currentData);
       boolean isHistoryAction = isHistoryAction(currentData);
-      boolean needSync = history.getCurrentHistoryNode().hasRemovedStone();
+      boolean needSync =
+          history.getCurrentHistoryNode().hasRemovedStone()
+              || currentData.isSnapshotNode();
       if (history.getCurrentHistoryNode().next().isPresent())
         updateIsBest(history.getCurrentHistoryNode().next().get());
       if (history.getPrevious().isPresent()) {

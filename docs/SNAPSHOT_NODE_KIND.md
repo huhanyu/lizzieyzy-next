@@ -100,6 +100,14 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - 后续 `clear_board + moveList` 只重放 `SNAPSHOT` 之后的真实手顺，`SNAPSHOT` 自带的静态局面持续生效。
 - 所有 `loadEngine=true` 的恢复入口都遵守同一套 `SNAPSHOT/setup` 恢复契约。
 - `restoreMoveNumber(...)` 恢复时也先命中最近 `SNAPSHOT` 边界，再续接后面的真实 `MOVE/PASS`。
+- `ExactSnapshotEngineRestore` 是 `exact snapshot restore` 的唯一编排 owner。恢复入口在发送任何命令前捕获 immutable plan；plan 固定最近的静态锚点、锚点盘面与轮次、盘尺寸和 setup metadata、锚点后的真实 `MOVE/PASS` tail、主/副目标实例以及 ponder disposition，后续 callback 不再读取这些 mutable globals/history。
+- `ExactSnapshotEngineRestore` 拥有临时 SGF 的生成与清理、双引擎 mirror 编排、`loadsgf` 成功后的 tail 重放以及明确的完成结果。调用方不能再自行拼装 snapshot tail，也不能持有或结束临时 SGF lifecycle。
+- `Leelaz` 继续唯一拥有 ordinary command queue、response handler、超时、outstanding response 退休、output-stream invalidation 与 engine arbitration；`ExactSnapshotEngineRestore` 不复制或旁路这些底层协议职责。
+- 祖先链完全没有可用 `SNAPSHOT` / removed-stone 静态锚点时，调用方保留既有的 root replay。这是“未进入 exact restore”，与 exact restore 已开始后的失败不同。
+- 新棋局默认的空 root `SNAPSHOT` 只提供历史起点，不是 exact restore 静态锚点；它继续走 root replay。root 带静态石子、显式轮次 / 手数语义或 removed-stone 标记时才是可用锚点。
+- exact restore 一旦开始，`loadsgf` 的发送失败、GTP `?`、超时或 output-stream 污染都原样向上传递；tail 在重放时若被 engine arbitration 拒绝也显式失败。以上失败都禁止 tail / root replay fallback，restore module 不把它们改写成 `ENGINE_STATE_UNRESTORED`。
+- ponder 只在全部目标恢复成功后，由现有 lifecycle owner 按入口捕获的 disposition 决定是否恢复；restore module 不擅自启动 ponder。
+- tail replay 的模块完成边界是所有 captured target 已接受命令进入 `Leelaz` ordinary queue；模块不复制 tail 的逐命令 GTP response lifecycle，后续 response / error 继续由 `Leelaz` 处理。
 - `exact snapshot restore` 的 `loadsgf` 生命周期按固定顺序执行：
   1. `loadsgf` 临时 SGF 准备完成后，命令先入队再发出。
   2. 命令发出前，当前次 `loadsgf` 的 pending response handler 与 dispatch 归属绑定完成，并持续到退休或完成。

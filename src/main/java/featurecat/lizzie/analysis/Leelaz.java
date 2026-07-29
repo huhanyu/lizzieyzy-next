@@ -4545,6 +4545,11 @@ public class Leelaz {
   }
 
   public void loadSgf(Path sgfFile, Runnable afterConsumed) {
+    Leelaz mirroredEngine = getClass() == Leelaz.class ? resolveLoadSgfMirrorEngine() : null;
+    loadSgf(sgfFile, mirroredEngine, afterConsumed);
+  }
+
+  void loadSgf(Path sgfFile, Leelaz mirroredEngine, Runnable afterConsumed) {
     if (afterConsumed == null) {
       loadSgf(sgfFile);
       return;
@@ -4559,7 +4564,6 @@ public class Leelaz {
       afterConsumed.run();
       return;
     }
-    Leelaz mirroredEngine = resolveLoadSgfMirrorEngine();
     LoadSgfDispatch dispatch = new LoadSgfDispatch(afterConsumed);
     RuntimeException sendFailure = sendTrackedLoadSgfCommand(this, sgfFile, dispatch);
     RuntimeException mirroredSendFailure = null;
@@ -4585,7 +4589,7 @@ public class Leelaz {
     }
   }
 
-  private Leelaz resolveLoadSgfMirrorEngine() {
+  Leelaz resolveLoadSgfMirrorEngine() {
     if (Lizzie.config == null || !Lizzie.config.isDoubleEngineMode()) {
       return null;
     }
@@ -4645,6 +4649,22 @@ public class Leelaz {
 
   public void sendCommandNoLeelaz2(String command) {
     sendCommandNoLeelaz2(command, null);
+  }
+
+  boolean sendCommandToCapturedRestoreTarget(String command) {
+    if (getClass() == Leelaz.class) {
+      return sendCommand(
+          command,
+          null,
+          null,
+          true,
+          false,
+          TrackingReleaseReason.ORDINARY_OPERATION,
+          null,
+          false);
+    }
+    sendCommand(command);
+    return true;
   }
 
   private void enqueueSavedGtpConfiguration() {

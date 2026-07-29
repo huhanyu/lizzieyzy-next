@@ -2,6 +2,7 @@ package featurecat.lizzie.rules;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
 import featurecat.lizzie.analysis.Leelaz;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -768,12 +769,17 @@ public class BoardHistoryNode {
 
   public void clearAndSyncBoard(boolean stepIn) {
     if (stepIn) {
+      boolean resumePonder = Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking();
+      Lizzie.leelaz.notPondering();
       Lizzie.leelaz.clear();
-      replayBoardStateWithSnapshotTurnAlignment(this);
+      ExactSnapshotEngineRestore.Completion completion =
+          ExactSnapshotEngineRestore.restore(Lizzie.leelaz, this, resumePonder).orElseThrow();
+      if (completion.shouldResumePonder()) {
+        Lizzie.leelaz.ponder();
+      }
     } else {
       //  System.out.println("out");
       Lizzie.board.resendMoveToEngine(Lizzie.leelaz, false);
-      if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
     }
   }
 
@@ -782,23 +788,8 @@ public class BoardHistoryNode {
     if (marker == null) {
       return false;
     }
-    replayBoardStateWithoutSnapshotTurnAlignment(marker);
-    replayActionsAfterRemovedStone(marker.next().orElse(null));
+    ExactSnapshotEngineRestore.restore(Lizzie.leelaz, this).orElseThrow();
     return true;
-  }
-
-  private void replayNodeMove(BoardHistoryNode node) {
-    BoardData replayData = node.getData();
-    if (replayData.isMoveNode()) {
-      Lizzie.leelaz.playMove(
-          replayData.lastMoveColor,
-          Board.convertCoordinatesToName(
-              replayData.lastMove.get()[0], replayData.lastMove.get()[1]));
-      return;
-    }
-    if (isReplayablePass(replayData)) {
-      Lizzie.leelaz.playMove(replayData.lastMoveColor, "pass");
-    }
   }
 
   private static ArrayList<ExtraStones> cloneExtraStones(ArrayList<ExtraStones> stones) {
@@ -898,10 +889,6 @@ public class BoardHistoryNode {
         candidateExtraStones);
   }
 
-  private static boolean isReplayablePass(BoardData data) {
-    return data.isPassNode() && data.moveNumber != 0 && !data.dummy;
-  }
-
   private void alignParentTurnStateWithFirstActionChild(BoardData childData) {
     if (this.data.isSnapshotNode()) {
       return;
@@ -979,35 +966,6 @@ public class BoardHistoryNode {
         return null;
       }
       node = node.previous.get();
-    }
-  }
-
-  private void replayBoardStateWithSnapshotTurnAlignment(BoardHistoryNode anchor) {
-    replayBoardState(anchor);
-  }
-
-  private void replayBoardStateWithoutSnapshotTurnAlignment(BoardHistoryNode anchor) {
-    replayBoardState(anchor);
-  }
-
-  private void replayBoardState(BoardHistoryNode anchor) {
-    BoardData snapshotData = anchor.data;
-    if (!snapshotData.isSnapshotNode()) {
-      snapshotData = SnapshotEngineRestore.snapshotFromCurrentBoard(snapshotData);
-    }
-    if (!SnapshotEngineRestore.restoreExactSnapshotIfNeeded(Lizzie.leelaz, snapshotData)) {
-      throw new IllegalStateException("Removed-stone replay requires snapshot data.");
-    }
-  }
-
-  private void replayActionsAfterRemovedStone(BoardHistoryNode actionNode) {
-    BoardHistoryNode node = actionNode;
-    while (node != null) {
-      replayNodeMove(node);
-      if (node == this) {
-        return;
-      }
-      node = node.next().orElse(null);
     }
   }
 

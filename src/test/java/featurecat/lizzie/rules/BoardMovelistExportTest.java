@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -245,7 +246,7 @@ class BoardMovelistExportTest {
       assertThrows(
           IllegalStateException.class,
           () ->
-              SnapshotEngineRestore.restoreExactSnapshotIfNeeded(
+              ExactSnapshotEngineRestore.restore(
                   engine, snapshotRootNeedingBookkeepingPass()));
 
       assertTempFileEventuallyDeleted(
@@ -265,8 +266,7 @@ class BoardMovelistExportTest {
       engine.allowConsume = new CountDownLatch(1);
       engine.consumed = new CountDownLatch(1);
 
-      SnapshotEngineRestore.restoreExactSnapshotIfNeeded(
-          engine, snapshotRootNeedingBookkeepingPass());
+      ExactSnapshotEngineRestore.restore(engine, snapshotRootNeedingBookkeepingPass());
 
       assertTrue(
           engine.awaitReadyToConsume(),
@@ -791,7 +791,7 @@ class BoardMovelistExportTest {
   }
 
   @Test
-  void nextMoveSkipsSnapshotMarkersButStillReplaysRealPasses() throws Exception {
+  void snapshotNavigationRestoresStaticPositionAndStillReplaysRealPasses() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     Board previousBoard = Lizzie.board;
     Leelaz previousLeelaz = Lizzie.leelaz;
@@ -812,14 +812,26 @@ class BoardMovelistExportTest {
 
       assertTrue(board.nextMove(false), "history should still advance onto the snapshot anchor.");
       assertEquals(
-          List.of(),
-          engine.recordedCommands(),
-          "snapshot markers should not be replayed as engine moves during navigation.");
+          2,
+          engine.recordedCommands().size(),
+          "snapshot navigation should clear and restore the static position.");
+      assertEquals("clear_board", engine.recordedCommands().get(0));
+      assertTrue(engine.recordedCommands().get(1).startsWith("loadsgf "));
+
+      assertTrue(board.previousMove(false), "history should navigate back out of the snapshot.");
+      assertEquals(
+          "clear_board",
+          engine.recordedCommands().get(2),
+          "leaving a snapshot should restore the previous position.");
+
+      assertTrue(board.nextMove(false), "history should advance onto the snapshot again.");
+      assertEquals("clear_board", engine.recordedCommands().get(3));
+      assertTrue(engine.recordedCommands().get(4).startsWith("loadsgf "));
 
       assertTrue(board.nextMove(false), "history should still advance onto the real pass.");
       assertEquals(
-          List.of("play W pass"),
-          engine.recordedCommands(),
+          "play W pass",
+          engine.recordedCommands().get(5),
           "explicit passes should keep replaying after snapshot anchors.");
     } finally {
       Lizzie.board = previousBoard;
@@ -1348,6 +1360,15 @@ class BoardMovelistExportTest {
     public void playMove(Stone color, String move, boolean addPlayer, boolean blackToPlay) {
       playMove(color, move);
     }
+
+    @Override
+    public void loadSgf(Path sgfFile, Runnable afterConsumed) {
+      recordedCommands().add("loadsgf " + sgfFile.toAbsolutePath());
+      afterConsumed.run();
+    }
+
+    @Override
+    public void nameCmdfornoponder() {}
 
     @Override
     public void modifyStart() {}

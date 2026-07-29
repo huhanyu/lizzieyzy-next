@@ -10,7 +10,6 @@ import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.ExtraStones;
 import featurecat.lizzie.rules.Movelist;
-import featurecat.lizzie.rules.SnapshotEngineRestore;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.util.Utils;
@@ -2698,7 +2697,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     }
     BoardData data = rebuiltNode.getData();
     BoardData restoreData =
-        data.isSnapshotNode() ? data : SnapshotEngineRestore.snapshotFromCurrentBoard(data);
+        data.isSnapshotNode() ? data : ExactSnapshotEngineRestore.snapshotFromCurrentBoard(data);
     boolean wasPondering = Lizzie.leelaz.isPondering();
     localMoveSyncDebug(
         "syncEngineToRebuiltSnapshot begin node="
@@ -2709,9 +2708,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
             + wasPondering);
     Lizzie.leelaz.clearWithoutPonder();
     localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
-    if (!ExactSnapshotEngineRestore.restoreIfNeeded(Lizzie.leelaz, restoreData)) {
-      throw new IllegalStateException("Engine restore must sync through snapshot data.");
-    }
+    ExactSnapshotEngineRestore.restore(Lizzie.leelaz, restoreData);
     localMoveSyncDebug(
         "syncEngineToRebuiltSnapshot loadsgf completed node=" + historyNodeSummary(rebuiltNode));
   }
