@@ -43,21 +43,23 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
    */
   @Override
   public void resyncFromCurrentHistory(BoardHistoryNode target) {
+    Leelaz engine = Lizzie.leelaz;
     if (target == null) {
-      Lizzie.leelaz.clear();
+      engine.clear();
       return;
     }
 
-    boolean resumePonder = Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking();
+    boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
+    java.util.Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
+        ExactSnapshotEngineRestore.prepare(engine, target, resumePonder);
     // 先停 ponder，避免后续 sync 命令期间 KataGo 仍在跑旧 ponder 输出 info 行
-    Lizzie.leelaz.notPondering();
-    Lizzie.leelaz.nameCmdfornoponder();
+    engine.notPondering();
+    engine.nameCmdfornoponder();
 
-    java.util.Optional<ExactSnapshotEngineRestore.Completion> exactRestore =
-        ExactSnapshotEngineRestore.restore(Lizzie.leelaz, target, resumePonder);
-    if (exactRestore.isPresent()) {
-      if (exactRestore.orElseThrow().shouldResumePonder()) {
-        Lizzie.leelaz.ponder();
+    if (preparedRestore.isPresent()) {
+      ExactSnapshotEngineRestore.Completion completion = preparedRestore.orElseThrow().execute();
+      if (completion.shouldResumePonder()) {
+        engine.ponder();
       }
       if (TrialDiag.ENABLED) {
         System.out.printf(
@@ -69,7 +71,7 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
 
     List<BoardHistoryNode> chain = buildRootReplayChain(target);
     // 用 clearWithoutPonder 清盘且不重启 ponder，避免 clear→ponder→play→ponder 链路
-    Lizzie.leelaz.clearWithoutPonder();
+    engine.clearWithoutPonder();
     if (TrialDiag.ENABLED) {
       System.out.printf(
           "[trial-resync] target moveNum=%d snapshotAnchor=%s chainLen=%d%n",
@@ -80,12 +82,12 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
 
     int played = 0;
     for (BoardHistoryNode n : chain) {
-      played += replayNodeNoPonder(n) ? 1 : 0;
+      played += replayNodeNoPonder(engine, n) ? 1 : 0;
     }
 
     // 序列发完，再启动 ponder。这时 KataGo 已稳定到 target 局面，info 行才会针对正确盘面
     if (resumePonder) {
-      Lizzie.leelaz.ponder();
+      engine.ponder();
     }
 
     if (TrialDiag.ENABLED) {
@@ -110,12 +112,12 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     return chain;
   }
 
-  private boolean replayNodeNoPonder(BoardHistoryNode n) {
+  private boolean replayNodeNoPonder(Leelaz engine, BoardHistoryNode n) {
     BoardData d = n.getData();
     if (d == null || d.dummy) return false;
     if (d.isPassNode()) {
       if (TrialDiag.ENABLED) System.out.printf("[trial-replay] play %s pass%n", d.lastMoveColor);
-      Lizzie.leelaz.playMoveNoPonder(d.lastMoveColor, "pass");
+      engine.playMoveNoPonder(d.lastMoveColor, "pass");
       return true;
     }
     if (!d.lastMove.isPresent()) return false;
@@ -126,7 +128,7 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
           "[trial-replay] play %s %s (moveNum=%d blackToPlayAfter=%s)%n",
           d.lastMoveColor, coord, d.moveNumber, d.blackToPlay);
     }
-    Lizzie.leelaz.playMoveNoPonder(d.lastMoveColor, coord);
+    engine.playMoveNoPonder(d.lastMoveColor, coord);
     return true;
   }
 }

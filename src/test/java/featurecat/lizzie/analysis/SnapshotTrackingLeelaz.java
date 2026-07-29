@@ -42,6 +42,8 @@ class SnapshotTrackingLeelaz extends Leelaz {
   private Path lastLoadedSgf;
   private volatile CountDownLatch blockedLoadSgfStarted;
   private volatile CountDownLatch blockedLoadSgfRelease;
+  private Runnable beforeNextClearBoard;
+  private Runnable beforeNextIsPondering;
 
   private SnapshotTrackingLeelaz() throws IOException {
     super("");
@@ -135,6 +137,17 @@ class SnapshotTrackingLeelaz extends Leelaz {
   }
 
   @Override
+  public boolean isPondering() {
+    boolean pondering = super.isPondering();
+    Runnable action = beforeNextIsPondering;
+    beforeNextIsPondering = null;
+    if (action != null) {
+      action.run();
+    }
+    return pondering;
+  }
+
+  @Override
   public void genmove(String color) {
     genmoveCount++;
     lastGenmoveColor = color;
@@ -193,6 +206,11 @@ class SnapshotTrackingLeelaz extends Leelaz {
   public void sendCommand(String command) {
     recordedCommands().add(command);
     if ("clear_board".equals(command)) {
+      Runnable action = beforeNextClearBoard;
+      beforeNextClearBoard = null;
+      if (action != null) {
+        action.run();
+      }
       resetBoardState();
       return;
     }
@@ -230,6 +248,14 @@ class SnapshotTrackingLeelaz extends Leelaz {
   void blockNextLoadSgf() {
     blockedLoadSgfStarted = new CountDownLatch(1);
     blockedLoadSgfRelease = new CountDownLatch(1);
+  }
+
+  void beforeNextClearBoard(Runnable action) {
+    beforeNextClearBoard = action;
+  }
+
+  void beforeNextIsPondering(Runnable action) {
+    beforeNextIsPondering = action;
   }
 
   boolean awaitBlockedLoadSgf() throws InterruptedException {

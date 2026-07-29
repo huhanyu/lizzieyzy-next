@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Random;
 import java.util.ResourceBundle;
 import java.util.Set;
@@ -2029,6 +2030,8 @@ public class EngineManager {
     // currentEngineNo = -1;
     if (isEmpty || Lizzie.leelaz == null) return;
     Leelaz currentForegroundEngine = Lizzie.leelaz;
+    int restartEngineIndex = currentEngineNo > 0 ? currentEngineNo : engineNo;
+    PreparedEngineSwitch preparedSwitch = prepareEngineSwitch(restartEngineIndex, true);
     EngineLifecycleReservations reservations =
         reserveEngineLifecycle(currentForegroundEngine, currentForegroundEngine);
     if (reservations == null) {
@@ -2050,8 +2053,9 @@ public class EngineManager {
     } catch (Exception e) {
     }
     switchEngineInternal(
-        currentEngineNo > 0 ? currentEngineNo : engineNo,
+        restartEngineIndex,
         true,
+        preparedSwitch,
         releaseEngineLifecycleAfterBoardSync(
             currentForegroundEngine,
             currentForegroundEngine,
@@ -2065,6 +2069,7 @@ public class EngineManager {
     if (isEmpty || Lizzie.leelaz == null) return;
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     Leelaz targetEngine = engineList.get(index);
+    PreparedEngineSwitch preparedSwitch = prepareEngineSwitch(index, true);
     EngineLifecycleReservations reservations =
         reserveEngineLifecycle(currentForegroundEngine, targetEngine);
     if (reservations == null) {
@@ -2087,6 +2092,7 @@ public class EngineManager {
     switchEngineInternal(
         index,
         true,
+        preparedSwitch,
         releaseEngineLifecycleAfterBoardSync(
             currentForegroundEngine, targetEngine, true, true, reservations));
   }
@@ -2094,6 +2100,8 @@ public class EngineManager {
   public void reStartEngine2() {
     // currentEngineNo = -1;
     if (Lizzie.leelaz2 == null) return;
+    PreparedEngineSwitch preparedSwitch =
+        prepareEngineSwitch(EngineManager.currentEngineNo2, false);
     EngineLifecycleReservations reservations =
         reserveEngineLifecycle(Lizzie.leelaz, Lizzie.leelaz2);
     if (reservations == null) {
@@ -2109,7 +2117,8 @@ public class EngineManager {
       if (Lizzie.leelaz2.isLeela0110) Lizzie.leelaz2.leela0110StopPonder();
     } catch (Exception e) {
     }
-    switchEngineInternal(EngineManager.currentEngineNo2, false, reservations::close);
+    switchEngineInternal(
+        EngineManager.currentEngineNo2, false, preparedSwitch, reservations::close);
   }
 
   public void killOtherEngines() {
@@ -2356,6 +2365,7 @@ public class EngineManager {
     }
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     Leelaz targetEngine = engineList.get(index);
+    PreparedEngineSwitch preparedSwitch = prepareEngineSwitch(index, isMain);
     EngineLifecycleReservations reservations =
         reserveEngineLifecycle(currentForegroundEngine, targetEngine);
     if (reservations == null) {
@@ -2367,6 +2377,7 @@ public class EngineManager {
     switchEngineInternal(
         index,
         isMain,
+        preparedSwitch,
         targetEngine == currentForegroundEngine
             ? reservations::close
             : releaseEngineLifecycleAfterBoardSync(
@@ -2421,6 +2432,14 @@ public class EngineManager {
   }
 
   protected void switchEngineInternal(int index, boolean isMain, Runnable afterSync) {
+    switchEngineInternal(index, isMain, prepareEngineSwitch(index, isMain), afterSync);
+  }
+
+  protected void switchEngineInternal(
+      int index,
+      boolean isMain,
+      PreparedEngineSwitch preparedSwitch,
+      Runnable afterSync) {
     boolean syncScheduled = false;
     try {
     if (Lizzie.frame.isContributing) {
@@ -2438,6 +2457,9 @@ public class EngineManager {
     if (index < 0 || index >= this.engineList.size()) return;
     Leelaz newEng = engineList.get(index);
     if (newEng == null) return;
+    double currentGameKomi = preparedSwitch.currentGameKomi;
+    Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
+        preparedSwitch.exactRestore;
     // newEng.isReadyForGenmoveGame = false;
     boolean changeBoard = true;
     if (newEng.width == Board.boardWidth && newEng.height == Board.boardHeight) changeBoard = false;
@@ -2475,8 +2497,8 @@ public class EngineManager {
         Lizzie.frame.invalidateTrackingAnalysis();
       }
       boolean changedKomi = Lizzie.board.getHistory().getGameInfo().changedKomi;
-      if (!isMain || changedKomi) {
-        newEng.komi = (float) Lizzie.board.getHistory().getGameInfo().getKomi();
+      if (!isMain || changedKomi || preparedRestore.isPresent()) {
+        newEng.komi = (float) currentGameKomi;
       } else newEng.komi = newEng.orikomi;
       if (!newEng.isStarted()) {
         newEng.isLoaded = false;
@@ -2524,7 +2546,11 @@ public class EngineManager {
             new Runnable() {
               public void run() {
                 newEng.notPondering();
-                Lizzie.board.resendMoveToEngine(newEng, true);
+                if (preparedRestore.isPresent()) {
+                  Lizzie.board.resendMoveToEngine(newEng, true, preparedRestore.orElseThrow());
+                } else {
+                  Lizzie.board.resendMoveToEngine(newEng, true);
+                }
                 if (newEng == Lizzie.leelaz) {
                   Lizzie.board.clearBestMovesAfterForFirstEngine(
                       Lizzie.board.getHistory().getStart());
@@ -2560,7 +2586,11 @@ public class EngineManager {
 
                 Lizzie.board.clearBestMovesAfterForSecondEngine(
                     Lizzie.board.getHistory().getStart());
-                Lizzie.board.resendMoveToEngine(newEng, true);
+                if (preparedRestore.isPresent()) {
+                  Lizzie.board.resendMoveToEngine(newEng, true, preparedRestore.orElseThrow());
+                } else {
+                  Lizzie.board.resendMoveToEngine(newEng, true);
+                }
                 Menu.engineMenu2.setText(
                     "["
                         + (currentEngineNo2 + 1)
@@ -2580,6 +2610,26 @@ public class EngineManager {
     } finally {
       if (!syncScheduled && afterSync != null) afterSync.run();
     }
+  }
+
+  private PreparedEngineSwitch prepareEngineSwitch(int index, boolean isMain) {
+    if (Lizzie.board == null
+        || Lizzie.board.getHistory() == null
+        || Lizzie.board.getHistory().getGameInfo() == null) {
+      return null;
+    }
+    Leelaz targetEngine = engineList.get(index);
+    double currentGameKomi = Lizzie.board.getHistory().getGameInfo().getKomi();
+    Leelaz restoreMirror =
+        Lizzie.config.isDoubleEngineMode() ? (isMain ? Lizzie.leelaz2 : Lizzie.leelaz) : null;
+    Optional<ExactSnapshotEngineRestore.PreparedRestore> exactRestore =
+        ExactSnapshotEngineRestore.prepareForEngineSwitch(
+            targetEngine,
+            restoreMirror,
+            Lizzie.board.getHistory().getCurrentHistoryNode(),
+            false,
+            currentGameKomi);
+    return new PreparedEngineSwitch(currentGameKomi, exactRestore);
   }
 
   protected void synchronizeEngineWhenReady(
@@ -2698,6 +2748,18 @@ public class EngineManager {
       }
       showEngineSynchronizationFailure(Lizzie.leelaz);
       return false;
+    }
+  }
+
+  protected static final class PreparedEngineSwitch {
+    private final double currentGameKomi;
+    private final Optional<ExactSnapshotEngineRestore.PreparedRestore> exactRestore;
+
+    private PreparedEngineSwitch(
+        double currentGameKomi,
+        Optional<ExactSnapshotEngineRestore.PreparedRestore> exactRestore) {
+      this.currentGameKomi = currentGameKomi;
+      this.exactRestore = exactRestore;
     }
   }
 

@@ -10,6 +10,7 @@ import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
+import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.LeelazEngineCommandSink;
 import featurecat.lizzie.gui.GtpConsolePane;
@@ -139,6 +140,124 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
+  void productionResyncCapturesExactPlanBeforeNameCommand() throws Exception {
+    assertProductionResyncCapturesExactPlanBeforeCommand(false, "name");
+  }
+
+  @Test
+  void productionResyncCapturesExactPlanBeforeStopCommand() throws Exception {
+    assertProductionResyncCapturesExactPlanBeforeCommand(true, "stop");
+  }
+
+  private void assertProductionResyncCapturesExactPlanBeforeCommand(
+      boolean kataGo, String preRestoreCommand) throws Exception {
+    try (TestHarness harness = TestHarness.open(true)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+
+      Leelaz primary = new Leelaz("");
+      primary.isKatago = kataGo;
+      Leelaz secondary = new Leelaz("");
+      Leelaz replacementSecondary = new Leelaz("");
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = secondary;
+
+      CommandMutationOutputStream primaryOutput =
+          new CommandMutationOutputStream(
+              primary,
+              preRestoreCommand,
+              () -> {
+                history.getStart().getData().stones[Board.getIndex(0, 0)] = Stone.EMPTY;
+                history.getData().lastMove = java.util.Optional.of(new int[] {0, 2});
+                Lizzie.leelaz2 = replacementSecondary;
+              });
+      CommandMutationOutputStream secondaryOutput =
+          new CommandMutationOutputStream(secondary, null, null);
+      CommandMutationOutputStream replacementOutput =
+          new CommandMutationOutputStream(replacementSecondary, null, null);
+      setOutputStream(primary, primaryOutput);
+      setOutputStream(secondary, secondaryOutput);
+      setOutputStream(replacementSecondary, replacementOutput);
+
+      new LeelazEngineCommandSink().resyncFromCurrentHistory(history.getCurrentHistoryNode());
+
+      assertEquals(
+          1,
+          primaryOutput.matchingCommandCount(),
+          preRestoreCommand + " must trigger the plan-mutation probe exactly once.");
+      assertTrue(
+          primaryOutput.loadedSgf().contains("AB[aa]"),
+          "the snapshot must be captured before the pre-restore command can mutate history.");
+      assertEquals(
+          List.of("play B " + Board.convertCoordinatesToName(2, 2)),
+          collectPlayCommands(primaryOutput.commands()),
+          "the real tail must be captured before the pre-restore command can mutate history.");
+      assertEquals(
+          1,
+          secondaryOutput.loadSgfCommandCount(),
+          "the original secondary engine must be captured before the pre-restore command.");
+      assertEquals(
+          0,
+          replacementOutput.loadSgfCommandCount(),
+          "a replacement secondary engine must not join an already prepared restore.");
+    }
+  }
+
+  @Test
+  void boardHistoryClearCapturesExactPlanBeforeClearCommand() throws Exception {
+    try (TestHarness harness = TestHarness.open(true)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      BoardHistoryNode current = history.getCurrentHistoryNode();
+
+      Leelaz primary = new Leelaz("");
+      Leelaz secondary = new Leelaz("");
+      Leelaz replacementSecondary = new Leelaz("");
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = secondary;
+
+      CommandMutationOutputStream primaryOutput =
+          new CommandMutationOutputStream(
+              primary,
+              "clear_board",
+              () -> {
+                history.getStart().getData().stones[Board.getIndex(0, 0)] = Stone.EMPTY;
+                history.getData().lastMove = java.util.Optional.of(new int[] {0, 2});
+                Lizzie.leelaz2 = replacementSecondary;
+              });
+      CommandMutationOutputStream secondaryOutput =
+          new CommandMutationOutputStream(secondary, null, null);
+      CommandMutationOutputStream replacementOutput =
+          new CommandMutationOutputStream(replacementSecondary, null, null);
+      setOutputStream(primary, primaryOutput);
+      setOutputStream(secondary, secondaryOutput);
+      setOutputStream(replacementSecondary, replacementOutput);
+
+      current.clearAndSyncBoard(true);
+
+      assertEquals(
+          1,
+          primaryOutput.matchingCommandCount(),
+          "clear_board must trigger the plan-mutation probe exactly once.");
+      assertTrue(
+          primaryOutput.loadedSgf().contains("AB[aa]"),
+          "the snapshot must be captured before clear can mutate history.");
+      assertEquals(
+          List.of("play B " + Board.convertCoordinatesToName(2, 2)),
+          collectPlayCommands(primaryOutput.commands()),
+          "the real tail must be captured before clear can mutate history.");
+      assertEquals(
+          1,
+          secondaryOutput.loadSgfCommandCount(),
+          "the original secondary engine must be captured before clear.");
+      assertEquals(
+          0,
+          replacementOutput.loadSgfCommandCount(),
+          "a replacement secondary engine must not join an already prepared history restore.");
+    }
+  }
+
+  @Test
   void productionResyncRestoresPonderDispositionCapturedBeforeStoppingTheEngine() throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
       PonderDispositionLeelaz engine = new PonderDispositionLeelaz();
@@ -151,6 +270,46 @@ class ExactSnapshotEngineRestoreContractTest {
           1,
           engine.ponderCalls,
           "production resync should restore ponder that was suspended by the existing owner.");
+    }
+  }
+
+  @Test
+  void productionResyncKeepsUsingPreparedPrimaryWhenGlobalOwnerChanges() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      PonderDispositionLeelaz original = new PonderDispositionLeelaz();
+      PonderDispositionLeelaz replacement = new PonderDispositionLeelaz();
+      original.replacePrimaryOnNotPondering(replacement);
+      Lizzie.leelaz = original;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+
+      new LeelazEngineCommandSink().resyncFromCurrentHistory(history.getCurrentHistoryNode());
+
+      assertEquals(1, original.nameCalls);
+      assertEquals(1, original.loadSgfCalls);
+      assertEquals(1, original.ponderCalls);
+      assertEquals(0, replacement.nameCalls);
+      assertEquals(0, replacement.loadSgfCalls);
+      assertEquals(0, replacement.ponderCalls);
+    }
+  }
+
+  @Test
+  void boardHistoryClearKeepsUsingPreparedPrimaryWhenGlobalOwnerChanges() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      PonderDispositionLeelaz original = new PonderDispositionLeelaz();
+      PonderDispositionLeelaz replacement = new PonderDispositionLeelaz();
+      original.replacePrimaryOnNotPondering(replacement);
+      Lizzie.leelaz = original;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+
+      history.getCurrentHistoryNode().clearAndSyncBoard(true);
+
+      assertEquals(1, original.clearCalls);
+      assertEquals(1, original.loadSgfCalls);
+      assertEquals(1, original.ponderCalls);
+      assertEquals(0, replacement.clearCalls);
+      assertEquals(0, replacement.loadSgfCalls);
+      assertEquals(0, replacement.ponderCalls);
     }
   }
 
@@ -170,6 +329,73 @@ class ExactSnapshotEngineRestoreContractTest {
           1,
           engine.ponderCalls,
           "board restore should use the disposition captured before clear_board.");
+    }
+  }
+
+  @Test
+  void boardRestoreCapturesExactPlanBeforeKomiAndClearCommands() throws Exception {
+    double previousDefaultKomi = GameInfo.DEFAULT_KOMI;
+    try (TestHarness harness = TestHarness.open(true)) {
+      GameInfo.DEFAULT_KOMI = 7.5;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      history.getGameInfo().setKomiNoMenu(0.0);
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz primary = new Leelaz("");
+      Leelaz secondary = new Leelaz("");
+      Leelaz replacementSecondary = new Leelaz("");
+      primary.komi = 7.5f;
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = secondary;
+
+      CommandMutationOutputStream primaryOutput =
+          new CommandMutationOutputStream(
+              primary,
+              "komi ",
+              () -> {
+                history.getStart().getData().stones[Board.getIndex(0, 0)] = Stone.EMPTY;
+                history.getData().lastMove = java.util.Optional.of(new int[] {0, 2});
+                Lizzie.leelaz2 = replacementSecondary;
+              });
+      CommandMutationOutputStream secondaryOutput =
+          new CommandMutationOutputStream(secondary, null, null);
+      CommandMutationOutputStream replacementOutput =
+          new CommandMutationOutputStream(replacementSecondary, null, null);
+      setOutputStream(primary, primaryOutput);
+      setOutputStream(secondary, secondaryOutput);
+      setOutputStream(replacementSecondary, replacementOutput);
+
+      board.resendMoveToEngine(primary, false);
+
+      assertEquals(
+          1,
+          primaryOutput.matchingCommandCount(),
+          "komi must trigger the plan-mutation probe exactly once.");
+      assertTrue(
+          primaryOutput.loadedSgf().contains("AB[aa]"),
+          "the snapshot must be captured before komi or clear_board can mutate history.");
+      assertTrue(
+          primaryOutput.loadedSgf().contains("KM[0.0]"),
+          "preparing before komi sync must still capture the displayed game's komi.");
+      assertEquals(
+          List.of("play B " + Board.convertCoordinatesToName(2, 2)),
+          collectPlayCommands(primaryOutput.commands()),
+          "the real tail must be captured before komi or clear_board can mutate history.");
+      assertEquals(
+          1,
+          secondaryOutput.loadSgfCommandCount(),
+          "the original secondary engine must be captured before komi or clear_board.");
+      assertEquals(
+          0,
+          replacementOutput.loadSgfCommandCount(),
+          "a replacement secondary engine must not join an already prepared board restore.");
+    } finally {
+      GameInfo.DEFAULT_KOMI = previousDefaultKomi;
     }
   }
 
@@ -1139,28 +1365,42 @@ class ExactSnapshotEngineRestoreContractTest {
     method.invoke(engine, command, onResponse, false, false);
   }
 
-  private static final class RecordingOutputStream extends OutputStream {
-    private String failCommandPrefix;
+  private abstract static class RecordedCommandOutputStream extends OutputStream {
     private final StringBuilder currentCommand = new StringBuilder();
     private final List<String> commands = new ArrayList<>();
 
-    private RecordingOutputStream(String failCommandPrefix) {
-      this.failCommandPrefix = failCommandPrefix;
-    }
-
     @Override
-    public void write(int b) {
+    public final void write(int b) {
       currentCommand.append((char) b);
     }
 
     @Override
-    public void flush() throws IOException {
+    public final void flush() throws IOException {
       String command = currentCommand.toString().trim();
       currentCommand.setLength(0);
       if (command.isEmpty()) {
         return;
       }
       commands.add(command);
+      onCommand(command);
+    }
+
+    protected abstract void onCommand(String command) throws IOException;
+
+    protected final List<String> commands() {
+      return commands;
+    }
+  }
+
+  private static final class RecordingOutputStream extends RecordedCommandOutputStream {
+    private String failCommandPrefix;
+
+    private RecordingOutputStream(String failCommandPrefix) {
+      this.failCommandPrefix = failCommandPrefix;
+    }
+
+    @Override
+    protected void onCommand(String command) throws IOException {
       if (matchesCommandPrefix(command, failCommandPrefix)) {
         throw new IOException("simulated flush failure: " + command);
       }
@@ -1169,14 +1409,14 @@ class ExactSnapshotEngineRestoreContractTest {
     private void failOnCommand(String commandPrefix) {
       this.failCommandPrefix = commandPrefix;
     }
-
-    private List<String> commands() {
-      return commands;
-    }
   }
 
   private static final class PonderDispositionLeelaz extends Leelaz {
+    private int clearCalls;
     private int ponderCalls;
+    private int nameCalls;
+    private int loadSgfCalls;
+    private Leelaz replacementPrimary;
 
     private PonderDispositionLeelaz() throws IOException {
       super("");
@@ -1193,19 +1433,87 @@ class ExactSnapshotEngineRestoreContractTest {
     }
 
     @Override
-    public void notPondering() {}
+    public void notPondering() {
+      if (replacementPrimary != null) {
+        Lizzie.leelaz = replacementPrimary;
+      }
+    }
 
     @Override
-    public void nameCmdfornoponder() {}
+    public void nameCmdfornoponder() {
+      nameCalls++;
+    }
+
+    @Override
+    public void clear() {
+      clearCalls++;
+    }
 
     @Override
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
+      loadSgfCalls++;
       afterConsumed.run();
     }
 
     @Override
     public void ponder() {
       ponderCalls++;
+    }
+
+    private void replacePrimaryOnNotPondering(Leelaz replacement) {
+      replacementPrimary = replacement;
+    }
+  }
+
+  private static final class CommandMutationOutputStream extends RecordedCommandOutputStream {
+    private final Leelaz engine;
+    private final String mutationCommand;
+    private final Runnable mutation;
+    private int matchingCommandCount;
+    private String loadedSgf = "";
+
+    private CommandMutationOutputStream(
+        Leelaz engine, String mutationCommand, Runnable mutation) {
+      this.engine = engine;
+      this.mutationCommand = mutationCommand;
+      this.mutation = mutation;
+    }
+
+    @Override
+    protected void onCommand(String command) throws IOException {
+      if (matchesCommandPrefix(command, mutationCommand)) {
+        matchingCommandCount++;
+        if (matchingCommandCount == 1) {
+          mutation.run();
+        }
+      }
+      if (!isLoadSgfCommand(command)) {
+        return;
+      }
+      try {
+        loadedSgf = Files.readString(extractLoadSgfPath(command));
+        invokeResponseHandlerForLine(engine, buildSuccessResponseLine(command));
+      } catch (Exception ex) {
+        throw new IOException("failed to consume snapshot SGF: " + command, ex);
+      }
+    }
+
+    private int loadSgfCommandCount() {
+      int count = 0;
+      for (String command : commands()) {
+        if (isLoadSgfCommand(command)) {
+          count++;
+        }
+      }
+      return count;
+    }
+
+    private String loadedSgf() {
+      return loadedSgf;
+    }
+
+    private int matchingCommandCount() {
+      return matchingCommandCount;
     }
   }
 
@@ -1240,13 +1548,11 @@ class ExactSnapshotEngineRestoreContractTest {
     }
   }
 
-  private static final class ScriptedResponseOutputStream extends OutputStream {
+  private static final class ScriptedResponseOutputStream extends RecordedCommandOutputStream {
     private final Leelaz engine;
     private final String failCommandPrefix;
     private final String clearBoardResponse;
     private final String loadSgfResponse;
-    private final StringBuilder currentCommand = new StringBuilder();
-    private final List<String> commands = new ArrayList<>();
 
     private ScriptedResponseOutputStream(
         Leelaz engine,
@@ -1260,18 +1566,7 @@ class ExactSnapshotEngineRestoreContractTest {
     }
 
     @Override
-    public void write(int b) {
-      currentCommand.append((char) b);
-    }
-
-    @Override
-    public void flush() throws IOException {
-      String command = currentCommand.toString().trim();
-      currentCommand.setLength(0);
-      if (command.isEmpty()) {
-        return;
-      }
-      commands.add(command);
+    protected void onCommand(String command) throws IOException {
       if (matchesCommandPrefix(command, failCommandPrefix)) {
         throw new IOException("simulated flush failure: " + command);
       }
@@ -1299,14 +1594,10 @@ class ExactSnapshotEngineRestoreContractTest {
       return null;
     }
 
-    private List<String> commands() {
-      return commands;
-    }
   }
 
-  private static final class TailReplayAwareOutputStream extends OutputStream {
+  private static final class TailReplayAwareOutputStream extends RecordedCommandOutputStream {
     private final Leelaz engine;
-    private final StringBuilder currentCommand = new StringBuilder();
     private Path loadSgfPath;
     private boolean tempFileExistedDuringReplay;
 
@@ -1315,17 +1606,7 @@ class ExactSnapshotEngineRestoreContractTest {
     }
 
     @Override
-    public void write(int b) {
-      currentCommand.append((char) b);
-    }
-
-    @Override
-    public void flush() throws IOException {
-      String command = currentCommand.toString().trim();
-      currentCommand.setLength(0);
-      if (command.isEmpty()) {
-        return;
-      }
+    protected void onCommand(String command) throws IOException {
       if (isLoadSgfCommand(command)) {
         loadSgfPath = extractLoadSgfPath(command);
         try {
@@ -1349,28 +1630,15 @@ class ExactSnapshotEngineRestoreContractTest {
     }
   }
 
-  private static final class TailRejectingOutputStream extends OutputStream {
+  private static final class TailRejectingOutputStream extends RecordedCommandOutputStream {
     private final Leelaz engine;
-    private final StringBuilder currentCommand = new StringBuilder();
-    private final List<String> commands = new ArrayList<>();
 
     private TailRejectingOutputStream(Leelaz engine) {
       this.engine = engine;
     }
 
     @Override
-    public void write(int b) {
-      currentCommand.append((char) b);
-    }
-
-    @Override
-    public void flush() throws IOException {
-      String command = currentCommand.toString().trim();
-      currentCommand.setLength(0);
-      if (command.isEmpty()) {
-        return;
-      }
-      commands.add(command);
+    protected void onCommand(String command) throws IOException {
       if (!isLoadSgfCommand(command)) {
         return;
       }
@@ -1388,9 +1656,6 @@ class ExactSnapshotEngineRestoreContractTest {
       }
     }
 
-    private List<String> commands() {
-      return commands;
-    }
   }
 
   private static final class SilentFrame extends LizzieFrame {

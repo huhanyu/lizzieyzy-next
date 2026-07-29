@@ -100,7 +100,8 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - 后续 `clear_board + moveList` 只重放 `SNAPSHOT` 之后的真实手顺，`SNAPSHOT` 自带的静态局面持续生效。
 - 所有 `loadEngine=true` 的恢复入口都遵守同一套 `SNAPSHOT/setup` 恢复契约。
 - `restoreMoveNumber(...)` 恢复时也先命中最近 `SNAPSHOT` 边界，再续接后面的真实 `MOVE/PASS`。
-- `ExactSnapshotEngineRestore` 是 `exact snapshot restore` 的唯一编排 owner。恢复入口在发送任何命令前捕获 immutable plan；plan 固定最近的静态锚点、锚点盘面与轮次、盘尺寸和 setup metadata、锚点后的真实 `MOVE/PASS` tail、主/副目标实例以及 ponder disposition，后续 callback 不再读取这些 mutable globals/history。
+- `ExactSnapshotEngineRestore` 是 `exact snapshot restore` 的唯一编排 owner。恢复入口在发送任何 `stop` / `name` / `komi` / `clear_board` 等前置命令前先 `prepare(...)` 捕获 immutable plan，前置命令完成后再 `execute()`；plan 固定最近的静态锚点、锚点盘面与轮次、盘尺寸和 setup metadata、锚点后的真实 `MOVE/PASS` tail、主/副目标实例以及 ponder disposition，后续 callback 不再读取这些 mutable globals/history。
+- 前台/副引擎切换也属于上述恢复入口：切换流程在 lifecycle reservation（可能发送 tracking release `stop`）、停止旧引擎或向目标引擎发送 `name` / `komi` / `clear_board` 前冻结 plan；命中 exact restore 时，本局 komi 随 plan 固定，目标引擎的默认 komi 不能先改写 `GameInfo` 或恢复 SGF。
 - `ExactSnapshotEngineRestore` 拥有临时 SGF 的生成与清理、双引擎 mirror 编排、`loadsgf` 成功后的 tail 重放以及明确的完成结果。调用方不能再自行拼装 snapshot tail，也不能持有或结束临时 SGF lifecycle。
 - `Leelaz` 继续唯一拥有 ordinary command queue、response handler、超时、outstanding response 退休、output-stream invalidation 与 engine arbitration；`ExactSnapshotEngineRestore` 不复制或旁路这些底层协议职责。
 - 祖先链完全没有可用 `SNAPSHOT` / removed-stone 静态锚点时，调用方保留既有的 root replay。这是“未进入 exact restore”，与 exact restore 已开始后的失败不同。

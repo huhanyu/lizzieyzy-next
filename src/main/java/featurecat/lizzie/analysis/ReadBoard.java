@@ -2698,7 +2698,8 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     BoardData data = rebuiltNode.getData();
     BoardData restoreData =
         data.isSnapshotNode() ? data : ExactSnapshotEngineRestore.snapshotFromCurrentBoard(data);
-    boolean wasPondering = Lizzie.leelaz.isPondering();
+    Leelaz engine = Lizzie.leelaz;
+    boolean wasPondering = engine.isPondering();
     localMoveSyncDebug(
         "syncEngineToRebuiltSnapshot begin node="
             + historyNodeSummary(rebuiltNode)
@@ -2706,9 +2707,11 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
             + (data.isSnapshotNode() ? "snapshot" : "move")
             + " enginePondering="
             + wasPondering);
-    Lizzie.leelaz.clearWithoutPonder();
+    ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+        ExactSnapshotEngineRestore.prepare(engine, restoreData);
+    engine.clearWithoutPonder();
     localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
-    ExactSnapshotEngineRestore.restore(Lizzie.leelaz, restoreData);
+    preparedRestore.execute();
     localMoveSyncDebug(
         "syncEngineToRebuiltSnapshot loadsgf completed node=" + historyNodeSummary(rebuiltNode));
   }

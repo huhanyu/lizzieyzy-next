@@ -1265,6 +1265,19 @@ public class Board {
     }
   }
 
+  public void resendMoveToEngine(
+      Leelaz leelaz,
+      boolean loadEngine,
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
+    if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+      return;
+    }
+    restoreEnginePosition(leelaz, getMoveList(), preparedRestore);
+    if (loadEngine) {
+      Lizzie.initializeAfterVersionCheck(false, leelaz);
+    }
+  }
+
   public boolean resendCurrentPositionToPrimaryEngine() {
     if (!isPrimaryEngineReady()) {
       return false;
@@ -1312,19 +1325,19 @@ public class Board {
     Lizzie.leelaz.syncKomiForCurrentGame(currentHistory.getGameInfo().getKomi());
   }
 
-  private void syncEngineKomiToNonDefaultCurrentGame(Leelaz engine) {
+  private Optional<Double> captureNonDefaultCurrentGameKomi(Leelaz engine) {
     BoardHistoryList currentHistory = getHistory();
     if (engine == null
         || Float.isNaN(engine.komi)
         || currentHistory == null
         || currentHistory.getGameInfo() == null) {
-      return;
+      return Optional.empty();
     }
     double gameKomi = currentHistory.getGameInfo().getKomi();
     if (Double.compare(gameKomi, GameInfo.DEFAULT_KOMI) == 0) {
-      return;
+      return Optional.empty();
     }
-    engine.syncKomiForCurrentGame(gameKomi);
+    return Optional.of(gameKomi);
   }
 
   private boolean isPrimaryEngineReady() {
@@ -2969,13 +2982,27 @@ public class Board {
 
   private void restoreEnginePosition(Leelaz engine, ArrayList<Movelist> fallbackMoves) {
     boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
-    syncEngineKomiToNonDefaultCurrentGame(engine);
-    engine.sendCommand("clear_board");
     BoardHistoryNode currentNode = getHistory().getCurrentHistoryNode();
-    Optional<ExactSnapshotEngineRestore.Completion> completion =
-        ExactSnapshotEngineRestore.restore(engine, currentNode, wasPondering);
-    if (completion.isPresent()) {
-      if (completion.get().shouldResumePonder()) engine.ponder();
+    Optional<Double> gameKomi = captureNonDefaultCurrentGameKomi(engine);
+    Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
+        gameKomi.isPresent()
+            ? ExactSnapshotEngineRestore.prepare(
+                engine, currentNode, wasPondering, gameKomi.orElseThrow())
+            : ExactSnapshotEngineRestore.prepare(engine, currentNode, wasPondering);
+    restoreEnginePosition(engine, fallbackMoves, preparedRestore.orElse(null));
+  }
+
+  private void restoreEnginePosition(
+      Leelaz engine,
+      ArrayList<Movelist> fallbackMoves,
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
+    boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
+    Optional<Double> gameKomi = captureNonDefaultCurrentGameKomi(engine);
+    gameKomi.ifPresent(engine::syncKomiForCurrentGame);
+    engine.sendCommand("clear_board");
+    if (preparedRestore != null) {
+      ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
+      if (completion.shouldResumePonder()) engine.ponder();
       return;
     }
     replayMovesToEngine(engine, fallbackMoves);

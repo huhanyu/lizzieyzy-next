@@ -769,13 +769,15 @@ public class BoardHistoryNode {
 
   public void clearAndSyncBoard(boolean stepIn) {
     if (stepIn) {
-      boolean resumePonder = Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking();
-      Lizzie.leelaz.notPondering();
-      Lizzie.leelaz.clear();
-      ExactSnapshotEngineRestore.Completion completion =
-          ExactSnapshotEngineRestore.restore(Lizzie.leelaz, this, resumePonder).orElseThrow();
+      Leelaz engine = Lizzie.leelaz;
+      boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepare(engine, this, resumePonder).orElseThrow();
+      engine.notPondering();
+      engine.clear();
+      ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
       if (completion.shouldResumePonder()) {
-        Lizzie.leelaz.ponder();
+        engine.ponder();
       }
     } else {
       //  System.out.println("out");
