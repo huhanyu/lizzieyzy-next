@@ -2,6 +2,7 @@ package featurecat.lizzie.rules;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.LeelazEngineCommandSink;
@@ -24,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -67,6 +70,103 @@ class ExactSnapshotEngineRestoreContractTest {
           List.of("play B " + Board.convertCoordinatesToName(2, 2), "play W pass"),
           collectPlayCommands(output.commands()),
           "history restore should replay only real MOVE/PASS nodes after the nearest snapshot.");
+    }
+  }
+
+  @Test
+  void preparedBoardRestoreDoesNotReadLiveMoveListAfterPlanCapture() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      ThrowingMoveListBoard board = allocate(ThrowingMoveListBoard.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz engine = new Leelaz("");
+      setOutputStream(engine, new ScriptedResponseOutputStream(engine, null, null, AUTO_ID_RESPONSE));
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepare(
+                  engine, history.getCurrentHistoryNode(), false, 6.5)
+              .orElseThrow();
+
+      board.resendMoveToEngine(engine, false, preparedRestore);
+    }
+  }
+
+  @Test
+  void preparedRestoreSynchronizesTargetKomiCacheAfterSuccess() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      Leelaz engine = new Leelaz("");
+      engine.komi = 7.5f;
+      ScriptedResponseOutputStream output =
+          new ScriptedResponseOutputStream(engine, null, null, AUTO_ID_RESPONSE);
+      setOutputStream(engine, output);
+
+      ExactSnapshotEngineRestore.prepare(engine, history.getCurrentHistoryNode(), false, 6.5)
+          .orElseThrow()
+          .execute();
+
+      assertEquals(6.5f, engine.komi, 0.0001f);
+    }
+  }
+
+  @Test
+  void unauthorizedSnapshotRestoreDoesNotBypassReadBoardGmaReservation() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      Leelaz engine = new Leelaz("");
+      RecordingOutputStream output = new RecordingOutputStream(null);
+      setOutputStream(engine, output);
+      Lizzie.leelaz = engine;
+      assertTrue(invokeBeginReadBoardGmaSession(engine));
+
+      assertThrows(
+          IllegalStateException.class,
+          () -> ExactSnapshotEngineRestore.restore(engine, history.getCurrentHistoryNode()));
+      assertTrue(output.commands().isEmpty(), "unauthorized restore must send no GTP commands");
+      invokeRetireReadBoardGmaSession(engine);
+    }
+  }
+
+  @Test
+  void preparedReadBoardGmaRestoreRejectsReplacementReservationBeforeDispatch() throws Exception {
+    String previousTempDirectory = System.getProperty("java.io.tmpdir");
+    Path tempDirectory =
+        Path.of(previousTempDirectory, "exact-restore-readboard-gma-aba-" + System.nanoTime());
+    Files.createDirectory(tempDirectory);
+    try (TestHarness harness = TestHarness.open(false)) {
+      System.setProperty("java.io.tmpdir", tempDirectory.toString());
+      RecordingReadBoardGmaLeelaz engine = new RecordingReadBoardGmaLeelaz();
+      assertTrue(invokeBeginReadBoardGmaSession(engine));
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          invokePrepareForReadBoardGma(engine, snapshotRoot());
+
+      invokeRetireReadBoardGmaSession(engine);
+      assertTrue(invokeBeginReadBoardGmaSession(engine));
+      try {
+        assertThrows(IllegalStateException.class, preparedRestore::execute);
+        assertTrue(
+            engine.commands().isEmpty(),
+            "stale GMA restore must not dispatch loadsgf or tail");
+        try (var files = Files.list(tempDirectory)) {
+          assertTrue(
+              files.findAny().isEmpty(),
+              "a stale GMA restore must delete its temporary SGF before dispatch");
+        }
+      } finally {
+        invokeRetireReadBoardGmaSession(engine);
+      }
+    } finally {
+      if (previousTempDirectory == null) {
+        System.clearProperty("java.io.tmpdir");
+      } else {
+        System.setProperty("java.io.tmpdir", previousTempDirectory);
+      }
+      Files.deleteIfExists(tempDirectory);
     }
   }
 
@@ -147,6 +247,32 @@ class ExactSnapshotEngineRestoreContractTest {
   @Test
   void productionResyncCapturesExactPlanBeforeStopCommand() throws Exception {
     assertProductionResyncCapturesExactPlanBeforeCommand(true, "stop");
+  }
+
+  @Test
+  void productionResyncUsesCurrentHistoryKomiInsteadOfEngineCache() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz primary = new Leelaz("");
+      primary.komi = 7.5f;
+      Lizzie.leelaz = primary;
+      CommandMutationOutputStream output =
+          new CommandMutationOutputStream(primary, null, null);
+      setOutputStream(primary, output);
+
+      new LeelazEngineCommandSink().resyncFromCurrentHistory(history.getCurrentHistoryNode());
+
+      assertTrue(
+          output.loadedSgf().contains("KM[6.5]"),
+          "production resync must freeze current history GameInfo komi, not engine cache komi");
+    }
   }
 
   private void assertProductionResyncCapturesExactPlanBeforeCommand(
@@ -254,6 +380,32 @@ class ExactSnapshotEngineRestoreContractTest {
           0,
           replacementOutput.loadSgfCommandCount(),
           "a replacement secondary engine must not join an already prepared history restore.");
+    }
+  }
+
+  @Test
+  void boardHistoryClearUsesCurrentHistoryKomiInsteadOfEngineCache() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz engine = new Leelaz("");
+      engine.komi = 7.5f;
+      Lizzie.leelaz = engine;
+      CommandMutationOutputStream output =
+          new CommandMutationOutputStream(engine, null, null);
+      setOutputStream(engine, output);
+
+      history.getCurrentHistoryNode().clearAndSyncBoard(true);
+
+      assertTrue(
+          output.loadedSgf().contains("KM[6.5]"),
+          "board history restore must freeze current history GameInfo komi, not engine cache komi");
     }
   }
 
@@ -422,6 +574,113 @@ class ExactSnapshotEngineRestoreContractTest {
       assertTrue(
           collectPlayCommands(output.commands()).isEmpty(),
           "a rejected tail command must not be reported as a completed exact restore.");
+    }
+  }
+
+  @Test
+  void exactSnapshotRestoreDeletesSgfWhenAdmissionRejectsBeforeLoadDispatch() throws Exception {
+    String previousTempDirectory = System.getProperty("java.io.tmpdir");
+    Path tempDirectory =
+        Path.of(previousTempDirectory, "exact-restore-admission-cleanup-" + System.nanoTime());
+    Files.createDirectory(tempDirectory);
+    try (TestHarness harness = TestHarness.open(false)) {
+      System.setProperty("java.io.tmpdir", tempDirectory.toString());
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      Leelaz engine = new Leelaz("");
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepare(
+                  engine, history.getCurrentHistoryNode(), false, 6.5)
+              .orElseThrow();
+      Leelaz.EngineModeReservation reservation = engine.beginEngineModeReservation();
+      assertNotNull(reservation);
+      try {
+        assertThrows(IllegalStateException.class, preparedRestore::execute);
+      } finally {
+        reservation.close();
+      }
+      try (var files = Files.list(tempDirectory)) {
+        assertTrue(
+            files.findAny().isEmpty(),
+            "an admission rejection before loadsgf dispatch must delete the temporary SGF");
+      }
+    } finally {
+      if (previousTempDirectory == null) {
+        System.clearProperty("java.io.tmpdir");
+      } else {
+        System.setProperty("java.io.tmpdir", previousTempDirectory);
+      }
+      Files.deleteIfExists(tempDirectory);
+    }
+  }
+
+  @Test
+  void mirrorLoadSgfEnqueueRejectionFailsImmediatelyAfterPrimaryWasAccepted() throws Exception {
+    try (TestHarness harness = TestHarness.open(true)) {
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz primary = new Leelaz("");
+      Leelaz mirror = new Leelaz("");
+      AtomicReference<Leelaz.EngineModeReservation> mirrorReservation = new AtomicReference<>();
+      CommandMutationOutputStream primaryOutput =
+          new CommandMutationOutputStream(
+              primary,
+              "loadsgf ",
+              () -> {
+                Thread reservationThread =
+                    new Thread(
+                        () -> mirrorReservation.set(mirror.beginEngineModeReservation()),
+                        "mirror-loadsgf-conflict-owner");
+                reservationThread.start();
+                try {
+                  reservationThread.join();
+                } catch (InterruptedException ex) {
+                  Thread.currentThread().interrupt();
+                  throw new IllegalStateException(ex);
+                }
+              });
+      RecordingOutputStream mirrorOutput = new RecordingOutputStream(null);
+      setOutputStream(primary, primaryOutput);
+      setOutputStream(mirror, mirrorOutput);
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = mirror;
+
+      long startedAt = System.nanoTime();
+      try {
+        IllegalStateException thrown =
+            assertThrows(
+                IllegalStateException.class, () -> board.resendMoveToEngine(primary, false));
+        long elapsedMillis =
+            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+
+        assertTrue(thrown.getMessage().contains("rejected"), thrown.getMessage());
+        assertTrue(
+            elapsedMillis < 2000L,
+            "mirror admission rejection must not wait for the no-response timeout");
+        assertNotNull(mirrorReservation.get());
+        assertEquals(1, primaryOutput.loadSgfCommandCount());
+        assertEquals(0, mirrorOutput.loadSgfCommandCount());
+        assertTrue(collectPlayCommands(primaryOutput.commands()).isEmpty());
+        assertTrue(collectPlayCommands(mirrorOutput.commands()).isEmpty());
+        assertEventuallyNoPendingLoadSgfHandler(primary);
+        assertEventuallyNoPendingLoadSgfHandler(mirror);
+        assertEventuallyDeleted(
+            extractLoadSgfPath(
+                primaryOutput.commands().stream()
+                    .filter(ExactSnapshotEngineRestoreContractTest::isLoadSgfCommand)
+                    .findFirst()
+                    .orElseThrow()));
+      } finally {
+        if (mirrorReservation.get() != null) {
+          mirrorReservation.get().close();
+        }
+      }
     }
   }
 
@@ -1194,6 +1453,27 @@ class ExactSnapshotEngineRestoreContractTest {
     outputField.set(engine, Leelaz.createCommandOutputStream(stream));
   }
 
+  private static boolean invokeBeginReadBoardGmaSession(Leelaz engine) throws Exception {
+    Method method = Leelaz.class.getDeclaredMethod("beginReadBoardGmaSession");
+    method.setAccessible(true);
+    return (Boolean) method.invoke(engine);
+  }
+
+  private static void invokeRetireReadBoardGmaSession(Leelaz engine) throws Exception {
+    Method method = Leelaz.class.getDeclaredMethod("retireReadBoardGmaSession");
+    method.setAccessible(true);
+    method.invoke(engine);
+  }
+
+  private static ExactSnapshotEngineRestore.PreparedRestore invokePrepareForReadBoardGma(
+      Leelaz engine, BoardData snapshotData) throws Exception {
+    Method method =
+        ExactSnapshotEngineRestore.class.getDeclaredMethod(
+            "prepareForReadBoardGma", Leelaz.class, BoardData.class);
+    method.setAccessible(true);
+    return (ExactSnapshotEngineRestore.PreparedRestore) method.invoke(null, engine, snapshotData);
+  }
+
   private static void invokeResponseHandlerForLine(Leelaz engine, String line) throws Exception {
     Method method =
         Leelaz.class.getDeclaredMethod("runPendingResponseHandlerForLine", String.class);
@@ -1277,6 +1557,33 @@ class ExactSnapshotEngineRestoreContractTest {
       Thread.sleep(50L);
     }
     assertEquals(expectedCount, pendingResponseHandlerCount(engine), "pending handlers leaked.");
+  }
+
+  private static void assertEventuallyNoPendingLoadSgfHandler(Leelaz engine) throws Exception {
+    for (int attempt = 0; attempt < 160; attempt++) {
+      if (!hasPendingLoadSgfHandler(engine)) {
+        return;
+      }
+      Thread.sleep(50L);
+    }
+    assertFalse(hasPendingLoadSgfHandler(engine), "pending loadsgf handler leaked.");
+  }
+
+  private static boolean hasPendingLoadSgfHandler(Leelaz engine) throws Exception {
+    Field pendingField = Leelaz.class.getDeclaredField("pendingResponseHandlers");
+    pendingField.setAccessible(true);
+    Object pending = pendingField.get(engine);
+    if (pending == null) {
+      return false;
+    }
+    for (Object handler : (java.util.ArrayDeque<?>) pending) {
+      Field commandField = handler.getClass().getDeclaredField("command");
+      commandField.setAccessible(true);
+      if (isLoadSgfCommand((String) commandField.get(handler))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static boolean isLoadSgfCommand(String command) {
@@ -1409,9 +1716,41 @@ class ExactSnapshotEngineRestoreContractTest {
     private void failOnCommand(String commandPrefix) {
       this.failCommandPrefix = commandPrefix;
     }
+
+    private int loadSgfCommandCount() {
+      int count = 0;
+      for (String command : commands()) {
+        if (isLoadSgfCommand(command)) {
+          count++;
+        }
+      }
+      return count;
+    }
   }
 
-  private static final class PonderDispositionLeelaz extends Leelaz {
+  private static final class RecordingReadBoardGmaLeelaz extends ExactSnapshotRestoreTestLeelaz {
+    private final List<String> commands = new ArrayList<>();
+
+    private RecordingReadBoardGmaLeelaz() throws IOException {
+      super("");
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      commands.add(command);
+      if (onResponse != null) {
+        onResponse.run();
+      }
+      return true;
+    }
+
+    private List<String> commands() {
+      return commands;
+    }
+  }
+
+  private static final class PonderDispositionLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private int clearCalls;
     private int ponderCalls;
     private int nameCalls;
@@ -1453,6 +1792,16 @@ class ExactSnapshotEngineRestoreContractTest {
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
       loadSgfCalls++;
       afterConsumed.run();
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())), onResponse);
+        return true;
+      }
+      return super.sendExactSnapshotRestoreCommandForTest(command, onResponse, onSendFailure);
     }
 
     @Override
@@ -1517,7 +1866,7 @@ class ExactSnapshotEngineRestoreContractTest {
     }
   }
 
-  private static final class ClearBoardDispositionLeelaz extends Leelaz {
+  private static final class ClearBoardDispositionLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private boolean resumePonder = true;
     private int ponderCalls;
 
@@ -1540,6 +1889,16 @@ class ExactSnapshotEngineRestoreContractTest {
     @Override
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
       afterConsumed.run();
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())), onResponse);
+        return true;
+      }
+      return super.sendExactSnapshotRestoreCommandForTest(command, onResponse, onSendFailure);
     }
 
     @Override
@@ -1686,6 +2045,13 @@ class ExactSnapshotEngineRestoreContractTest {
 
     @Override
     public void addLine(String line) {}
+  }
+
+  private static final class ThrowingMoveListBoard extends Board {
+    @Override
+    public ArrayList<Movelist> getMoveList() {
+      throw new AssertionError("prepared exact restore must not read live move list");
+    }
   }
 
   private static final class TestHarness implements AutoCloseable {

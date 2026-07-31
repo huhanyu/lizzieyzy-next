@@ -10,8 +10,15 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.rules.Board;
+import featurecat.lizzie.rules.BoardData;
+import featurecat.lizzie.rules.BoardHistoryList;
+import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.rules.Zobrist;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -20,6 +27,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -98,6 +106,66 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       assertEquals(1, pausedEngine.restartCount);
       assertEquals(0, pausedEngine.lastRestartIndex);
       assertFalse(pausedEngine.hasExclusiveGtpWorkInProgress());
+    }
+  }
+
+  @Test
+  void benchmarkRestartCapturesPreparedRestoreBeforePonderAndStart() throws Exception {
+    Config previousConfig = Lizzie.config;
+    Board previousBoard = Lizzie.board;
+    Leelaz previousEngine = Lizzie.leelaz;
+    EngineManager previousManager = Lizzie.engineManager;
+    LizzieFrame previousFrame = Lizzie.frame;
+    boolean previousEmpty = EngineManager.isEmpty;
+    boolean previousEngineGame = EngineManager.isEngineGame;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    int previousBoardWidth = Board.boardWidth;
+    int previousBoardHeight = Board.boardHeight;
+    Board.boardWidth = 3;
+    Board.boardHeight = 3;
+    BoardHistoryList history = new BoardHistoryList(benchmarkSnapshotRoot());
+    history.getGameInfo().setKomiNoMenu(6.5);
+    history.add(benchmarkMoveNode(2, 2, Stone.BLACK, true, 4));
+    PreparedBenchmarkBoard board = preparedBenchmarkBoard(history);
+    PreparedBenchmarkLeelaz engine = new PreparedBenchmarkLeelaz();
+    try {
+      Lizzie.config = ConfigTestHelper.createForTests(Files.createTempDirectory("katago-prepared"));
+      Lizzie.board = board;
+      Lizzie.leelaz = engine;
+      Lizzie.engineManager = engineManager(List.of(engine));
+      Lizzie.frame = null;
+      EngineManager.isEmpty = false;
+      EngineManager.isEngineGame = false;
+      EngineManager.currentEngineNo = 0;
+      engine.Pondering();
+      engine.mutateOnReservation = () -> mutateBenchmarkHistory(history);
+
+      KataGoRuntimeHelper.BenchmarkPauseResult pause =
+          KataGoRuntimeHelper.pauseCurrentAnalysisForBenchmark();
+      assertTrue(pause.accepted());
+      engine.mutateOnPonder = () -> mutateBenchmarkHistory(history);
+      engine.mutateOnStart = () -> mutateBenchmarkHistory(history);
+      KataGoRuntimeHelper.restoreAnalysisAfterBenchmark(pause.analysisWasPondering());
+
+      assertTrue(board.restoreCompleted.await(2, TimeUnit.SECONDS));
+      assertTrue(board.preparedRestoreReceived);
+      assertFalse(board.genericRestoreReceived);
+      assertTrue(engine.loadedSgf.contains("AB[aa]"), engine.loadedSgf);
+      assertTrue(engine.loadedSgf.contains("KM[6.5]"), engine.loadedSgf);
+    } finally {
+      if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+        KataGoRuntimeHelper.restoreAnalysisAfterBenchmark(false);
+      }
+      Lizzie.config = previousConfig;
+      Lizzie.board = previousBoard;
+      Lizzie.leelaz = previousEngine;
+      Lizzie.engineManager = previousManager;
+      Lizzie.frame = previousFrame;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.isEngineGame = previousEngineGame;
+      EngineManager.currentEngineNo = previousEngineNo;
+      Board.boardWidth = previousBoardWidth;
+      Board.boardHeight = previousBoardHeight;
     }
   }
 
@@ -556,6 +624,14 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     }
 
     @Override
+    public ExclusiveGtpLifecycleReservation beginAutomaticEngineRestartReservation() {
+      reservationAttempts++;
+      reservationEntered.countDown();
+      await(reservationGate);
+      return rejectReservation ? null : super.beginAutomaticEngineRestartReservation();
+    }
+
+    @Override
     public void Pondering() {
       ponderingCallCount++;
       super.Pondering();
@@ -613,8 +689,185 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     }
   }
 
+  private static final class PreparedBenchmarkLeelaz extends ExactSnapshotRestoreTestLeelaz {
+    private Runnable mutateOnReservation;
+    private Runnable mutateOnPonder;
+    private Runnable mutateOnStart;
+    private String loadedSgf = "";
+
+    private PreparedBenchmarkLeelaz() throws Exception {
+      super("controlled-engine");
+      prepareReusableKatagoEngine(this);
+    }
+
+    @Override
+    public ExclusiveGtpLifecycleReservation beginAutomaticEngineRestartReservation() {
+      ExclusiveGtpLifecycleReservation reservation =
+          super.beginAutomaticEngineRestartReservation();
+      runMutation(() -> mutateOnReservation);
+      return reservation;
+    }
+
+    @Override
+    public void Pondering() {
+      runMutation(() -> mutateOnPonder);
+      super.Pondering();
+    }
+
+    @Override
+    public void startEngine(int index) {
+      runMutation(() -> mutateOnStart);
+      started = true;
+      isLoaded = true;
+      isCheckingName = false;
+      try {
+        Field field = Leelaz.class.getDeclaredField("endGetCommandList");
+        field.setAccessible(true);
+        field.set(this, true);
+      } catch (ReflectiveOperationException failure) {
+        throw new IllegalStateException(failure);
+      }
+    }
+
+    @Override
+    public void normalQuit() {}
+
+    @Override
+    public void shutdown() {
+      started = false;
+      isLoaded = false;
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        try {
+          loadedSgf = Files.readString(Path.of(command.substring("loadsgf ".length()).trim()));
+        } catch (IOException failure) {
+          throw new IllegalStateException(failure);
+        }
+      }
+      if (onResponse != null) {
+        onResponse.run();
+      }
+      return true;
+    }
+
+    private void runMutation(java.util.function.Supplier<Runnable> mutationSupplier) {
+      Runnable mutation = mutationSupplier.get();
+      if (mutation != null) {
+        mutation.run();
+        if (mutation == mutateOnReservation) {
+          mutateOnReservation = null;
+        }
+        if (mutation == mutateOnPonder) {
+          mutateOnPonder = null;
+        }
+        if (mutation == mutateOnStart) {
+          mutateOnStart = null;
+        }
+      }
+    }
+  }
+
+  private static final class PreparedBenchmarkBoard extends Board {
+    private CountDownLatch restoreCompleted;
+    private boolean preparedRestoreReceived;
+    private boolean genericRestoreReceived;
+
+    @Override
+    public void resendMoveToEngine(Leelaz leelaz, boolean loadEngine) {
+      genericRestoreReceived = true;
+      restoreCompleted.countDown();
+    }
+
+    @Override
+    public void resendMoveToEngine(
+        Leelaz leelaz,
+        boolean loadEngine,
+        ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
+      preparedRestoreReceived = true;
+      preparedRestore.execute();
+      restoreCompleted.countDown();
+    }
+  }
+
   private static Leelaz reusableKatagoEngine() throws Exception {
     return prepareReusableKatagoEngine(new Leelaz(""));
+  }
+
+  private static PreparedBenchmarkBoard preparedBenchmarkBoard(BoardHistoryList history)
+      throws Exception {
+    PreparedBenchmarkBoard board = allocate(PreparedBenchmarkBoard.class);
+    board.restoreCompleted = new CountDownLatch(1);
+    board.startStonelist = new ArrayList<>();
+    board.hasStartStone = false;
+    board.setHistory(history);
+    return board;
+  }
+
+  private static BoardData benchmarkSnapshotRoot() {
+    Stone[] stones = new Stone[9];
+    java.util.Arrays.fill(stones, Stone.EMPTY);
+    stones[Board.getIndex(0, 0)] = Stone.BLACK;
+    stones[Board.getIndex(1, 0)] = Stone.WHITE;
+    int[] moveNumbers = new int[9];
+    moveNumbers[Board.getIndex(0, 0)] = 1;
+    moveNumbers[Board.getIndex(1, 0)] = 2;
+    return BoardData.snapshot(
+        stones,
+        java.util.Optional.of(new int[] {1, 0}),
+        Stone.WHITE,
+        false,
+        benchmarkZobrist(stones),
+        3,
+        moveNumbers,
+        0,
+        0,
+        50,
+        0);
+  }
+
+  private static BoardData benchmarkMoveNode(
+      int x, int y, Stone color, boolean blackToPlay, int moveNumber) {
+    Stone[] stones = benchmarkSnapshotRoot().stones.clone();
+    stones[Board.getIndex(x, y)] = color;
+    return BoardData.move(
+        stones,
+        new int[] {x, y},
+        color,
+        blackToPlay,
+        benchmarkZobrist(stones),
+        moveNumber,
+        new int[9],
+        0,
+        0,
+        50,
+        0);
+  }
+
+  private static Zobrist benchmarkZobrist(Stone[] stones) {
+    Zobrist zobrist = new Zobrist();
+    for (int x = 0; x < 3; x++) {
+      for (int y = 0; y < 3; y++) {
+        Stone stone = stones[Board.getIndex(x, y)];
+        if (!stone.isEmpty()) {
+          zobrist.toggleStone(x, y, stone);
+        }
+      }
+    }
+    return zobrist;
+  }
+
+  private static void mutateBenchmarkHistory(BoardHistoryList history) {
+    history.getStart().getData().stones[Board.getIndex(0, 0)] = Stone.EMPTY;
+    history.getGameInfo().setKomiNoMenu(7.5);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <T> T allocate(Class<T> type) throws Exception {
+    return (T) UnsafeHolder.UNSAFE.allocateInstance(type);
   }
 
   private static ByteArrayOutputStream installOutput(Leelaz engine) throws Exception {
@@ -659,5 +912,19 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     outputField.setAccessible(true);
     outputField.set(engine, new BufferedOutputStream(new ByteArrayOutputStream()));
     return engine;
+  }
+
+  private static final class UnsafeHolder {
+    private static final sun.misc.Unsafe UNSAFE = loadUnsafe();
+
+    private static sun.misc.Unsafe loadUnsafe() {
+      try {
+        Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (sun.misc.Unsafe) field.get(null);
+      } catch (ReflectiveOperationException failure) {
+        throw new IllegalStateException(failure);
+      }
+    }
   }
 }

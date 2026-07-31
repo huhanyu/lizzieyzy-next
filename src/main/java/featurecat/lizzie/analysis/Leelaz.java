@@ -94,6 +94,13 @@ public class Leelaz {
     RESTORE_FAILED
   }
 
+  enum ExactSnapshotRestoreOwner {
+    ORDINARY,
+    READ_BOARD_GMA,
+    FOREGROUND,
+    LIFECYCLE
+  }
+
   public enum TrackingStreamLeaseFailure {
     INITIAL_STOP_SEND_FAILED,
     INITIAL_STOP_ERROR_RESPONSE,
@@ -229,6 +236,8 @@ public class Leelaz {
   private QueuedCommand normalCommandBeingSent;
   private final ThreadLocal<ExclusiveGtpSession> foregroundRestoreCommandSession =
       new ThreadLocal<>();
+  private static final ThreadLocal<ExactSnapshotRestoreAdmission>
+      exactSnapshotRestoreAdmissionContext = new ThreadLocal<>();
   private final ThreadLocal<AtomicReference<RuntimeException>> deferredDefaultMirrorFailure =
       new ThreadLocal<>();
   private volatile boolean foregroundRestoreInProgress;
@@ -255,6 +264,8 @@ public class Leelaz {
   private final ThreadLocal<RestartBootstrapReceipt> restartBootstrapReceiptContext =
       new ThreadLocal<>();
   private RestartBootstrapReceipt restartBootstrapReceipt;
+  private volatile ExactSnapshotEngineRestore.PreparedRestore automaticRestartPreparedRestore;
+  private volatile ExclusiveGtpLifecycleReservation automaticRestartReservation;
 
   private BufferedReader inputStream;
   private BufferedOutputStream outputStream;
@@ -930,10 +941,16 @@ public class Leelaz {
   public void restartClosedEngine(int index, Runnable afterBoardRestore) throws IOException {
     boolean restoreScheduled = false;
     try {
-      boolean isPondering = this.isPondering;
       if (engineCommand.trim().isEmpty()) {
         return;
       }
+      boolean isPondering = this.isPondering;
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          consumeAutomaticRestartPreparedRestore();
+      if (preparedRestore == null && !hasAutomaticRestartReservation()) {
+        preparedRestore = captureDirectRestartRestore(isPondering);
+      }
+      final ExactSnapshotEngineRestore.PreparedRestore restorePlan = preparedRestore;
       if (useRemoteCompute && isStarted()) {
         normalQuit();
       }
@@ -956,10 +973,11 @@ public class Leelaz {
                   return;
                 }
                 if (afterBoardRestore == null) {
-                  thisLeelz.restoreClosedEngineBoardState(isPondering);
+                  thisLeelz.restoreClosedEngineBoardState(isPondering, restorePlan);
                 } else {
                   completionDelegated = true;
-                  thisLeelz.restoreClosedEngineBoardState(isPondering, afterBoardRestore);
+                  thisLeelz.restoreClosedEngineBoardState(
+                      isPondering, restorePlan, afterBoardRestore);
                 }
               } finally {
                 if (afterBoardRestore != null && !completionDelegated) {
@@ -1020,8 +1038,18 @@ public class Leelaz {
   }
 
   void restoreClosedEngineBoardState(boolean resumePonder) {
+    restoreClosedEngineBoardState(resumePonder, null);
+  }
+
+  private void restoreClosedEngineBoardState(
+      boolean resumePonder, ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
     isPondering = false;
-    Lizzie.board.resendMoveToEngine(this, false);
+    if (preparedRestore == null) {
+      Lizzie.board.resendMoveToEngine(this, false);
+    } else {
+      Lizzie.board.resendMoveToEngine(this, false, preparedRestore);
+      return;
+    }
     if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
       return;
     }
@@ -1037,10 +1065,19 @@ public class Leelaz {
     resumeClosedEngineAfterBoardSynchronization(resumePonder);
   }
 
-  private void restoreClosedEngineBoardState(boolean resumePonder, Runnable afterBoardRestore) {
+  private void restoreClosedEngineBoardState(
+      boolean resumePonder,
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore,
+      Runnable afterBoardRestore) {
     try {
       isPondering = false;
-      Lizzie.board.resendMoveToEngine(this, false);
+      if (preparedRestore == null) {
+        Lizzie.board.resendMoveToEngine(this, false);
+      } else {
+        Lizzie.board.resendMoveToEngine(this, false, preparedRestore);
+        afterBoardRestore.run();
+        return;
+      }
     } catch (RuntimeException failure) {
       isLoaded = false;
       markBoardSynchronizationFailed(
@@ -1107,7 +1144,7 @@ public class Leelaz {
         && !EngineManager.isEngineGame();
   }
 
-  ExclusiveGtpLifecycleReservation beginAutomaticEngineRestartReservation() {
+  public ExclusiveGtpLifecycleReservation beginAutomaticEngineRestartReservation() {
     synchronized (engineArbitrationLock()) {
       if (engineStateUnrestored
           || readBoardGmaReservation != null
@@ -1118,7 +1155,82 @@ public class Leelaz {
       if (!beginExclusiveGtpLifecycleTransition(owner)) {
         return null;
       }
-      return new ExclusiveGtpLifecycleReservation(this, owner, false);
+      try {
+        ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+            captureAutomaticRestartRestore(owner);
+        ExclusiveGtpLifecycleReservation reservation =
+            new ExclusiveGtpLifecycleReservation(this, owner, false);
+        automaticRestartPreparedRestore = preparedRestore;
+        automaticRestartReservation = reservation;
+        return reservation;
+      } catch (ExactSnapshotRestoreAdmissionException conflict) {
+        endExclusiveGtpLifecycleTransition(owner);
+        return null;
+      } catch (RuntimeException failure) {
+        endExclusiveGtpLifecycleTransition(owner);
+        throw failure;
+      }
+    }
+  }
+
+  private ExactSnapshotEngineRestore.PreparedRestore captureAutomaticRestartRestore(
+      Object lifecycleOwner) {
+    Board restoreBoard = Lizzie.board;
+    if (restoreBoard == null) {
+      return null;
+    }
+    BoardHistoryList history = restoreBoard.getHistory();
+    if (history == null || history.getGameInfo() == null) {
+      return null;
+    }
+    BoardHistoryNode target = history.getCurrentHistoryNode();
+    if (target == null) {
+      return null;
+    }
+    return ExactSnapshotEngineRestore.prepareForEngineSwitch(
+            this,
+            resolveLoadSgfMirrorEngine(),
+            target,
+            isPonderingOrWasPonderingBeforeTracking(),
+            history.getGameInfo().getKomi(),
+            lifecycleOwner,
+            true)
+        .orElse(null);
+  }
+
+  private ExactSnapshotEngineRestore.PreparedRestore captureDirectRestartRestore(
+      boolean resumePonder) {
+    Board restoreBoard = Lizzie.board;
+    if (restoreBoard == null) {
+      return null;
+    }
+    BoardHistoryList history = restoreBoard.getHistory();
+    if (history == null || history.getGameInfo() == null) {
+      return null;
+    }
+    BoardHistoryNode target = history.getCurrentHistoryNode();
+    if (target == null) {
+      return null;
+    }
+    return ExactSnapshotEngineRestore.prepare(
+            this, target, resumePonder, history.getGameInfo().getKomi())
+        .orElse(null);
+  }
+
+  private ExactSnapshotEngineRestore.PreparedRestore consumeAutomaticRestartPreparedRestore() {
+    ExactSnapshotEngineRestore.PreparedRestore preparedRestore = automaticRestartPreparedRestore;
+    automaticRestartPreparedRestore = null;
+    return preparedRestore;
+  }
+
+  private boolean hasAutomaticRestartReservation() {
+    return automaticRestartReservation != null;
+  }
+
+  private void clearAutomaticRestartPreparation(EngineModeReservation reservation) {
+    if (automaticRestartReservation == reservation) {
+      automaticRestartPreparedRestore = null;
+      automaticRestartReservation = null;
     }
   }
 
@@ -4434,6 +4546,7 @@ public class Leelaz {
                 && exclusiveGtpLifecycleQueueGate
                 && !isCurrentRestartBootstrapReceiptLocked(bootstrapReceipt))
             || (rejectForExclusiveWinner
+                && !isExactSnapshotRestoreAdmissionContextActive()
                 && (engineStateUnrestored
                     || readBoardGmaReservation != null
                     || trackingHandoffGate != null
@@ -4545,7 +4658,7 @@ public class Leelaz {
   }
 
   public void loadSgf(Path sgfFile, Runnable afterConsumed) {
-    Leelaz mirroredEngine = getClass() == Leelaz.class ? resolveLoadSgfMirrorEngine() : null;
+    Leelaz mirroredEngine = resolveLoadSgfMirrorEngine();
     loadSgf(sgfFile, mirroredEngine, afterConsumed);
   }
 
@@ -4554,21 +4667,45 @@ public class Leelaz {
       loadSgf(sgfFile);
       return;
     }
-    if (getClass() != Leelaz.class) {
-      try {
-        loadSgf(sgfFile);
-      } catch (RuntimeException ex) {
-        afterConsumed.run();
-        throw ex;
-      }
-      afterConsumed.run();
-      return;
+    loadTrackedSgf(sgfFile, mirroredEngine, afterConsumed, null);
+  }
+
+  final void loadSgfForExactSnapshotRestore(
+      Path sgfFile,
+      Leelaz mirroredEngine,
+      ExactSnapshotRestoreAdmission admission,
+      Runnable afterConsumed,
+      Runnable onDispatchStarted) {
+    if (afterConsumed == null) {
+      throw new IllegalArgumentException("afterConsumed");
     }
+    if (!isExactSnapshotRestoreAdmissionValid(admission)
+        || (mirroredEngine != null
+            && !mirroredEngine.isExactSnapshotRestoreAdmissionValid(admission))) {
+      throw new IllegalStateException("Exact snapshot restore loadsgf was not admitted.");
+    }
+    withExactSnapshotRestoreAdmission(
+        admission,
+        () -> {
+          if (onDispatchStarted != null) {
+            onDispatchStarted.run();
+          }
+          loadTrackedSgf(sgfFile, mirroredEngine, afterConsumed, admission);
+        });
+  }
+
+  private void loadTrackedSgf(
+      Path sgfFile,
+      Leelaz mirroredEngine,
+      Runnable afterConsumed,
+      ExactSnapshotRestoreAdmission admission) {
     LoadSgfDispatch dispatch = new LoadSgfDispatch(afterConsumed);
-    RuntimeException sendFailure = sendTrackedLoadSgfCommand(this, sgfFile, dispatch);
+    RuntimeException sendFailure =
+        sendTrackedLoadSgfCommand(this, sgfFile, dispatch, admission);
     RuntimeException mirroredSendFailure = null;
     if (mirroredEngine != null) {
-      mirroredSendFailure = sendTrackedLoadSgfCommand(mirroredEngine, sgfFile, dispatch);
+      mirroredSendFailure =
+          sendTrackedLoadSgfCommand(mirroredEngine, sgfFile, dispatch, admission);
     }
     if (sendFailure == null) {
       sendFailure = mirroredSendFailure;
@@ -4612,20 +4749,53 @@ public class Leelaz {
       Path sgfFile,
       Runnable onResponse,
       CommandSendFailureHandler onSendFailure) {
+    sendLoadSgfCommand(targetEngine, sgfFile, onResponse, onSendFailure, null);
+  }
+
+  private void sendLoadSgfCommand(
+      Leelaz targetEngine,
+      Path sgfFile,
+      Runnable onResponse,
+      CommandSendFailureHandler onSendFailure,
+      ExactSnapshotRestoreAdmission admission) {
+    if (admission != null) {
+      String command = "loadsgf " + sgfFile.toAbsolutePath();
+      if (!targetEngine.sendExactSnapshotRestoreCommand(command, onResponse, onSendFailure)) {
+        throw new IllegalStateException(
+            "Exact snapshot restore loadsgf command was rejected: " + command);
+      }
+      return;
+    }
     targetEngine.sendCommand(
         "loadsgf " + sgfFile.toAbsolutePath(), onResponse, onSendFailure, true, false);
   }
 
   private RuntimeException sendTrackedLoadSgfCommand(
       Leelaz targetEngine, Path sgfFile, LoadSgfDispatch dispatch) {
+    return sendTrackedLoadSgfCommand(targetEngine, sgfFile, dispatch, null);
+  }
+
+  private RuntimeException sendTrackedLoadSgfCommand(
+      Leelaz targetEngine,
+      Path sgfFile,
+      LoadSgfDispatch dispatch,
+      ExactSnapshotRestoreAdmission admission) {
     TrackedLoadSgfConsumer trackedConsumer =
         new TrackedLoadSgfConsumer(targetEngine, sgfFile, dispatch);
     try {
-      sendLoadSgfCommand(
-          targetEngine,
-          sgfFile,
-          trackedConsumer.responseHandler(),
-          trackedConsumer.sendFailureHandler());
+      Runnable send =
+          () ->
+              sendLoadSgfCommand(
+                  targetEngine,
+                  sgfFile,
+                  trackedConsumer.responseHandler(),
+                  trackedConsumer.sendFailureHandler(),
+                  admission);
+      if (admission == null) {
+        send.run();
+      } else {
+        targetEngine.withExactSnapshotRestoreAdmission(admission, send);
+      }
       return null;
     } catch (RuntimeException ex) {
       trackedConsumer.failFromSend(ex);
@@ -4651,20 +4821,32 @@ public class Leelaz {
     sendCommandNoLeelaz2(command, null);
   }
 
-  boolean sendCommandToCapturedRestoreTarget(String command) {
-    if (getClass() == Leelaz.class) {
-      return sendCommand(
-          command,
-          null,
-          null,
-          true,
-          false,
-          TrackingReleaseReason.ORDINARY_OPERATION,
-          null,
-          false);
+  boolean sendCommandToCapturedRestoreTarget(
+      String command, ExactSnapshotRestoreAdmission admission) {
+    return sendExactSnapshotRestoreCommand(command, admission);
+  }
+
+  boolean sendExactSnapshotRestoreCommand(
+      String command,
+      Runnable onResponse,
+      CommandSendFailureHandler onSendFailure) {
+    return sendCommand(
+        command,
+        onResponse,
+        onSendFailure,
+        true,
+        false,
+        TrackingReleaseReason.ORDINARY_OPERATION,
+        null,
+        true);
+  }
+
+  boolean sendExactSnapshotRestoreCommand(
+      String command, ExactSnapshotRestoreAdmission admission) {
+    if (!isExactSnapshotRestoreAdmissionValid(admission)) {
+      return false;
     }
-    sendCommand(command);
-    return true;
+    return sendExactSnapshotRestoreCommand(command, null, null);
   }
 
   private void enqueueSavedGtpConfiguration() {
@@ -5102,7 +5284,8 @@ public class Leelaz {
   private boolean shouldSuppressNormalCommandForForegroundAnalysis() {
     boolean suppress =
         suppressNormalCommandsForForegroundAnalysis
-            && foregroundRestoreCommandSession.get() == null;
+            && foregroundRestoreCommandSession.get() == null
+            && !isExactSnapshotRestoreAdmissionContextActive();
     if (suppress && foregroundRestoreInProgress && foregroundRestoreSession != null) {
       foregroundRestoreSession.restoreInvalidated = true;
     }
@@ -6112,7 +6295,18 @@ public class Leelaz {
   }
 
   public ExclusiveGtpLifecycleReservation beginExclusiveGtpLifecycleReservation() {
-    Object owner = new Object();
+    return beginExclusiveGtpLifecycleReservationInternal(new Object());
+  }
+
+  ExclusiveGtpLifecycleReservation beginExclusiveGtpLifecycleReservation(Object owner) {
+    if (owner == null) {
+      throw new IllegalArgumentException("owner");
+    }
+    return beginExclusiveGtpLifecycleReservationInternal(owner);
+  }
+
+  private ExclusiveGtpLifecycleReservation beginExclusiveGtpLifecycleReservationInternal(
+      Object owner) {
     ExclusiveGtpSession trackingSession = null;
     TrackingDispositionNotification dispositionNotification = null;
     int releaseStopCommandId = 0;
@@ -6252,6 +6446,188 @@ public class Leelaz {
     }
   }
 
+  /** Captures the arbitration owner for one immutable exact restore plan. */
+  ExactSnapshotRestoreAdmission captureExactSnapshotRestoreAdmission(
+      ExactSnapshotRestoreOwner owner, Object ownerIdentity, Leelaz mirror) {
+    return captureExactSnapshotRestoreAdmission(owner, ownerIdentity, mirror, false);
+  }
+
+  ExactSnapshotRestoreAdmission captureExactSnapshotRestoreAdmission(
+      ExactSnapshotRestoreOwner owner,
+      Object ownerIdentity,
+      Leelaz mirror,
+      boolean mirrorLifecycleOwnedByOperation) {
+    if (owner == null) {
+      throw new IllegalArgumentException("owner");
+    }
+    Object capturedOwnerIdentity = ownerIdentity;
+    synchronized (engineArbitrationLock()) {
+      if (owner == ExactSnapshotRestoreOwner.READ_BOARD_GMA && capturedOwnerIdentity == null) {
+        capturedOwnerIdentity = readBoardGmaReservation;
+      }
+      if (!canCaptureExactSnapshotRestoreAdmission(owner, capturedOwnerIdentity)) {
+        throw new ExactSnapshotRestoreAdmissionException(
+            "Exact snapshot restore is not admitted for owner " + owner);
+      }
+    }
+    if (mirror != null
+        && !mirror.canAcceptExactSnapshotRestoreAdmission(
+            this, owner, capturedOwnerIdentity, mirrorLifecycleOwnedByOperation)) {
+      throw new ExactSnapshotRestoreAdmissionException(
+          "Exact snapshot restore mirror is not admitted for owner " + owner);
+    }
+    return new ExactSnapshotRestoreAdmission(
+        this, mirror, owner, capturedOwnerIdentity, mirrorLifecycleOwnedByOperation);
+  }
+
+  private boolean canCaptureExactSnapshotRestoreAdmission(
+      ExactSnapshotRestoreOwner owner, Object ownerIdentity) {
+    switch (owner) {
+      case ORDINARY:
+        return !hasConflictingExactSnapshotRestoreWorkLocked();
+      case READ_BOARD_GMA:
+        return !engineStateUnrestored
+            && ownerIdentity != null
+            && readBoardGmaReservation == ownerIdentity;
+      case FOREGROUND:
+        return ownerIdentity != null
+            && ((exclusiveGtpSession != null
+                    && exclusiveGtpSession == ownerIdentity
+                    && !exclusiveGtpSession.closing)
+                || (foregroundRestoreSession != null
+                    && foregroundRestoreSession == ownerIdentity
+                    && foregroundRestoreInProgress));
+      case LIFECYCLE:
+        return ownerIdentity != null
+            && !hasConflictingExactSnapshotRestoreWorkLocked(ownerIdentity);
+      default:
+        return false;
+    }
+  }
+
+  private boolean hasConflictingExactSnapshotRestoreWorkLocked() {
+    return hasConflictingExactSnapshotRestoreWorkLocked(null);
+  }
+
+  private boolean hasConflictingExactSnapshotRestoreWorkLocked(Object allowedLifecycleOwner) {
+    return engineStateUnrestored
+        || readBoardGmaReservation != null
+        || trackingHandoffGate != null
+        || foregroundRestoreInProgress
+        || (exclusiveGtpLifecycleTransition
+            && (allowedLifecycleOwner == null
+                || exclusiveGtpLifecycleOwner != allowedLifecycleOwner))
+        || (exclusiveGtpSession != null && !isTrackingStreamSession(exclusiveGtpSession));
+  }
+
+  private boolean canAcceptExactSnapshotRestoreAdmission(
+      Leelaz authority,
+      ExactSnapshotRestoreOwner owner,
+      Object ownerIdentity,
+      boolean mirrorLifecycleOwnedByOperation) {
+    if (this != authority && owner == ExactSnapshotRestoreOwner.READ_BOARD_GMA) {
+      synchronized (authority.engineArbitrationLock()) {
+        if (ownerIdentity == null
+            || authority.engineStateUnrestored
+            || authority.readBoardGmaReservation != ownerIdentity) {
+          return false;
+        }
+      }
+    }
+    synchronized (engineArbitrationLock()) {
+      if (this != authority) {
+        return !hasConflictingExactSnapshotRestoreWorkLocked(
+            owner == ExactSnapshotRestoreOwner.LIFECYCLE && mirrorLifecycleOwnedByOperation
+                ? ownerIdentity
+                : null);
+      }
+      switch (owner) {
+        case ORDINARY:
+          return !hasConflictingExactSnapshotRestoreWorkLocked();
+        case READ_BOARD_GMA:
+          return !engineStateUnrestored
+              && ownerIdentity != null
+              && readBoardGmaReservation == ownerIdentity;
+        case FOREGROUND:
+          return canCaptureExactSnapshotRestoreAdmission(owner, ownerIdentity);
+        case LIFECYCLE:
+          return canCaptureExactSnapshotRestoreAdmission(owner, ownerIdentity);
+        default:
+          return false;
+      }
+    }
+  }
+
+  private boolean isExactSnapshotRestoreAdmissionValid(
+      ExactSnapshotRestoreAdmission admission) {
+    if (admission == null || !admission.includes(this)) {
+      return false;
+    }
+    Leelaz authority = admission.authority;
+    if (authority == null) {
+      return false;
+    }
+    synchronized (authority.engineArbitrationLock()) {
+      switch (admission.owner) {
+        case ORDINARY:
+          if (authority.hasConflictingExactSnapshotRestoreWorkLocked()) {
+            return false;
+          }
+          break;
+        case READ_BOARD_GMA:
+          if (admission.ownerIdentity == null
+              || authority.engineStateUnrestored
+              || authority.readBoardGmaReservation != admission.ownerIdentity) {
+            return false;
+          }
+          break;
+        case FOREGROUND:
+          if (authority.foregroundRestoreSession == null
+              || authority.foregroundRestoreSession != admission.ownerIdentity) {
+            return false;
+          }
+          break;
+        case LIFECYCLE:
+          if (!authority.exclusiveGtpLifecycleTransition
+              || authority.exclusiveGtpLifecycleOwner != admission.ownerIdentity) {
+            return false;
+          }
+          break;
+        default:
+          return false;
+      }
+    }
+    if (this != authority) {
+      synchronized (engineArbitrationLock()) {
+        return !hasConflictingExactSnapshotRestoreWorkLocked(
+            admission.owner == ExactSnapshotRestoreOwner.LIFECYCLE
+                    && admission.mirrorLifecycleOwnedByOperation
+                ? admission.ownerIdentity
+                : null);
+      }
+    }
+    return true;
+  }
+
+  private boolean isExactSnapshotRestoreAdmissionContextActive() {
+    return isExactSnapshotRestoreAdmissionValid(exactSnapshotRestoreAdmissionContext.get());
+  }
+
+  void withExactSnapshotRestoreAdmission(
+      ExactSnapshotRestoreAdmission admission, Runnable action) {
+    ExactSnapshotRestoreAdmission previous = exactSnapshotRestoreAdmissionContext.get();
+    exactSnapshotRestoreAdmissionContext.set(admission);
+    try {
+      action.run();
+    } finally {
+      if (previous == null) {
+        exactSnapshotRestoreAdmissionContext.remove();
+      } else {
+        exactSnapshotRestoreAdmissionContext.set(previous);
+      }
+    }
+  }
+
   public void endForegroundAnalysisLease(Object owner) {
     endForegroundAnalysisLease(owner, null);
   }
@@ -6263,6 +6639,7 @@ public class Leelaz {
   public boolean endForegroundAnalysisLease(
       Object owner, Runnable afterRestore, Runnable afterRestoreFailure) {
     ExclusiveGtpSession session;
+    ExactSnapshotEngineRestore.PreparedRestore preparedRestore;
     int releaseStopCommandId = 0;
     synchronized (engineArbitrationLock()) {
       session = exclusiveGtpSession;
@@ -6272,6 +6649,21 @@ public class Leelaz {
           || session.releaseRequested) {
         return false;
       }
+    }
+    try {
+      preparedRestore = prepareForegroundRestore(session);
+    } catch (ExactSnapshotRestoreAdmissionException conflict) {
+      return failForegroundRestoreAdmission(
+          session, afterRestore, afterRestoreFailure, conflict.getMessage());
+    }
+    synchronized (engineArbitrationLock()) {
+      if (exclusiveGtpSession != session
+          || session.owner != owner
+          || session.closing
+          || session.releaseRequested) {
+        return false;
+      }
+      session.preparedRestore = preparedRestore;
       session.releaseRequested = true;
       session.afterRestore = afterRestore;
       session.afterRestoreFailure = afterRestoreFailure;
@@ -6294,6 +6686,47 @@ public class Leelaz {
           ForegroundAnalysisLeaseFailure.FINAL_STOP_SEND_FAILED,
           "failed to send final stop command");
     }
+    return true;
+  }
+
+  private ExactSnapshotEngineRestore.PreparedRestore prepareForegroundRestore(
+      ExclusiveGtpSession session) {
+    Board board = Lizzie.board;
+    BoardHistoryList history = board == null ? null : board.getHistory();
+    if (history == null) {
+      return null;
+    }
+    Double currentGameKomi =
+        history.getGameInfo() == null ? null : history.getGameInfo().getKomi();
+    return ExactSnapshotEngineRestore.prepareForForeground(
+            this, history.getCurrentHistoryNode(), currentGameKomi, session)
+        .orElse(null);
+  }
+
+  private boolean failForegroundRestoreAdmission(
+      ExclusiveGtpSession session,
+      Runnable afterRestore,
+      Runnable afterRestoreFailure,
+      String detail) {
+    synchronized (engineArbitrationLock()) {
+      if (session == null
+          || exclusiveGtpSession != session
+          || session.closing
+          || session.releaseRequested) {
+        return false;
+      }
+      session.releaseRequested = true;
+      session.afterRestore = afterRestore;
+      session.afterRestoreFailure = afterRestoreFailure;
+      recordForegroundAnalysisLeaseFailure(
+          session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED);
+      session.restoreFailed = true;
+      session.closing = true;
+    }
+    String message = "Failed to prepare foreground engine restore: " + detail;
+    rememberRecentLine(recentStderrLines, message);
+    System.err.println(message);
+    restoreAfterClosedForegroundLease(session);
     return true;
   }
 
@@ -6696,25 +7129,40 @@ public class Leelaz {
   private void performForegroundRestore(ExclusiveGtpSession session) {
     foregroundRestoreCommandSession.set(session);
     try {
-      int currentBoardWidth = Board.boardWidth;
-      int currentBoardHeight = Board.boardHeight;
-      sendCommand(
-          currentBoardWidth == currentBoardHeight
-              ? "boardsize " + currentBoardWidth
-              : "rectangular_boardsize " + currentBoardWidth + " " + currentBoardHeight);
-      width = currentBoardWidth;
-      height = currentBoardHeight;
-      double currentKomi = komi;
-      BoardHistoryList currentHistory = Lizzie.board == null ? null : Lizzie.board.getHistory();
-      if (currentHistory != null && currentHistory.getGameInfo() != null) {
-        currentKomi = currentHistory.getGameInfo().getKomi();
+      if (session.preparedRestore != null) {
+        session
+            .preparedRestore
+            .capturedKomi()
+            .ifPresent(
+                value -> {
+                  sendCommand("komi " + (value == 0.0 ? "0" : value));
+                  komi = (float) value;
+                });
+        if (session.originalRules != null) {
+          sendCommand("kata-set-rules " + session.originalRules);
+        }
+        Lizzie.board.resendMoveToEngine(this, false, session.preparedRestore);
+      } else {
+        int currentBoardWidth = Board.boardWidth;
+        int currentBoardHeight = Board.boardHeight;
+        sendCommand(
+            currentBoardWidth == currentBoardHeight
+                ? "boardsize " + currentBoardWidth
+                : "rectangular_boardsize " + currentBoardWidth + " " + currentBoardHeight);
+        width = currentBoardWidth;
+        height = currentBoardHeight;
+        double currentKomi = komi;
+        BoardHistoryList currentHistory = Lizzie.board == null ? null : Lizzie.board.getHistory();
+        if (currentHistory != null && currentHistory.getGameInfo() != null) {
+          currentKomi = currentHistory.getGameInfo().getKomi();
+        }
+        sendCommand("komi " + (currentKomi == 0.0 ? "0" : currentKomi));
+        komi = (float) currentKomi;
+        if (session.originalRules != null) {
+          sendCommand("kata-set-rules " + session.originalRules);
+        }
+        Lizzie.board.resendMoveToEngine(this, false);
       }
-      sendCommand("komi " + (currentKomi == 0.0 ? "0" : currentKomi));
-      komi = (float) currentKomi;
-      if (session.originalRules != null) {
-        sendCommand("kata-set-rules " + session.originalRules);
-      }
-      Lizzie.board.resendMoveToEngine(this, false);
       if (isForegroundRestoreCompleted(session)) {
         return;
       }
@@ -6796,6 +7244,19 @@ public class Leelaz {
       }
     }
     if (retryRestore) {
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore;
+      try {
+        preparedRestore = prepareForegroundRestore(session);
+      } catch (ExactSnapshotRestoreAdmissionException conflict) {
+        failForegroundRestore(session, conflict.getMessage());
+        return;
+      }
+      synchronized (engineArbitrationLock()) {
+        if (session.restoreCompleted || foregroundRestoreSession != session) {
+          return;
+        }
+        session.preparedRestore = preparedRestore;
+      }
       startForegroundRestoreAttempt(session);
       return;
     }
@@ -6824,7 +7285,9 @@ public class Leelaz {
       } catch (RuntimeException ex) {
         ex.printStackTrace();
       }
-      if (session.wasPondering && Lizzie.leelaz == this && canResumePonderAfterForegroundLease()) {
+      if (session.wasPondering
+          && Lizzie.leelaz == this
+          && canResumePonderAfterForegroundLease()) {
         ponder();
       }
     } finally {
@@ -7588,7 +8051,7 @@ public class Leelaz {
   }
 
   @FunctionalInterface
-  private interface CommandSendFailureHandler {
+  interface CommandSendFailureHandler {
     void onSendFailure(RuntimeException ex);
 
     default void onStateResetAfterOutputWrite(RuntimeException ex) {
@@ -7746,6 +8209,7 @@ public class Leelaz {
     private boolean restoreFailed;
     private volatile boolean restoreInvalidated;
     private boolean restoreStarted;
+    private ExactSnapshotEngineRestore.PreparedRestore preparedRestore;
     private String originalRules;
     private Runnable afterRestore;
     private Runnable afterRestoreFailure;
@@ -8055,6 +8519,12 @@ public class Leelaz {
     }
   }
 
+  static final class ExactSnapshotRestoreAdmissionException extends IllegalStateException {
+    private ExactSnapshotRestoreAdmissionException(String message) {
+      super(message);
+    }
+  }
+
   public static class EngineModeReservation implements AutoCloseable {
     private Leelaz engine;
     private final Object owner;
@@ -8072,8 +8542,34 @@ public class Leelaz {
         engine = null;
       }
       if (reservedEngine != null) {
+        reservedEngine.clearAutomaticRestartPreparation(this);
         reservedEngine.endExclusiveGtpLifecycleTransition(owner);
       }
+    }
+  }
+
+  static final class ExactSnapshotRestoreAdmission {
+    private final Leelaz authority;
+    private final Leelaz mirror;
+    private final ExactSnapshotRestoreOwner owner;
+    private final Object ownerIdentity;
+    private final boolean mirrorLifecycleOwnedByOperation;
+
+    private ExactSnapshotRestoreAdmission(
+        Leelaz authority,
+        Leelaz mirror,
+        ExactSnapshotRestoreOwner owner,
+        Object ownerIdentity,
+        boolean mirrorLifecycleOwnedByOperation) {
+      this.authority = authority;
+      this.mirror = mirror;
+      this.owner = owner;
+      this.ownerIdentity = ownerIdentity;
+      this.mirrorLifecycleOwnedByOperation = mirrorLifecycleOwnedByOperation;
+    }
+
+    private boolean includes(Leelaz engine) {
+      return engine == authority || engine == mirror;
     }
   }
 

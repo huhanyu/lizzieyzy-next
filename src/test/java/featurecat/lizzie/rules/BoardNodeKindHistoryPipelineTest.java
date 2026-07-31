@@ -13,6 +13,7 @@ import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.AnalysisEngine;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -4680,7 +4681,7 @@ class BoardNodeKindHistoryPipelineTest {
     }
   }
 
-  private static final class TrackingLeelaz extends Leelaz {
+  private static final class TrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private static final Pattern PLAY_COMMAND = Pattern.compile("^play\\s+([BW])\\s+(.+)$");
     private static final Pattern LOAD_SGF_COMMAND = Pattern.compile("^loadsgf\\s+(.+)$");
     private static final Pattern PROPERTY_PATTERN = Pattern.compile("(AB|AW|PL)\\[([^\\]]*)\\]");
@@ -4721,6 +4722,18 @@ class BoardNodeKindHistoryPipelineTest {
     public void loadSgf(Path sgfFile) {
       recordedCommands().add("loadsgf " + sgfFile.toAbsolutePath());
       restoreSnapshotSgf(sgfFile);
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())));
+        onResponse.run();
+      } else {
+        sendCommand(command);
+      }
+      return true;
     }
 
     @Override

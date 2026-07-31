@@ -173,6 +173,24 @@ class ReadBoardSyncDecisionTest {
   }
 
   @Test
+  void rebuildRestorePlanUsesCurrentHistoryKomiInsteadOfEngineCache() throws Exception {
+    Stone[] target = stones(placement(0, 0, Stone.BLACK));
+
+    try (SyncHarness harness = SyncHarness.create(false, emptyHistory())) {
+      harness.board.getHistory().getGameInfo().setKomiNoMenu(6.5);
+      harness.leelaz.komi = 7.5f;
+      harness.readBoard.parseLine("lastMoveSource foxCornerFlip");
+
+      harness.sync(snapshot(target, Optional.empty(), Stone.EMPTY));
+
+      String sgf = harness.leelaz.lastLoadedSgfContent();
+      assertTrue(
+          sgf.contains("KM[6.5]"),
+          "rebuild exact restore must freeze the current history GameInfo komi in the SGF");
+    }
+  }
+
+  @Test
   void forceRebuildKeepsUsingPreparedPrimaryWhenGlobalOwnerChanges() throws Exception {
     Stone[] target =
         stones(
@@ -1681,7 +1699,7 @@ class ReadBoardSyncDecisionTest {
   }
 
   @Test
-  void markerlessFoxRebuildWithDeadSnapshotGroupUsesLoadsgfForExactEngineRestore()
+  void markerlessFoxRebuildProductionEntryUsesOrdinaryAdmissionForExactEngineRestore()
       throws Exception {
     Stone[] target =
         stones(

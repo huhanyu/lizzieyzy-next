@@ -771,8 +771,13 @@ public class BoardHistoryNode {
     if (stepIn) {
       Leelaz engine = Lizzie.leelaz;
       boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
+      Optional<Double> currentHistoryKomi = currentHistoryKomi();
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
-          ExactSnapshotEngineRestore.prepare(engine, this, resumePonder).orElseThrow();
+          (currentHistoryKomi.isPresent()
+                  ? ExactSnapshotEngineRestore.prepare(
+                      engine, this, resumePonder, currentHistoryKomi.orElseThrow())
+                  : ExactSnapshotEngineRestore.prepare(engine, this, resumePonder))
+              .orElseThrow();
       engine.notPondering();
       engine.clear();
       ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
@@ -790,8 +795,26 @@ public class BoardHistoryNode {
     if (marker == null) {
       return false;
     }
-    ExactSnapshotEngineRestore.restore(Lizzie.leelaz, this).orElseThrow();
+    Optional<Double> currentHistoryKomi = currentHistoryKomi();
+    if (currentHistoryKomi.isPresent()) {
+      ExactSnapshotEngineRestore.prepare(
+              Lizzie.leelaz, this, Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking(),
+              currentHistoryKomi.orElseThrow())
+          .map(ExactSnapshotEngineRestore.PreparedRestore::execute)
+          .orElseThrow();
+    } else {
+      ExactSnapshotEngineRestore.restore(Lizzie.leelaz, this).orElseThrow();
+    }
     return true;
+  }
+
+  private static Optional<Double> currentHistoryKomi() {
+    if (Lizzie.board == null
+        || Lizzie.board.getHistory() == null
+        || Lizzie.board.getHistory().getGameInfo() == null) {
+      return Optional.empty();
+    }
+    return Optional.of(Lizzie.board.getHistory().getGameInfo().getKomi());
   }
 
   private static ArrayList<ExtraStones> cloneExtraStones(ArrayList<ExtraStones> stones) {

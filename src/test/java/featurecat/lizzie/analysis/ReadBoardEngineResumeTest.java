@@ -778,6 +778,7 @@ class ReadBoardEngineResumeTest {
     try (EngineResumeHarness harness =
         EngineResumeHarness.create(rootHistory(beforeCapture, true))) {
       harness.frame.bothSync = true;
+      assertTrue(beginReadBoardGmaSessionForTest(harness.leelaz));
       setField(harness.readBoard, "readBoardGmaPending", true);
       setField(harness.readBoard, "readBoardGmaAutoPlayActive", true);
 
@@ -1386,6 +1387,7 @@ class ReadBoardEngineResumeTest {
       assertEquals(1, harness.leelaz.readBoardGmaCount);
 
       setField(harness.readBoard, "readBoardGmaPending", false);
+      harness.leelaz.retireReadBoardGmaSession();
       harness.board.getHistory().place(1, 0, Stone.WHITE, false);
 
       markPendingLocalMoveAwaitingReadBoard(harness.readBoard);
@@ -1795,6 +1797,7 @@ class ReadBoardEngineResumeTest {
     try (EngineResumeHarness harness =
         EngineResumeHarness.create(rootHistory(authoritativeStones, false))) {
       harness.frame.bothSync = true;
+      assertTrue(beginReadBoardGmaSessionForTest(harness.leelaz));
       setField(harness.readBoard, "readBoardGmaPending", true);
       setField(harness.readBoard, "readBoardGmaAutoPlayActive", true);
       setField(harness.readBoard, "readBoardGmaAutoPlayColor", Stone.WHITE);
@@ -1818,6 +1821,7 @@ class ReadBoardEngineResumeTest {
     try (EngineResumeHarness harness =
         EngineResumeHarness.create(rootHistory(emptyStones(), true))) {
       harness.frame.bothSync = true;
+      assertTrue(beginReadBoardGmaSessionForTest(harness.leelaz));
       setField(harness.readBoard, "readBoardGmaPending", true);
       setField(harness.readBoard, "readBoardGmaAutoPlayActive", true);
 
@@ -1854,6 +1858,7 @@ class ReadBoardEngineResumeTest {
     try (EngineResumeHarness harness =
         EngineResumeHarness.create(rootHistory(emptyStones(), true))) {
       harness.frame.bothSync = true;
+      assertTrue(beginReadBoardGmaSessionForTest(harness.leelaz));
       setField(harness.readBoard, "readBoardGmaEngineRestorePending", true);
       setField(harness.readBoard, "readBoardGmaEngineRestoreInProgress", true);
 
@@ -2059,6 +2064,12 @@ class ReadBoardEngineResumeTest {
     Method method = Leelaz.class.getDeclaredMethod("dispatchExclusiveGtpLine", String.class);
     method.setAccessible(true);
     return (boolean) method.invoke(engine, line);
+  }
+
+  private static boolean beginReadBoardGmaSessionForTest(Leelaz engine) throws Exception {
+    Method method = Leelaz.class.getDeclaredMethod("beginReadBoardGmaSession");
+    method.setAccessible(true);
+    return (boolean) method.invoke(engine);
   }
 
   private static void processTrackingCommandResponse(Leelaz engine, String line) throws Exception {

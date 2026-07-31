@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-class SnapshotTrackingLeelaz extends Leelaz {
+class SnapshotTrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
   private static final Pattern PLAY_COMMAND = Pattern.compile("^play\\s+([BW])\\s+(.+)$");
   private static final Pattern LOAD_SGF_COMMAND = Pattern.compile("^loadsgf\\s+(.+)$");
   private static final Pattern PROPERTY_PATTERN = Pattern.compile("(AB|AW|PL)\\[([^\\]]*)\\]");
@@ -40,6 +40,7 @@ class SnapshotTrackingLeelaz extends Leelaz {
   private Stone[] stones;
   private boolean blackToPlay = true;
   private Path lastLoadedSgf;
+  private String lastLoadedSgfContent;
   private volatile CountDownLatch blockedLoadSgfStarted;
   private volatile CountDownLatch blockedLoadSgfRelease;
   private Runnable beforeNextClearBoard;
@@ -180,6 +181,9 @@ class SnapshotTrackingLeelaz extends Leelaz {
     if (rejectReadBoardGma) {
       return false;
     }
+    if (!beginReadBoardGmaSessionForFixture()) {
+      return false;
+    }
     readBoardGmaCount++;
     lastReadBoardGmaColor = color;
     recordedCommands()
@@ -194,6 +198,16 @@ class SnapshotTrackingLeelaz extends Leelaz {
                 + ponder);
     isThinking = true;
     return true;
+  }
+
+  private boolean beginReadBoardGmaSessionForFixture() {
+    try {
+      java.lang.reflect.Method method = Leelaz.class.getDeclaredMethod("beginReadBoardGmaSession");
+      method.setAccessible(true);
+      return (boolean) method.invoke(this);
+    } catch (ReflectiveOperationException ex) {
+      throw new IllegalStateException("Failed to begin fixture ReadBoard GMA session", ex);
+    }
   }
 
   @Override
@@ -245,6 +259,18 @@ class SnapshotTrackingLeelaz extends Leelaz {
     restoreSnapshotSgf(sgfFile);
   }
 
+  @Override
+  protected boolean sendExactSnapshotRestoreCommandForTest(
+      String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+    if (command.startsWith("loadsgf ")) {
+      loadSgf(Path.of(command.substring("loadsgf ".length())));
+      onResponse.run();
+    } else {
+      sendCommand(command);
+    }
+    return true;
+  }
+
   void blockNextLoadSgf() {
     blockedLoadSgfStarted = new CountDownLatch(1);
     blockedLoadSgfRelease = new CountDownLatch(1);
@@ -280,6 +306,10 @@ class SnapshotTrackingLeelaz extends Leelaz {
 
   Path lastLoadedSgf() {
     return lastLoadedSgf;
+  }
+
+  String lastLoadedSgfContent() {
+    return lastLoadedSgfContent;
   }
 
   private void waitForBlockedLoadSgfRelease() {
@@ -331,6 +361,7 @@ class SnapshotTrackingLeelaz extends Leelaz {
     resetBoardState();
     try {
       String content = Files.readString(path);
+      lastLoadedSgfContent = content;
       Matcher matcher = PROPERTY_PATTERN.matcher(content);
       while (matcher.find()) {
         String tag = matcher.group(1);

@@ -2560,7 +2560,7 @@ class LeelazReadBoardGmaTest {
     }
   }
 
-  private static final class FailingBoardRestoreLeelaz extends Leelaz {
+  private static final class FailingBoardRestoreLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private FailingBoardRestoreLeelaz() throws IOException {
       super("");
     }
@@ -2569,9 +2569,19 @@ class LeelazReadBoardGmaTest {
     public void loadSgf(Path sgfFile) {
       throw new IllegalStateException("controlled board restore failure");
     }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())));
+      }
+      return true;
+    }
   }
 
-  private static final class ControlledBoardRestoreLeelaz extends Leelaz {
+  private static final class ControlledBoardRestoreLeelaz
+      extends ExactSnapshotRestoreTestLeelaz {
     private final CountDownLatch loadStarted = new CountDownLatch(1);
     private final CountDownLatch completeLoad = new CountDownLatch(1);
 
@@ -2588,6 +2598,16 @@ class LeelazReadBoardGmaTest {
         Thread.currentThread().interrupt();
         throw new IllegalStateException("controlled board restore interrupted", ex);
       }
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())));
+        onResponse.run();
+      }
+      return true;
     }
   }
 

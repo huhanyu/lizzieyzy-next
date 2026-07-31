@@ -3,6 +3,7 @@ package featurecat.lizzie.rules;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -22,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BoardMovelistExportTest {
@@ -266,7 +269,18 @@ class BoardMovelistExportTest {
       engine.allowConsume = new CountDownLatch(1);
       engine.consumed = new CountDownLatch(1);
 
-      ExactSnapshotEngineRestore.restore(engine, snapshotRootNeedingBookkeepingPass());
+      AtomicReference<Throwable> restoreFailure = new AtomicReference<>();
+      Thread restoreThread =
+          new Thread(
+              () -> {
+                try {
+                  ExactSnapshotEngineRestore.restore(engine, snapshotRootNeedingBookkeepingPass());
+                } catch (Throwable failure) {
+                  restoreFailure.set(failure);
+                }
+              },
+              "delayed-exact-snapshot-restore");
+      restoreThread.start();
 
       assertTrue(
           engine.awaitReadyToConsume(),
@@ -281,6 +295,9 @@ class BoardMovelistExportTest {
       assertTrue(
           engine.fileExistedDuringConsumption(),
           "the delayed loadsgf consumer should still see the temp SGF on disk.");
+      restoreThread.join(2000L);
+      assertFalse(restoreThread.isAlive(), "exact snapshot restore should finish after consumption.");
+      assertNull(restoreFailure.get(), "delayed exact snapshot restore should not fail.");
       assertTempFileEventuallyDeleted(
           engine.lastConsumedSgf(),
           "exact snapshot restore should still clean up the temporary SGF after delayed consumption.");
@@ -743,6 +760,44 @@ class BoardMovelistExportTest {
       assertTrue(
           engine.loadedSgf().contains("KM[0.0]"),
           "snapshot restore should load the displayed game's komi.");
+    } finally {
+      GameInfo.DEFAULT_KOMI = previousDefaultKomi;
+      Lizzie.board = previousBoard;
+      env.close();
+    }
+  }
+
+  @Test
+  void resendMoveToEngineSnapshotRestoreFreezesDefaultGameKomiWithoutPreSync() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    Board previousBoard = Lizzie.board;
+    double previousDefaultKomi = GameInfo.DEFAULT_KOMI;
+    try {
+      GameInfo.DEFAULT_KOMI = 7.5;
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      BoardData snapshot = capturedCenterSnapshotAnchor();
+      snapshot.komi = 0.0;
+      BoardHistoryList history = new BoardHistoryList(snapshot);
+      history.getGameInfo().setKomiNoMenu(GameInfo.DEFAULT_KOMI);
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      SnapshotSgfAwareFakeLeelaz engine = allocate(SnapshotSgfAwareFakeLeelaz.class);
+      engine.komi = 6.5f;
+      engine.orikomi = 6.5f;
+      board.resendMoveToEngine(engine, false);
+
+      assertFalse(
+          engine.recordedCommands().contains("komi 7.5"),
+          "default game komi should preserve the existing non-default-only pre-sync behavior.");
+      assertFalse(
+          engine.loadedSgf().contains("KM[6.5]"),
+          "stale engine komi must not become the immutable exact restore komi.");
+      assertTrue(
+          engine.loadedSgf().contains("KM[7.5]"),
+          "exact restore should freeze the current history GameInfo komi even when it is default.");
     } finally {
       GameInfo.DEFAULT_KOMI = previousDefaultKomi;
       Lizzie.board = previousBoard;
@@ -1339,7 +1394,7 @@ class BoardMovelistExportTest {
     public void refresh() {}
   }
 
-  private static final class TrackingLeelaz extends Leelaz {
+  private static final class TrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private List<String> commands;
 
     private TrackingLeelaz() throws Exception {
@@ -1368,6 +1423,16 @@ class BoardMovelistExportTest {
     }
 
     @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())), onResponse);
+        return true;
+      }
+      return super.sendExactSnapshotRestoreCommandForTest(command, onResponse, onSendFailure);
+    }
+
+    @Override
     public void nameCmdfornoponder() {}
 
     @Override
@@ -1392,7 +1457,7 @@ class BoardMovelistExportTest {
     }
   }
 
-  private static final class ThrowingLoadSgfLeelaz extends Leelaz {
+  private static final class ThrowingLoadSgfLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private Path lastAttemptedSgf;
 
     private ThrowingLoadSgfLeelaz() throws Exception {
@@ -1405,12 +1470,28 @@ class BoardMovelistExportTest {
       throw new IllegalStateException("simulated loadsgf failure");
     }
 
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (!command.startsWith("loadsgf ")) {
+        return true;
+      }
+      Path sgfFile = Path.of(command.substring("loadsgf ".length()));
+      try {
+        loadSgf(sgfFile);
+      } catch (RuntimeException ex) {
+        onResponse.run();
+        throw ex;
+      }
+      return true;
+    }
+
     private Path lastAttemptedSgf() {
       return lastAttemptedSgf;
     }
   }
 
-  private static final class DelayedLoadSgfLeelaz extends Leelaz {
+  private static final class DelayedLoadSgfLeelaz extends ExactSnapshotRestoreTestLeelaz {
     private CountDownLatch readyToConsume;
     private CountDownLatch allowConsume;
     private CountDownLatch consumed;
@@ -1430,6 +1511,16 @@ class BoardMovelistExportTest {
     @Override
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
       consumeLater(sgfFile, afterConsumed);
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())), onResponse);
+        return true;
+      }
+      return super.sendExactSnapshotRestoreCommandForTest(command, onResponse, onSendFailure);
     }
 
     private void consumeLater(Path sgfFile, Runnable afterConsumed) {
@@ -1509,7 +1600,8 @@ class BoardMovelistExportTest {
     public void updateMenuStatusForEngine() {}
   }
 
-  private static final class SnapshotSgfAwareFakeLeelaz extends Leelaz {
+  private static final class SnapshotSgfAwareFakeLeelaz
+      extends ExactSnapshotRestoreTestLeelaz {
     private List<String> commands;
     private Stone[] stones;
     private boolean blackToPlay = true;
@@ -1537,6 +1629,16 @@ class BoardMovelistExportTest {
       } catch (Exception ex) {
         throw new IllegalStateException("Failed to parse snapshot SGF in fake engine", ex);
       }
+    }
+
+    @Override
+    protected boolean sendExactSnapshotRestoreCommandForTest(
+        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
+      if (command.startsWith("loadsgf ")) {
+        loadSgf(Path.of(command.substring("loadsgf ".length())));
+        onResponse.run();
+      }
+      return true;
     }
 
     private void parseLoadedSgf(String sgfContent) {

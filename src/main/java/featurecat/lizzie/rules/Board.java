@@ -1269,12 +1269,20 @@ public class Board {
       Leelaz leelaz,
       boolean loadEngine,
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
+    resendMoveToEngine(leelaz, loadEngine, preparedRestore, false);
+  }
+
+  public void resendMoveToEngine(
+      Leelaz leelaz,
+      boolean loadEngine,
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore,
+      boolean isEngineGame) {
     if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
       return;
     }
-    restoreEnginePosition(leelaz, getMoveList(), preparedRestore);
+    restoreEnginePosition(leelaz, null, preparedRestore);
     if (loadEngine) {
-      Lizzie.initializeAfterVersionCheck(false, leelaz);
+      Lizzie.initializeAfterVersionCheck(isEngineGame, leelaz);
     }
   }
 
@@ -1326,18 +1334,24 @@ public class Board {
   }
 
   private Optional<Double> captureNonDefaultCurrentGameKomi(Leelaz engine) {
+    return nonDefaultCurrentGameKomiForSync(engine, captureCurrentGameKomi());
+  }
+
+  private Optional<Double> nonDefaultCurrentGameKomiForSync(
+      Leelaz engine, Optional<Double> currentGameKomi) {
+    if (engine == null || Float.isNaN(engine.komi)) {
+      return Optional.empty();
+    }
+    return currentGameKomi
+        .filter(gameKomi -> Double.compare(gameKomi, GameInfo.DEFAULT_KOMI) != 0);
+  }
+
+  private Optional<Double> captureCurrentGameKomi() {
     BoardHistoryList currentHistory = getHistory();
-    if (engine == null
-        || Float.isNaN(engine.komi)
-        || currentHistory == null
-        || currentHistory.getGameInfo() == null) {
+    if (currentHistory == null || currentHistory.getGameInfo() == null) {
       return Optional.empty();
     }
-    double gameKomi = currentHistory.getGameInfo().getKomi();
-    if (Double.compare(gameKomi, GameInfo.DEFAULT_KOMI) == 0) {
-      return Optional.empty();
-    }
-    return Optional.of(gameKomi);
+    return Optional.of(currentHistory.getGameInfo().getKomi());
   }
 
   private boolean isPrimaryEngineReady() {
@@ -2983,28 +2997,44 @@ public class Board {
   private void restoreEnginePosition(Leelaz engine, ArrayList<Movelist> fallbackMoves) {
     boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
     BoardHistoryNode currentNode = getHistory().getCurrentHistoryNode();
-    Optional<Double> gameKomi = captureNonDefaultCurrentGameKomi(engine);
+    Optional<Double> capturedKomi = captureCurrentGameKomi();
     Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
-        gameKomi.isPresent()
+        capturedKomi.isPresent()
             ? ExactSnapshotEngineRestore.prepare(
-                engine, currentNode, wasPondering, gameKomi.orElseThrow())
+                engine, currentNode, wasPondering, capturedKomi.orElseThrow())
             : ExactSnapshotEngineRestore.prepare(engine, currentNode, wasPondering);
-    restoreEnginePosition(engine, fallbackMoves, preparedRestore.orElse(null));
+    Optional<Double> preCommandKomi = nonDefaultCurrentGameKomiForSync(engine, capturedKomi);
+    restoreEnginePosition(
+        engine, fallbackMoves, preparedRestore.orElse(null), preCommandKomi);
   }
 
   private void restoreEnginePosition(
       Leelaz engine,
       ArrayList<Movelist> fallbackMoves,
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
-    boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
-    Optional<Double> gameKomi = captureNonDefaultCurrentGameKomi(engine);
-    gameKomi.ifPresent(engine::syncKomiForCurrentGame);
-    engine.sendCommand("clear_board");
+    restoreEnginePosition(engine, fallbackMoves, preparedRestore, Optional.empty());
+  }
+
+  private void restoreEnginePosition(
+      Leelaz engine,
+      ArrayList<Movelist> fallbackMoves,
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore,
+      Optional<Double> gameKomi) {
     if (preparedRestore != null) {
+      gameKomi.ifPresent(
+          value -> {
+            engine.sendCommand("komi " + (value == 0.0 ? "0" : value));
+            engine.komi = value.floatValue();
+          });
+      engine.sendCommand("clear_board");
       ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
       if (completion.shouldResumePonder()) engine.ponder();
       return;
     }
+    boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
+    Optional<Double> currentGameKomi = captureNonDefaultCurrentGameKomi(engine);
+    currentGameKomi.ifPresent(engine::syncKomiForCurrentGame);
+    engine.sendCommand("clear_board");
     replayMovesToEngine(engine, fallbackMoves);
     if (wasPondering) engine.ponder();
   }

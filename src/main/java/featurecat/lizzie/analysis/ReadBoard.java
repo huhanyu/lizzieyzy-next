@@ -2685,10 +2685,11 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     if (deferReadBoardGmaEngineRestoreIfPending("syncEngineToRebuiltSnapshot", rebuiltNode)) {
       return;
     }
-    syncEngineToRebuiltSnapshotNow(rebuiltNode);
+    syncEngineToRebuiltSnapshotNow(rebuiltNode, false);
   }
 
-  private void syncEngineToRebuiltSnapshotNow(BoardHistoryNode rebuiltNode) {
+  private void syncEngineToRebuiltSnapshotNow(
+      BoardHistoryNode rebuiltNode, boolean readBoardGmaRecovery) {
     if (!isReadBoardAnalysisEngineAvailable()) {
       localMoveSyncDebug(
           "syncEngineToRebuiltSnapshot skip engine unavailable node="
@@ -2696,6 +2697,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
       return;
     }
     BoardData data = rebuiltNode.getData();
+    double currentHistoryKomi = Lizzie.board.getHistory().getGameInfo().getKomi();
     BoardData restoreData =
         data.isSnapshotNode() ? data : ExactSnapshotEngineRestore.snapshotFromCurrentBoard(data);
     Leelaz engine = Lizzie.leelaz;
@@ -2708,7 +2710,10 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
             + " enginePondering="
             + wasPondering);
     ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
-        ExactSnapshotEngineRestore.prepare(engine, restoreData);
+        readBoardGmaRecovery
+            ? ExactSnapshotEngineRestore.prepareForReadBoardGma(
+                engine, restoreData, currentHistoryKomi)
+            : ExactSnapshotEngineRestore.prepare(engine, restoreData, currentHistoryKomi);
     engine.clearWithoutPonder();
     localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
     preparedRestore.execute();
@@ -3899,7 +3904,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
               + " node="
               + historyNodeSummary(restoreNode));
       try {
-        syncEngineToRebuiltSnapshotNow(restoreNode);
+        syncEngineToRebuiltSnapshotNow(restoreNode, true);
       } catch (RuntimeException ex) {
         restoreFailure = ex;
       }
