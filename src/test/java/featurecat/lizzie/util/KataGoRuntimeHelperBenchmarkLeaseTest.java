@@ -11,7 +11,7 @@ import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
-import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreProtocolFixture;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.rules.Board;
@@ -133,7 +133,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       Lizzie.board = board;
       Lizzie.leelaz = engine;
       Lizzie.engineManager = engineManager(List.of(engine));
-      Lizzie.frame = null;
+      Lizzie.frame = allocate(LizzieFrame.class);
       EngineManager.isEmpty = false;
       EngineManager.isEngineGame = false;
       EngineManager.currentEngineNo = 0;
@@ -150,6 +150,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       assertTrue(board.restoreCompleted.await(2, TimeUnit.SECONDS));
       assertTrue(board.preparedRestoreReceived);
       assertFalse(board.genericRestoreReceived);
+      assertNull(board.restoreFailure.get());
       assertTrue(engine.loadedSgf.contains("AB[aa]"), engine.loadedSgf);
       assertTrue(engine.loadedSgf.contains("KM[6.5]"), engine.loadedSgf);
     } finally {
@@ -689,7 +690,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     }
   }
 
-  private static final class PreparedBenchmarkLeelaz extends ExactSnapshotRestoreTestLeelaz {
+  private static final class PreparedBenchmarkLeelaz extends Leelaz {
     private Runnable mutateOnReservation;
     private Runnable mutateOnPonder;
     private Runnable mutateOnStart;
@@ -698,6 +699,19 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     private PreparedBenchmarkLeelaz() throws Exception {
       super("controlled-engine");
       prepareReusableKatagoEngine(this);
+      installProtocol();
+    }
+
+    private void installProtocol() {
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            if (command.startsWith("loadsgf ")) {
+              loadedSgf =
+                  Files.readString(Path.of(command.substring("loadsgf ".length()).trim()));
+            }
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
     }
 
     @Override
@@ -720,6 +734,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       started = true;
       isLoaded = true;
       isCheckingName = false;
+      installProtocol();
       try {
         Field field = Leelaz.class.getDeclaredField("endGetCommandList");
         field.setAccessible(true);
@@ -736,22 +751,6 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     public void shutdown() {
       started = false;
       isLoaded = false;
-    }
-
-    @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (command.startsWith("loadsgf ")) {
-        try {
-          loadedSgf = Files.readString(Path.of(command.substring("loadsgf ".length()).trim()));
-        } catch (IOException failure) {
-          throw new IllegalStateException(failure);
-        }
-      }
-      if (onResponse != null) {
-        onResponse.run();
-      }
-      return true;
     }
 
     private void runMutation(java.util.function.Supplier<Runnable> mutationSupplier) {
@@ -775,6 +774,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     private CountDownLatch restoreCompleted;
     private boolean preparedRestoreReceived;
     private boolean genericRestoreReceived;
+    private AtomicReference<Throwable> restoreFailure = new AtomicReference<>();
 
     @Override
     public void resendMoveToEngine(Leelaz leelaz, boolean loadEngine) {
@@ -788,8 +788,14 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
         boolean loadEngine,
         ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
       preparedRestoreReceived = true;
+      try {
       preparedRestore.execute();
+      } catch (Throwable failure) {
+        restoreFailure.set(failure);
+        throw failure;
+      } finally {
       restoreCompleted.countDown();
+      }
     }
   }
 
@@ -801,6 +807,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       throws Exception {
     PreparedBenchmarkBoard board = allocate(PreparedBenchmarkBoard.class);
     board.restoreCompleted = new CountDownLatch(1);
+    board.restoreFailure = new AtomicReference<>();
     board.startStonelist = new ArrayList<>();
     board.hasStartStone = false;
     board.setHistory(history);

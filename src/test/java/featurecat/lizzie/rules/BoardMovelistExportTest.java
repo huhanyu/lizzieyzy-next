@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.ExactSnapshotEngineRestore;
-import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreProtocolFixture;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -249,8 +249,9 @@ class BoardMovelistExportTest {
       assertThrows(
           IllegalStateException.class,
           () ->
-              ExactSnapshotEngineRestore.restore(
-                  engine, snapshotRootNeedingBookkeepingPass()));
+              ExactSnapshotEngineRestore.prepareCurrentPosition(
+                      engine, snapshotRootNeedingBookkeepingPass())
+                  .execute());
 
       assertTempFileEventuallyDeleted(
           engine.lastAttemptedSgf(),
@@ -274,7 +275,9 @@ class BoardMovelistExportTest {
           new Thread(
               () -> {
                 try {
-                  ExactSnapshotEngineRestore.restore(engine, snapshotRootNeedingBookkeepingPass());
+                  ExactSnapshotEngineRestore.prepareCurrentPosition(
+                          engine, snapshotRootNeedingBookkeepingPass())
+                      .execute();
                 } catch (Throwable failure) {
                   restoreFailure.set(failure);
                 }
@@ -1333,6 +1336,11 @@ class BoardMovelistExportTest {
 
   @SuppressWarnings("unchecked")
   private static <T> T allocate(Class<T> type) throws Exception {
+    if (Leelaz.class.isAssignableFrom(type)) {
+      java.lang.reflect.Constructor<T> constructor = type.getDeclaredConstructor();
+      constructor.setAccessible(true);
+      return constructor.newInstance();
+    }
     return (T) UnsafeHolder.UNSAFE.allocateInstance(type);
   }
 
@@ -1340,18 +1348,31 @@ class BoardMovelistExportTest {
     private final int previousBoardWidth;
     private final int previousBoardHeight;
 
-    private TestEnvironment(int previousBoardWidth, int previousBoardHeight) {
+    private final Config previousConfig;
+    private final LizzieFrame previousFrame;
+
+    private TestEnvironment(
+        int previousBoardWidth, int previousBoardHeight,
+        Config previousConfig,
+        LizzieFrame previousFrame) {
       this.previousBoardWidth = previousBoardWidth;
       this.previousBoardHeight = previousBoardHeight;
+      this.previousConfig = previousConfig;
+      this.previousFrame = previousFrame;
     }
 
-    private static TestEnvironment open() {
+    private static TestEnvironment open() throws Exception {
       int previousBoardWidth = Board.boardWidth;
       int previousBoardHeight = Board.boardHeight;
+      Config previousConfig = Lizzie.config;
+      LizzieFrame previousFrame = Lizzie.frame;
       Board.boardWidth = BOARD_SIZE;
       Board.boardHeight = BOARD_SIZE;
       Zobrist.init();
-      return new TestEnvironment(previousBoardWidth, previousBoardHeight);
+      Lizzie.config = minimalConfig();
+      Lizzie.frame = allocate(TrackingFrame.class);
+      return new TestEnvironment(
+          previousBoardWidth, previousBoardHeight, previousConfig, previousFrame);
     }
 
     @Override
@@ -1359,6 +1380,8 @@ class BoardMovelistExportTest {
       Board.boardWidth = previousBoardWidth;
       Board.boardHeight = previousBoardHeight;
       Zobrist.init();
+      Lizzie.config = previousConfig;
+      Lizzie.frame = previousFrame;
     }
   }
 
@@ -1394,11 +1417,21 @@ class BoardMovelistExportTest {
     public void refresh() {}
   }
 
-  private static final class TrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
+  private static final class TrackingLeelaz extends Leelaz {
     private List<String> commands;
 
     private TrackingLeelaz() throws Exception {
       super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            if (command.startsWith("loadsgf ")) {
+              loadSgf(Path.of(command.substring("loadsgf ".length())), () -> {});
+            } else {
+              sendCommand(command);
+            }
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
     }
 
     @Override
@@ -1420,16 +1453,6 @@ class BoardMovelistExportTest {
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
       recordedCommands().add("loadsgf " + sgfFile.toAbsolutePath());
       afterConsumed.run();
-    }
-
-    @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (command.startsWith("loadsgf ")) {
-        loadSgf(Path.of(command.substring("loadsgf ".length())), onResponse);
-        return true;
-      }
-      return super.sendExactSnapshotRestoreCommandForTest(command, onResponse, onSendFailure);
     }
 
     @Override
@@ -1457,11 +1480,21 @@ class BoardMovelistExportTest {
     }
   }
 
-  private static final class ThrowingLoadSgfLeelaz extends ExactSnapshotRestoreTestLeelaz {
+  private static final class ThrowingLoadSgfLeelaz extends Leelaz {
     private Path lastAttemptedSgf;
 
     private ThrowingLoadSgfLeelaz() throws Exception {
       super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            if (command.startsWith("loadsgf ")) {
+              lastAttemptedSgf = Path.of(command.substring("loadsgf ".length()));
+              return ExactSnapshotRestoreProtocolFixture.Response.error(
+                  "simulated loadsgf failure");
+            }
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
     }
 
     @Override
@@ -1470,28 +1503,12 @@ class BoardMovelistExportTest {
       throw new IllegalStateException("simulated loadsgf failure");
     }
 
-    @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (!command.startsWith("loadsgf ")) {
-        return true;
-      }
-      Path sgfFile = Path.of(command.substring("loadsgf ".length()));
-      try {
-        loadSgf(sgfFile);
-      } catch (RuntimeException ex) {
-        onResponse.run();
-        throw ex;
-      }
-      return true;
-    }
-
     private Path lastAttemptedSgf() {
       return lastAttemptedSgf;
     }
   }
 
-  private static final class DelayedLoadSgfLeelaz extends ExactSnapshotRestoreTestLeelaz {
+  private static final class DelayedLoadSgfLeelaz extends Leelaz {
     private CountDownLatch readyToConsume;
     private CountDownLatch allowConsume;
     private CountDownLatch consumed;
@@ -1501,6 +1518,25 @@ class BoardMovelistExportTest {
 
     private DelayedLoadSgfLeelaz() throws Exception {
       super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            if (command.startsWith("loadsgf ")) {
+              Path sgfFile = Path.of(command.substring("loadsgf ".length()));
+              pendingSgf = sgfFile;
+              readyToConsume.countDown();
+              if (!allowConsume.await(2, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting to consume delayed SGF");
+              }
+              lastConsumedSgf = sgfFile;
+              fileExistedDuringConsumption = Files.exists(sgfFile);
+              if (fileExistedDuringConsumption) {
+                Files.readString(sgfFile);
+              }
+              consumed.countDown();
+            }
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
     }
 
     @Override
@@ -1511,16 +1547,6 @@ class BoardMovelistExportTest {
     @Override
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
       consumeLater(sgfFile, afterConsumed);
-    }
-
-    @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (command.startsWith("loadsgf ")) {
-        loadSgf(Path.of(command.substring("loadsgf ".length())), onResponse);
-        return true;
-      }
-      return super.sendExactSnapshotRestoreCommandForTest(command, onResponse, onSendFailure);
     }
 
     private void consumeLater(Path sgfFile, Runnable afterConsumed) {
@@ -1601,7 +1627,7 @@ class BoardMovelistExportTest {
   }
 
   private static final class SnapshotSgfAwareFakeLeelaz
-      extends ExactSnapshotRestoreTestLeelaz {
+      extends Leelaz {
     private List<String> commands;
     private Stone[] stones;
     private boolean blackToPlay = true;
@@ -1611,6 +1637,16 @@ class BoardMovelistExportTest {
 
     private SnapshotSgfAwareFakeLeelaz() throws Exception {
       super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            if (command.startsWith("loadsgf ")) {
+              loadSgf(Path.of(command.substring("loadsgf ".length())));
+            } else {
+              sendCommand(command);
+            }
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
     }
 
     @Override
@@ -1629,16 +1665,6 @@ class BoardMovelistExportTest {
       } catch (Exception ex) {
         throw new IllegalStateException("Failed to parse snapshot SGF in fake engine", ex);
       }
-    }
-
-    @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (command.startsWith("loadsgf ")) {
-        loadSgf(Path.of(command.substring("loadsgf ".length())));
-        onResponse.run();
-      }
-      return true;
     }
 
     private void parseLoadedSgf(String sgfContent) {

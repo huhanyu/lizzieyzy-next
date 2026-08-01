@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -37,6 +38,7 @@ class LeelazOpenClRecoveryTest {
     Config previousConfig = Lizzie.config;
     Board previousBoard = Lizzie.board;
     Leelaz previousEngine = Lizzie.leelaz;
+    LizzieFrame previousFrame = Lizzie.frame;
     String previousOsName = System.getProperty("os.name");
     String previousDriver = System.getProperty("lizzie.opencl.nvidiaDriverVersion");
     Path tempRoot = Files.createTempDirectory("leelaz-opencl-prepared-restore");
@@ -48,6 +50,7 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = ConfigTestHelper.createForTests(tempRoot.resolve("runtime-root"));
       Lizzie.board = board;
       Lizzie.leelaz = engine;
+      Lizzie.frame = allocate(SilentRecoveryFrame.class);
       engine.mutateOnReservation = () -> mutateHistory(board.getHistory());
       engine.mutateOnStart = () -> mutateHistory(board.getHistory());
       Path enginePath = createOpenClEngine(tempRoot);
@@ -83,6 +86,7 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = previousConfig;
       Lizzie.board = previousBoard;
       Lizzie.leelaz = previousEngine;
+      Lizzie.frame = previousFrame;
     }
   }
 
@@ -262,7 +266,7 @@ class LeelazOpenClRecoveryTest {
     return (T) UnsafeHolder.UNSAFE.allocateInstance(type);
   }
 
-  private static final class PreparedRecoveryLeelaz extends ExactSnapshotRestoreTestLeelaz {
+  private static final class PreparedRecoveryLeelaz extends Leelaz {
     private Runnable mutateOnReservation;
     private Runnable mutateOnStart;
     private Leelaz.ExclusiveGtpLifecycleReservation reservation;
@@ -270,6 +274,18 @@ class LeelazOpenClRecoveryTest {
 
     private PreparedRecoveryLeelaz() throws Exception {
       super("controlled-engine");
+      installProtocol();
+    }
+
+    private void installProtocol() {
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            if (command.startsWith("loadsgf ")) {
+              loadedSgf = Files.readString(Path.of(command.substring("loadsgf ".length())));
+            }
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
     }
 
     @Override
@@ -289,28 +305,18 @@ class LeelazOpenClRecoveryTest {
       started = true;
       isLoaded = true;
       isCheckingName = false;
+      installProtocol();
       try {
         setField(this, "endGetCommandList", true);
       } catch (Exception failure) {
         throw new IllegalStateException(failure);
       }
     }
+  }
 
+  private static final class SilentRecoveryFrame extends LizzieFrame {
     @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (command.startsWith("loadsgf ")) {
-        try {
-          loadedSgf = Files.readString(Path.of(command.substring("loadsgf ".length())));
-        } catch (IOException failure) {
-          throw new IllegalStateException(failure);
-        }
-      }
-      if (onResponse != null) {
-        onResponse.run();
-      }
-      return true;
-    }
+    public void prepareQuickAnalysisForPrimaryOpenClRecovery() {}
   }
 
   private static final class PreparedRestoreBoard extends Board {

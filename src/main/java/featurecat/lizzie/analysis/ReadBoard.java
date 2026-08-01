@@ -2698,8 +2698,6 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     }
     BoardData data = rebuiltNode.getData();
     double currentHistoryKomi = Lizzie.board.getHistory().getGameInfo().getKomi();
-    BoardData restoreData =
-        data.isSnapshotNode() ? data : ExactSnapshotEngineRestore.snapshotFromCurrentBoard(data);
     Leelaz engine = Lizzie.leelaz;
     boolean wasPondering = engine.isPondering();
     localMoveSyncDebug(
@@ -2712,8 +2710,9 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
         readBoardGmaRecovery
             ? ExactSnapshotEngineRestore.prepareForReadBoardGma(
-                engine, restoreData, currentHistoryKomi)
-            : ExactSnapshotEngineRestore.prepare(engine, restoreData, currentHistoryKomi);
+                engine, data, currentHistoryKomi)
+            : ExactSnapshotEngineRestore.prepareCurrentPosition(
+                engine, data, currentHistoryKomi);
     engine.clearWithoutPonder();
     localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
     preparedRestore.execute();

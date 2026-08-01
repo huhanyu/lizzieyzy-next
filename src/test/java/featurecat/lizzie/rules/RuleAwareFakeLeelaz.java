@@ -1,6 +1,7 @@
 package featurecat.lizzie.rules;
 
-import featurecat.lizzie.analysis.ExactSnapshotRestoreTestLeelaz;
+import featurecat.lizzie.analysis.ExactSnapshotRestoreProtocolFixture;
+import featurecat.lizzie.analysis.Leelaz;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,7 +11,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-class RuleAwareFakeLeelaz extends ExactSnapshotRestoreTestLeelaz {
+class RuleAwareFakeLeelaz extends Leelaz {
   private static final Pattern PLAY_COMMAND = Pattern.compile("^play\\s+([BW])\\s+(.+)$");
   private static final Pattern LOAD_SGF_COMMAND = Pattern.compile("^loadsgf\\s+(.+)$");
   private static final Pattern PROPERTY_PATTERN = Pattern.compile("(AB|AW|PL)\\[([^\\]]*)\\]");
@@ -22,6 +23,16 @@ class RuleAwareFakeLeelaz extends ExactSnapshotRestoreTestLeelaz {
 
   private RuleAwareFakeLeelaz() throws IOException {
     super("");
+    ExactSnapshotRestoreProtocolFixture.install(
+        this,
+        command -> {
+          if (command.startsWith("loadsgf ")) {
+            loadSgf(Path.of(command.substring("loadsgf ".length())));
+          } else {
+            sendCommand(command);
+          }
+          return ExactSnapshotRestoreProtocolFixture.Response.success();
+        });
   }
 
   @Override
@@ -63,18 +74,6 @@ class RuleAwareFakeLeelaz extends ExactSnapshotRestoreTestLeelaz {
   public void loadSgf(Path sgfFile) {
     recordedCommands().add("loadsgf " + sgfFile.toAbsolutePath());
     restoreSnapshotSgf(sgfFile);
-  }
-
-  @Override
-  protected boolean sendExactSnapshotRestoreCommandForTest(
-      String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-    if (command.startsWith("loadsgf ")) {
-      loadSgf(Path.of(command.substring("loadsgf ".length())));
-      onResponse.run();
-    } else {
-      sendCommand(command);
-    }
-    return true;
   }
 
   List<String> recordedCommands() {

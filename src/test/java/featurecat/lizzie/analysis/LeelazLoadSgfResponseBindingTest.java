@@ -21,11 +21,317 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class LeelazLoadSgfResponseBindingTest {
+  @Test
+  void allStrictResponseDomainsUseOneAllocatorAndKeepRoutingById() throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      FastBoardSyncTimeoutLeelaz engine = new FastBoardSyncTimeoutLeelaz();
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+
+      engine.confirmBoardSynchronization(() -> {}, detail -> engine.firstTimeout.countDown());
+      assertTrue(engine.firstTimeout.await(1, TimeUnit.SECONDS));
+
+      engine.sendCommandNoLeelaz2("version");
+      AtomicInteger loadCallback = new AtomicInteger();
+      sendCommandWithResponse(
+          engine, "loadsgf /tmp/strict-response-domain.sgf", loadCallback::incrementAndGet);
+      AtomicInteger gmaCallback = new AtomicInteger();
+      sendCommandWithResponse(engine, "kata-get-param maxTime", gmaCallback::incrementAndGet);
+      AtomicInteger boardSyncCallback = new AtomicInteger();
+      engine.confirmBoardSynchronization(boardSyncCallback::incrementAndGet, detail -> {});
+
+      int firstBoardSyncId = responseCommandId(output.commands().get(0));
+      int noOpId = responseCommandId(output.commands().get(1));
+      int loadSgfId = responseCommandId(output.commands().get(2));
+      int gmaId = responseCommandId(output.commands().get(3));
+      int secondBoardSyncId = responseCommandId(output.commands().get(4));
+      assertEquals(800000000, firstBoardSyncId);
+      assertEquals(
+          List.of(800000001, 800000002, 800000003, 800000004),
+          List.of(noOpId, loadSgfId, gmaId, secondBoardSyncId));
+
+      invokeResponseHandlerForLine(engine, "=" + noOpId);
+      invokeResponseHandlerForLine(engine, "=" + loadSgfId);
+      invokeResponseHandlerForLine(engine, "=" + gmaId);
+      invokeResponseHandlerForLine(engine, "=" + secondBoardSyncId);
+      assertEquals(1, loadCallback.get());
+      assertEquals(1, gmaCallback.get());
+      assertEquals(1, boardSyncCallback.get());
+
+      engine.started = true;
+      engine.isLoaded = true;
+      engine.isKatago = true;
+      setBooleanField(engine, "endGetCommandList", true);
+      engine.commandLists.addAll(
+          List.of(
+              "stop",
+              "boardsize",
+              "komi",
+              "kata-get-rules",
+              "kata-set-rules",
+              "clear_board",
+              "play",
+              "set_position",
+              "kata-analyze"));
+      assertEquals(
+          Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
+          engine.beginForegroundAnalysisLease(new Object(), line -> {}, () -> {}, () -> {}));
+      int exclusiveStopId = responseCommandId(output.commands().get(5));
+      assertEquals(800000005, exclusiveStopId);
+      assertEquals(
+          6,
+          java.util.Set.of(
+                  firstBoardSyncId, noOpId, loadSgfId, gmaId, secondBoardSyncId, exclusiveStopId)
+              .size());
+    }
+  }
+
+  @Test
+  void quarantineNumbersNoCallbackCommandsAndDoesNotCollideWithBoardSynchronization()
+      throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      FastBoardSyncTimeoutLeelaz engine = new FastBoardSyncTimeoutLeelaz();
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+
+      engine.confirmBoardSynchronization(() -> {}, detail -> engine.firstTimeout.countDown());
+      assertTrue(engine.firstTimeout.await(1, TimeUnit.SECONDS));
+
+      engine.sendCommandNoLeelaz2("version");
+      AtomicInteger ordinaryCallback = new AtomicInteger();
+      sendCommandWithResponse(engine, "protocol_version", ordinaryCallback::incrementAndGet);
+      AtomicInteger boardSyncCallback = new AtomicInteger();
+      engine.confirmBoardSynchronization(boardSyncCallback::incrementAndGet, detail -> {});
+
+      assertEquals(4, output.commands().size());
+      int noCallbackId = responseCommandId(output.commands().get(1));
+      int ordinaryId = responseCommandId(output.commands().get(2));
+      int boardSyncId = responseCommandId(output.commands().get(3));
+      assertTrue(noCallbackId > 0, "quarantined no-callback command must be numbered.");
+      assertTrue(ordinaryId > 0, "quarantined callback command must be numbered.");
+      assertTrue(boardSyncId > 0, "board synchronization command must be numbered.");
+      assertEquals(3, java.util.Set.of(noCallbackId, ordinaryId, boardSyncId).size());
+
+      invokeResponseHandlerForLine(engine, "=" + boardSyncId);
+      assertEquals(1, boardSyncCallback.get());
+      assertEquals(0, ordinaryCallback.get());
+      invokeResponseHandlerForLine(engine, "=" + noCallbackId);
+      assertEquals(0, ordinaryCallback.get());
+      invokeResponseHandlerForLine(engine, "=" + ordinaryId);
+      assertEquals(1, ordinaryCallback.get());
+    }
+  }
+
+  @Test
+  void quarantineDiscardsLateUnnumberedResponseBeforeNextCommandWithoutAdvancingCounters()
+      throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      FastBoardSyncTimeoutLeelaz engine = new FastBoardSyncTimeoutLeelaz();
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+
+      engine.confirmBoardSynchronization(() -> {}, detail -> engine.firstTimeout.countDown());
+      assertTrue(engine.firstTimeout.await(1, TimeUnit.SECONDS));
+      int currentBeforeLateResponse = intField(engine, "currentCmdNum");
+      engine.requireResponseBeforeSend = true;
+      AtomicInteger callbackCount = new AtomicInteger();
+      enqueueCommandWithoutSending(engine, "version", callbackCount::incrementAndGet);
+      setCurrentCmdNum(engine, intField(engine, "cmdNumber") - 2);
+      assertEquals(1, commandQueueSize(engine));
+
+      invokeCommandResponseLine(engine, "= late response");
+
+      assertEquals(currentBeforeLateResponse, intField(engine, "currentCmdNum"));
+      assertEquals(1, commandQueueSize(engine));
+      assertEquals(1, output.commands().size());
+      assertEquals(0, callbackCount.get());
+
+      setCurrentCmdNum(engine, intField(engine, "cmdNumber") - 1);
+      invokeTrySendCommandFromQueue(engine);
+      assertEquals(2, output.commands().size());
+      invokeCommandResponseLine(engine, "=" + responseCommandId(output.commands().get(1)));
+      assertEquals(1, callbackCount.get());
+    }
+  }
+
+  @Test
+  void numberedLoadSgfErrorDoesNotClearQuarantineForFollowingLateUnnumberedResponse()
+      throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      FastBoardSyncTimeoutLeelaz engine = new FastBoardSyncTimeoutLeelaz();
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+
+      engine.confirmBoardSynchronization(() -> {}, detail -> engine.firstTimeout.countDown());
+      assertTrue(engine.firstTimeout.await(1, TimeUnit.SECONDS));
+      Path sgfFile = Files.createTempFile("numbered-error-quarantine-", ".sgf");
+      AtomicReference<Throwable> loadFailure = new AtomicReference<>();
+      Thread loadThread =
+          new Thread(
+              () -> {
+                try {
+                  engine.loadSgf(sgfFile, () -> {});
+                } catch (Throwable failure) {
+                  loadFailure.set(failure);
+                }
+              },
+              "numbered-error-quarantine");
+      loadThread.start();
+      waitForCommandCount(output, 2, 1000L, "loadsgf should be dispatched while quarantined.");
+      invokeCommandResponseLine(
+          engine, "?" + responseCommandId(output.commands().get(1)) + " cannot loadsgf");
+      loadThread.join(1000L);
+      Files.deleteIfExists(sgfFile);
+      assertTrue(loadFailure.get() instanceof IllegalStateException);
+      int currentBeforeLateResponse = intField(engine, "currentCmdNum");
+
+      invokeCommandResponseLine(engine, "= late response");
+
+      assertEquals(currentBeforeLateResponse, intField(engine, "currentCmdNum"));
+    }
+  }
+
+  @Test
+  void mirroredLoadSgfErrorWaitsForAlreadyDispatchedPeerBeforeCleanup() throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      Leelaz primary = new Leelaz("");
+      Leelaz mirror = new Leelaz("");
+      RecordingOutputStream primaryOutput = new RecordingOutputStream();
+      RecordingOutputStream mirrorOutput = new RecordingOutputStream();
+      setOutputStream(primary, primaryOutput);
+      setOutputStream(mirror, mirrorOutput);
+      Path sgfFile = Files.createTempFile("mirrored-loadsgf-response-", ".sgf");
+      CountDownLatch cleaned = new CountDownLatch(1);
+      AtomicReference<Throwable> loadFailure = new AtomicReference<>();
+      Thread loadThread =
+          new Thread(
+              () -> {
+                try {
+                  primary.loadSgf(
+                      sgfFile,
+                      mirror,
+                      () -> {
+                        try {
+                          Files.deleteIfExists(sgfFile);
+                        } catch (IOException failure) {
+                          throw new IllegalStateException(failure);
+                        } finally {
+                          cleaned.countDown();
+                        }
+                      });
+                } catch (Throwable failure) {
+                  loadFailure.set(failure);
+                }
+              },
+              "mirrored-loadsgf-response-error");
+      try {
+        loadThread.start();
+        waitForCommandCount(primaryOutput, 1, 1000L, "primary loadsgf should be dispatched.");
+        waitForCommandCount(mirrorOutput, 1, 1000L, "mirror loadsgf should be dispatched.");
+
+        invokeCommandResponseLine(
+            primary, "?" + responseCommandId(primaryOutput.commands().get(0)) + " cannot loadsgf");
+
+        assertFalse(cleaned.await(50, TimeUnit.MILLISECONDS));
+        assertTrue(loadThread.isAlive());
+        assertTrue(Files.exists(sgfFile));
+        assertEquals(1, pendingHandlerCount(mirror));
+
+        invokeCommandResponseLine(mirror, buildSuccessResponseLine(mirrorOutput.commands().get(0)));
+        loadThread.join(1000L);
+
+        assertFalse(loadThread.isAlive());
+        assertTrue(loadFailure.get() instanceof IllegalStateException);
+        assertTrue(cleaned.await(1, TimeUnit.SECONDS));
+        assertFalse(Files.exists(sgfFile));
+      } finally {
+        if (loadThread.isAlive() && !mirrorOutput.commands().isEmpty()) {
+          invokeCommandResponseLine(
+              mirror, buildSuccessResponseLine(mirrorOutput.commands().get(0)));
+          loadThread.join(1000L);
+        }
+        Files.deleteIfExists(sgfFile);
+      }
+    }
+  }
+
+  @Test
+  void strictTimeoutQuarantinesOrdinaryHandlerAlreadySentBeforeTimeout() throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      FastBoardSyncTimeoutLeelaz engine = new FastBoardSyncTimeoutLeelaz();
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      AtomicInteger ordinaryCallback = new AtomicInteger();
+
+      engine.confirmBoardSynchronization(() -> {}, detail -> engine.firstTimeout.countDown());
+      waitForCommandCount(output, 1, 1000L, "strict command should be sent.");
+      sendCommandWithResponse(engine, "version", ordinaryCallback::incrementAndGet);
+      waitForCommandCount(output, 2, 1000L, "ordinary command should be sent before timeout.");
+      assertTrue(engine.firstTimeout.await(1, TimeUnit.SECONDS));
+
+      invokeCommandResponseLine(engine, "= late strict response");
+      assertEquals(
+          0, ordinaryCallback.get(), "late strict response must not consume ordinary handler.");
+
+      int ordinaryId = responseCommandId(output.commands().get(1));
+      assertTrue(ordinaryId > 0, "ordinary handler sent during strict command must be numbered.");
+      invokeCommandResponseLine(engine, "=" + ordinaryId);
+      assertEquals(
+          1, ordinaryCallback.get(), "ordinary handler should settle on its own response.");
+    }
+  }
+
+  @Test
+  void idleQuarantineDoesNotDeliverLateResponseToActiveExclusiveSession() throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      Leelaz engine = new Leelaz("");
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      engine.started = true;
+      engine.isLoaded = true;
+      engine.isKatago = true;
+      setBooleanField(engine, "endGetCommandList", true);
+      engine.commandLists.addAll(
+          List.of(
+              "stop",
+              "boardsize",
+              "komi",
+              "kata-get-rules",
+              "kata-set-rules",
+              "clear_board",
+              "play",
+              "set_position",
+              "kata-analyze"));
+      AtomicInteger lineCount = new AtomicInteger();
+      assertEquals(
+          Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
+          engine.beginForegroundAnalysisLease(
+              new Object(), line -> lineCount.incrementAndGet(), () -> {}, () -> {}));
+      int stopId = responseCommandId(output.commands().get(0));
+      invokeCommandResponseLine(engine, "=" + stopId);
+      assertTrue(dispatchExclusiveLine(engine, ""));
+      setBooleanField(engine, "unnumberedResponseQuarantined", true);
+
+      invokeCommandResponseLine(engine, "= late strict response");
+
+      assertEquals(
+          0, lineCount.get(), "quarantined late response must not reach exclusive consumer.");
+    }
+  }
+
   @Test
   void loadSgfBindsAfterConsumedToImmediateResponse() throws Exception {
     try (TestHarness harness = TestHarness.open()) {
@@ -397,8 +703,8 @@ class LeelazLoadSgfResponseBindingTest {
             loadFailure.get().getMessage().contains("loadsgf"),
             "failure should keep loadsgf context.");
         assertTrue(
-            pollutedOutput.writtenText().startsWith("1 load"),
-            "polluted stream should capture partial loadsgf prefix before invalidation.");
+            pollutedOutput.writtenText().matches("\\d+"),
+            "polluted stream should capture the command id prefix before invalidation.");
         assertTrue(
             outputStreamField(engine) == null, "polluted output stream should be invalidated.");
 
@@ -531,6 +837,19 @@ class LeelazLoadSgfResponseBindingTest {
     method.invoke(engine, line);
   }
 
+  private static boolean dispatchExclusiveLine(Leelaz engine, String line) throws Exception {
+    Method method = Leelaz.class.getDeclaredMethod("dispatchExclusiveGtpLine", String.class);
+    method.setAccessible(true);
+    return (boolean) method.invoke(engine, line);
+  }
+
+  private static void setBooleanField(Leelaz engine, String fieldName, boolean value)
+      throws Exception {
+    Field field = Leelaz.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    field.setBoolean(engine, value);
+  }
+
   private static void waitForCommandCount(
       RecordingOutputStream output, int expectedCount, long timeoutMillis, String message)
       throws InterruptedException {
@@ -632,6 +951,15 @@ class LeelazLoadSgfResponseBindingTest {
     return "=" + firstToken;
   }
 
+  private static int responseCommandId(String command) {
+    String firstToken = command.trim().split(" ", 2)[0];
+    try {
+      return Integer.parseInt(firstToken);
+    } catch (NumberFormatException failure) {
+      return -1;
+    }
+  }
+
   private static Config minimalConfig() throws Exception {
     Config config = allocate(Config.class);
     config.extraMode = ExtraMode.Normal;
@@ -667,6 +995,19 @@ class LeelazLoadSgfResponseBindingTest {
   private static final class PassiveOutputStream extends OutputStream {
     @Override
     public void write(int b) {}
+  }
+
+  private static final class FastBoardSyncTimeoutLeelaz extends Leelaz {
+    private final CountDownLatch firstTimeout = new CountDownLatch(1);
+
+    private FastBoardSyncTimeoutLeelaz() throws IOException {
+      super("");
+    }
+
+    @Override
+    protected long readBoardGmaRestoreResponseTimeoutMillis() {
+      return 20L;
+    }
   }
 
   private static final class RecordingOutputStream extends OutputStream {

@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.gui.LizzieFrame;
 import java.lang.reflect.Field;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -308,6 +310,11 @@ class BoardHistoryNodeRemovedStoneReplayTest {
 
   @SuppressWarnings("unchecked")
   private static <T> T allocate(Class<T> type) throws Exception {
+    if (Leelaz.class.isAssignableFrom(type)) {
+      java.lang.reflect.Constructor<T> constructor = type.getDeclaredConstructor();
+      constructor.setAccessible(true);
+      return constructor.newInstance();
+    }
     return (T) UnsafeHolder.UNSAFE.allocateInstance(type);
   }
 
@@ -327,16 +334,22 @@ class BoardHistoryNodeRemovedStoneReplayTest {
     private final int previousBoardWidth;
     private final int previousBoardHeight;
     private final Leelaz previousLeelaz;
+    private final Config previousConfig;
+    private final LizzieFrame previousFrame;
     private final RuleAwareFakeLeelaz leelaz;
 
     private TestEnvironment(
         int previousBoardWidth,
         int previousBoardHeight,
         Leelaz previousLeelaz,
+        Config previousConfig,
+        LizzieFrame previousFrame,
         RuleAwareFakeLeelaz leelaz) {
       this.previousBoardWidth = previousBoardWidth;
       this.previousBoardHeight = previousBoardHeight;
       this.previousLeelaz = previousLeelaz;
+      this.previousConfig = previousConfig;
+      this.previousFrame = previousFrame;
       this.leelaz = leelaz;
     }
 
@@ -344,14 +357,24 @@ class BoardHistoryNodeRemovedStoneReplayTest {
       int previousBoardWidth = Board.boardWidth;
       int previousBoardHeight = Board.boardHeight;
       Leelaz previousLeelaz = Lizzie.leelaz;
+      Config previousConfig = Lizzie.config;
+      LizzieFrame previousFrame = Lizzie.frame;
 
       Board.boardWidth = BOARD_SIZE;
       Board.boardHeight = BOARD_SIZE;
       Zobrist.init();
+      Lizzie.config = allocate(Config.class);
+      Lizzie.frame = allocate(LizzieFrame.class);
 
       RuleAwareFakeLeelaz leelaz = allocate(RuleAwareFakeLeelaz.class);
       Lizzie.leelaz = leelaz;
-      return new TestEnvironment(previousBoardWidth, previousBoardHeight, previousLeelaz, leelaz);
+      return new TestEnvironment(
+          previousBoardWidth,
+          previousBoardHeight,
+          previousLeelaz,
+          previousConfig,
+          previousFrame,
+          leelaz);
     }
 
     @Override
@@ -360,6 +383,8 @@ class BoardHistoryNodeRemovedStoneReplayTest {
       Board.boardHeight = previousBoardHeight;
       Zobrist.init();
       Lizzie.leelaz = previousLeelaz;
+      Lizzie.config = previousConfig;
+      Lizzie.frame = previousFrame;
     }
   }
 

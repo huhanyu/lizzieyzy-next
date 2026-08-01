@@ -102,11 +102,19 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - `restoreMoveNumber(...)` 恢复时也先命中最近 `SNAPSHOT` 边界，再续接后面的真实 `MOVE/PASS`。
 - `ExactSnapshotEngineRestore` 是 `exact snapshot restore` 的唯一编排 owner。恢复入口在发送任何 `stop` / `name` / `komi` / `clear_board` 等前置命令前先 `prepare(...)` 捕获 immutable plan，前置命令完成后再 `execute()`；plan 固定最近的静态锚点、锚点盘面与轮次、盘尺寸和 setup metadata、锚点后的真实 `MOVE/PASS` tail、主/副目标实例以及 ponder disposition，后续 callback 不再读取这些 mutable globals/history。
 - 前台/副引擎切换也属于上述恢复入口：切换流程在 lifecycle reservation（可能发送 tracking release `stop`）、停止旧引擎或向目标引擎发送 `name` / `komi` / `clear_board` 前冻结 plan；命中 exact restore 时，本局 komi 随 plan 固定，目标引擎的默认 komi 不能先改写 `GameInfo` 或恢复 SGF。
+- lifecycle 恢复使用同一个 opaque typed handoff 冻结 target、可用 mirror、合法的既有 reservation endpoint 与 owner identity；caller 不能再分别传递 raw owner、target pair 或 `mirrorLifecycleOwnedByOperation` boolean，也不能用不同上下文 prepare 与申请 reservation。任意第三方 endpoint 在任何 reservation 副作用前拒绝；配置替换、直接 restart 与 engine switch 的执行阶段继续使用冻结实例，不从可变 engine slot 重新选择。restore module 不申请、持有或关闭 lifecycle reservation。
+- captured mirror 不是独立 lifecycle existing endpoint，不能因为参与 restore 就取得 reservation；handoff 在 mirror 与 target 不同时拒绝把 mirror 伪装为 existing endpoint。副引擎切换必须 reserve 被停止的 frozen previous secondary 与新 target；PK start/restart 只 reserve target，mirror 冲突留给 execute-time admission fail-closed。
+- lifecycle `prepare(...)` 还必须在 reservation、engine start/stop 等副作用前冻结“exact restore 或 root replay”路线。没有可用静态锚点时，同一个 handoff 捕获针对 frozen target/mirror/owner 的 root-replay admission；副作用之后只能一次性执行该路线，不能重新进入 generic prepare，也不能通过重读 mutable history 或 engine slot 改成另一条恢复路线。
+- lifecycle root replay 继续使用入口既有的 live-board/root-movelist 产品语义，但 `komi`、`clear_board` 与 move replay 只发送给 handoff 捕获的 target 和 mirror，并在同一 admission identity 下执行；它不新增 mirror reservation，也不依赖执行时的全局双引擎配对。
+- lifecycle root replay 在 callback 前复验 frozen admission，且每条 `komi` / `clear_board` / `play` enqueue 都再次验证并在拒绝时显式抛错；reservation 关闭或 ABA replacement 不能静默丢命令后返回成功。
+- prepared exact Board restore 的 `clear_board` 只通过 plan 捕获的 target set 发送，不能调用会在执行时重新解析 `Lizzie.leelaz2` 的默认 mirror 路径。没有捕获 mirror 的 plan 即使执行时进入双引擎全局状态，也不能清理该 secondary。
+- 自动/直接 restart 的 exact 与 root 路线都经过同一个 board synchronization fence；lifecycle plan 自身不提前恢复 ponder，reservation/completion 只在 fence 成功或失败收敛后结束。执行使用 frozen restart target，即使 `Lizzie.leelaz` 在 start 后变化也不能静默跳过恢复。
 - `ExactSnapshotEngineRestore` 拥有临时 SGF 的生成与清理、双引擎 mirror 编排、`loadsgf` 成功后的 tail 重放以及明确的完成结果。调用方不能再自行拼装 snapshot tail，也不能持有或结束临时 SGF lifecycle。
 - `Leelaz` 继续唯一拥有 ordinary command queue、response handler、超时、outstanding response 退休、output-stream invalidation 与 engine arbitration；`ExactSnapshotEngineRestore` 不复制或旁路这些底层协议职责。
 - 祖先链完全没有可用 `SNAPSHOT` / removed-stone 静态锚点时，调用方保留既有的 root replay。这是“未进入 exact restore”，与 exact restore 已开始后的失败不同。
 - 新棋局默认的空 root `SNAPSHOT` 只提供历史起点，不是 exact restore 静态锚点；它继续走 root replay。root 带静态石子、显式轮次 / 手数语义或 removed-stone 标记时才是可用锚点。
 - exact restore 一旦开始，`loadsgf` 的发送失败、GTP `?`、超时或 output-stream 污染都原样向上传递；tail 在重放时若被 engine arbitration 拒绝也显式失败。以上失败都禁止 tail / root replay fallback，restore module 不把它们改写成 `ENGINE_STATE_UNRESTORED`。
+- 配置替换、engine switch 与直接/自动 restart 的 frozen target 在 exact 或 root board synchronization 抛错时都标为 unavailable，并在既有 completion boundary 释放 lifecycle reservation；该 caller 失败收敛不因 restore failure 新建通用 `ENGINE_STATE_UNRESTORED`。如果入口本来就是恢复已存在的 ReadBoard GMA quarantine，失败后继续保留该既有 quarantine。
 - ponder 只在全部目标恢复成功后，由现有 lifecycle owner 按入口捕获的 disposition 决定是否恢复；restore module 不擅自启动 ponder。
 - tail replay 的模块完成边界是所有 captured target 已接受命令进入 `Leelaz` ordinary queue；模块不复制 tail 的逐命令 GTP response lifecycle，后续 response / error 继续由 `Leelaz` 处理。
 - `exact snapshot restore` 的 `loadsgf` 生命周期按固定顺序执行：
@@ -117,7 +125,7 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
   5. 无响应超时时，当前次 pending handler 与 outstanding response 计数同步退休，dispatch 显式结束为失败。
   6. 只有 `loadsgf` 成功消费后，dispatch 才能结束为完成态。
   7. dispatch 完结后，才允许重放 `SNAPSHOT` 尾部真实 `MOVE/PASS`。
-  8. 双引擎模式下，临时 SGF 生命周期覆盖两侧 `loadsgf` 消费与尾部真实 `MOVE/PASS` 重放，直到两侧都完成后删除。
+  8. 双引擎模式下，临时 SGF 生命周期覆盖两侧 `loadsgf` 消费与尾部真实 `MOVE/PASS` 重放；任一侧返回 `?` 后也不能取消另一侧已经 dispatch 的 consumer，直到两侧都真实消费、timeout retirement 或 fallback cleanup 后删除。
 - `exact snapshot restore` 中 `loadsgf` 发送阶段失败都视为恢复失败，必须显式结束 dispatch、终止后续真实 `MOVE/PASS` 重放、进入清理流程并显式抛错。
 - 该恢复失败规则覆盖“先入队后发送”的链路形态。
 - `exact snapshot restore` 中 `loadsgf` 收到 GTP `?` 错误响应也属于恢复失败，必须终止后续真实 `MOVE/PASS` 重放并显式抛错。

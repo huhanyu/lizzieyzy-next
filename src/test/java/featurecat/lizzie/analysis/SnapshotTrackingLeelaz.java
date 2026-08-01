@@ -3,8 +3,6 @@ package featurecat.lizzie.analysis;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -17,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-class SnapshotTrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
+class SnapshotTrackingLeelaz extends Leelaz {
   private static final Pattern PLAY_COMMAND = Pattern.compile("^play\\s+([BW])\\s+(.+)$");
   private static final Pattern LOAD_SGF_COMMAND = Pattern.compile("^loadsgf\\s+(.+)$");
   private static final Pattern PROPERTY_PATTERN = Pattern.compile("(AB|AW|PL)\\[([^\\]]*)\\]");
@@ -68,7 +66,16 @@ class SnapshotTrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
     leelaz.readBoardGmaPonderingSupported = false;
     leelaz.commandLists = new ArrayList<>(List.of("stop", "kata-analyze"));
     setLeelazField(leelaz, "endGetCommandList", true);
-    setLeelazField(leelaz, "outputStream", new BufferedOutputStream(new ByteArrayOutputStream()));
+    ExactSnapshotRestoreProtocolFixture.install(
+        leelaz,
+        command -> {
+          if (command.startsWith("loadsgf ")) {
+            leelaz.loadSgf(Path.of(command.substring("loadsgf ".length())));
+          } else {
+            leelaz.sendCommand(command);
+          }
+          return ExactSnapshotRestoreProtocolFixture.Response.success();
+        });
     initializeReadBoardGmaRuntimeParam(leelaz, "readBoardGmaMaxTime", "maxTime");
     initializeReadBoardGmaRuntimeParam(leelaz, "readBoardGmaMaxVisits", "maxVisits");
     initializeReadBoardGmaRuntimeParam(leelaz, "readBoardGmaPondering", "ponderingEnabled");
@@ -257,18 +264,6 @@ class SnapshotTrackingLeelaz extends ExactSnapshotRestoreTestLeelaz {
     recordedCommands().add("loadsgf " + sgfFile.toAbsolutePath());
     waitForBlockedLoadSgfRelease();
     restoreSnapshotSgf(sgfFile);
-  }
-
-  @Override
-  protected boolean sendExactSnapshotRestoreCommandForTest(
-      String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-    if (command.startsWith("loadsgf ")) {
-      loadSgf(Path.of(command.substring("loadsgf ".length())));
-      onResponse.run();
-    } else {
-      sendCommand(command);
-    }
-    return true;
   }
 
   void blockNextLoadSgf() {

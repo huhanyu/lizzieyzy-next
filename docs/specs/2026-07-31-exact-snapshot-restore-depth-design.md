@@ -104,6 +104,9 @@ ponder disposition 或 admission identity。
 - 捕获锚点后的真实 `MOVE/PASS` tail；
 - 捕获主目标、可用 mirror、目标集合与 ponder disposition；
 - 捕获本次恢复的 owner/admission 身份；
+- lifecycle 入口在副作用前冻结 exact/root 路线；root 路线也捕获同一 target/mirror/owner 的 admission，并只允许一次性执行；
+- 将 Board restore 所需的 exact preclear 发送到 captured target set，不通过 execution-time default mirror；
+- lifecycle root replay 在 callback 前及每条 root command enqueue 时复验同一 admission，拒绝即显式失败；
 - 生成并清理临时 SGF；
 - 编排所有 captured target 的 `loadsgf`；
 - 在 snapshot 成功消费后向所有 captured target 提交 tail；
@@ -128,14 +131,27 @@ ponder disposition 或 admission identity。
 Caller 只负责：
 
 - 选择要恢复的 history target 或显式 snapshot seed；
-- 在自己的 owner/lifecycle 语境中调用 `prepare(...)`；
+- 在自己的 owner/lifecycle 语境中调用 `prepare(...)`；lifecycle caller 可以提供本次操作未来
+  使用的 target pairing context，但 pairing 由 restore module 校验并冻结；
 - 在 plan 已冻结后执行必要的 `stop`、`name`、`komi`、`clear_board`、engine start/switch
   等前置动作；
 - 调用 `execute()` 并处理成功或原始失败；
 - 全部目标恢复成功后，按冻结的 disposition 和自身既有策略决定是否恢复 ponder。
 
-Caller 不能再提供或拼装 tail，不能重新选择 mirror，不能持有临时 SGF lifecycle，也不能
-直接调用内部 cleanup/dispatch callback。
+Caller 不能再提供或拼装 tail，不能在 pairing capture 后重新 resolve/reselect mirror，不能持有
+临时 SGF lifecycle，也不能直接调用内部 cleanup/dispatch callback。prepare 与 lifecycle
+reservation 必须消费同一个 frozen target-pair context。
+
+Lifecycle 入口通过 opaque typed handoff 一次冻结 target、可用 mirror、合法的既有 reservation endpoint
+和 owner identity。任意第三方 endpoint 在 reservation 副作用前显式拒绝。Caller 只把同一个 handoff
+交给 `prepare` 与现有 lifecycle reservation seam；不能分别创建 raw owner、公开 target/mirror pair，
+或传入“mirror 是否归本操作”boolean。Handoff 只绑定事实，不申请、持有或关闭 reservation；
+reservation lifetime 仍归 lifecycle owner，配置替换和直接 restart 必须持有它直到 frozen target 完成
+restore/board fence，执行阶段不能从可变 engine catalog slot 重新选择实例。
+
+Captured mirror 不属于合法的独立 existing lifecycle endpoint。Handoff 在 mirror 与 target 不同时拒绝把 mirror 作为 existing endpoint：secondary switch 的 existing endpoint 是被停止的 frozen previous secondary；PK start/restart 没有额外 existing endpoint，只 reserve target。Mirror 上的竞争由 execute-time admission fail-closed，不以 reservation 清退其 tracking/foreground work。
+
+当 lifecycle `prepare(...)` 没有找到可用静态锚点时，empty 不是允许副作用后重新 prepare 的信号。Handoff 在此时冻结 root-replay 路线与 admission；caller 只能通过该 handoff 一次性执行既有 root replay。Root payload 仍遵循入口原有的 live-board/root-movelist 语义，但 target、mirror、owner identity 与路线不再变化。
 
 ## 小 interface
 
@@ -143,16 +159,24 @@ Module 的外部形状收敛为两阶段 handoff：
 
 ```text
 prepare(engine, historyTarget, context) -> Optional<PreparedRestore>
-prepare(engine, explicitSnapshotSeed, context) -> PreparedRestore
+prepare(engine, explicitCurrentPosition, context) -> PreparedRestore
+
+prepareLifecycleHandoff(existing, target, mirror) -> LifecycleRestoreHandoff
+LifecycleRestoreHandoff.prepare(historyTarget, context) -> Optional<PreparedRestore>
+LifecycleRestoreHandoff.executeRootReplay(replay) -> void
 
 PreparedRestore.execute() -> Completion
+PreparedRestore.executeAfterCapturedTargetClear() -> Completion
 ```
 
-- history target 没有可用静态锚点时，`prepare(...)` 返回 empty，caller 才可走原有 root
-  replay。
-- explicit snapshot seed 必须是合法静态恢复目标；无效输入显式失败。
+- history target 没有可用静态锚点时，`prepare(...)` 返回 empty，表示本次路线已确定为 root replay。普通 caller 保留原有 root replay；lifecycle caller 必须使用同一个 handoff 的 one-shot root execution，不能在副作用后重新 prepare。
+- explicit current position 必须包含可物化的有效盘面状态；无效输入显式失败。
+- explicit current position 可以是现有 `SNAPSHOT` 或已重建的当前 `BoardData`；module 内部负责
+  clone/materialize 为静态 snapshot，caller 不再调用公开 snapshot conversion helper。
 - `PreparedRestore` 隐藏 immutable plan，不暴露 tail、mirror、SGF 路径、dispatch 或 cleanup
   callback。
+- `PreparedRestore` 是 one-shot；第二次 `execute()` 在任何文件或引擎副作用前显式失败。
+- Board restore 需要的 preclear 与 exact execute 通过 `executeAfterCapturedTargetClear()` 形成一个 one-shot 操作；`clear_board` 只发给 plan 的 captured target set。普通 `execute()` 不凭空增加 caller 未请求的 preclear。
 - 成功返回 `Completion`；失败通过原始异常/失败原因向上传递。没有额外的“失败后重试或
   fallback”结果。
 - `Completion` 只提供 caller 真正需要的完成信息，例如冻结的 ponder disposition；不暴露
@@ -166,9 +190,10 @@ PreparedRestore.execute() -> Completion
 - stones、side-to-play、盘尺寸、setup properties/metadata、手数与 captures 等恢复所需状态；
 - 当前棋局 komi，而不是稍后可能变化的目标引擎默认/cache komi；
 - 锚点到目标之间的真实 `MOVE/PASS` tail；
-- authority engine、captured mirror 和最终 target 集合；
+- module 校验并冻结的 authority engine、captured mirror 和最终 target 集合；
 - 入口时的 ponder disposition；
 - restore owner、owner identity 与 mirror admission 条件。
+- lifecycle root 路线的 target、captured mirror、owner/admission identity 与 exact/root 决策；root payload 本身继续由入口的既有 live-board/root-movelist 语义提供。
 
 后续 callback 不得重新读取以下 mutable state 来修改同一个 plan：
 
@@ -185,9 +210,9 @@ PreparedRestore.execute() -> Completion
 
 ```text
 resolve target
-    -> prepare immutable plan
+    -> prepare immutable exact plan or freeze root-replay route/admission
     -> lifecycle reservation / stop / name / komi / clear_board / engine start or switch
-    -> execute captured plan
+    -> execute captured exact plan or the same handoff's one-shot root replay
     -> caller applies completion disposition
 ```
 
@@ -219,9 +244,12 @@ Exact restore 一旦开始即 fail-closed：
 
 | 场景 | 结果 |
 |---|---|
-| 没有可用静态锚点 | 未进入 exact restore；caller 保留原有 root replay |
+| 没有可用静态锚点 | 未进入 exact restore；普通 caller 保留原有 root replay，lifecycle caller 已冻结 root 路线与 admission |
 | Capture 时 owner/admission 冲突 | 零 restore 命令；显式失败 |
 | Execute 前 admission 已失效 | `loadsgf` 前失败并清理已生成的临时 SGF |
+| Root callback 前 admission 已失效 | 不调用 replay；显式失败 |
+| Root replay 中途 reservation 关闭或 ABA replacement | 下一条 `komi` / `clear_board` / `play` enqueue 显式失败；不能静默成功 |
+| Captured-target preclear 被 arbitration 拒绝 | `loadsgf` 前显式失败；不重选 execution-time mirror |
 | `loadsgf` enqueue/send/write/flush 失败 | 不发 tail；退休对应协议状态并清理；传播原始失败 |
 | GTP `?` 或无响应超时 | 不发 tail；隔离晚到响应并清理；传播原始失败 |
 | 部分写导致 output stream 污染 | 不发 tail；由 `Leelaz` 失效该 stream；传播原始失败 |
@@ -229,17 +257,20 @@ Exact restore 一旦开始即 fail-closed：
 | Tail 被 engine arbitration 拒绝 | 显式失败；不 fallback 到 root replay |
 
 Restore module 不把这些失败改写为 `ENGINE_STATE_UNRESTORED`，也不自行决定上层 UI、engine
-replacement 或 retry 策略。
+replacement 或 retry 策略。具体 caller boundary 按各自既有产品语义处理原始失败。
+
+配置替换、engine switch 与直接/自动 restart 的 board synchronization 若抛错，既有 lifecycle owner 必须把 frozen replacement/target 标为 unavailable，并在 completion boundary 释放 reservation。该 caller-level 收敛不因 restore failure 新建通用 `ENGINE_STATE_UNRESTORED`，也不引入 retry 或 root fallback；入口若正在恢复既有 ReadBoard GMA quarantine，失败后仍保留该既有 quarantine。
 
 ## Mirror 语义
 
-- Capture 时一次性确定主/副 target；callback 不重新读取全局 engine 字段。
+- Capture 时由 restore module 校验并一次性冻结主/副 target；caller 即使提供未来 lifecycle 的
+  pairing context，也不得在 prepare 与 reservation 之间重新读取全局 engine 字段或重新选 mirror。
 - 从主引擎或副引擎入口发起时，只要调用实例属于当前主/副配对，双方使用同一 snapshot、
   tail 和临时 SGF lifecycle。
 - 第三实例或临时 engine 不属于主/副配对，只恢复自身。
 - 任一 captured target 的 `loadsgf` 失败时，所有 target 都不提交 tail。
-- 若某一侧已经 dispatch，另一侧随后失败，已发出侧仍必须完成消费、timeout retirement 或
-  fallback cleanup，不能提前删除临时 SGF。
+- 任一侧已经 dispatch 后，另一侧发送失败或任一侧返回 `?`，其余已发出侧仍必须完成消费、
+  timeout retirement 或 fallback cleanup；失败不能主动退休 peer consumer，也不能提前删除临时 SGF。
 - Mirror 本身不获得新的 queue 或 ownership；两侧仍各自通过自己的 `Leelaz` 协议生命周期
   完成请求。
 
@@ -249,6 +280,7 @@ replacement 或 retry 策略。
 - Restore module 不主动启动或停止 ponder。
 - 全部 captured target 成功后，caller/lifecycle owner 才能按冻结 disposition 执行既有 ponder
   策略。
+- 自动/直接 restart 捕获 exact plan 时 module disposition 固定为不自行 resume；restart owner 保留原始 ponder 意图，exact/root 都只在同一个 board fence 成功后恢复，失败或 fence 前不启动分析。
 - 任一目标失败时，本次 restore 不恢复 ponder。
 - Execute 期间若已进入 PLAY_MODE 或其他使旧 disposition 不再合法的 owner 状态，现有 owner
   仍可拒绝 ponder；冻结 disposition 是恢复意图，不是越过 arbitration 的授权。
@@ -280,11 +312,11 @@ ReadBoard GMA 需要额外防止 reservation ABA：
 | 入口类别 | Capture 要求 | 主要合同测试 |
 |---|---|---|
 | 普通 resync、导航、clear/restore | 在 `stop/name/komi/clear_board` 前冻结 history、komi、tail、targets 和 ponder | `ExactSnapshotEngineRestoreContractTest`、`BoardMovelistExportTest` |
-| 前台/副引擎切换与配置更新 | 在 lifecycle reservation、停止旧 engine、目标 `name/komi/clear_board` 前冻结目标实例和棋局状态 | `EngineManagerLifecycleReservationTest` |
-| 自动/直接 restart | 对外发布 reservation 或执行 engine start/stop 前冻结；无 snapshot 时仍按执行时 live board 走既有 fallback | `EngineManagerLifecycleReservationTest`、`LeelazExclusiveRemoteGtpSessionTest` |
-| OpenCL recovery | 在 lifecycle reservation 和 engine start 前冻结 | `LeelazOpenClRecoveryTest` |
-| Benchmark recovery | 在 ponder/start 前冻结 | `KataGoRuntimeHelperBenchmarkLeaseTest` |
-| PK start/restart | 在 engine start 及其他前置命令前冻结 | `EngineManagerLifecycleReservationTest` |
+| 前台/副引擎切换与配置更新 | 在 lifecycle reservation、停止旧 engine、目标 `name/komi/clear_board` 前冻结目标实例、棋局状态与 exact/root 路线；reservation 到 frozen target restore 完成或失败收敛后才释放 | `EngineManagerLifecycleReservationTest` |
+| 自动/直接 restart | 对外发布 reservation 或执行 engine start/stop 前冻结 target 与 exact/root 路线；直接入口自行建立同 identity handoff/reservation 并持有到 board fence；exact/root 共用该 fence 与 caller-owned ponder resume，执行 frozen target 时不能因 `Lizzie.leelaz` 变化静默跳过；root payload 保留既有 live-board 语义但不能重新 prepare | `EngineManagerLifecycleReservationTest`、`LeelazExclusiveRemoteGtpSessionTest`、`LeelazReadBoardGmaTest` |
+| OpenCL recovery | 在 lifecycle reservation 和 engine start 前冻结 target 与 exact/root 路线 | `LeelazOpenClRecoveryTest` |
+| Benchmark recovery | 在 ponder/start 前冻结 exact restore plan；无 lifecycle handoff 的既有 root 路径保持原产品语义 | `KataGoRuntimeHelperBenchmarkLeaseTest` |
+| PK start/restart | 在 engine start、clear 及其他前置命令前冻结 target 与 exact/root 路线；clear 使用 frozen target，不重读 catalog | `EngineManagerLifecycleReservationTest` |
 | Foreground lease release/retry | 每次 attempt 都是独立的 `prepare -> execute`；旧 plan 失效后只能重新 prepare | `LeelazExclusiveRemoteGtpSessionTest` |
 | ReadBoard/GMA restore | 捕获具体 GMA reservation identity，并在 clear/restore 命令前完成 handoff | `ExactSnapshotEngineRestoreContractTest`、`LeelazReadBoardGmaTest`、`ReadBoardSyncDecisionTest` |
 
@@ -331,6 +363,22 @@ automatic restart、OpenCL、benchmark、PK 与 foreground lease 等入口。
 后续窄修固定具体 reservation identity，并增加 stale plan 在 dispatch 前失败的合同测试。
 
 这些演进补强原始 immutable handoff，不改变 module 与 `Leelaz` 的 ownership 分工。
+
+### Opaque lifecycle restore handoff
+
+后续完整复审确认，`LifecycleTargetPair`、caller 创建的 raw owner、
+`mirrorLifecycleOwnedByOperation` primitive 与 caller 独立推导的 reservation target 仍把同一个
+ownership 决策拆在 module seam 两侧，并曾直接引出 mirror self-conflict。窄修将这些事实收敛为
+一个 `LifecycleRestoreHandoff`：module 校验/freeze pairing 并内部推导 mirror ownership，
+`Leelaz` 只允许 handoff 在其冻结的 lifecycle endpoint 上申请既有 reservation。Handoff 还在
+`prepare(...)` 返回 empty 时冻结 root-replay route/admission，避免副作用后 generic re-prepare；
+exact 与 root 都使用同一 target/mirror/identity 完成本次 board synchronization。Handoff 本身不
+新增 reservation/state machine，也不接管 start/stop、root payload、reservation lifetime 或 ponder
+等 caller 产品语义。
+
+### Captured precommands 与 restart fence
+
+最终耦合复审又发现两个会绕过 immutable handoff 的路径：Board prepared restore 用普通 `sendCommand("clear_board")` 在执行时重新解析全局 secondary；automatic/direct restart 的 exact 分支在 `loadsgf` 后提前 return，跳过 board fence，并按 plan 过早恢复 ponder。修复后，Board preclear 由 `PreparedRestore` 发送到 captured target set；lifecycle root 的每条命令通过 active captured admission 显式 enqueue。Restart plan 不自行 resume，exact/root 都恢复 frozen target 并等待同一 fence 后才完成 reservation 与 ponder 策略。
 
 ## 被拒绝的方案
 

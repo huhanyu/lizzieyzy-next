@@ -31,107 +31,77 @@ public final class ExactSnapshotEngineRestore {
 
   private ExactSnapshotEngineRestore() {}
 
-  public static Optional<Completion> restore(Leelaz engine, BoardHistoryNode target) {
-    RestorePlan.requireEngine(engine);
-    return restore(engine, target, engine.isPonderingOrWasPonderingBeforeTracking());
-  }
-
-  public static Optional<Completion> restore(
-      Leelaz engine, BoardHistoryNode target, boolean resumePonder) {
-    return prepare(engine, target, resumePonder).map(PreparedRestore::execute);
-  }
-
-  public static Completion restore(Leelaz engine, BoardData snapshotData) {
-    return prepare(engine, snapshotData).execute();
-  }
-
   public static Optional<PreparedRestore> prepare(
       Leelaz engine, BoardHistoryNode target, boolean resumePonder) {
     return RestorePlan.capture(
-            engine,
-            target,
-            resumePonder,
-            null,
-            Leelaz.ExactSnapshotRestoreOwner.ORDINARY,
-            null)
+            engine, target, resumePonder, null, Leelaz.ExactSnapshotRestoreOwner.ORDINARY, null)
         .map(PreparedRestore::new);
   }
 
   public static Optional<PreparedRestore> prepare(
       Leelaz engine, BoardHistoryNode target, boolean resumePonder, double komi) {
     return RestorePlan.capture(
-            engine,
-            target,
-            resumePonder,
-            komi,
-            Leelaz.ExactSnapshotRestoreOwner.ORDINARY,
-            null)
+            engine, target, resumePonder, komi, Leelaz.ExactSnapshotRestoreOwner.ORDINARY, null)
         .map(PreparedRestore::new);
   }
 
-  static Optional<PreparedRestore> prepareForEngineSwitch(
-      Leelaz engine,
-      Leelaz mirrorEngine,
-      BoardHistoryNode target,
-      boolean resumePonder,
-      double komi,
-      Object lifecycleOwner,
-      boolean mirrorLifecycleOwnedByOperation) {
-    return RestorePlan.capture(
-            engine,
-            mirrorEngine,
-            target,
-            resumePonder,
-            komi,
-            Leelaz.ExactSnapshotRestoreOwner.LIFECYCLE,
-            lifecycleOwner,
-            mirrorLifecycleOwnedByOperation)
-        .map(PreparedRestore::new);
+  static LifecycleRestoreHandoff prepareLifecycleHandoff(
+      Leelaz existingReservationEngine, Leelaz targetEngine, Leelaz proposedMirrorEngine) {
+    return new LifecycleRestoreHandoff(
+        existingReservationEngine, targetEngine, proposedMirrorEngine);
+  }
+
+  private static Leelaz freezeLifecycleMirror(Leelaz targetEngine, Leelaz proposedMirrorEngine) {
+    RestorePlan.requireEngine(targetEngine);
+    if (proposedMirrorEngine == null) {
+      return null;
+    }
+    if (targetEngine == proposedMirrorEngine) {
+      throw new IllegalArgumentException("proposedMirrorEngine");
+    }
+    Leelaz primary = Lizzie.leelaz;
+    Leelaz secondary = Lizzie.leelaz2;
+    boolean currentPair =
+        (targetEngine == primary && proposedMirrorEngine == secondary)
+            || (targetEngine == secondary && proposedMirrorEngine == primary);
+    boolean futurePair =
+        targetEngine != primary
+            && targetEngine != secondary
+            && (proposedMirrorEngine == primary || proposedMirrorEngine == secondary);
+    return currentPair || futurePair ? proposedMirrorEngine : null;
   }
 
   static Optional<PreparedRestore> prepareForForeground(
       Leelaz engine, BoardHistoryNode target, Double komi, Object owner) {
     return RestorePlan.capture(
-            engine,
-            target,
-            false,
-            komi,
-            Leelaz.ExactSnapshotRestoreOwner.FOREGROUND,
-            owner)
+            engine, target, false, komi, Leelaz.ExactSnapshotRestoreOwner.FOREGROUND, owner)
         .map(PreparedRestore::new);
   }
 
   static PreparedRestore prepareForReadBoardGma(Leelaz engine, BoardData snapshotData) {
     return new PreparedRestore(
-        RestorePlan.capture(
-            engine,
-            snapshotData,
-            Leelaz.ExactSnapshotRestoreOwner.READ_BOARD_GMA));
+        RestorePlan.capture(engine, snapshotData, Leelaz.ExactSnapshotRestoreOwner.READ_BOARD_GMA));
   }
 
   static PreparedRestore prepareForReadBoardGma(
       Leelaz engine, BoardData snapshotData, double komi) {
     return new PreparedRestore(
         RestorePlan.capture(
-            engine,
-            snapshotData,
-            Leelaz.ExactSnapshotRestoreOwner.READ_BOARD_GMA,
-            komi));
+            engine, snapshotData, Leelaz.ExactSnapshotRestoreOwner.READ_BOARD_GMA, komi));
   }
 
-  public static PreparedRestore prepare(Leelaz engine, BoardData snapshotData) {
+  public static PreparedRestore prepareCurrentPosition(Leelaz engine, BoardData positionData) {
     return new PreparedRestore(
-        RestorePlan.capture(
-            engine, snapshotData, Leelaz.ExactSnapshotRestoreOwner.ORDINARY));
+        RestorePlan.capture(engine, positionData, Leelaz.ExactSnapshotRestoreOwner.ORDINARY));
   }
 
-  static PreparedRestore prepare(Leelaz engine, BoardData snapshotData, double komi) {
+  static PreparedRestore prepareCurrentPosition(
+      Leelaz engine, BoardData positionData, double komi) {
     return new PreparedRestore(
-        RestorePlan.capture(
-            engine, snapshotData, Leelaz.ExactSnapshotRestoreOwner.ORDINARY, komi));
+        RestorePlan.capture(engine, positionData, Leelaz.ExactSnapshotRestoreOwner.ORDINARY, komi));
   }
 
-  public static BoardData snapshotFromCurrentBoard(BoardData sourceData) {
+  private static BoardData materializeCurrentPosition(BoardData sourceData) {
     if (sourceData == null) {
       throw new IllegalArgumentException("sourceData");
     }
@@ -156,7 +126,12 @@ public final class ExactSnapshotEngineRestore {
     return snapshot;
   }
 
-  private static Completion execute(RestorePlan plan) {
+  private static Completion execute(RestorePlan plan, boolean clearCapturedTargets) {
+    if (clearCapturedTargets) {
+      for (Leelaz targetEngine : plan.targetEngines) {
+        sendCapturedRestoreCommand(plan, targetEngine, "clear_board", "preclear");
+      }
+    }
     Path sgfFile = writeSnapshotSgf(plan);
     RestoreLifecycle lifecycle = new RestoreLifecycle(sgfFile);
     try {
@@ -176,20 +151,7 @@ public final class ExactSnapshotEngineRestore {
       }
       for (TailAction action : plan.tail) {
         for (Leelaz targetEngine : plan.targetEngines) {
-          final Leelaz target = targetEngine;
-          final RuntimeException[] failure = new RuntimeException[1];
-          target.withExactSnapshotRestoreAdmission(
-              plan.admission,
-              () -> {
-                if (!target.sendCommandToCapturedRestoreTarget(action.command, plan.admission)) {
-                  failure[0] =
-                      new IllegalStateException(
-                          "Exact snapshot restore tail command was rejected: " + action.command);
-                }
-              });
-          if (failure[0] != null) {
-            throw failure[0];
-          }
+          sendCapturedRestoreCommand(plan, targetEngine, action.command, "tail");
         }
       }
       for (Leelaz targetEngine : plan.targetEngines) {
@@ -202,6 +164,23 @@ public final class ExactSnapshotEngineRestore {
       return new Completion(plan.resumePonder);
     } finally {
       lifecycle.finishTailReplay();
+    }
+  }
+
+  private static void sendCapturedRestoreCommand(
+      RestorePlan plan, Leelaz target, String command, String phase) {
+    final RuntimeException[] failure = new RuntimeException[1];
+    target.withExactSnapshotRestoreAdmission(
+        plan.admission,
+        () -> {
+          if (!target.sendCommandToCapturedRestoreTarget(command, plan.admission)) {
+            failure[0] =
+                new IllegalStateException(
+                    "Exact snapshot restore " + phase + " command was rejected: " + command);
+          }
+        });
+    if (failure[0] != null) {
+      throw failure[0];
     }
   }
 
@@ -398,10 +377,6 @@ public final class ExactSnapshotEngineRestore {
       this.resumePonder = resumePonder;
     }
 
-    public boolean completed() {
-      return true;
-    }
-
     public boolean shouldResumePonder() {
       return resumePonder;
     }
@@ -409,17 +384,136 @@ public final class ExactSnapshotEngineRestore {
 
   public static final class PreparedRestore {
     private final RestorePlan plan;
+    private final AtomicBoolean executed = new AtomicBoolean(false);
 
     private PreparedRestore(RestorePlan plan) {
       this.plan = plan;
     }
 
     public Completion execute() {
-      return ExactSnapshotEngineRestore.execute(plan);
+      return execute(false);
+    }
+
+    public Completion executeAfterCapturedTargetClear() {
+      return execute(true);
+    }
+
+    private Completion execute(boolean clearCapturedTargets) {
+      if (!executed.compareAndSet(false, true)) {
+        throw new IllegalStateException("Exact snapshot restore has already been executed");
+      }
+      return ExactSnapshotEngineRestore.execute(plan, clearCapturedTargets);
     }
 
     OptionalDouble capturedKomi() {
       return plan.komi == null ? OptionalDouble.empty() : OptionalDouble.of(plan.komi);
+    }
+  }
+
+  static final class LifecycleRestoreHandoff {
+    private final Leelaz existingReservationEngine;
+    private final Leelaz targetEngine;
+    private final Leelaz mirrorEngine;
+    private Leelaz.ExactSnapshotRestoreAdmission rootReplayAdmission;
+    private final AtomicBoolean rootReplayExecuted = new AtomicBoolean(false);
+
+    private LifecycleRestoreHandoff(
+        Leelaz existingReservationEngine, Leelaz targetEngine, Leelaz proposedMirrorEngine) {
+      this.targetEngine = targetEngine;
+      this.mirrorEngine = freezeLifecycleMirror(targetEngine, proposedMirrorEngine);
+      this.existingReservationEngine =
+          normalizeExistingReservationEngine(
+              existingReservationEngine, targetEngine, proposedMirrorEngine, mirrorEngine);
+    }
+
+    private static Leelaz normalizeExistingReservationEngine(
+        Leelaz existingReservationEngine,
+        Leelaz targetEngine,
+        Leelaz proposedMirrorEngine,
+        Leelaz mirrorEngine) {
+      if (existingReservationEngine == null) {
+        return null;
+      }
+      if (existingReservationEngine == proposedMirrorEngine && mirrorEngine == null) {
+        return null;
+      }
+      if (existingReservationEngine == mirrorEngine && existingReservationEngine != targetEngine) {
+        throw new IllegalArgumentException(
+            "existingReservationEngine must not be the restore mirror");
+      }
+      if (existingReservationEngine == targetEngine
+          || existingReservationEngine == Lizzie.leelaz
+          || existingReservationEngine == Lizzie.leelaz2) {
+        return existingReservationEngine;
+      }
+      throw new IllegalArgumentException("existingReservationEngine");
+    }
+
+    Optional<PreparedRestore> prepare(BoardHistoryNode target, boolean resumePonder, double komi) {
+      Optional<PreparedRestore> preparedRestore =
+          RestorePlan.capture(
+                  targetEngine,
+                  mirrorEngine,
+                  target,
+                  resumePonder,
+                  komi,
+                  Leelaz.ExactSnapshotRestoreOwner.LIFECYCLE,
+                  this,
+                  mirrorEngine != null && mirrorEngine == existingReservationEngine)
+              .map(PreparedRestore::new);
+      if (preparedRestore.isEmpty()) {
+        prepareRootReplay();
+      }
+      return preparedRestore;
+    }
+
+    void prepareRootReplay() {
+      if (rootReplayAdmission == null) {
+        rootReplayAdmission =
+            targetEngine.captureExactSnapshotRestoreAdmission(
+                Leelaz.ExactSnapshotRestoreOwner.LIFECYCLE,
+                this,
+                mirrorEngine,
+                mirrorEngine != null && mirrorEngine == existingReservationEngine);
+      }
+    }
+
+    void executeRootReplay(Runnable replay) {
+      if (rootReplayAdmission == null) {
+        throw new IllegalStateException("Lifecycle root replay was not prepared");
+      }
+      if (!rootReplayExecuted.compareAndSet(false, true)) {
+        throw new IllegalStateException("Lifecycle root replay has already been executed");
+      }
+      targetEngine.requireExactSnapshotRestoreAdmission(rootReplayAdmission);
+      if (mirrorEngine != null) {
+        mirrorEngine.requireExactSnapshotRestoreAdmission(rootReplayAdmission);
+      }
+      targetEngine.withExactSnapshotRestoreAdmission(
+          rootReplayAdmission,
+          () -> {
+            if (mirrorEngine == null) {
+              replay.run();
+            } else {
+              mirrorEngine.withExactSnapshotRestoreAdmission(rootReplayAdmission, replay);
+            }
+          });
+    }
+
+    Leelaz existingReservationEngine() {
+      return existingReservationEngine;
+    }
+
+    Leelaz targetEngine() {
+      return targetEngine;
+    }
+
+    Leelaz mirrorEngine() {
+      return mirrorEngine;
+    }
+
+    boolean includesReservationEngine(Leelaz engine) {
+      return engine != null && (engine == existingReservationEngine || engine == targetEngine);
     }
   }
 
@@ -475,14 +569,7 @@ public final class ExactSnapshotEngineRestore {
         Double komiOverride,
         Leelaz.ExactSnapshotRestoreOwner owner,
         Object ownerIdentity) {
-      return capture(
-          engine,
-          target,
-          resumePonder,
-          komiOverride,
-          owner,
-          ownerIdentity,
-          false);
+      return capture(engine, target, resumePonder, komiOverride, owner, ownerIdentity, false);
     }
 
     private static Optional<RestorePlan> capture(
@@ -522,9 +609,7 @@ public final class ExactSnapshotEngineRestore {
         return Optional.empty();
       }
       BoardData snapshotData =
-          anchor.data.isSnapshotNode()
-              ? anchor.data
-              : ExactSnapshotEngineRestore.snapshotFromCurrentBoard(anchor.data);
+          anchor.data.isSnapshotNode() ? anchor.data : materializeCurrentPosition(anchor.data);
       int[] boardSize = resolveSnapshotBoardSize(snapshotData);
       List<TailAction> tail = captureTail(target, anchor.node, boardSize[0], boardSize[1]);
       Leelaz.ExactSnapshotRestoreAdmission admission =
@@ -532,31 +617,25 @@ public final class ExactSnapshotEngineRestore {
               owner, ownerIdentity, mirrorEngine, mirrorLifecycleOwnedByOperation);
       return Optional.of(
           new RestorePlan(
-              engine,
-              mirrorEngine,
-              snapshotData,
-              tail,
-              resumePonder,
-              komiOverride,
-              admission));
+              engine, mirrorEngine, snapshotData, tail, resumePonder, komiOverride, admission));
     }
 
     private static RestorePlan capture(
-        Leelaz engine,
-        BoardData snapshotData,
-        Leelaz.ExactSnapshotRestoreOwner owner) {
+        Leelaz engine, BoardData snapshotData, Leelaz.ExactSnapshotRestoreOwner owner) {
       return capture(engine, snapshotData, owner, null);
     }
 
     private static RestorePlan capture(
         Leelaz engine,
-        BoardData snapshotData,
+        BoardData sourceData,
         Leelaz.ExactSnapshotRestoreOwner owner,
         Double komiOverride) {
       requireEngine(engine);
-      if (snapshotData == null || !snapshotData.isSnapshotNode()) {
-        throw new IllegalArgumentException("snapshotData");
+      if (sourceData == null) {
+        throw new IllegalArgumentException("positionData");
       }
+      BoardData snapshotData =
+          sourceData.isSnapshotNode() ? sourceData : materializeCurrentPosition(sourceData);
       Leelaz mirrorEngine = captureMirrorEngine(engine);
       return new RestorePlan(
           engine,

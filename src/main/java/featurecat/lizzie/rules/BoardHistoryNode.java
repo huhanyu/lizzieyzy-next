@@ -803,7 +803,12 @@ public class BoardHistoryNode {
           .map(ExactSnapshotEngineRestore.PreparedRestore::execute)
           .orElseThrow();
     } else {
-      ExactSnapshotEngineRestore.restore(Lizzie.leelaz, this).orElseThrow();
+      ExactSnapshotEngineRestore.prepare(
+              Lizzie.leelaz,
+              this,
+              Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking())
+          .map(ExactSnapshotEngineRestore.PreparedRestore::execute)
+          .orElseThrow();
     }
     return true;
   }

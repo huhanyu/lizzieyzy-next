@@ -464,7 +464,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
-  void exactSnapshotRestoreInternalsArePackageScopedAndOrchestratorIsFinal() throws Exception {
+  void exactSnapshotRestoreInternalsAreNotPublicAndOrchestratorIsFinal() throws Exception {
     Class<?> admissionType =
         java.util.Arrays.stream(Leelaz.class.getDeclaredClasses())
             .filter(type -> type.getSimpleName().equals("ExactSnapshotRestoreAdmission"))
@@ -502,8 +502,9 @@ class LeelazExclusiveRemoteGtpSessionTest {
     assertPackageScoped(admissionType.getModifiers());
     assertPackageScoped(ownerType.getModifiers());
     assertPackageScoped(capturedKomi.getModifiers());
-    assertNotPublicOrProtected(transportHook.getModifiers());
-    assertNotPublicOrProtected(failureHandlerType.getModifiers());
+    assertTrue(Modifier.isFinal(transportHook.getModifiers()));
+    assertPackageScoped(transportHook.getModifiers());
+    assertPackageScoped(failureHandlerType.getModifiers());
   }
 
   private static void assertPackageScoped(int modifiers) {
@@ -1214,6 +1215,23 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
       assertEquals(1, harness.engine.ponderCount);
       assertEquals(1, harness.completions.get());
+    }
+  }
+
+  @Test
+  void staleNumberedErrorDoesNotFailCurrentForegroundRestore() throws Exception {
+    try (ProductionForegroundRestoreHarness harness =
+        ProductionForegroundRestoreHarness.open()) {
+      harness.releaseThroughNameCommand();
+
+      processCommandResponse(harness.engine, "?999 stale restore error");
+      harness.completeNameResponse();
+
+      assertEquals(
+          1,
+          harness.completions.get(),
+          "stale response must not terminate foreground restore.");
+      assertEquals(1, harness.engine.ponderCount);
     }
   }
 
@@ -2210,7 +2228,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
     }
   }
 
-  private static final class RecordingRestoreLeelaz extends ExactSnapshotRestoreTestLeelaz {
+  private static final class RecordingRestoreLeelaz extends Leelaz {
     private volatile int ponderCount;
     private volatile boolean lifecycleBusyDuringPonder;
     private volatile long initialStopTimeoutMillis = 8000L;
@@ -2223,6 +2241,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
     private RecordingRestoreLeelaz() throws Exception {
       super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
     }
 
     @Override
@@ -2240,15 +2260,6 @@ class LeelazExclusiveRemoteGtpSessionTest {
     @Override
     protected long foregroundReleaseStopTimeoutMillis() {
       return releaseStopTimeoutMillis;
-    }
-
-    @Override
-    protected boolean sendExactSnapshotRestoreCommandForTest(
-        String command, Runnable onResponse, TestCommandSendFailureHandler onSendFailure) {
-      if (onResponse != null) {
-        onResponse.run();
-      }
-      return true;
     }
 
     @Override

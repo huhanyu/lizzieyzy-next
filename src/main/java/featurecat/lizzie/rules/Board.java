@@ -1286,6 +1286,47 @@ public class Board {
     }
   }
 
+  public void resendMoveToEngineFromRoot(
+      Leelaz engine,
+      Leelaz mirrorEngine,
+      boolean loadEngine,
+      boolean isEngineGame,
+      ArrayList<Movelist> moves) {
+    if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+      return;
+    }
+    Optional<Double> currentGameKomi = captureNonDefaultCurrentGameKomi(engine);
+    currentGameKomi.ifPresent(
+        value -> {
+          syncCapturedRestoreKomi(engine, value);
+          if (mirrorEngine != null) {
+            syncCapturedRestoreKomi(mirrorEngine, value);
+          }
+        });
+    engine.sendCapturedRestoreCommand("clear_board");
+    if (mirrorEngine != null) {
+      mirrorEngine.sendCapturedRestoreCommand("clear_board");
+    }
+    replayMovesToCapturedRestoreTarget(engine, moves);
+    if (mirrorEngine != null) {
+      replayMovesToCapturedRestoreTarget(mirrorEngine, moves);
+    }
+    if (loadEngine) {
+      Lizzie.initializeAfterVersionCheck(isEngineGame, engine);
+    }
+  }
+
+  private void syncCapturedRestoreKomi(Leelaz engine, double komi) {
+    float normalizedKomi = (float) (komi == 0.0 ? 0.0 : komi);
+    synchronized (engine) {
+      if (Float.compare(engine.komi, normalizedKomi) == 0) {
+        return;
+      }
+      engine.sendCapturedRestoreCommand("komi " + (komi == 0.0 ? "0" : komi));
+      engine.komi = normalizedKomi;
+    }
+  }
+
   public boolean resendCurrentPositionToPrimaryEngine() {
     if (!isPrimaryEngineReady()) {
       return false;
@@ -3026,16 +3067,20 @@ public class Board {
             engine.sendCommand("komi " + (value == 0.0 ? "0" : value));
             engine.komi = value.floatValue();
           });
-      engine.sendCommand("clear_board");
-      ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
+      ExactSnapshotEngineRestore.Completion completion =
+          preparedRestore.executeAfterCapturedTargetClear();
       if (completion.shouldResumePonder()) engine.ponder();
       return;
     }
+    restoreEnginePositionFromRoot(engine, fallbackMoves);
+  }
+
+  private void restoreEnginePositionFromRoot(Leelaz engine, ArrayList<Movelist> moves) {
     boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
     Optional<Double> currentGameKomi = captureNonDefaultCurrentGameKomi(engine);
     currentGameKomi.ifPresent(engine::syncKomiForCurrentGame);
     engine.sendCommand("clear_board");
-    replayMovesToEngine(engine, fallbackMoves);
+    replayMovesToEngine(engine, moves);
     if (wasPondering) engine.ponder();
   }
 
@@ -3049,6 +3094,15 @@ public class Board {
       if (mirrorEngine != null) {
         sendEngineMoveWithoutMirror(mirrorEngine, move.isblack, moveName);
       }
+    }
+  }
+
+  private void replayMovesToCapturedRestoreTarget(Leelaz engine, ArrayList<Movelist> moves) {
+    int length = moves.size();
+    for (int i = 0; i < length; i++) {
+      Movelist move = moves.get(length - 1 - i);
+      String moveName = move.ispass ? "pass" : convertCoordinatesToName(move.x, move.y);
+      engine.sendCapturedRestoreCommand("play " + (move.isblack ? "B" : "W") + " " + moveName);
     }
   }
 
