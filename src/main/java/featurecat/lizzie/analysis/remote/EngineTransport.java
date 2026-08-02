@@ -19,6 +19,11 @@ public interface EngineTransport extends AutoCloseable {
 
   default void markAnalysisProgressAccepted(long totalPlayouts) {}
 
+  /** True when the transport ended deliberately so its owner can rebuild a fresh session. */
+  default boolean isRecoveryRequested() {
+    return false;
+  }
+
   String description();
 
   @Override

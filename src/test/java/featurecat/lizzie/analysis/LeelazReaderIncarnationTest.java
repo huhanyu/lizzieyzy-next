@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.remote.EngineTransport;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.HtmlMessage;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -190,6 +191,35 @@ class LeelazReaderIncarnationTest {
       invokeTerminal(engine, binding);
       assertEquals(1, engine.readBoardCleanupCount);
       assertEquals(1, process.destroyCount);
+    }
+  }
+
+  @Test
+  void recoveryRequestedRemoteTransportSkipsCrashDialogAndDispatchesSessionRebuild()
+      throws Exception {
+    try (GlobalState ignored = GlobalState.install()) {
+      Leelaz engine = new Leelaz("");
+      RecoveryTransport transport = new RecoveryTransport();
+      RecoveryRecordingManager manager = new RecoveryRecordingManager(engine);
+      engine.useRemoteCompute = true;
+      setField(engine, "remoteTransport", transport);
+      initializeStreams(engine, bytes(""), bytes(""));
+      Object binding = getField(engine, "readerStreamBinding");
+      Lizzie.leelaz = engine;
+      Lizzie.engineManager = manager;
+      engine.started = true;
+      engine.isLoaded = true;
+      engine.isNormalEnd = false;
+
+      invokeTerminal(engine, binding);
+
+      assertEquals(1, transport.closeCount);
+      assertEquals(1, manager.restartCount);
+      assertFalse(engine.isStarted());
+      SwingUtilities.invokeAndWait(() -> {});
+      assertFalse(
+          java.util.Arrays.stream(Window.getWindows())
+              .anyMatch(window -> window instanceof HtmlMessage && window.isDisplayable()));
     }
   }
 
@@ -400,6 +430,7 @@ class LeelazReaderIncarnationTest {
     private final GtpConsolePane previousGtpConsole;
     private final Board previousBoard;
     private final LizzieFrame previousFrame;
+    private final EngineManager previousEngineManager;
     private final boolean previousEngineGame;
     private final EngineGameInfo previousEngineGameInfo;
 
@@ -409,6 +440,7 @@ class LeelazReaderIncarnationTest {
         GtpConsolePane previousGtpConsole,
         Board previousBoard,
         LizzieFrame previousFrame,
+        EngineManager previousEngineManager,
         boolean previousEngineGame,
         EngineGameInfo previousEngineGameInfo) {
       this.previousConfig = previousConfig;
@@ -416,6 +448,7 @@ class LeelazReaderIncarnationTest {
       this.previousGtpConsole = previousGtpConsole;
       this.previousBoard = previousBoard;
       this.previousFrame = previousFrame;
+      this.previousEngineManager = previousEngineManager;
       this.previousEngineGame = previousEngineGame;
       this.previousEngineGameInfo = previousEngineGameInfo;
     }
@@ -428,6 +461,7 @@ class LeelazReaderIncarnationTest {
               Lizzie.gtpConsole,
               Lizzie.board,
               Lizzie.frame,
+              Lizzie.engineManager,
               EngineManager.isEngineGame,
               EngineManager.engineGameInfo);
       Lizzie.config =
@@ -445,6 +479,7 @@ class LeelazReaderIncarnationTest {
       Lizzie.gtpConsole = previousGtpConsole;
       Lizzie.board = previousBoard;
       Lizzie.frame = previousFrame;
+      Lizzie.engineManager = previousEngineManager;
       EngineManager.isEngineGame = previousEngineGame;
       EngineManager.engineGameInfo = previousEngineGameInfo;
     }
@@ -527,6 +562,61 @@ class LeelazReaderIncarnationTest {
     public void failReadBoardGmaEngineRestore(String detail) {
       readBoardCleanupCount++;
       super.failReadBoardGmaEngineRestore(detail);
+    }
+  }
+
+  private static final class RecoveryRecordingManager extends EngineManager {
+    private int restartCount;
+
+    private RecoveryRecordingManager(Leelaz engine) {
+      super(java.util.List.of(engine));
+    }
+
+    @Override
+    void restartUnresponsiveRemoteEngine(Leelaz engine, int index) {
+      restartCount++;
+    }
+  }
+
+  private static final class RecoveryTransport implements EngineTransport {
+    private int closeCount;
+
+    @Override
+    public void start() {}
+
+    @Override
+    public InputStream stdout() {
+      return bytes("");
+    }
+
+    @Override
+    public OutputStream stdin() {
+      return new ByteArrayOutputStream();
+    }
+
+    @Override
+    public InputStream stderr() {
+      return bytes("");
+    }
+
+    @Override
+    public boolean isOpen() {
+      return false;
+    }
+
+    @Override
+    public boolean isRecoveryRequested() {
+      return true;
+    }
+
+    @Override
+    public String description() {
+      return "test recovery transport";
+    }
+
+    @Override
+    public void close() {
+      closeCount++;
     }
   }
 
