@@ -7,8 +7,10 @@ import featurecat.lizzie.util.Utils;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Optional;
 import org.json.JSONObject;
 
 public final class RemoteComputeConfig {
@@ -36,7 +38,18 @@ public final class RemoteComputeConfig {
       "--platform all --engine-type go --gpu-type 1x --kata-name katago-CUDA --kata-weight 28bnbt";
   public static final long ZHIZI_CATALOG_REFRESH_INTERVAL_MILLIS = 6L * 60L * 60L * 1000L;
 
+  private static final String LEGACY_TOKEN_KEY = "zhizi-account-token";
+  private static final String LEGACY_PASSWORD_KEY = "zhizi-password-v1";
+  private static final String CREDENTIAL_BACKEND_KEY = "zhizi-credential-backend";
+  private static final Object CREDENTIAL_LOCK = new Object();
   private static volatile String sessionZhiziToken = "";
+  private static volatile String sessionZhiziPassword = "";
+  private static volatile String sessionZhiziIdentifier = "";
+  private static volatile boolean sessionTokenStoredSecurely;
+  private static volatile boolean sessionPasswordStoredSecurely;
+  private static volatile CredentialStore credentialStoreOverride;
+  private static volatile CredentialStore systemCredentialStore;
+  private static volatile Path systemCredentialDirectory;
 
   private RemoteComputeConfig() {}
 
@@ -50,64 +63,176 @@ public final class RemoteComputeConfig {
     }
     State state = new State();
     state.provider = json.optString("provider", PROVIDER_LOCAL);
-    state.zhiziAccountToken = json.optString("zhizi-account-token", "");
     state.zhiziIdentifier = json.optString("zhizi-identifier", "");
     state.rememberZhiziToken = json.optBoolean("remember-zhizi-token", false);
     state.rememberZhiziPassword = json.optBoolean("remember-zhizi-password", false);
-    state.zhiziPassword =
-        state.rememberZhiziPassword
-            ? decodeSavedPassword(json.optString("zhizi-password-v1", ""))
-            : "";
     state.zhiziArgs = json.optString("zhizi-args", DEFAULT_ZHIZI_ARGS);
     state.zhiziCatalog = loadZhiziCatalog(json.optJSONObject("zhizi-engine-catalog"));
     state.zhiziCatalogUpdatedAt = json.optLong("zhizi-catalog-updated-at", 0L);
     state.customRemoteCode = json.optString("custom-remote-code", "");
-    if (state.zhiziAccountToken.isEmpty() && !sessionZhiziToken.isEmpty()) {
-      state.zhiziAccountToken = sessionZhiziToken;
+    CredentialStore store = credentialStore();
+    state.credentialStoreBackend = store.backendName();
+    state.credentialStoreAvailable = store.isAvailable();
+    boolean changed = false;
+    synchronized (CREDENTIAL_LOCK) {
+      boolean sameSession = sameAccount(sessionZhiziIdentifier, state.zhiziIdentifier);
+      SecretLoad token =
+          loadSecret(
+              store,
+              CredentialStore.Kind.ACCOUNT_TOKEN,
+              state.zhiziIdentifier,
+              state.rememberZhiziToken,
+              json.optString(LEGACY_TOKEN_KEY, ""),
+              sessionZhiziToken,
+              sameSession && sessionTokenStoredSecurely);
+      SecretLoad password =
+          loadSecret(
+              store,
+              CredentialStore.Kind.PASSWORD,
+              state.zhiziIdentifier,
+              state.rememberZhiziPassword,
+              decodeSavedPassword(json.optString(LEGACY_PASSWORD_KEY, "")),
+              sessionZhiziPassword,
+              sameSession && sessionPasswordStoredSecurely);
+      state.zhiziAccountToken = token.secret;
+      state.zhiziPassword = password.secret;
+      state.tokenStoredSecurely = token.storedSecurely;
+      state.passwordStoredSecurely = password.storedSecurely;
+      state.credentialMigrationFailed = token.migrationFailed || password.migrationFailed;
+      state.credentialReadFailed = token.readFailed || password.readFailed;
+      if (token.migrated) {
+        json.remove(LEGACY_TOKEN_KEY);
+        changed = true;
+      }
+      if (password.migrated) {
+        json.remove(LEGACY_PASSWORD_KEY);
+        changed = true;
+      }
+      if (!token.secret.isEmpty()) {
+        sessionZhiziToken = token.secret;
+        sessionTokenStoredSecurely = token.storedSecurely;
+        sessionZhiziIdentifier = state.zhiziIdentifier;
+      }
+      if (!password.secret.isEmpty()) {
+        sessionZhiziPassword = password.secret;
+        sessionPasswordStoredSecurely = password.storedSecurely;
+        sessionZhiziIdentifier = state.zhiziIdentifier;
+      }
+    }
+    if (changed) {
+      json.put(CREDENTIAL_BACKEND_KEY, store.backendName());
+      saveConfigQuietly();
     }
     return state;
   }
 
-  public static void save(State state) {
+  public static CredentialSaveResult save(State state) {
+    if (state == null) {
+      return CredentialSaveResult.none("session-only");
+    }
+    JSONObject previous = currentConfigJson();
+    String previousIdentifier = previous.optString("zhizi-identifier", "");
+    String identifier = state.zhiziIdentifier == null ? "" : state.zhiziIdentifier.trim();
+    CredentialStore store = credentialStore();
+    CredentialSaveResult result = new CredentialSaveResult(store.backendName());
     JSONObject json = new JSONObject();
     json.put("provider", emptyToDefault(state.provider, PROVIDER_LOCAL));
     json.put("zhizi-args", emptyToDefault(state.zhiziArgs, DEFAULT_ZHIZI_ARGS));
-    json.put("zhizi-identifier", state.zhiziIdentifier == null ? "" : state.zhiziIdentifier.trim());
-    json.put("remember-zhizi-token", state.rememberZhiziToken);
-    json.put("remember-zhizi-password", state.rememberZhiziPassword);
+    json.put("zhizi-identifier", identifier);
     json.put("custom-remote-code", state.customRemoteCode == null ? "" : state.customRemoteCode);
     if (state.zhiziCatalog != null) {
-      json.put(
-          "zhizi-engine-catalog", state.zhiziCatalog.withConfirmedWeights().toJson());
+      json.put("zhizi-engine-catalog", state.zhiziCatalog.withConfirmedWeights().toJson());
     }
     json.put("zhizi-catalog-updated-at", Math.max(0L, state.zhiziCatalogUpdatedAt));
-    String savedPassword = state.zhiziPassword == null ? "" : state.zhiziPassword;
-    if (state.rememberZhiziPassword && !savedPassword.isEmpty()) {
-      json.put("zhizi-password-v1", encodeSavedPassword(savedPassword));
-    }
-    sessionZhiziToken = state.zhiziAccountToken == null ? "" : state.zhiziAccountToken;
-    if (state.rememberZhiziToken && !sessionZhiziToken.isEmpty()) {
-      json.put("zhizi-account-token", sessionZhiziToken);
+    synchronized (CREDENTIAL_LOCK) {
+      if (!sameAccount(previousIdentifier, identifier)) {
+        result.deletionFailed |= !deleteSecrets(store, previousIdentifier);
+        sessionZhiziToken = "";
+        sessionZhiziPassword = "";
+        sessionTokenStoredSecurely = false;
+        sessionPasswordStoredSecurely = false;
+      }
+      sessionZhiziIdentifier = identifier;
+      String token = state.zhiziAccountToken == null ? "" : state.zhiziAccountToken;
+      String password = state.zhiziPassword == null ? "" : state.zhiziPassword;
+      if (!token.isEmpty()) {
+        sessionZhiziToken = token;
+      } else if (!state.rememberZhiziToken) {
+        sessionZhiziToken = "";
+      }
+      if (!password.isEmpty()) {
+        sessionZhiziPassword = password;
+      } else if (!state.rememberZhiziPassword) {
+        sessionZhiziPassword = "";
+      }
+
+      Persistence tokenPersistence =
+          persistSecret(
+              store,
+              CredentialStore.Kind.ACCOUNT_TOKEN,
+              identifier,
+              state.rememberZhiziToken,
+              sessionZhiziToken,
+              previous,
+              LEGACY_TOKEN_KEY,
+              state.credentialMigrationFailed,
+              state.tokenStoredSecurely);
+      Persistence passwordPersistence =
+          persistSecret(
+              store,
+              CredentialStore.Kind.PASSWORD,
+              identifier,
+              state.rememberZhiziPassword,
+              sessionZhiziPassword,
+              previous,
+              LEGACY_PASSWORD_KEY,
+              state.credentialMigrationFailed,
+              state.passwordStoredSecurely);
+      state.rememberZhiziToken = tokenPersistence.remember;
+      state.rememberZhiziPassword = passwordPersistence.remember;
+      state.tokenStoredSecurely = tokenPersistence.storedSecurely;
+      state.passwordStoredSecurely = passwordPersistence.storedSecurely;
+      sessionTokenStoredSecurely = tokenPersistence.storedSecurely;
+      sessionPasswordStoredSecurely = passwordPersistence.storedSecurely;
+      result.tokenRequested = tokenPersistence.requested;
+      result.passwordRequested = passwordPersistence.requested;
+      result.tokenStored = tokenPersistence.storedSecurely;
+      result.passwordStored = passwordPersistence.storedSecurely;
+      result.deletionFailed |= tokenPersistence.deletionFailed;
+      result.deletionFailed |= passwordPersistence.deletionFailed;
+      json.put("remember-zhizi-token", tokenPersistence.remember);
+      json.put("remember-zhizi-password", passwordPersistence.remember);
+      if (tokenPersistence.preserveLegacy && previous.has(LEGACY_TOKEN_KEY)) {
+        json.put(LEGACY_TOKEN_KEY, previous.optString(LEGACY_TOKEN_KEY, ""));
+      }
+      if (passwordPersistence.preserveLegacy && previous.has(LEGACY_PASSWORD_KEY)) {
+        json.put(LEGACY_PASSWORD_KEY, previous.optString(LEGACY_PASSWORD_KEY, ""));
+      }
+      if (tokenPersistence.storedSecurely || passwordPersistence.storedSecurely) {
+        json.put(CREDENTIAL_BACKEND_KEY, store.backendName());
+      }
     }
     Lizzie.config.leelazConfig.put(CONFIG_KEY, json);
     saveConfigQuietly();
+    return result;
   }
 
-  public static void saveZhiziToken(String token, boolean remember, String args) {
-    saveZhiziToken(token, remember, args, "");
+  public static CredentialSaveResult saveZhiziToken(String token, boolean remember, String args) {
+    return saveZhiziToken(token, remember, args, "");
   }
 
-  public static void saveZhiziToken(
+  public static CredentialSaveResult saveZhiziToken(
       String token, boolean remember, String args, String identifier) {
     State state = load();
     state.zhiziAccountToken = token == null ? "" : token;
+    state.tokenStoredSecurely = false;
     state.zhiziIdentifier = identifier == null ? "" : identifier.trim();
     state.rememberZhiziToken = remember;
     state.zhiziArgs = emptyToDefault(args, DEFAULT_ZHIZI_ARGS);
-    save(state);
+    return save(state);
   }
 
-  public static void saveZhiziToken(
+  public static CredentialSaveResult saveZhiziToken(
       String token,
       boolean remember,
       String args,
@@ -116,15 +241,17 @@ public final class RemoteComputeConfig {
       boolean rememberPassword) {
     State state = load();
     state.zhiziAccountToken = token == null ? "" : token;
+    state.tokenStoredSecurely = false;
     state.zhiziIdentifier = identifier == null ? "" : identifier.trim();
     state.rememberZhiziToken = remember;
     state.zhiziPassword = rememberPassword ? (password == null ? "" : password) : "";
+    state.passwordStoredSecurely = false;
     state.rememberZhiziPassword = rememberPassword && !state.zhiziPassword.isEmpty();
     state.zhiziArgs = emptyToDefault(args, DEFAULT_ZHIZI_ARGS);
-    save(state);
+    return save(state);
   }
 
-  public static void clearZhiziToken() {
+  public static CredentialSaveResult clearZhiziToken() {
     State state = load();
     state.zhiziAccountToken = "";
     state.zhiziIdentifier = "";
@@ -132,7 +259,10 @@ public final class RemoteComputeConfig {
     state.rememberZhiziToken = false;
     state.rememberZhiziPassword = false;
     sessionZhiziToken = "";
-    save(state);
+    sessionZhiziPassword = "";
+    sessionTokenStoredSecurely = false;
+    sessionPasswordStoredSecurely = false;
+    return save(state);
   }
 
   public static void saveZhiziCatalog(ZhiziEngineCatalog catalog) {
@@ -642,10 +772,6 @@ public final class RemoteComputeConfig {
     return Math.min(ws, wss);
   }
 
-  private static String encodeSavedPassword(String password) {
-    return Base64.getEncoder().encodeToString(password.getBytes(StandardCharsets.UTF_8));
-  }
-
   private static String decodeSavedPassword(String encoded) {
     if (encoded == null || encoded.trim().isEmpty()) {
       return "";
@@ -681,6 +807,168 @@ public final class RemoteComputeConfig {
     }
   }
 
+  private static JSONObject currentConfigJson() {
+    if (Lizzie.config == null || Lizzie.config.leelazConfig == null) {
+      return new JSONObject();
+    }
+    JSONObject json = Lizzie.config.leelazConfig.optJSONObject(CONFIG_KEY);
+    return json == null ? new JSONObject() : json;
+  }
+
+  private static CredentialStore credentialStore() {
+    CredentialStore override = credentialStoreOverride;
+    if (override != null) {
+      return override;
+    }
+    Path directory = credentialDirectory();
+    CredentialStore cached = systemCredentialStore;
+    if (cached != null && directory.equals(systemCredentialDirectory)) {
+      return cached;
+    }
+    synchronized (CREDENTIAL_LOCK) {
+      if (systemCredentialStore == null || !directory.equals(systemCredentialDirectory)) {
+        systemCredentialDirectory = directory;
+        systemCredentialStore = PlatformCredentialStore.create(directory);
+      }
+      return systemCredentialStore;
+    }
+  }
+
+  private static Path credentialDirectory() {
+    if (Lizzie.config != null && Lizzie.config.getWorkDirectory() != null) {
+      return Lizzie.config.getWorkDirectory().toPath().resolve("secure-credentials").normalize();
+    }
+    return Path.of(System.getProperty("user.dir", "."), "secure-credentials")
+        .toAbsolutePath()
+        .normalize();
+  }
+
+  private static SecretLoad loadSecret(
+      CredentialStore store,
+      CredentialStore.Kind kind,
+      String identifier,
+      boolean remember,
+      String legacySecret,
+      String sessionSecret,
+      boolean sessionStoredSecurely) {
+    if (sameAccount(sessionZhiziIdentifier, identifier)
+        && sessionSecret != null
+        && !sessionSecret.isEmpty()) {
+      return SecretLoad.session(sessionSecret, sessionStoredSecurely);
+    }
+    if (!remember) {
+      return SecretLoad.empty();
+    }
+    boolean readFailed = false;
+    if (store.isAvailable() && identifier != null && !identifier.isBlank()) {
+      try {
+        Optional<String> stored = store.read(kind, identifier);
+        if (stored.isPresent()) {
+          return SecretLoad.stored(stored.get());
+        }
+      } catch (IOException e) {
+        readFailed = true;
+      }
+    }
+    if (legacySecret == null || legacySecret.isEmpty()) {
+      return readFailed ? SecretLoad.readFailed() : SecretLoad.empty();
+    }
+    if (!store.isAvailable() || identifier == null || identifier.isBlank()) {
+      return SecretLoad.migrationFailed(readFailed);
+    }
+    try {
+      store.write(kind, identifier, legacySecret);
+      return SecretLoad.migrated(legacySecret);
+    } catch (IOException e) {
+      return SecretLoad.migrationFailed(readFailed);
+    }
+  }
+
+  private static Persistence persistSecret(
+      CredentialStore store,
+      CredentialStore.Kind kind,
+      String identifier,
+      boolean remember,
+      String secret,
+      JSONObject previous,
+      String legacyKey,
+      boolean preserveFailedMigration,
+      boolean alreadyStoredSecurely) {
+    String safeSecret = secret == null ? "" : secret;
+    boolean requested = remember && !safeSecret.isEmpty();
+    if (requested && alreadyStoredSecurely) {
+      return Persistence.stored();
+    }
+    if (requested && store.isAvailable() && identifier != null && !identifier.isBlank()) {
+      try {
+        store.write(kind, identifier, safeSecret);
+        return Persistence.stored();
+      } catch (IOException ignored) {
+        return Persistence.sessionOnly(previous.has(legacyKey) && preserveFailedMigration, true);
+      }
+    }
+    if (requested) {
+      return Persistence.sessionOnly(previous.has(legacyKey) && preserveFailedMigration, true);
+    }
+    if (remember && safeSecret.isEmpty() && previous.has(legacyKey) && preserveFailedMigration) {
+      return Persistence.preserveLegacy();
+    }
+    boolean deletionFailed = false;
+    if (identifier != null && !identifier.isBlank()) {
+      try {
+        store.delete(kind, identifier);
+      } catch (IOException e) {
+        deletionFailed = true;
+      }
+    }
+    return Persistence.notRemembered(deletionFailed);
+  }
+
+  private static boolean deleteSecrets(CredentialStore store, String identifier) {
+    if (identifier == null || identifier.isBlank()) {
+      return true;
+    }
+    boolean deleted = true;
+    for (CredentialStore.Kind kind : CredentialStore.Kind.values()) {
+      try {
+        store.delete(kind, identifier);
+      } catch (IOException e) {
+        deleted = false;
+      }
+    }
+    return deleted;
+  }
+
+  private static boolean sameAccount(String first, String second) {
+    String left = first == null ? "" : first.trim();
+    String right = second == null ? "" : second.trim();
+    return left.equalsIgnoreCase(right);
+  }
+
+  static void setCredentialStoreForTests(CredentialStore store) {
+    synchronized (CREDENTIAL_LOCK) {
+      credentialStoreOverride = store;
+      resetSessionCredentials();
+    }
+  }
+
+  static void resetCredentialStateForTests() {
+    synchronized (CREDENTIAL_LOCK) {
+      credentialStoreOverride = null;
+      systemCredentialStore = null;
+      systemCredentialDirectory = null;
+      resetSessionCredentials();
+    }
+  }
+
+  private static void resetSessionCredentials() {
+    sessionZhiziToken = "";
+    sessionZhiziPassword = "";
+    sessionZhiziIdentifier = "";
+    sessionTokenStoredSecurely = false;
+    sessionPasswordStoredSecurely = false;
+  }
+
   public static final class State {
     public String provider = PROVIDER_LOCAL;
     public String zhiziAccountToken = "";
@@ -692,6 +980,115 @@ public final class RemoteComputeConfig {
     public ZhiziEngineCatalog zhiziCatalog = ZhiziEngineCatalog.fallback();
     public long zhiziCatalogUpdatedAt;
     public String customRemoteCode = "";
+    public String credentialStoreBackend = "session-only";
+    public boolean credentialStoreAvailable;
+    public boolean tokenStoredSecurely;
+    public boolean passwordStoredSecurely;
+    public boolean credentialMigrationFailed;
+    public boolean credentialReadFailed;
+  }
+
+  public static final class CredentialSaveResult {
+    public final String backend;
+    public boolean tokenRequested;
+    public boolean passwordRequested;
+    public boolean tokenStored;
+    public boolean passwordStored;
+    public boolean deletionFailed;
+
+    private CredentialSaveResult(String backend) {
+      this.backend = backend == null || backend.isBlank() ? "session-only" : backend;
+    }
+
+    private static CredentialSaveResult none(String backend) {
+      return new CredentialSaveResult(backend);
+    }
+
+    public boolean isSessionOnly() {
+      return (tokenRequested && !tokenStored) || (passwordRequested && !passwordStored);
+    }
+  }
+
+  private static final class SecretLoad {
+    final String secret;
+    final boolean storedSecurely;
+    final boolean migrated;
+    final boolean migrationFailed;
+    final boolean readFailed;
+
+    private SecretLoad(
+        String secret,
+        boolean storedSecurely,
+        boolean migrated,
+        boolean migrationFailed,
+        boolean readFailed) {
+      this.secret = secret == null ? "" : secret;
+      this.storedSecurely = storedSecurely;
+      this.migrated = migrated;
+      this.migrationFailed = migrationFailed;
+      this.readFailed = readFailed;
+    }
+
+    static SecretLoad empty() {
+      return new SecretLoad("", false, false, false, false);
+    }
+
+    static SecretLoad session(String secret, boolean storedSecurely) {
+      return new SecretLoad(secret, storedSecurely, false, false, false);
+    }
+
+    static SecretLoad stored(String secret) {
+      return new SecretLoad(secret, true, false, false, false);
+    }
+
+    static SecretLoad migrated(String secret) {
+      return new SecretLoad(secret, true, true, false, false);
+    }
+
+    static SecretLoad migrationFailed(boolean readFailed) {
+      return new SecretLoad("", false, false, true, readFailed);
+    }
+
+    static SecretLoad readFailed() {
+      return new SecretLoad("", false, false, false, true);
+    }
+  }
+
+  private static final class Persistence {
+    final boolean remember;
+    final boolean requested;
+    final boolean storedSecurely;
+    final boolean preserveLegacy;
+    final boolean deletionFailed;
+
+    private Persistence(
+        boolean remember,
+        boolean requested,
+        boolean storedSecurely,
+        boolean preserveLegacy,
+        boolean deletionFailed) {
+      this.remember = remember;
+      this.requested = requested;
+      this.storedSecurely = storedSecurely;
+      this.preserveLegacy = preserveLegacy;
+      this.deletionFailed = deletionFailed;
+    }
+
+    static Persistence stored() {
+      return new Persistence(true, true, true, false, false);
+    }
+
+    static Persistence sessionOnly(boolean preserveLegacy, boolean requested) {
+      return new Persistence(false, requested, false, preserveLegacy, false);
+    }
+
+    static Persistence preserveLegacy() {
+      return new Persistence(true, false, false, true, false);
+    }
+
+    static Persistence notRemembered(boolean deletionFailed) {
+      return new Persistence(false, false, false, false, deletionFailed);
+    }
   }
 
   public static final class StartupSelection {
