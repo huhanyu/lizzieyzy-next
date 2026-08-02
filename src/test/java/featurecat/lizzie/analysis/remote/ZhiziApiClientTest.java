@@ -9,6 +9,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -24,6 +25,7 @@ class ZhiziApiClientTest {
   private HttpServer server;
   private String lastPath;
   private String lastMethod;
+  private String lastQuery;
   private String lastAuthorization;
   private JSONObject lastBody;
   private int responseStatus;
@@ -111,6 +113,86 @@ class ZhiziApiClientTest {
   }
 
   @Test
+  void accountAndBalanceTolerateExtraFieldsAndKeepDecimalPrecision() throws Exception {
+    ZhiziApiClient client = client();
+
+    responseBody =
+        "{\"phone\":\"13800138000\",\"isMembership\":true,"
+            + "\"membershipExpiresAt\":\"2026-12-31T16:00:00Z\","
+            + "\"membershipAutoRenew\":false,\"futureField\":{\"safe\":true}}";
+    ZhiziApiClient.AccountProfile profile = client.fetchAccount("account-token");
+    assertEquals("13800138000", profile.identifier());
+    assertTrue(profile.membership);
+    assertEquals("2026-12-31T16:00:00Z", profile.membershipExpiresAt.toString());
+    assertEquals(Boolean.FALSE, profile.membershipAutoRenew);
+
+    responseBody =
+        "{\"remainingBalance\":\"12.3456\",\"yesterdayConsumption\":0.10,"
+            + "\"totalConsumption\":\"100.0001\",\"totalDuration\":3661,"
+            + "\"currentNumOfMyConnections\":2,\"currentNumOfNodes\":8}";
+    ZhiziApiClient.BalanceInfo balance = client.fetchBalance("account-token");
+    assertEquals(new BigDecimal("12.3456"), balance.remainingBalanceYuan);
+    assertEquals(new BigDecimal("0.10"), balance.yesterdayConsumptionYuan);
+    assertEquals(new BigDecimal("100.0001"), balance.totalConsumptionYuan);
+    assertEquals(3661L, balance.totalDurationSeconds);
+    assertEquals(2, balance.currentConnections);
+  }
+
+  @Test
+  void usageAndCreditPagesUseOfficialZeroBasedPagination() throws Exception {
+    ZhiziApiClient client = client();
+
+    responseBody =
+        "{\"total\":21,\"page\":1,\"pageSize\":20,\"items\":[{"
+            + "\"startedAt\":\"2026-08-01T01:02:03Z\",\"finished\":true,"
+            + "\"duration\":61,\"totalCost\":\"0.015\",\"gpuType\":\"vip-share\","
+            + "\"vip\":true,\"unknown\":123}]}";
+    ZhiziApiClient.UsagePage usages = client.fetchUsages("account-token", 1, 20, true);
+    assertEquals("page=1&pageSize=20&finished=true", lastQuery);
+    assertEquals(21L, usages.total);
+    assertEquals(1, usages.page);
+    assertEquals(new BigDecimal("0.015"), usages.items.get(0).totalCostYuan);
+    assertTrue(usages.items.get(0).vip);
+
+    responseBody =
+        "{\"total\":1,\"page\":0,\"pageSize\":20,\"items\":[{"
+            + "\"creditType\":\"PURCHASE_PRODUCT\",\"amount\":\"30.50\","
+            + "\"productName\":\"MEMBERSHIP_1_MONTH\","
+            + "\"createdAt\":\"2026-08-01T02:03:04+00:00\"}]}";
+    ZhiziApiClient.CreditPage credits = client.fetchCredits("account-token", 0, 20, "CASH");
+    assertEquals("page=0&pageSize=20&creditType=CASH", lastQuery);
+    assertEquals(new BigDecimal("30.50"), credits.items.get(0).amountYuan);
+    assertEquals("MEMBERSHIP_1_MONTH", credits.items.get(0).productName);
+  }
+
+  @Test
+  void accountServiceCachesOverviewWithoutPersistingOrRepeatingRequests() throws Exception {
+    ZhiziAccountService service = new ZhiziAccountService(client());
+
+    ZhiziAccountService.Overview first = service.fetchOverview("account-token", false);
+    ZhiziAccountService.Overview second = service.fetchOverview("account-token", false);
+
+    assertEquals(3, requestCount, "profile, balance and recent usage should each load once");
+    assertTrue(first == second, "a fresh overview should be reused within the cache window");
+    service.clear();
+    service.fetchOverview("account-token", false);
+    assertEquals(6, requestCount, "clearing a login must invalidate the account cache");
+  }
+
+  @Test
+  void protectedAccountEndpointsClassifyExpiredSessions() {
+    responseStatus = 401;
+    responseBody = "Not Authorized";
+
+    ZhiziApiException failure =
+        assertThrows(ZhiziApiException.class, () -> client().fetchBalance("expired-account-token"));
+
+    assertEquals(ZhiziApiException.Operation.FETCH_BALANCE, failure.operation());
+    assertTrue(failure.isUnauthorized());
+    assertFalse(failure.getMessage().contains("expired-account-token"));
+  }
+
+  @Test
   void sendCodeUsesOfficialPurposeAndHonorsRetryAfter() throws Exception {
     responseBody = "";
     responseHeaders.put("Retry-After", "45");
@@ -143,17 +225,13 @@ class ZhiziApiClientTest {
   @Test
   void jsonErrorIsStructuredWithoutLeakingRawResponse() {
     responseStatus = 500;
-    responseBody =
-        "{\"statusCode\":500,\"key\":\"send_code_error\",\"secret\":\"do-not-leak\"}";
+    responseBody = "{\"statusCode\":500,\"key\":\"send_code_error\",\"secret\":\"do-not-leak\"}";
     responseHeaders.put("X-Request-Id", "request-42");
 
     ZhiziApiException failure =
         assertThrows(
             ZhiziApiException.class,
-            () ->
-                client()
-                    .sendCode(
-                        "13800138000", ZhiziApiClient.VerificationPurpose.FAST_LOGIN));
+            () -> client().sendCode("13800138000", ZhiziApiClient.VerificationPurpose.FAST_LOGIN));
 
     assertEquals(500, failure.statusCode());
     assertEquals("send_code_error", failure.errorKey());
@@ -188,8 +266,7 @@ class ZhiziApiClientTest {
     responseStatus = 409;
     responseBody = "{\"key\":\"future_server_error\"}";
     ZhiziApiException unknown =
-        assertThrows(
-            ZhiziApiException.class, () -> client().fastLogin("13800138000", "123456"));
+        assertThrows(ZhiziApiException.class, () -> client().fastLogin("13800138000", "123456"));
     assertEquals("future_server_error", unknown.errorKey());
     assertFalse(unknown.isRetryable());
 
@@ -210,10 +287,7 @@ class ZhiziApiClientTest {
     ZhiziApiException failure =
         assertThrows(
             ZhiziApiException.class,
-            () ->
-                client()
-                    .sendCode(
-                        "13800138000", ZhiziApiClient.VerificationPurpose.FAST_LOGIN));
+            () -> client().sendCode("13800138000", ZhiziApiClient.VerificationPurpose.FAST_LOGIN));
 
     assertEquals(600L, failure.retryAfterSeconds());
     assertFalse(failure.isRetryable());
@@ -228,6 +302,7 @@ class ZhiziApiClientTest {
   private void handle(HttpExchange exchange) throws IOException {
     requestCount++;
     lastPath = exchange.getRequestURI().getPath();
+    lastQuery = exchange.getRequestURI().getQuery();
     lastMethod = exchange.getRequestMethod();
     lastAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
     String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
@@ -243,6 +318,22 @@ class ZhiziApiClientTest {
         response.put("connectPassword", "temporary-password");
       } else if (lastPath.endsWith("/send-code")) {
         payload = "";
+      } else if (lastPath.endsWith("/account/me")) {
+        response.put("email", "player@example.com");
+        response.put("isMembership", true);
+      } else if (lastPath.endsWith("/balance")) {
+        response.put("remainingBalance", "8.50");
+        response.put("yesterdayConsumption", "0.25");
+      } else if (lastPath.endsWith("/my-usages")) {
+        response.put("total", 0);
+        response.put("page", 0);
+        response.put("pageSize", 5);
+        response.put("items", new org.json.JSONArray());
+      } else if (lastPath.endsWith("/my-credits")) {
+        response.put("total", 0);
+        response.put("page", 0);
+        response.put("pageSize", 20);
+        response.put("items", new org.json.JSONArray());
       } else {
         response.put("token", "account-token");
       }
