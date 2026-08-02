@@ -8,6 +8,7 @@ import com.google.zxing.common.HybridBinarizer;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
+import featurecat.lizzie.analysis.remote.ZhiziAccountService;
 import featurecat.lizzie.analysis.remote.ZhiziApiClient;
 import featurecat.lizzie.analysis.remote.ZhiziApiException;
 import featurecat.lizzie.analysis.remote.ZhiziEngineCatalog;
@@ -37,8 +38,12 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URI;
 import java.text.MessageFormat;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -77,8 +82,13 @@ public class RemoteComputeDialog extends JDialog {
   private static final Color GREEN = new Color(43, 139, 90);
   private static final Color GOLD = new Color(193, 132, 42);
   private static final Color ERROR = new Color(190, 69, 56);
+  private static final DateTimeFormatter ACCOUNT_DATE =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
+  private static final DateTimeFormatter ACCOUNT_TIME =
+      DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault());
 
   private final ZhiziApiClient apiClient;
+  private final ZhiziAccountService accountService;
   private final ZhiziServerCatalogClient catalogClient;
   private final CardLayout pageLayout = new CardLayout();
   private final JPanel pageCards = transparent(pageLayout);
@@ -121,6 +131,12 @@ public class RemoteComputeDialog extends JDialog {
       primaryButton(text("RemoteCompute.enableZhizi", "Enable Zhizi Cloud"));
   private final JButton logoutButton =
       secondaryButton(text("RemoteCompute.changeAccount", "Change account"));
+  private final JButton refreshAccountButton =
+      linkButton(text("RemoteCompute.account.refresh", "Refresh"));
+  private final JButton usageDetailsButton =
+      linkButton(text("RemoteCompute.account.usageDetails", "Usage details"));
+  private final JButton creditDetailsButton =
+      linkButton(text("RemoteCompute.account.creditDetails", "Funds details"));
   private final JButton localFromZhiziButton =
       secondaryButton(text("RemoteCompute.backToLocal", "Switch to local engine"));
   private final JButton importQrButton =
@@ -143,6 +159,10 @@ public class RemoteComputeDialog extends JDialog {
   private Component resetConfirmPasswordRowGap;
   private Component fastLoginHintGap;
   private JLabel loggedInAccountLabel;
+  private JLabel membershipLabel;
+  private JLabel balanceLabel;
+  private JLabel accountActivityLabel;
+  private JLabel accountUpdatedLabel;
   private boolean codeLoginMode;
   private boolean resetPasswordMode;
   private String activePage = RemoteComputeConfig.PROVIDER_ZHIZI;
@@ -154,10 +174,13 @@ public class RemoteComputeDialog extends JDialog {
   private Timer verificationCooldownTimer;
   private int verificationCooldownSeconds;
   private SwingWorker<ZhiziEngineCatalog, Void> catalogRefreshWorker;
+  private SwingWorker<ZhiziAccountService.Overview, Void> accountOverviewWorker;
+  private ZhiziAccountService.Overview lastAccountOverview;
 
   public RemoteComputeDialog(Frame owner) throws IOException {
     super(owner, text("RemoteCompute.title", "Remote Compute"), false);
     apiClient = new ZhiziApiClient();
+    accountService = new ZhiziAccountService(apiClient);
     catalogClient = new ZhiziServerCatalogClient();
     setDefaultCloseOperation(DISPOSE_ON_CLOSE);
     setMinimumSize(new Dimension(1040, 680));
@@ -329,9 +352,38 @@ public class RemoteComputeDialog extends JDialog {
                 "This login is saved. The password is not stored."));
     loggedInAccountLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
     loggedInPanel.add(loggedInAccountLabel);
-    loggedInPanel.add(Box.createVerticalStrut(22));
+    loggedInPanel.add(Box.createVerticalStrut(16));
+
+    JPanel accountStats = transparent(new GridLayout(2, 1, 0, 8));
+    accountStats.setAlignmentX(Component.LEFT_ALIGNMENT);
+    accountStats.setMaximumSize(new Dimension(Integer.MAX_VALUE, 82));
+    membershipLabel = accountValueLabel();
+    balanceLabel = accountValueLabel();
+    accountStats.add(membershipLabel);
+    accountStats.add(balanceLabel);
+    loggedInPanel.add(accountStats);
+    loggedInPanel.add(Box.createVerticalStrut(8));
+
+    accountActivityLabel = smallText(" ");
+    accountActivityLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+    loggedInPanel.add(accountActivityLabel);
+    loggedInPanel.add(Box.createVerticalStrut(4));
+    accountUpdatedLabel = smallText(" ");
+    accountUpdatedLabel.setFont(accountUpdatedLabel.getFont().deriveFont(Font.PLAIN, 11.5F));
+    accountUpdatedLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+    loggedInPanel.add(accountUpdatedLabel);
+    loggedInPanel.add(Box.createVerticalStrut(8));
+
+    JPanel accountActions = transparent(new FlowLayout(FlowLayout.LEFT, 12, 0));
+    accountActions.setAlignmentX(Component.LEFT_ALIGNMENT);
+    accountActions.add(refreshAccountButton);
+    accountActions.add(usageDetailsButton);
+    accountActions.add(creditDetailsButton);
+    loggedInPanel.add(accountActions);
+    loggedInPanel.add(Box.createVerticalStrut(14));
     loggedInPanel.add(fullWidth(logoutButton, 48));
     loggedInPanel.setVisible(false);
+    showAccountLoadingState();
     card.add(loggedInPanel);
     return card;
   }
@@ -658,6 +710,9 @@ public class RemoteComputeDialog extends JDialog {
           }
         });
     logoutButton.addActionListener(e -> logout());
+    refreshAccountButton.addActionListener(e -> refreshAccountOverview(true));
+    usageDetailsButton.addActionListener(e -> openAccountDetails(0));
+    creditDetailsButton.addActionListener(e -> openAccountDetails(1));
     useZhiziButton.addActionListener(e -> useZhiziEngine());
     localFromZhiziButton.addActionListener(e -> switchToLocalProvider());
     importQrButton.addActionListener(e -> importQrCode());
@@ -735,6 +790,9 @@ public class RemoteComputeDialog extends JDialog {
         && RemoteComputeConfig.shouldRefreshZhiziCatalog(state, System.currentTimeMillis())) {
       SwingUtilities.invokeLater(() -> refreshZhiziWeightOptions(false));
     }
+    if (!state.zhiziAccountToken.trim().isEmpty()) {
+      SwingUtilities.invokeLater(() -> refreshAccountOverview(false));
+    }
   }
 
   private void showPage(String page) {
@@ -795,6 +853,166 @@ public class RemoteComputeDialog extends JDialog {
 
   private boolean isZhiziLoggedIn() {
     return !RemoteComputeConfig.load().zhiziAccountToken.trim().isEmpty();
+  }
+
+  private void refreshAccountOverview(boolean forceRefresh) {
+    if (accountOverviewWorker != null && !accountOverviewWorker.isDone()) {
+      return;
+    }
+    String token = RemoteComputeConfig.load().zhiziAccountToken.trim();
+    if (token.isEmpty()) {
+      lastAccountOverview = null;
+      showAccountLoadingState();
+      setAccountOverviewBusy(false);
+      return;
+    }
+
+    if (lastAccountOverview == null) {
+      showAccountLoadingState();
+    }
+    setAccountOverviewBusy(true);
+    accountOverviewWorker =
+        new SwingWorker<ZhiziAccountService.Overview, Void>() {
+          @Override
+          protected ZhiziAccountService.Overview doInBackground() throws Exception {
+            return accountService.fetchOverview(token, forceRefresh);
+          }
+
+          @Override
+          protected void done() {
+            try {
+              if (!isCancelled()) {
+                lastAccountOverview = get();
+                showAccountOverview(lastAccountOverview);
+                if (forceRefresh) {
+                  updateStatus(
+                      text("RemoteCompute.account.updated", "Account data updated."), true);
+                }
+              }
+            } catch (Exception error) {
+              Throwable cause = error.getCause() == null ? error : error.getCause();
+              ZhiziApiException apiError = findZhiziApiException(cause);
+              if (apiError != null && apiError.isUnauthorized()) {
+                RemoteComputeConfig.invalidateZhiziToken();
+                accountService.clear();
+                lastAccountOverview = null;
+                updateLoginMode();
+                updateCurrentStatus();
+              }
+              updateStatus(
+                  RemoteComputeConfig.friendlyZhiziErrorMessage(cause, currentArgs()), false);
+            } finally {
+              accountOverviewWorker = null;
+              setAccountOverviewBusy(false);
+            }
+          }
+        };
+    accountOverviewWorker.execute();
+  }
+
+  private void showAccountLoadingState() {
+    if (membershipLabel == null) {
+      return;
+    }
+    membershipLabel.setText(text("RemoteCompute.account.loading", "Loading account..."));
+    balanceLabel.setText(text("RemoteCompute.account.balancePending", "Balance: --"));
+    accountActivityLabel.setText(" ");
+    accountUpdatedLabel.setText(" ");
+  }
+
+  private void showAccountOverview(ZhiziAccountService.Overview overview) {
+    ZhiziApiClient.AccountProfile account = overview.account;
+    String membership;
+    if (account.membership) {
+      membership = text("RemoteCompute.account.vipActive", "VIP active");
+      if (account.membershipExpiresAt != null) {
+        membership +=
+            " · "
+                + format(
+                    "RemoteCompute.account.expires",
+                    "Expires {0}",
+                    ACCOUNT_DATE.format(account.membershipExpiresAt));
+      }
+      membershipLabel.setForeground(GREEN);
+    } else {
+      membership = text("RemoteCompute.account.vipInactive", "VIP not active");
+      membershipLabel.setForeground(GOLD);
+    }
+    membershipLabel.setText(membership);
+
+    ZhiziApiClient.BalanceInfo balance = overview.balance;
+    balanceLabel.setText(
+        format(
+            "RemoteCompute.account.balanceSummary",
+            "Balance {0} · Yesterday {1}",
+            formatMoney(balance.remainingBalanceYuan),
+            formatMoney(balance.yesterdayConsumptionYuan)));
+    balanceLabel.setForeground(TEXT);
+
+    String recent = text("RemoteCompute.account.noRecentUsage", "No recent usage");
+    if (!overview.recentUsage.items.isEmpty()) {
+      ZhiziApiClient.UsageRecord item = overview.recentUsage.items.get(0);
+      recent =
+          format(
+              "RemoteCompute.account.recentUsage",
+              "Last use {0} · {1}",
+              formatDuration(item.durationSeconds),
+              formatMoney(item.totalCostYuan));
+    }
+    accountActivityLabel.setText(
+        format(
+            "RemoteCompute.account.activity",
+            "Connections {0} · {1}",
+            balance.currentConnections,
+            recent));
+    accountUpdatedLabel.setText(
+        format(
+            "RemoteCompute.account.updatedAt",
+            "Updated {0}",
+            ACCOUNT_TIME.format(overview.loadedAt)));
+    AccessibilitySupport.named(
+        membershipLabel, membershipLabel.getText(), membershipLabel.getText());
+    AccessibilitySupport.named(balanceLabel, balanceLabel.getText(), balanceLabel.getText());
+    AccessibilitySupport.named(
+        accountActivityLabel, accountActivityLabel.getText(), accountActivityLabel.getText());
+  }
+
+  private void setAccountOverviewBusy(boolean loading) {
+    refreshAccountButton.setEnabled(!loading && isZhiziLoggedIn());
+    usageDetailsButton.setEnabled(!loading && isZhiziLoggedIn());
+    creditDetailsButton.setEnabled(!loading && isZhiziLoggedIn());
+    if (loading) {
+      refreshAccountButton.setText(text("RemoteCompute.account.refreshing", "Refreshing..."));
+    } else {
+      refreshAccountButton.setText(text("RemoteCompute.account.refresh", "Refresh"));
+    }
+    AccessibilitySupport.button(
+        refreshAccountButton, refreshAccountButton.getText(), refreshAccountButton.getText());
+  }
+
+  private void openAccountDetails(int selectedTab) {
+    String token = RemoteComputeConfig.load().zhiziAccountToken.trim();
+    if (token.isEmpty()) {
+      updateStatus(text("RemoteCompute.error.loginFirst", "Sign in to Zhizi Cloud first."), false);
+      return;
+    }
+    Frame frameOwner = getOwner() instanceof Frame ? (Frame) getOwner() : null;
+    new ZhiziAccountDetailsDialog(frameOwner, accountService, token, selectedTab).setVisible(true);
+  }
+
+  private static String formatMoney(BigDecimal value) {
+    BigDecimal amount = value == null ? BigDecimal.ZERO : value;
+    return "¥" + amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+  }
+
+  private static String formatDuration(long seconds) {
+    long safe = Math.max(0L, seconds);
+    long hours = safe / 3600L;
+    long minutes = (safe % 3600L) / 60L;
+    if (hours > 0) {
+      return format("RemoteCompute.account.hoursMinutes", "{0}h {1}m", hours, minutes);
+    }
+    return format("RemoteCompute.account.minutes", "{0} min", Math.max(1L, minutes));
   }
 
   private void selectPresetForArgs(String args) {
@@ -1025,6 +1243,8 @@ public class RemoteComputeDialog extends JDialog {
     updateLoginMode();
     updateCurrentStatus();
     updateCredentialSaveStatus(saveResult);
+    accountService.clear();
+    refreshAccountOverview(true);
     refreshZhiziWeightOptions(false);
   }
 
@@ -1037,6 +1257,8 @@ public class RemoteComputeDialog extends JDialog {
     updateLoginMode();
     updateCurrentStatus();
     updateCredentialSaveStatus(saveResult);
+    accountService.clear();
+    refreshAccountOverview(true);
     refreshZhiziWeightOptions(false);
   }
 
@@ -1108,17 +1330,13 @@ public class RemoteComputeDialog extends JDialog {
   private void updateVerificationCodeButton() {
     if (verificationCooldownSeconds > 0) {
       sendCodeButton.setText(
-          format(
-              "RemoteCompute.sendCodeCountdown",
-              "Retry in {0}s",
-              verificationCooldownSeconds));
+          format("RemoteCompute.sendCodeCountdown", "Retry in {0}s", verificationCooldownSeconds));
       sendCodeButton.setEnabled(false);
     } else {
       sendCodeButton.setText(text("RemoteCompute.sendCode", "Send code"));
       sendCodeButton.setEnabled(!busy && (codeLoginMode || resetPasswordMode));
     }
-    AccessibilitySupport.button(
-        sendCodeButton, sendCodeButton.getText(), sendCodeButton.getText());
+    AccessibilitySupport.button(sendCodeButton, sendCodeButton.getText(), sendCodeButton.getText());
   }
 
   private void openZhiziOfficialWebsite() {
@@ -1247,6 +1465,9 @@ public class RemoteComputeDialog extends JDialog {
   private void logout() {
     stopZhiziStartupMonitor();
     cancelCatalogRefresh();
+    cancelAccountOverviewRefresh();
+    accountService.clear();
+    lastAccountOverview = null;
     RemoteComputeConfig.CredentialSaveResult result = RemoteComputeConfig.clearZhiziToken();
     passwordField.setText("");
     resetPasswordField.setText("");
@@ -1267,6 +1488,7 @@ public class RemoteComputeDialog extends JDialog {
       updateStatus(text("RemoteCompute.status.loggedOut", "Signed out of Zhizi Cloud."), true);
     }
     updateWeightControlState();
+    showAccountLoadingState();
   }
 
   private void updatePasswordEcho() {
@@ -1401,6 +1623,7 @@ public class RemoteComputeDialog extends JDialog {
   public void dispose() {
     stopZhiziStartupMonitor();
     cancelCatalogRefresh();
+    cancelAccountOverviewRefresh();
     if (verificationCooldownTimer != null) {
       verificationCooldownTimer.stop();
     }
@@ -1416,6 +1639,14 @@ public class RemoteComputeDialog extends JDialog {
     if (refreshingWeights) {
       setWeightRefreshBusy(false);
     }
+  }
+
+  private void cancelAccountOverviewRefresh() {
+    if (accountOverviewWorker != null) {
+      accountOverviewWorker.cancel(true);
+      accountOverviewWorker = null;
+    }
+    setAccountOverviewBusy(false);
   }
 
   private void updateCurrentStatus() {
@@ -1651,6 +1882,10 @@ public class RemoteComputeDialog extends JDialog {
     loginButton.setEnabled(!busy);
     updateZhiziActionButtonState();
     logoutButton.setEnabled(!busy);
+    boolean accountIdle = accountOverviewWorker == null || accountOverviewWorker.isDone();
+    refreshAccountButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
+    usageDetailsButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
+    creditDetailsButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
     localFromZhiziButton.setEnabled(!busy);
     importQrButton.setEnabled(!busy);
     updateCustomActionButtonState();
@@ -1672,6 +1907,12 @@ public class RemoteComputeDialog extends JDialog {
         zhiziWebsiteButton, zhiziWebsiteButton.getText(), zhiziWebsiteButton.getText());
     AccessibilitySupport.button(useZhiziButton, useZhiziButton.getText(), useZhiziButton.getText());
     AccessibilitySupport.button(logoutButton, logoutButton.getText(), logoutButton.getText());
+    AccessibilitySupport.button(
+        refreshAccountButton, refreshAccountButton.getText(), refreshAccountButton.getText());
+    AccessibilitySupport.button(
+        usageDetailsButton, usageDetailsButton.getText(), usageDetailsButton.getText());
+    AccessibilitySupport.button(
+        creditDetailsButton, creditDetailsButton.getText(), creditDetailsButton.getText());
     AccessibilitySupport.button(
         localFromZhiziButton, localFromZhiziButton.getText(), localFromZhiziButton.getText());
     AccessibilitySupport.button(importQrButton, importQrButton.getText(), importQrButton.getText());
@@ -1881,6 +2122,13 @@ public class RemoteComputeDialog extends JDialog {
     JLabel label = new JLabel(text);
     label.setForeground(MUTED);
     label.setFont(label.getFont().deriveFont(Font.BOLD, 14F));
+    return label;
+  }
+
+  private JLabel accountValueLabel() {
+    JLabel label = new JLabel(" ");
+    label.setForeground(TEXT);
+    label.setFont(label.getFont().deriveFont(Font.BOLD, 16F));
     return label;
   }
 

@@ -2,14 +2,23 @@ package featurecat.lizzie.analysis.remote;
 
 import featurecat.lizzie.util.NetworkProxy;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -39,12 +48,7 @@ public class ZhiziApiClient {
     JSONObject body = identifierBody(identifier);
     body.put("password", password == null ? "" : password);
     return extractToken(
-        post(
-            "/api/cluster/account/login",
-            body,
-            "",
-            ZhiziApiException.Operation.LOGIN,
-            false),
+        post("/api/cluster/account/login", body, "", ZhiziApiException.Operation.LOGIN, false),
         ZhiziApiException.Operation.LOGIN);
   }
 
@@ -85,12 +89,7 @@ public class ZhiziApiClient {
       throws IOException, InterruptedException {
     if (newPassword == null || newPassword.length() < 8) {
       throw new ZhiziApiException(
-          400,
-          "password_too_short",
-          "",
-          0,
-          false,
-          ZhiziApiException.Operation.RESET_PASSWORD);
+          400, "password_too_short", "", 0, false, ZhiziApiException.Operation.RESET_PASSWORD);
     }
     JSONObject body = identifierBody(identifier);
     body.put("verificationCode", verificationCode == null ? "" : verificationCode);
@@ -141,6 +140,49 @@ public class ZhiziApiClient {
     return new ConnectAccount(username, password);
   }
 
+  public AccountProfile fetchAccount(String accountToken) throws IOException, InterruptedException {
+    JSONObject response =
+        get("/api/cluster/account/me", accountToken, ZhiziApiException.Operation.FETCH_ACCOUNT);
+    return AccountProfile.fromJson(response);
+  }
+
+  public BalanceInfo fetchBalance(String accountToken) throws IOException, InterruptedException {
+    JSONObject response =
+        get("/api/cluster/balance", accountToken, ZhiziApiException.Operation.FETCH_BALANCE);
+    return BalanceInfo.fromJson(response);
+  }
+
+  public UsagePage fetchUsages(String accountToken, int page, int pageSize, Boolean finished)
+      throws IOException, InterruptedException {
+    StringBuilder path =
+        new StringBuilder("/api/cluster/usage/my-usages?page=")
+            .append(Math.max(0, page))
+            .append("&pageSize=")
+            .append(clampPageSize(pageSize));
+    if (finished != null) {
+      path.append("&finished=").append(finished.booleanValue());
+    }
+    JSONObject response =
+        get(path.toString(), accountToken, ZhiziApiException.Operation.FETCH_USAGE);
+    return UsagePage.fromJson(response, Math.max(0, page), clampPageSize(pageSize));
+  }
+
+  public CreditPage fetchCredits(String accountToken, int page, int pageSize, String creditType)
+      throws IOException, InterruptedException {
+    StringBuilder path =
+        new StringBuilder("/api/cluster/credit/my-credits?page=")
+            .append(Math.max(0, page))
+            .append("&pageSize=")
+            .append(clampPageSize(pageSize));
+    String type = creditType == null ? "" : creditType.trim();
+    if (!type.isEmpty()) {
+      path.append("&creditType=").append(URLEncoder.encode(type, StandardCharsets.UTF_8));
+    }
+    JSONObject response =
+        get(path.toString(), accountToken, ZhiziApiException.Operation.FETCH_CREDITS);
+    return CreditPage.fromJson(response, Math.max(0, page), clampPageSize(pageSize));
+  }
+
   private JSONObject post(
       String path,
       JSONObject body,
@@ -169,8 +211,7 @@ public class ZhiziApiClient {
     return sendJson(builder.build(), operation, allowEmpty);
   }
 
-  private JSONObject get(
-      String path, String bearerToken, ZhiziApiException.Operation operation)
+  private JSONObject get(String path, String bearerToken, ZhiziApiException.Operation operation)
       throws IOException, InterruptedException {
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(baseUri.resolve(path))
@@ -215,8 +256,7 @@ public class ZhiziApiClient {
           status,
           errorKey,
           requestId);
-      throw new ZhiziApiException(
-          status, errorKey, requestId, retryAfter, retryable, operation);
+      throw new ZhiziApiException(status, errorKey, requestId, retryAfter, retryable, operation);
     }
     if (responseBody.trim().isEmpty()) {
       if (!allowEmpty) {
@@ -324,6 +364,41 @@ public class ZhiziApiClient {
         0, "network_error", "", 0, operation.isIdempotent(), operation, cause);
   }
 
+  private static int clampPageSize(int value) {
+    return Math.max(1, Math.min(100, value));
+  }
+
+  private static BigDecimal decimal(JSONObject json, String key) {
+    Object value = json == null ? null : json.opt(key);
+    if (value == null || value == JSONObject.NULL) {
+      return BigDecimal.ZERO;
+    }
+    try {
+      if (value instanceof BigDecimal) {
+        return (BigDecimal) value;
+      }
+      return new BigDecimal(String.valueOf(value).trim());
+    } catch (NumberFormatException ignored) {
+      return BigDecimal.ZERO;
+    }
+  }
+
+  private static Instant instant(JSONObject json, String key) {
+    String value = json == null ? "" : json.optString(key, "").trim();
+    if (value.isEmpty()) {
+      return null;
+    }
+    try {
+      return Instant.parse(value);
+    } catch (DateTimeParseException ignored) {
+      try {
+        return OffsetDateTime.parse(value, DateTimeFormatter.ISO_DATE_TIME).toInstant();
+      } catch (DateTimeParseException ignoredOffset) {
+        return null;
+      }
+    }
+  }
+
   public enum VerificationPurpose {
     FAST_LOGIN("fast_login"),
     RESET_PASSWORD("reset_password");
@@ -360,6 +435,227 @@ public class ZhiziApiClient {
     public ConnectAccount(String username, String password) {
       this.username = username == null ? "" : username;
       this.password = password == null ? "" : password;
+    }
+  }
+
+  public static final class AccountProfile {
+    public final String phone;
+    public final String email;
+    public final boolean membership;
+    public final Instant membershipExpiresAt;
+    public final Boolean membershipAutoRenew;
+
+    private AccountProfile(
+        String phone,
+        String email,
+        boolean membership,
+        Instant membershipExpiresAt,
+        Boolean membershipAutoRenew) {
+      this.phone = phone == null ? "" : phone;
+      this.email = email == null ? "" : email;
+      this.membership = membership;
+      this.membershipExpiresAt = membershipExpiresAt;
+      this.membershipAutoRenew = membershipAutoRenew;
+    }
+
+    private static AccountProfile fromJson(JSONObject json) {
+      Object autoRenew = json.opt("membershipAutoRenew");
+      return new AccountProfile(
+          json.optString("phone", ""),
+          json.optString("email", ""),
+          json.optBoolean("isMembership", false),
+          instant(json, "membershipExpiresAt"),
+          autoRenew instanceof Boolean ? (Boolean) autoRenew : null);
+    }
+
+    public String identifier() {
+      return !phone.isBlank() ? phone : email;
+    }
+  }
+
+  public static final class BalanceInfo {
+    public final BigDecimal remainingBalanceYuan;
+    public final BigDecimal yesterdayConsumptionYuan;
+    public final BigDecimal totalConsumptionYuan;
+    public final long totalDurationSeconds;
+    public final long last24HoursShareDurationSeconds;
+    public final long last24HoursVipDurationSeconds;
+    public final int currentConnections;
+    public final int currentNodes;
+
+    private BalanceInfo(
+        BigDecimal remainingBalanceYuan,
+        BigDecimal yesterdayConsumptionYuan,
+        BigDecimal totalConsumptionYuan,
+        long totalDurationSeconds,
+        long last24HoursShareDurationSeconds,
+        long last24HoursVipDurationSeconds,
+        int currentConnections,
+        int currentNodes) {
+      this.remainingBalanceYuan = remainingBalanceYuan;
+      this.yesterdayConsumptionYuan = yesterdayConsumptionYuan;
+      this.totalConsumptionYuan = totalConsumptionYuan;
+      this.totalDurationSeconds = Math.max(0L, totalDurationSeconds);
+      this.last24HoursShareDurationSeconds = Math.max(0L, last24HoursShareDurationSeconds);
+      this.last24HoursVipDurationSeconds = Math.max(0L, last24HoursVipDurationSeconds);
+      this.currentConnections = Math.max(0, currentConnections);
+      this.currentNodes = Math.max(0, currentNodes);
+    }
+
+    private static BalanceInfo fromJson(JSONObject json) {
+      return new BalanceInfo(
+          decimal(json, "remainingBalance"),
+          decimal(json, "yesterdayConsumption"),
+          decimal(json, "totalConsumption"),
+          json.optLong("totalDuration", 0L),
+          json.optLong("last24HrsShareDuration", 0L),
+          json.optLong("last24HrsVIPShareDuration", 0L),
+          json.optInt("currentNumOfMyConnections", 0),
+          json.optInt("currentNumOfNodes", 0));
+    }
+  }
+
+  public static final class UsageRecord {
+    public final Instant startedAt;
+    public final Instant endedAt;
+    public final boolean finished;
+    public final boolean ready;
+    public final long durationSeconds;
+    public final BigDecimal totalCostYuan;
+    public final String gpuType;
+    public final String engineType;
+    public final boolean vip;
+    public final boolean shared;
+
+    private UsageRecord(
+        Instant startedAt,
+        Instant endedAt,
+        boolean finished,
+        boolean ready,
+        long durationSeconds,
+        BigDecimal totalCostYuan,
+        String gpuType,
+        String engineType,
+        boolean vip,
+        boolean shared) {
+      this.startedAt = startedAt;
+      this.endedAt = endedAt;
+      this.finished = finished;
+      this.ready = ready;
+      this.durationSeconds = Math.max(0L, durationSeconds);
+      this.totalCostYuan = totalCostYuan;
+      this.gpuType = gpuType == null ? "" : gpuType;
+      this.engineType = engineType == null ? "" : engineType;
+      this.vip = vip;
+      this.shared = shared;
+    }
+
+    private static UsageRecord fromJson(JSONObject json) {
+      return new UsageRecord(
+          instant(json, "startedAt"),
+          instant(json, "endedAt"),
+          json.optBoolean("finished", false),
+          json.optBoolean("ready", false),
+          json.optLong("duration", 0L),
+          decimal(json, "totalCost"),
+          json.optString("gpuType", ""),
+          json.optString("engineType", ""),
+          json.optBoolean("vip", false),
+          json.optBoolean("share", false));
+    }
+  }
+
+  public static final class UsagePage {
+    public final long total;
+    public final int page;
+    public final int pageSize;
+    public final List<UsageRecord> items;
+
+    private UsagePage(long total, int page, int pageSize, List<UsageRecord> items) {
+      this.total = Math.max(0L, total);
+      this.page = Math.max(0, page);
+      this.pageSize = Math.max(1, pageSize);
+      this.items = Collections.unmodifiableList(new ArrayList<>(items));
+    }
+
+    private static UsagePage fromJson(JSONObject json, int fallbackPage, int fallbackPageSize) {
+      List<UsageRecord> items = new ArrayList<>();
+      JSONArray array = json.optJSONArray("items");
+      if (array != null) {
+        for (int i = 0; i < array.length(); i++) {
+          JSONObject item = array.optJSONObject(i);
+          if (item != null) {
+            items.add(UsageRecord.fromJson(item));
+          }
+        }
+      }
+      return new UsagePage(
+          json.optLong("total", items.size()),
+          json.optInt("page", fallbackPage),
+          json.optInt("pageSize", fallbackPageSize),
+          items);
+    }
+  }
+
+  public static final class CreditRecord {
+    public final String creditType;
+    public final BigDecimal amountYuan;
+    public final String source;
+    public final String productName;
+    public final Instant createdAt;
+
+    private CreditRecord(
+        String creditType,
+        BigDecimal amountYuan,
+        String source,
+        String productName,
+        Instant createdAt) {
+      this.creditType = creditType == null ? "" : creditType;
+      this.amountYuan = amountYuan;
+      this.source = source == null ? "" : source;
+      this.productName = productName == null ? "" : productName;
+      this.createdAt = createdAt;
+    }
+
+    private static CreditRecord fromJson(JSONObject json) {
+      return new CreditRecord(
+          json.optString("creditType", ""),
+          decimal(json, "amount"),
+          json.optString("source", ""),
+          json.optString("productName", ""),
+          instant(json, "createdAt"));
+    }
+  }
+
+  public static final class CreditPage {
+    public final long total;
+    public final int page;
+    public final int pageSize;
+    public final List<CreditRecord> items;
+
+    private CreditPage(long total, int page, int pageSize, List<CreditRecord> items) {
+      this.total = Math.max(0L, total);
+      this.page = Math.max(0, page);
+      this.pageSize = Math.max(1, pageSize);
+      this.items = Collections.unmodifiableList(new ArrayList<>(items));
+    }
+
+    private static CreditPage fromJson(JSONObject json, int fallbackPage, int fallbackPageSize) {
+      List<CreditRecord> items = new ArrayList<>();
+      JSONArray array = json.optJSONArray("items");
+      if (array != null) {
+        for (int i = 0; i < array.length(); i++) {
+          JSONObject item = array.optJSONObject(i);
+          if (item != null) {
+            items.add(CreditRecord.fromJson(item));
+          }
+        }
+      }
+      return new CreditPage(
+          json.optLong("total", items.size()),
+          json.optInt("page", fallbackPage),
+          json.optInt("pageSize", fallbackPageSize),
+          items);
     }
   }
 

@@ -11,6 +11,10 @@ public final class ZhiziApiException extends IOException {
     RESET_PASSWORD(false),
     FETCH_SOCKET_TOKEN(true),
     FETCH_CONNECT_ACCOUNT(true),
+    FETCH_ACCOUNT(true),
+    FETCH_BALANCE(true),
+    FETCH_USAGE(true),
+    FETCH_CREDITS(true),
     OTHER(false);
 
     private final boolean idempotent;
@@ -86,7 +90,11 @@ public final class ZhiziApiException extends IOException {
     return "unauthorized".equals(errorKey)
         || (statusCode == 401
             && (operation == Operation.FETCH_SOCKET_TOKEN
-                || operation == Operation.FETCH_CONNECT_ACCOUNT));
+                || operation == Operation.FETCH_CONNECT_ACCOUNT
+                || operation == Operation.FETCH_ACCOUNT
+                || operation == Operation.FETCH_BALANCE
+                || operation == Operation.FETCH_USAGE
+                || operation == Operation.FETCH_CREDITS));
   }
 
   private static String buildSafeMessage(int statusCode, String errorKey, Operation operation) {
