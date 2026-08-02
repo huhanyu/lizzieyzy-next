@@ -41,6 +41,7 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.LayoutManager;
 import java.awt.Polygon;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
@@ -176,7 +177,8 @@ public class KataGoAutoSetupDialog extends JDialog {
   private final JLabel lblHumanSlModelValue = new JFontLabel();
   private final WeightStatusTagLabel lblHumanSlStatus = new WeightStatusTagLabel();
   private final JLabel lblStatus = new JFontLabel();
-  private final JList<String> sectionNav = new JList<String>();
+  private final ExactHitList<String> sectionNav = new ExactHitList<String>();
+  private final JButton btnRemoteCompute = new SidebarActionButton();
   private final ActiveCardLayout detailCardLayout = new ActiveCardLayout();
   private final JPanel detailCards = new ViewportWidthPanel(detailCardLayout);
   private final JPanel footerPanel = new JPanel(new BorderLayout(0, 10));
@@ -317,6 +319,8 @@ public class KataGoAutoSetupDialog extends JDialog {
         lblCurrentWeightName, text("AutoSetup.currentWeight"), text("AutoSetup.currentlyUsing"));
     AccessibilitySupport.named(
         sectionNav, text("AutoSetup.sidebarTitle"), text("AutoSetup.expertSubtitle"));
+    AccessibilitySupport.button(
+        btnRemoteCompute, text("Menu.remoteCompute"), text("Menu.remoteCompute"));
     AccessibilitySupport.applyToTree(content);
     AccessibilitySupport.installEscapeAction(getRootPane(), this, this::closeOrCancelActiveTask);
 
@@ -616,12 +620,12 @@ public class KataGoAutoSetupDialog extends JDialog {
           text("AutoSetup.navOverview"),
           text("AutoSetup.navWeights"),
           text("AutoSetup.navBenchmark"),
-          text("AutoSetup.navAcceleration"),
-          text("Menu.remoteCompute")
+          text("AutoSetup.navAcceleration")
         });
     sectionNav.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     sectionNav.setSelectedIndex(0);
     sectionNav.setFixedCellHeight(58);
+    sectionNav.setVisibleRowCount(4);
     sectionNav.setOpaque(false);
     sectionNav.setBackground(new Color(0, 0, 0, 0));
     sectionNav.setForeground(SIDEBAR_TEXT);
@@ -646,20 +650,30 @@ public class KataGoAutoSetupDialog extends JDialog {
               selectedSetupSectionIndex = selectedIndex;
               showDetailCard(CARD_ACCELERATION);
               break;
-            case 4:
-              SwingUtilities.invokeLater(
-                  () -> {
-                    sectionNav.setSelectedIndex(selectedSetupSectionIndex);
-                    openRemoteComputeCenter();
-                  });
-              break;
             default:
               selectedSetupSectionIndex = 0;
               showDetailCard(CARD_OVERVIEW);
               break;
           }
         });
-    sidebar.add(sectionNav, BorderLayout.CENTER);
+
+    btnRemoteCompute.setText(text("Menu.remoteCompute"));
+    btnRemoteCompute.setIcon(new NavIcon(4, false));
+    btnRemoteCompute.addActionListener(event -> openRemoteComputeCenter());
+
+    JPanel navigation = new JPanel(new GridBagLayout());
+    navigation.setOpaque(false);
+    GridBagConstraints navigationConstraints = new GridBagConstraints();
+    navigationConstraints.gridx = 0;
+    navigationConstraints.gridy = 0;
+    navigationConstraints.weightx = 1;
+    navigationConstraints.fill = GridBagConstraints.HORIZONTAL;
+    navigationConstraints.anchor = GridBagConstraints.NORTH;
+    navigation.add(sectionNav, navigationConstraints);
+    navigationConstraints.gridy = 1;
+    navigationConstraints.insets = new Insets(8, 0, 0, 0);
+    navigation.add(btnRemoteCompute, navigationConstraints);
+    sidebar.add(navigation, BorderLayout.NORTH);
     return sidebar;
   }
 
@@ -4938,6 +4952,75 @@ public class KataGoAutoSetupDialog extends JDialog {
           int y = startY + stone[1];
           g2.setColor(stone[3] == 0 ? new Color(5, 16, 17, 150) : new Color(221, 229, 219, 135));
           g2.fillOval(stone[0], y, stone[2], stone[2]);
+        }
+      } finally {
+        g2.dispose();
+      }
+      super.paintComponent(graphics);
+    }
+  }
+
+  static final class ExactHitList<E> extends JList<E> {
+    @Override
+    public int locationToIndex(Point location) {
+      int index = super.locationToIndex(location);
+      if (index < 0) {
+        return -1;
+      }
+      Rectangle cellBounds = getCellBounds(index, index);
+      return cellBounds != null && cellBounds.contains(location) ? index : -1;
+    }
+  }
+
+  private static final class SidebarActionButton extends JFontButton {
+    private boolean hovered;
+
+    private SidebarActionButton() {
+      AppleStyleSupport.preserveCustomButtonStyle(this);
+      setUI(new BasicButtonUI());
+      setHorizontalAlignment(SwingConstants.LEFT);
+      setIconTextGap(15);
+      setForeground(SIDEBAR_TEXT);
+      setOpaque(false);
+      setContentAreaFilled(false);
+      setBorderPainted(false);
+      setFocusPainted(false);
+      setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+      setBorder(BorderFactory.createEmptyBorder(0, 14, 0, 10));
+      setPreferredSize(new Dimension(190, 54));
+      addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent event) {
+              hovered = true;
+              repaint();
+            }
+
+            @Override
+            public void mouseExited(MouseEvent event) {
+              hovered = false;
+              repaint();
+            }
+          });
+    }
+
+    @Override
+    public void updateUI() {
+      setUI(new BasicButtonUI());
+    }
+
+    @Override
+    protected void paintComponent(Graphics graphics) {
+      Graphics2D g2 = (Graphics2D) graphics.create();
+      try {
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        if (hovered || isFocusOwner()) {
+          g2.setColor(new Color(255, 255, 255, hovered ? 22 : 12));
+          g2.fillRoundRect(2, 3, getWidth() - 4, getHeight() - 6, 14, 14);
+        }
+        if (isFocusOwner()) {
+          g2.setColor(new Color(242, 210, 148, 150));
+          g2.drawRoundRect(3, 4, getWidth() - 7, getHeight() - 9, 12, 12);
         }
       } finally {
         g2.dispose();

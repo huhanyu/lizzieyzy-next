@@ -1,6 +1,7 @@
 package featurecat.lizzie.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,6 +54,28 @@ class AccessibilitySupportTest {
     assertEquals(
         "released",
         button.getInputMap(JComponent.WHEN_FOCUSED).get(KeyStroke.getKeyStroke("released ENTER")));
+  }
+
+  @Test
+  void screenReaderOnlyDescriptionsNeverRegainVisibleTooltips() {
+    JPanel panel = new JPanel();
+    JButton nextMove = new JButton(">");
+    nextMove.setToolTipText("Old tooltip");
+    panel.add(nextMove);
+
+    AccessibilitySupport.buttonWithoutTooltip(
+        nextMove, "Next move", "Go forward one move");
+    AccessibilitySupport.applyToTree(panel);
+
+    assertNull(nextMove.getToolTipText());
+    assertEquals("Next move", nextMove.getAccessibleContext().getAccessibleName());
+    assertEquals(
+        "Go forward one move", nextMove.getAccessibleContext().getAccessibleDescription());
+    assertEquals(
+        "pressed",
+        nextMove
+            .getInputMap(JComponent.WHEN_FOCUSED)
+            .get(KeyStroke.getKeyStroke("pressed ENTER")));
   }
 
   @Test

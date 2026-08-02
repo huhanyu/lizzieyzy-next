@@ -44,6 +44,7 @@ public final class AppleStyleSupport {
   private static final String BUTTON_ROLE = "lizzie.apple.button.role";
   private static final String ROLE_PRIMARY = "primary";
   private static final String ROLE_DANGER = "danger";
+  private static final String CUSTOM_BUTTON_STYLE = "lizzie.apple.button.customStyle";
   private static final String LEGACY_BUTTON_UI = "lizzie.apple.legacy.button.ui";
   private static final String LEGACY_CHECKBOX_ICON = "lizzie.apple.legacy.checkbox.icon";
   private static final String LEGACY_COMBO_RENDERER = "lizzie.apple.legacy.combo.renderer";
@@ -81,6 +82,13 @@ public final class AppleStyleSupport {
   public static void markDanger(AbstractButton button) {
     if (button != null) {
       button.putClientProperty(BUTTON_ROLE, ROLE_DANGER);
+    }
+  }
+
+  /** Keeps a purpose-built button renderer from being replaced by global theme refreshes. */
+  public static void preserveCustomButtonStyle(AbstractButton button) {
+    if (button != null) {
+      button.putClientProperty(CUSTOM_BUTTON_STYLE, Boolean.TRUE);
     }
   }
 
@@ -162,6 +170,9 @@ public final class AppleStyleSupport {
 
   public static void installButtonStyle(AbstractButton button) {
     if (button == null) {
+      return;
+    }
+    if (Boolean.TRUE.equals(button.getClientProperty(CUSTOM_BUTTON_STYLE))) {
       return;
     }
     // Preserve manually set sizes (e.g. BottomToolbar buttons sized before styling)
