@@ -1830,7 +1830,6 @@ public class EngineManager {
         || engine != Lizzie.leelaz
         || index != currentEngineNo
         || isEmpty
-        || !engine.isPondering()
         || !engine.isProcessDead()) {
       return;
     }

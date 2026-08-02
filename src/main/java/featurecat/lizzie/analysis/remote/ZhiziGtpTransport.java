@@ -2,10 +2,8 @@ package featurecat.lizzie.analysis.remote;
 
 import featurecat.lizzie.util.NetworkProxy;
 import io.socket.client.IO;
-import io.socket.client.Manager;
 import io.socket.client.Socket;
 import io.socket.engineio.client.transports.WebSocket;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
@@ -23,14 +21,11 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 
 public class ZhiziGtpTransport implements EngineTransport {
   private static final Duration READY_TIMEOUT = Duration.ofSeconds(60);
-  private static final Duration READY_FALLBACK_AFTER_RECONNECT = Duration.ofSeconds(4);
-  private static final Duration RECONNECT_GRACE_PERIOD = Duration.ofSeconds(45);
   private static final Duration ANALYSIS_RESPONSE_TIMEOUT = Duration.ofSeconds(20);
   private static final int MAX_START_ATTEMPTS = 3;
 
@@ -42,9 +37,8 @@ public class ZhiziGtpTransport implements EngineTransport {
   private final SocketCommandOutputStream stdin;
   private final AtomicBoolean open = new AtomicBoolean(false);
   private final AtomicBoolean closed = new AtomicBoolean(true);
-  private final AtomicBoolean everReady = new AtomicBoolean(false);
-  private final AtomicInteger connectGeneration = new AtomicInteger();
-  private final AtomicInteger reconnectAttemptCount = new AtomicInteger();
+  private final AtomicBoolean recoveryRequested = new AtomicBoolean(false);
+  private final SessionLifecycle lifecycle = new SessionLifecycle();
   private final ScheduledExecutorService reconnectExecutor =
       Executors.newSingleThreadScheduledExecutor(
           runnable -> {
@@ -53,9 +47,6 @@ public class ZhiziGtpTransport implements EngineTransport {
             return thread;
           });
   private final AnalysisResponseWatchdog analysisWatchdog;
-  private volatile ScheduledFuture<?> readyFallbackTask;
-  private volatile Runnable unresponsiveListener = () -> {};
-  private volatile long lastDisconnectAtMs;
   private Socket socket;
   private OkHttpClient socketHttpClient;
 
@@ -68,10 +59,7 @@ public class ZhiziGtpTransport implements EngineTransport {
         new AnalysisResponseWatchdog(
             reconnectExecutor,
             ANALYSIS_RESPONSE_TIMEOUT.toMillis(),
-            () -> {
-              writeStderrLine("智子云算力未返回分析结果，正在自动重建会话并恢复当前棋局...");
-              unresponsiveListener.run();
-            });
+            () -> requestRecovery("智子云算力未返回分析结果，正在自动重建会话并恢复当前棋局..."));
     this.stdin =
         new SocketCommandOutputStream(
             new SocketCommandEmitter(null), analysisWatchdog::onCommandSubmittedOrEmitted);
@@ -132,6 +120,7 @@ public class ZhiziGtpTransport implements EngineTransport {
       throw new IOException("请先登录智子云算力。");
     }
     closed.set(false);
+    long generation = lifecycle.beginAttempt();
     ZhiziApiClient.SocketToken socketToken;
     try {
       socketToken = apiClient.fetchSocketioToken(accountToken, args);
@@ -139,10 +128,13 @@ public class ZhiziGtpTransport implements EngineTransport {
       Thread.currentThread().interrupt();
       throw new IOException("连接智子云算力被中断。", e);
     }
+    if (!lifecycle.tokenFetched(generation)) {
+      throw new IOException("智子云算力连接已取消。");
+    }
     CountDownLatch readyLatch = new CountDownLatch(1);
-    CountDownLatch errorLatch = new CountDownLatch(1);
-    AtomicBoolean failedBeforeReady = new AtomicBoolean(false);
+    CountDownLatch failureLatch = new CountDownLatch(1);
     AtomicReference<String> startupError = new AtomicReference<>("");
+    Socket sessionSocket;
     try {
       IO.Options options =
           IO.Options.builder()
@@ -151,68 +143,79 @@ public class ZhiziGtpTransport implements EngineTransport {
                   "zz-socketio-token="
                       + URLEncoder.encode(socketToken.token, StandardCharsets.UTF_8))
               .setTransports(new String[] {WebSocket.NAME})
-              .setReconnection(true)
-              .setReconnectionAttempts(Integer.MAX_VALUE)
-              .setReconnectionDelay(1200)
-              .setReconnectionDelayMax(8000)
+              .setReconnection(false)
               .setTimeout(30000)
               .build();
       socketHttpClient = NetworkProxy.configure(new OkHttpClient.Builder()).build();
       options.callFactory = socketHttpClient;
       options.webSocketFactory = socketHttpClient;
-      socket = IO.socket(socketToken.socketIOURL, options);
+      sessionSocket = IO.socket(socketToken.socketIOURL, options);
+      socket = sessionSocket;
     } catch (URISyntaxException e) {
+      lifecycle.startupFailed(generation);
       throw new IOException("智子云算力连接地址无效。", e);
     }
-    attachReconnectDiagnostics(socket);
-    socket.on(
+    sessionSocket.on(
         Socket.EVENT_CONNECT,
         objects -> {
-          int generation = connectGeneration.incrementAndGet();
-          Socket current = socket;
-          writeStderrLine("智子云算力已连接，等待引擎准备...");
-          if (everReady.get()) {
-            scheduleReadyFallback(current, generation);
+          if (lifecycle.connected(generation)) {
+            writeStderrLine("智子云算力已连接，等待引擎准备...");
           }
         });
-    socket.on(
+    sessionSocket.on(
         "ready",
         objects -> {
-          markReady(socket, readyLatch, "智子云算力已准备好。");
+          if (lifecycle.ready(generation)) {
+            stdin.bind(new SocketCommandEmitter(sessionSocket));
+            writeStderrLine("智子云算力已准备好。");
+            readyLatch.countDown();
+          }
         });
-    socket.on("stdout", objects -> writePayload(stdout, first(objects)));
-    socket.on("stderr", objects -> writePayload(stderr, first(objects)));
-    socket.on(
+    sessionSocket.on(
+        "stdout",
+        objects -> {
+          if (lifecycle.acceptsEngineOutput(generation) && socket == sessionSocket) {
+            writePayload(stdout, first(objects));
+          }
+        });
+    sessionSocket.on(
+        "stderr",
+        objects -> {
+          if (lifecycle.acceptsDiagnostics(generation) && socket == sessionSocket) {
+            writePayload(stderr, first(objects));
+          }
+        });
+    sessionSocket.on(
         Socket.EVENT_DISCONNECT,
         objects -> {
-          open.set(false);
-          stdin.bind(new SocketCommandEmitter(null));
-          analysisWatchdog.suspend();
-          cancelReadyFallback();
-          lastDisconnectAtMs = System.currentTimeMillis();
           String reason = summarize(first(objects));
           String suffix = reason.isEmpty() ? "" : "（" + reason + "）";
-          writeStderrLine("智子云算力连接断开" + suffix + "，正在自动重连...");
+          handleSessionFailure(
+              generation,
+              "智子云算力连接断开" + suffix,
+              startupError,
+              failureLatch);
         });
-    socket.on(
+    sessionSocket.on(
         Socket.EVENT_CONNECT_ERROR,
         objects -> {
           String error = summarize(first(objects));
-          if (!everReady.get()) {
-            failedBeforeReady.set(true);
-            startupError.set(error);
-          }
-          writeStderrLine((everReady.get() ? "智子云算力重连暂未成功: " : "智子云算力连接失败: ") + error);
-          errorLatch.countDown();
+          handleSessionFailure(
+              generation,
+              "智子云算力连接失败: " + error,
+              startupError,
+              failureLatch);
         });
-    socket.connect();
+    sessionSocket.connect();
     long deadline = System.currentTimeMillis() + READY_TIMEOUT.toMillis();
     try {
       while (!readyLatch.await(250, TimeUnit.MILLISECONDS)) {
-        if (errorLatch.getCount() == 0
-            && failedBeforeReady.get()
-            && isFatalStartupFailure(startupError.get())) {
-          throw new IOException("智子云算力连接失败，请检查网络、登录状态或账号额度。");
+        if (failureLatch.getCount() == 0) {
+          String detail = startupError.get();
+          throw new IOException(
+              detail == null || detail.isBlank()
+                  ? "智子云算力连接失败，正在重新建立会话。"
+                  : detail);
         }
         if (Thread.currentThread().isInterrupted()) {
           Thread.currentThread().interrupt();
@@ -230,9 +233,10 @@ public class ZhiziGtpTransport implements EngineTransport {
       Thread.currentThread().interrupt();
       throw new IOException("连接智子云算力被中断。", e);
     }
-    if (!open.get()) {
-      throw new IOException("智子云算力超时未准备好。");
+    if (!sessionSocket.connected() || !lifecycle.activate(generation)) {
+      throw new IOException("智子云算力在启用前已断开，正在重新建立会话。");
     }
+    open.set(true);
   }
 
   @Override
@@ -253,22 +257,12 @@ public class ZhiziGtpTransport implements EngineTransport {
   @Override
   public boolean isOpen() {
     Socket current = socket;
-    if (closed.get() || current == null || analysisWatchdog.isUnresponsive()) {
-      return false;
-    }
-    return connectionIsUsable(
-        open.get(),
-        current.connected(),
-        current.isActive(),
-        everReady.get(),
-        lastDisconnectAtMs,
-        System.currentTimeMillis(),
-        RECONNECT_GRACE_PERIOD.toMillis());
-  }
-
-  @Override
-  public void setUnresponsiveListener(Runnable listener) {
-    unresponsiveListener = listener == null ? () -> {} : listener;
+    return !closed.get()
+        && !recoveryRequested.get()
+        && current != null
+        && current.connected()
+        && open.get()
+        && lifecycle.isActive();
   }
 
   @Override
@@ -276,22 +270,9 @@ public class ZhiziGtpTransport implements EngineTransport {
     analysisWatchdog.onAnalysisProgressAccepted(totalPlayouts);
   }
 
-  static boolean connectionIsUsable(
-      boolean ready,
-      boolean connected,
-      boolean active,
-      boolean wasEverReady,
-      long disconnectedAtMillis,
-      long nowMillis,
-      long reconnectGraceMillis) {
-    if (ready || connected) {
-      return true;
-    }
-    if (!wasEverReady) {
-      return active;
-    }
-    return disconnectedAtMillis > 0
-        && Math.max(0L, nowMillis - disconnectedAtMillis) <= reconnectGraceMillis;
+  @Override
+  public boolean isRecoveryRequested() {
+    return recoveryRequested.get();
   }
 
   @Override
@@ -303,7 +284,7 @@ public class ZhiziGtpTransport implements EngineTransport {
   public void close() {
     closed.set(true);
     open.set(false);
-    cancelReadyFallback();
+    lifecycle.close();
     analysisWatchdog.cancel();
     disposeSocketSession(true);
     stdin.closeForShutdown();
@@ -314,7 +295,6 @@ public class ZhiziGtpTransport implements EngineTransport {
 
   private void disposeSocketSession(boolean sendQuit) {
     open.set(false);
-    cancelReadyFallback();
     analysisWatchdog.suspend();
     stdin.bind(new SocketCommandEmitter(null));
     Socket current = socket;
@@ -332,93 +312,45 @@ public class ZhiziGtpTransport implements EngineTransport {
       current.disconnect();
       current.close();
     }
-    reconnectAttemptCount.set(0);
-    lastDisconnectAtMs = 0L;
+    if (!closed.get()) {
+      lifecycle.retireAttempt();
+    }
     closeSocketHttpClient();
   }
 
-  private void attachReconnectDiagnostics(Socket socket) {
-    Manager manager = socket.io();
-    manager.on(
-        Manager.EVENT_RECONNECT_ATTEMPT,
-        objects -> {
-          int countedAttempt = reconnectAttemptCount.incrementAndGet();
-          String attempt = summarize(first(objects));
-          if (attempt.isEmpty()) {
-            attempt = String.valueOf(countedAttempt);
-          }
-          writeStderrLine(
-              "智子云算力正在重连（第 " + attempt + " 次）...");
-        });
-    manager.on(
-        Manager.EVENT_RECONNECT,
-        objects -> {
-          String attempt = summarize(first(objects));
-          reconnectAttemptCount.set(0);
-          writeStderrLine(
-              attempt.isEmpty()
-                  ? "智子云算力网络已恢复，等待引擎 ready..."
-                  : "智子云算力网络已恢复（第 " + attempt + " 次），等待引擎 ready...");
-        });
-    manager.on(
-        Manager.EVENT_RECONNECT_ERROR,
-        objects -> writeStderrLine("智子云算力重连错误: " + summarize(first(objects))));
-    manager.on(
-        Manager.EVENT_RECONNECT_FAILED,
-        objects -> writeStderrLine("智子云算力重连失败，请检查网络或稍后切回本机引擎。"));
+  private void handleSessionFailure(
+      long generation,
+      String message,
+      AtomicReference<String> startupError,
+      CountDownLatch startupFailureLatch) {
+    SessionFailureAction action = lifecycle.sessionFailed(generation);
+    if (action == SessionFailureAction.STARTUP_FAILED) {
+      open.set(false);
+      startupError.set(message);
+      writeStderrLine(message);
+      startupFailureLatch.countDown();
+    } else if (action == SessionFailureAction.RECOVERY_REQUIRED) {
+      initiateRecovery(message + "，正在重建会话并恢复当前棋局...");
+    }
   }
 
-  private void markReady(Socket readySocket, CountDownLatch readyLatch, String message) {
-    if (closed.get() || readySocket == null) {
+  private void requestRecovery(String message) {
+    if (lifecycle.requestRecovery()) {
+      initiateRecovery(message);
+    }
+  }
+
+  private void initiateRecovery(String message) {
+    if (closed.get() || !recoveryRequested.compareAndSet(false, true)) {
       return;
     }
-    boolean reconnectReady = everReady.get();
-    cancelReadyFallback();
-    open.set(true);
-    everReady.set(true);
-    stdin.bind(new SocketCommandEmitter(readySocket));
-    int flushed = stdin.flushQueuedCommands();
-    boolean resumedAnalysis = reconnectReady && stdin.resumeLastAnalysisIfIdle();
-    String suffix = "";
-    if (flushed > 0) {
-      suffix += " 已补发重连期间等待的 " + flushed + " 条命令。";
-    }
-    if (reconnectReady && resumedAnalysis) {
-      suffix += " 已恢复实时分析。";
-    }
-    writeStderrLine(
-        suffix.isEmpty() ? message : message + suffix);
-    readyLatch.countDown();
-  }
-
-  private void scheduleReadyFallback(Socket expectedSocket, int expectedGeneration) {
-    cancelReadyFallback();
-    readyFallbackTask =
-        reconnectExecutor.schedule(
-            () -> {
-              if (closed.get()
-                  || open.get()
-                  || socket != expectedSocket
-                  || connectGeneration.get() != expectedGeneration
-                  || expectedSocket == null
-                  || !expectedSocket.connected()) {
-                return;
-              }
-              markReady(
-                  expectedSocket,
-                  new CountDownLatch(0),
-                  "智子云算力网络已恢复，未收到新的 ready，已恢复命令通道。");
-            },
-            READY_FALLBACK_AFTER_RECONNECT.toMillis(),
-            TimeUnit.MILLISECONDS);
-  }
-
-  private void cancelReadyFallback() {
-    ScheduledFuture<?> task = readyFallbackTask;
-    readyFallbackTask = null;
-    if (task != null) {
-      task.cancel(false);
-    }
+    open.set(false);
+    analysisWatchdog.suspend();
+    stdin.invalidateForRecovery();
+    writeStderrLine(message);
+    // EOF retires the reader incarnation. Leelaz then creates a fresh transport, fetches a new
+    // Socket.IO token, waits for the real ready event, and replays the complete board.
+    stdout.finish();
   }
 
   static boolean isFatalStartupFailure(String message) {
@@ -508,6 +440,124 @@ public class ZhiziGtpTransport implements EngineTransport {
 
   private void writeStderrLine(String line) {
     writePayload(stderr, "[remote] " + line + "\n");
+  }
+
+  enum SessionState {
+    NEW,
+    FETCHING_TOKEN,
+    CONNECTING,
+    WAITING_READY,
+    READY,
+    ACTIVE,
+    RECOVERY_REQUIRED,
+    FAILED,
+    CLOSED
+  }
+
+  enum SessionFailureAction {
+    IGNORED,
+    STARTUP_FAILED,
+    RECOVERY_REQUIRED
+  }
+
+  /** Serializes Socket.IO lifecycle events and rejects callbacks from retired connections. */
+  static final class SessionLifecycle {
+    private long generation;
+    private SessionState state = SessionState.NEW;
+
+    synchronized long beginAttempt() {
+      generation++;
+      state = SessionState.FETCHING_TOKEN;
+      return generation;
+    }
+
+    synchronized boolean tokenFetched(long expectedGeneration) {
+      return transition(expectedGeneration, SessionState.FETCHING_TOKEN, SessionState.CONNECTING);
+    }
+
+    synchronized boolean connected(long expectedGeneration) {
+      return transition(expectedGeneration, SessionState.CONNECTING, SessionState.WAITING_READY);
+    }
+
+    synchronized boolean ready(long expectedGeneration) {
+      return transition(expectedGeneration, SessionState.WAITING_READY, SessionState.READY);
+    }
+
+    synchronized boolean activate(long expectedGeneration) {
+      return transition(expectedGeneration, SessionState.READY, SessionState.ACTIVE);
+    }
+
+    synchronized SessionFailureAction sessionFailed(long expectedGeneration) {
+      if (expectedGeneration != generation
+          || state == SessionState.FAILED
+          || state == SessionState.RECOVERY_REQUIRED
+          || state == SessionState.CLOSED) {
+        return SessionFailureAction.IGNORED;
+      }
+      if (state == SessionState.ACTIVE) {
+        state = SessionState.RECOVERY_REQUIRED;
+        return SessionFailureAction.RECOVERY_REQUIRED;
+      }
+      state = SessionState.FAILED;
+      return SessionFailureAction.STARTUP_FAILED;
+    }
+
+    synchronized boolean startupFailed(long expectedGeneration) {
+      if (expectedGeneration != generation || state == SessionState.CLOSED) {
+        return false;
+      }
+      state = SessionState.FAILED;
+      return true;
+    }
+
+    synchronized boolean requestRecovery() {
+      if (state != SessionState.ACTIVE) {
+        return false;
+      }
+      state = SessionState.RECOVERY_REQUIRED;
+      return true;
+    }
+
+    synchronized boolean acceptsEngineOutput(long expectedGeneration) {
+      return expectedGeneration == generation
+          && (state == SessionState.READY || state == SessionState.ACTIVE);
+    }
+
+    synchronized boolean acceptsDiagnostics(long expectedGeneration) {
+      return expectedGeneration == generation
+          && state != SessionState.FAILED
+          && state != SessionState.RECOVERY_REQUIRED
+          && state != SessionState.CLOSED;
+    }
+
+    synchronized boolean isActive() {
+      return state == SessionState.ACTIVE;
+    }
+
+    synchronized SessionState state() {
+      return state;
+    }
+
+    synchronized void retireAttempt() {
+      generation++;
+      if (state != SessionState.CLOSED) {
+        state = SessionState.FAILED;
+      }
+    }
+
+    synchronized void close() {
+      generation++;
+      state = SessionState.CLOSED;
+    }
+
+    private boolean transition(
+        long expectedGeneration, SessionState expectedState, SessionState nextState) {
+      if (expectedGeneration != generation || state != expectedState) {
+        return false;
+      }
+      state = nextState;
+      return true;
+    }
   }
 
   static final class AnalysisResponseWatchdog {
@@ -732,16 +782,11 @@ public class ZhiziGtpTransport implements EngineTransport {
   }
 
   static final class SocketCommandOutputStream extends OutputStream {
-    private static final int MAX_QUEUED_COMMAND_BYTES = 256 * 1024;
-
-    private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-    private final ArrayDeque<String> queuedCommands = new ArrayDeque<>();
-    private int queuedCommandBytes;
-    private String lastAnalysisCommand = "";
-    private boolean lastQueuedFlushHadAnalysis;
+    private final java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
     private volatile CommandEmitter emitter;
     private final java.util.function.Consumer<String> commandStateListener;
     private volatile boolean closed;
+    private volatile boolean invalidatedForRecovery;
 
     SocketCommandOutputStream(CommandEmitter emitter) {
       this(emitter, command -> {});
@@ -758,50 +803,16 @@ public class ZhiziGtpTransport implements EngineTransport {
       this.emitter = emitter == null ? new SocketCommandEmitter(null) : emitter;
     }
 
-    synchronized int flushQueuedCommands() {
-      CommandEmitter current = emitter;
-      lastQueuedFlushHadAnalysis = false;
-      if (closed || current == null || !current.isConnected() || queuedCommands.isEmpty()) {
-        return 0;
-      }
-      int flushed = 0;
-      while (!queuedCommands.isEmpty() && current.isConnected()) {
-        String command = queuedCommands.removeFirst();
-        queuedCommandBytes -= command.getBytes(StandardCharsets.UTF_8).length;
-        if (isAnalysisCommand(command)) {
-          lastQueuedFlushHadAnalysis = true;
-        }
-        current.emit(command);
-        commandStateListener.accept(command);
-        flushed++;
-      }
-      if (queuedCommands.isEmpty()) {
-        queuedCommandBytes = 0;
-      }
-      return flushed;
+    synchronized void invalidateForRecovery() {
+      invalidatedForRecovery = true;
+      emitter = new SocketCommandEmitter(null);
+      buffer.reset();
     }
 
-    synchronized boolean resumeLastAnalysisIfIdle() {
-      if (closed || lastQueuedFlushHadAnalysis || lastAnalysisCommand.isEmpty()) {
-        return false;
-      }
-      CommandEmitter current = emitter;
-      if (current == null || !current.isConnected()) {
-        return false;
-      }
-      current.emit(lastAnalysisCommand);
-      commandStateListener.accept(lastAnalysisCommand);
-      return true;
-    }
-
-    void closeForShutdown() {
+    synchronized void closeForShutdown() {
       closed = true;
       emitter = new SocketCommandEmitter(null);
-      synchronized (this) {
-        buffer.reset();
-        queuedCommands.clear();
-        queuedCommandBytes = 0;
-      }
+      buffer.reset();
     }
 
     @Override
@@ -817,66 +828,52 @@ public class ZhiziGtpTransport implements EngineTransport {
     @Override
     public synchronized void flush() throws IOException {
       if (buffer.size() == 0) {
-        flushQueuedCommands();
         return;
       }
       if (closed) {
         buffer.reset();
         throw new IOException("智子云算力连接已关闭。");
       }
+      if (invalidatedForRecovery) {
+        buffer.reset();
+        throw new IOException("智子云算力会话正在重建，旧命令已作废。");
+      }
       String command = buffer.toString(StandardCharsets.UTF_8);
       buffer.reset();
-      rememberCommand(command);
-      commandStateListener.accept(command);
       CommandEmitter current = emitter;
-      if (current != null && current.isConnected()) {
-        current.emit(command);
-        return;
+      if (current == null || !current.isConnected()) {
+        throw new IOException("智子云算力连接已断开，命令未发送。");
       }
-      queueCommand(command);
-    }
-
-    int queuedCommandCount() {
-      return queuedCommands.size();
-    }
-
-    private void queueCommand(String command) throws IOException {
-      int commandBytes = command.getBytes(StandardCharsets.UTF_8).length;
-      if (queuedCommandBytes + commandBytes > MAX_QUEUED_COMMAND_BYTES) {
-        throw new IOException("智子云算力重连时间过长，等待发送的命令过多，请稍后重试。");
-      }
-      queuedCommands.addLast(command);
-      queuedCommandBytes += commandBytes;
-    }
-
-    private void rememberCommand(String command) {
-      if (isStopCommand(command)) {
-        lastAnalysisCommand = "";
-      } else if (isAnalysisCommand(command)) {
-        lastAnalysisCommand = command;
-      }
-    }
-
-    private static boolean isAnalysisCommand(String command) {
-      String normalized = firstCommandLine(command).trim();
-      return isContinuousAnalysisCommand(command)
-          || normalized.equals("kata-raw-nn")
-          || normalized.startsWith("kata-raw-nn ");
+      current.emit(command);
+      commandStateListener.accept(command);
     }
 
     static boolean isContinuousAnalysisCommand(String command) {
-      String normalized = firstCommandLine(command).trim();
-      return normalized.startsWith("kata-analyze ")
+      String normalized = normalizedCommand(command);
+      return normalized.equals("kata-analyze")
+          || normalized.startsWith("kata-analyze ")
+          || normalized.equals("kata-analyze_interval")
           || normalized.startsWith("kata-analyze_interval ")
+          || normalized.equals("lz-analyze")
           || normalized.startsWith("lz-analyze ")
+          || normalized.equals("analyze")
           || normalized.startsWith("analyze ");
     }
 
     static boolean isStopCommand(String command) {
-      String normalized = firstCommandLine(command).trim();
+      String normalized = normalizedCommand(command);
       return normalized.equals("stop")
           || normalized.equals("stop-ponder")
           || normalized.equals("quit");
+    }
+
+    private static String normalizedCommand(String command) {
+      String normalized = firstCommandLine(command).trim();
+      int separator = normalized.indexOf(' ');
+      if (separator > 0 && normalized.substring(0, separator).chars().allMatch(Character::isDigit)) {
+        return normalized.substring(separator + 1).trim();
+      }
+      return normalized;
     }
 
     private static String firstCommandLine(String command) {

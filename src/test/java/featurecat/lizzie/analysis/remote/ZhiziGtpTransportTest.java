@@ -3,6 +3,7 @@ package featurecat.lizzie.analysis.remote;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -41,27 +42,51 @@ class ZhiziGtpTransportTest {
   }
 
   @Test
-  void connectionHealthAllowsInitialConnectAndShortReconnectGrace() {
-    assertEquals(
-        true,
-        ZhiziGtpTransport.connectionIsUsable(
-            false, false, true, false, 0L, 10_000L, 45_000L));
-    assertEquals(
-        true,
-        ZhiziGtpTransport.connectionIsUsable(
-            false, false, true, true, 10_000L, 40_000L, 45_000L));
+  void sessionLifecycleRequiresTokenConnectAndRealReadyInOrder() {
+    ZhiziGtpTransport.SessionLifecycle lifecycle = new ZhiziGtpTransport.SessionLifecycle();
+    long generation = lifecycle.beginAttempt();
+
+    assertFalse(lifecycle.ready(generation));
+    assertTrue(lifecycle.tokenFetched(generation));
+    assertTrue(lifecycle.connected(generation));
+    assertTrue(lifecycle.ready(generation));
+    assertFalse(lifecycle.isActive());
+    assertTrue(lifecycle.activate(generation));
+    assertTrue(lifecycle.isActive());
   }
 
   @Test
-  void connectionHealthExpiresEvenWhenSocketIoStillReportsActive() {
+  void sessionLifecycleRejectsEventsFromRetiredSocketGeneration() {
+    ZhiziGtpTransport.SessionLifecycle lifecycle = new ZhiziGtpTransport.SessionLifecycle();
+    long retired = lifecycle.beginAttempt();
+    assertTrue(lifecycle.tokenFetched(retired));
+    lifecycle.retireAttempt();
+    long current = lifecycle.beginAttempt();
+
+    assertFalse(lifecycle.connected(retired));
+    assertFalse(lifecycle.ready(retired));
+    assertFalse(lifecycle.acceptsEngineOutput(retired));
+    assertTrue(lifecycle.tokenFetched(current));
+  }
+
+  @Test
+  void sessionFailureBeforeActivationRetriesButActiveFailureRequiresFullRecovery() {
+    ZhiziGtpTransport.SessionLifecycle lifecycle = new ZhiziGtpTransport.SessionLifecycle();
+    long startup = lifecycle.beginAttempt();
+    assertTrue(lifecycle.tokenFetched(startup));
     assertEquals(
-        false,
-        ZhiziGtpTransport.connectionIsUsable(
-            false, false, true, true, 10_000L, 60_001L, 45_000L));
+        ZhiziGtpTransport.SessionFailureAction.STARTUP_FAILED,
+        lifecycle.sessionFailed(startup));
+
+    long active = lifecycle.beginAttempt();
+    assertTrue(lifecycle.tokenFetched(active));
+    assertTrue(lifecycle.connected(active));
+    assertTrue(lifecycle.ready(active));
+    assertTrue(lifecycle.activate(active));
     assertEquals(
-        true,
-        ZhiziGtpTransport.connectionIsUsable(
-            false, true, false, true, 10_000L, 60_001L, 45_000L));
+        ZhiziGtpTransport.SessionFailureAction.RECOVERY_REQUIRED,
+        lifecycle.sessionFailed(active));
+    assertEquals(ZhiziGtpTransport.SessionState.RECOVERY_REQUIRED, lifecycle.state());
   }
 
   @Test
@@ -101,23 +126,11 @@ class ZhiziGtpTransportTest {
   }
 
   @Test
-  void commandStreamQueuesCommandsUntilReconnectIsReady() throws Exception {
-    FakeEmitter disconnected = new FakeEmitter(false);
+  void commandStreamRejectsDisconnectedWritesInsteadOfReplayingThemBlindly() throws Exception {
     ZhiziGtpTransport.SocketCommandOutputStream stream =
-        new ZhiziGtpTransport.SocketCommandOutputStream(disconnected);
+        new ZhiziGtpTransport.SocketCommandOutputStream(new FakeEmitter(false));
 
-    send(stream, "boardsize 19");
-    send(stream, "kata-analyze B 10");
-
-    assertEquals(2, stream.queuedCommandCount());
-    assertEquals(List.of(), disconnected.commands);
-
-    FakeEmitter reconnected = new FakeEmitter(true);
-    stream.bind(reconnected);
-
-    assertEquals(2, stream.flushQueuedCommands());
-    assertEquals(List.of("boardsize 19\n", "kata-analyze B 10\n"), reconnected.commands);
-    assertEquals(0, stream.queuedCommandCount());
+    assertThrows(java.io.IOException.class, () -> send(stream, "boardsize 19"));
   }
 
   @Test
@@ -129,70 +142,19 @@ class ZhiziGtpTransportTest {
     send(stream, "name");
 
     assertEquals(List.of("name\n"), connected.commands);
-    assertEquals(0, stream.queuedCommandCount());
   }
 
   @Test
-  void commandStreamRestartsLastAnalysisAfterReconnectWhenNoNewAnalysisWasQueued()
-      throws Exception {
+  void commandStreamInvalidatesBufferedAndFutureCommandsDuringRecovery() throws Exception {
     FakeEmitter connected = new FakeEmitter(true);
     ZhiziGtpTransport.SocketCommandOutputStream stream =
         new ZhiziGtpTransport.SocketCommandOutputStream(connected);
-    send(stream, "kata-analyze B 10");
+    stream.write("boardsize 19\n".getBytes(StandardCharsets.UTF_8));
+    stream.invalidateForRecovery();
+    stream.write("name\n".getBytes(StandardCharsets.UTF_8));
 
-    FakeEmitter reconnected = new FakeEmitter(true);
-    stream.bind(reconnected);
-
-    assertEquals(true, stream.resumeLastAnalysisIfIdle());
-    assertEquals(List.of("kata-analyze B 10\n"), reconnected.commands);
-  }
-
-  @Test
-  void commandStreamRestartsRawNnAfterReconnectWhenNoNewAnalysisWasQueued() throws Exception {
-    FakeEmitter connected = new FakeEmitter(true);
-    ZhiziGtpTransport.SocketCommandOutputStream stream =
-        new ZhiziGtpTransport.SocketCommandOutputStream(connected);
-    send(stream, "kata-raw-nn 0");
-
-    FakeEmitter reconnected = new FakeEmitter(true);
-    stream.bind(reconnected);
-
-    assertEquals(true, stream.resumeLastAnalysisIfIdle());
-    assertEquals(List.of("kata-raw-nn 0\n"), reconnected.commands);
-  }
-
-  @Test
-  void commandStreamQueuedRawNnSuppressesStaleAnalysisResume() throws Exception {
-    FakeEmitter connected = new FakeEmitter(true);
-    ZhiziGtpTransport.SocketCommandOutputStream stream =
-        new ZhiziGtpTransport.SocketCommandOutputStream(connected);
-    send(stream, "kata-analyze B 10");
-
-    FakeEmitter disconnected = new FakeEmitter(false);
-    stream.bind(disconnected);
-    send(stream, "kata-raw-nn 0");
-
-    FakeEmitter reconnected = new FakeEmitter(true);
-    stream.bind(reconnected);
-
-    assertEquals(1, stream.flushQueuedCommands());
-    assertEquals(false, stream.resumeLastAnalysisIfIdle());
-    assertEquals(List.of("kata-raw-nn 0\n"), reconnected.commands);
-  }
-
-  @Test
-  void commandStreamDoesNotRestartAnalysisAfterStop() throws Exception {
-    FakeEmitter connected = new FakeEmitter(true);
-    ZhiziGtpTransport.SocketCommandOutputStream stream =
-        new ZhiziGtpTransport.SocketCommandOutputStream(connected);
-    send(stream, "kata-analyze B 10");
-    send(stream, "stop");
-
-    FakeEmitter reconnected = new FakeEmitter(true);
-    stream.bind(reconnected);
-
-    assertEquals(false, stream.resumeLastAnalysisIfIdle());
-    assertEquals(List.of(), reconnected.commands);
+    assertThrows(java.io.IOException.class, stream::flush);
+    assertEquals(List.of(), connected.commands);
   }
 
   @Test
@@ -227,7 +189,7 @@ class ZhiziGtpTransportTest {
   }
 
   @Test
-  void analysisWatchdogDetectsAnalysisRequestThatRemainsQueued() throws Exception {
+  void analysisWatchdogRecognizesNumberedGtpAnalysisCommand() throws Exception {
     ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     CountDownLatch timedOut = new CountDownLatch(1);
     try {
@@ -235,11 +197,10 @@ class ZhiziGtpTransportTest {
           new ZhiziGtpTransport.AnalysisResponseWatchdog(scheduler, 30L, timedOut::countDown);
       ZhiziGtpTransport.SocketCommandOutputStream stream =
           new ZhiziGtpTransport.SocketCommandOutputStream(
-              new FakeEmitter(false), watchdog::onCommandSubmittedOrEmitted);
+              new FakeEmitter(true), watchdog::onCommandSubmittedOrEmitted);
 
-      send(stream, "kata-analyze B 10");
+      send(stream, "42 kata-analyze B 10");
 
-      assertEquals(1, stream.queuedCommandCount());
       assertEquals(true, timedOut.await(2, TimeUnit.SECONDS));
       assertEquals(true, watchdog.isUnresponsive());
     } finally {

@@ -166,6 +166,32 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
+  void disconnectedRemoteSessionRestartsEvenWhenOrdinaryPonderIsNotActive() throws Exception {
+    Leelaz previousEngine = Lizzie.leelaz;
+    boolean previousEmpty = EngineManager.isEmpty;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    TrackingRestartLeelaz engine = new TrackingRestartLeelaz();
+    engine.useRemoteCompute = true;
+    engine.started = true;
+    engine.processDead = true;
+    EngineManager manager = new EngineManager(List.of(engine));
+    try {
+      Lizzie.leelaz = engine;
+      EngineManager.isEmpty = false;
+      EngineManager.currentEngineNo = 0;
+
+      manager.restartUnresponsiveRemoteEngine(engine, 0);
+
+      assertTrue(engine.restartCompleted.await(2, TimeUnit.SECONDS));
+      assertEquals(1, engine.restartCount);
+    } finally {
+      Lizzie.leelaz = previousEngine;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+    }
+  }
+
+  @Test
   void automaticJavaSshRestartDoesNotClearQuarantinedGmaState() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     boolean previousEmpty = EngineManager.isEmpty;

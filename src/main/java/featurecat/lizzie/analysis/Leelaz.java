@@ -658,7 +658,6 @@ public class Leelaz {
       this.isSSH = false;
       try {
         this.remoteTransport = RemoteComputeConfig.createTransportForCommand(this.engineCommand);
-        this.remoteTransport.setUnresponsiveListener(this::recoverUnresponsiveRemoteAnalysis);
         this.remoteTransport.start();
         initializeStreams(
             this.remoteTransport.stdout(),
@@ -4068,6 +4067,16 @@ public class Leelaz {
       completeForegroundRestore(interruptedForegroundWork);
     }
     failReadBoardGmaEngineRestore("engine transport closed");
+    if (binding.remoteTransport != null && binding.remoteTransport.isRecoveryRequested()) {
+      isDownWithError = true;
+      rememberRecentLine(
+          recentStderrLines,
+          "Remote session retired; rebuilding with a fresh token and full board replay");
+      if (Lizzie.engineManager != null) {
+        Lizzie.engineManager.restartUnresponsiveRemoteEngine(this, currentEngineN);
+      }
+      return;
+    }
     if (!isNormalEnd && !tryRecoverBundledOpenClNativeExit(binding.process)) {
       isDownWithError = true;
       // isLoaded=false;
@@ -10988,17 +10997,6 @@ public class Leelaz {
       return remoteTransport == null || !remoteTransport.isOpen();
     }
     return process != null && !process.isAlive();
-  }
-
-  private void recoverUnresponsiveRemoteAnalysis() {
-    if (!useRemoteCompute
-        || isNormalEnd
-        || !started
-        || !isPondering
-        || Lizzie.engineManager == null) {
-      return;
-    }
-    Lizzie.engineManager.restartUnresponsiveRemoteEngine(this, currentEngineN);
   }
 
   public void maybeAjustPDA(BoardHistoryNode node) {
