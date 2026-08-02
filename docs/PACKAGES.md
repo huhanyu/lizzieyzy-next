@@ -134,6 +134,13 @@
 - Windows 免安装包的用户下载权重和 TensorRT：解压目录内的 `user-data/`；TensorRT 下载缓存、CUDA/TensorRT 运行缓存会尽量保存在 `user-data/runtime/`
 - Windows 安装器版本为了避免写入 `Program Files`，运行数据可能位于 `C:\Users\Public\Documents\LizzieYzyNext` 或 `C:\ProgramData\LizzieYzyNext`；如果非常在意 C 盘空间，优先使用免安装包并解压到非 C 盘
 
+### Linux Wayland 菜单兼容
+
+- Linux Wayland 会自动使用标准 Swing 菜单栏，规避 JDK 21 下弹出菜单可能造成窗口白屏的问题；Windows、macOS 和 Linux X11 继续使用原有菜单外观。
+- 诊断包会记录桌面会话、实际菜单模式、Java 版本、显示设备以及可安全读取到的 NVIDIA 型号和驱动版本，不记录用户名、目录原文或其他个人数据。
+- 排查时可追加 JVM 参数 `-Dlizzie.menu.presentation=native` 强制标准菜单，或用 `-Dlizzie.menu.presentation=custom` 临时对照原菜单。该参数只用于诊断，不建议普通用户长期修改。
+- 相关 JDK 修复进展见 [OpenJDK JDK-8342096](https://bugs.openjdk.org/browse/JDK-8342096)。Linux 发布运行时是否升级到 JDK 25，将在 KDE Plasma Wayland 与 NVIDIA 真机验收完成后单独决定。
+
 ## 远程算力中心
 
 如果本机显卡不够，或者临时想用更强算力，可以在软件内打开 `设置 -> 远程算力中心`：

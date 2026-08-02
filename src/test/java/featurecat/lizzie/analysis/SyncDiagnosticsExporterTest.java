@@ -39,6 +39,19 @@ class SyncDiagnosticsExporterTest {
   }
 
   @Test
+  void environmentIncludesWaylandMenuAndGraphicsDiagnostics() throws IOException {
+    Path zip = new SyncDiagnosticsExporter(tempDir).export(sensitiveSnapshot());
+    String environment = unzipTextEntries(zip).get("environment.txt");
+
+    assertTrue(environment.contains("desktopSession: wayland"));
+    assertTrue(environment.contains("waylandDisplayPresent: true"));
+    assertTrue(environment.contains("desktopName: KDE"));
+    assertTrue(environment.contains("menuPresentation: native"));
+    assertTrue(environment.contains("graphicsDevice: screen-0"));
+    assertTrue(environment.contains("graphicsDriver: NVIDIA RTX 5080, 580.88"));
+  }
+
+  @Test
   void exportRedactsSensitiveValuesAcrossWholeZip() throws IOException {
     Path zip = new SyncDiagnosticsExporter(tempDir).export(sensitiveSnapshot());
     Map<String, String> entries = unzipTextEntries(zip);
@@ -251,6 +264,12 @@ class SyncDiagnosticsExporterTest {
             "Linux",
             "test-os",
             "x86_64",
+            "wayland",
+            true,
+            "KDE",
+            "native",
+            "screen-0",
+            "NVIDIA RTX 5080, 580.88",
             "\\\\wsl.localhost\\Ubuntu\\home\\alice\\dev",
             150L));
   }

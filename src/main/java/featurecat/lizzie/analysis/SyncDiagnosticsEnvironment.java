@@ -1,6 +1,8 @@
 package featurecat.lizzie.analysis;
 
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.util.GraphicsDriverDiagnostics;
+import java.awt.GraphicsEnvironment;
 
 public final class SyncDiagnosticsEnvironment {
   private final String appVersion;
@@ -8,6 +10,12 @@ public final class SyncDiagnosticsEnvironment {
   private final String osName;
   private final String osVersion;
   private final String osArch;
+  private final String desktopSession;
+  private final boolean waylandDisplayPresent;
+  private final String desktopName;
+  private final String menuPresentation;
+  private final String graphicsDevice;
+  private final String graphicsDriver;
   private final String userDirSanitized;
   private final long timestampMillis;
 
@@ -17,6 +25,12 @@ public final class SyncDiagnosticsEnvironment {
       String osName,
       String osVersion,
       String osArch,
+      String desktopSession,
+      boolean waylandDisplayPresent,
+      String desktopName,
+      String menuPresentation,
+      String graphicsDevice,
+      String graphicsDriver,
       String userDirSanitized,
       long timestampMillis) {
     this.appVersion = SyncDecisionTrace.normalize(appVersion, "unknown");
@@ -24,6 +38,12 @@ public final class SyncDiagnosticsEnvironment {
     this.osName = SyncDecisionTrace.normalize(osName, "unknown");
     this.osVersion = SyncDecisionTrace.normalize(osVersion, "unknown");
     this.osArch = SyncDecisionTrace.normalize(osArch, "unknown");
+    this.desktopSession = SyncDecisionTrace.normalize(desktopSession, "unknown");
+    this.waylandDisplayPresent = waylandDisplayPresent;
+    this.desktopName = SyncDecisionTrace.normalize(desktopName, "unknown");
+    this.menuPresentation = SyncDecisionTrace.normalize(menuPresentation, "unknown");
+    this.graphicsDevice = SyncDecisionTrace.normalize(graphicsDevice, "unknown");
+    this.graphicsDriver = SyncDecisionTrace.normalize(graphicsDriver, "unknown");
     this.userDirSanitized = SyncDecisionTrace.normalize(userDirSanitized, "unknown");
     this.timestampMillis = timestampMillis;
   }
@@ -35,6 +55,12 @@ public final class SyncDiagnosticsEnvironment {
         System.getProperty("os.name", "unknown"),
         System.getProperty("os.version", "unknown"),
         System.getProperty("os.arch", "unknown"),
+        safeEnvironmentValue("XDG_SESSION_TYPE"),
+        hasEnvironmentValue("WAYLAND_DISPLAY"),
+        safeEnvironmentValue("XDG_CURRENT_DESKTOP"),
+        System.getProperty("lizzie.menu.presentation.active", "unknown"),
+        captureGraphicsDevice(),
+        GraphicsDriverDiagnostics.summary(),
         sanitizePath(System.getProperty("user.dir", "")),
         System.currentTimeMillis());
   }
@@ -48,7 +74,49 @@ public final class SyncDiagnosticsEnvironment {
       String userDirSanitized,
       long timestampMillis) {
     return new SyncDiagnosticsEnvironment(
-        appVersion, javaVersion, osName, osVersion, osArch, userDirSanitized, timestampMillis);
+        appVersion,
+        javaVersion,
+        osName,
+        osVersion,
+        osArch,
+        "unknown",
+        false,
+        "unknown",
+        "unknown",
+        "unknown",
+        "not-probed",
+        userDirSanitized,
+        timestampMillis);
+  }
+
+  static SyncDiagnosticsEnvironment of(
+      String appVersion,
+      String javaVersion,
+      String osName,
+      String osVersion,
+      String osArch,
+      String desktopSession,
+      boolean waylandDisplayPresent,
+      String desktopName,
+      String menuPresentation,
+      String graphicsDevice,
+      String graphicsDriver,
+      String userDirSanitized,
+      long timestampMillis) {
+    return new SyncDiagnosticsEnvironment(
+        appVersion,
+        javaVersion,
+        osName,
+        osVersion,
+        osArch,
+        desktopSession,
+        waylandDisplayPresent,
+        desktopName,
+        menuPresentation,
+        graphicsDevice,
+        graphicsDriver,
+        userDirSanitized,
+        timestampMillis);
   }
 
   public static String sanitizePath(String path) {
@@ -101,12 +169,66 @@ public final class SyncDiagnosticsEnvironment {
     return osArch;
   }
 
+  public String getDesktopSession() {
+    return desktopSession;
+  }
+
+  public boolean isWaylandDisplayPresent() {
+    return waylandDisplayPresent;
+  }
+
+  public String getDesktopName() {
+    return desktopName;
+  }
+
+  public String getMenuPresentation() {
+    return menuPresentation;
+  }
+
+  public String getGraphicsDevice() {
+    return graphicsDevice;
+  }
+
+  public String getGraphicsDriver() {
+    return graphicsDriver;
+  }
+
   public String getUserDirSanitized() {
     return userDirSanitized;
   }
 
   public long getTimestampMillis() {
     return timestampMillis;
+  }
+
+  private static boolean hasEnvironmentValue(String name) {
+    String value = System.getenv(name);
+    return value != null && !value.isBlank();
+  }
+
+  private static String safeEnvironmentValue(String name) {
+    String value = System.getenv(name);
+    if (value == null || value.isBlank()) {
+      return "unknown";
+    }
+    String compact = value.trim().replaceAll("[^A-Za-z0-9 ._:+/-]", "");
+    if (compact.isEmpty()) {
+      return "present";
+    }
+    return compact.length() <= 80 ? compact : compact.substring(0, 80);
+  }
+
+  private static String captureGraphicsDevice() {
+    try {
+      if (GraphicsEnvironment.isHeadless()) {
+        return "headless";
+      }
+      return GraphicsEnvironment.getLocalGraphicsEnvironment()
+          .getDefaultScreenDevice()
+          .getIDstring();
+    } catch (RuntimeException e) {
+      return "unavailable";
+    }
   }
 
   private static boolean isAbsolutePath(String original, String normalized) {

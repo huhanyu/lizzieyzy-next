@@ -43,6 +43,7 @@ import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.theme.MorandiPalette;
+import featurecat.lizzie.util.GraphicsDriverDiagnostics;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
 import featurecat.lizzie.util.YikeSyncDebugLog;
@@ -321,6 +322,7 @@ public class LizzieFrame extends JFrame {
   public static Menu menu;
   public static BottomToolbar toolbar;
   public WindowMenuStrip windowMenuStrip;
+  private final MenuPresentationMode menuPresentationMode;
   private int windowMenuHeight = Config.menuHeight;
   // public static EditToolbar editToolbar;
   public Optional<List<String>> variationOpt;
@@ -733,6 +735,7 @@ public class LizzieFrame extends JFrame {
     toolbar = new BottomToolbar();
     topPanel = new TopHeaderPanel();
     menu = new Menu();
+    menuPresentationMode = MenuPresentationMode.detectCurrent();
     windowMenuStrip = new WindowMenuStrip(menu);
     RightClickMenu = new RightClickMenu();
     RightClickMenu2 = new RightClickMenu2();
@@ -1128,7 +1131,7 @@ public class LizzieFrame extends JFrame {
               }
             });
     tableTimer.start();
-    setJMenuBar(null);
+    configureWindowMenuPresentation();
     if (Lizzie.config.isDoubleEngineMode()) {
       boardRenderer2 = new BoardRenderer(false);
       boardRenderer2.setOrder(1);
@@ -1870,14 +1873,16 @@ public class LizzieFrame extends JFrame {
         text(
             "Accessibility.candidateTableDescription",
             "Candidate moves reported by the current analysis engine."));
-    AccessibilitySupport.applyToTree(windowMenuStrip);
+    JComponent activeMenuComponent =
+        menuPresentationMode.usesNativeMenuBar() ? menu : windowMenuStrip;
+    AccessibilitySupport.applyToTree(activeMenuComponent);
     AccessibilitySupport.applyToTree(topPanel);
     AccessibilitySupport.applyToTree(sidebarPanel);
     AccessibilitySupport.applyToTree(toolbar);
     AccessibilitySupport.installWindowFocusCycling(
         this,
         mainPanel,
-        windowMenuStrip,
+        activeMenuComponent,
         topPanel,
         mainPanel,
         sidebarPanel,
@@ -11851,23 +11856,49 @@ public class LizzieFrame extends JFrame {
     mainPanel.setVisible(true);
   }
 
+  private void configureWindowMenuPresentation() {
+    boolean nativeMenu = menuPresentationMode.usesNativeMenuBar();
+    GraphicsDriverDiagnostics.startAsync();
+    setJMenuBar(nativeMenu ? menu : null);
+    windowMenuStrip.setVisible(!nativeMenu);
+    windowMenuHeight = nativeMenu ? 0 : Config.menuHeight;
+    System.setProperty(MenuPresentationMode.ACTIVE_PROPERTY, menuPresentationMode.id());
+    System.out.println(
+        "Menu presentation: mode="
+            + menuPresentationMode.id()
+            + ", desktopSession="
+            + MenuPresentationMode.desktopSession(System.getenv())
+            + ", java="
+            + System.getProperty("java.version", "unknown")
+            + ", os="
+            + System.getProperty("os.name", "unknown")
+            + " "
+            + System.getProperty("os.version", "unknown"));
+  }
+
   public void reSetLoc() {
     SwingUtilities.invokeLater(
         new Thread() {
           public void run() {
             int width = getWidth() - getInsets().left - getInsets().right;
-            windowMenuStrip.rebuild();
-            windowMenuHeight =
-                windowMenuStrip.getPreferredSize().height > 0
-                    ? windowMenuStrip.getPreferredSize().height
-                    : Config.menuHeight;
-            windowMenuStrip.setBounds(0, 0, width, windowMenuHeight);
-            windowMenuStrip.setPreferredSize(new Dimension(width, windowMenuHeight));
-            windowMenuStrip.invalidate();
-            windowMenuStrip.revalidate();
-            windowMenuStrip.doLayout();
-            windowMenuStrip.repaint();
-            windowMenuStrip.setVisible(true);
+            if (menuPresentationMode.usesNativeMenuBar()) {
+              windowMenuHeight = 0;
+              windowMenuStrip.setVisible(false);
+            } else {
+              windowMenuStrip.rebuild();
+              int preferredMenuHeight =
+                  windowMenuStrip.getPreferredSize().height > 0
+                      ? windowMenuStrip.getPreferredSize().height
+                      : Config.menuHeight;
+              windowMenuHeight = menuPresentationMode.contentOffset(preferredMenuHeight);
+              windowMenuStrip.setBounds(0, 0, width, windowMenuHeight);
+              windowMenuStrip.setPreferredSize(new Dimension(width, windowMenuHeight));
+              windowMenuStrip.invalidate();
+              windowMenuStrip.revalidate();
+              windowMenuStrip.doLayout();
+              windowMenuStrip.repaint();
+              windowMenuStrip.setVisible(true);
+            }
             if (Lizzie.config.showTopToolBar) {
               if (Lizzie.config.autoWrapToolBar) {
                 // To allow FlowLayout wrapping properly, let it take its preferred height

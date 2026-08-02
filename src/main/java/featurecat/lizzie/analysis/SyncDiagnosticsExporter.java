@@ -343,6 +343,22 @@ public final class SyncDiagnosticsExporter {
     text.append("osName: ").append(sanitizer.text(environment.getOsName())).append('\n');
     text.append("osVersion: ").append(sanitizer.text(environment.getOsVersion())).append('\n');
     text.append("osArch: ").append(sanitizer.text(environment.getOsArch())).append('\n');
+    text.append("desktopSession: ")
+        .append(sanitizer.text(environment.getDesktopSession()))
+        .append('\n');
+    text.append("waylandDisplayPresent: ")
+        .append(environment.isWaylandDisplayPresent())
+        .append('\n');
+    text.append("desktopName: ").append(sanitizer.text(environment.getDesktopName())).append('\n');
+    text.append("menuPresentation: ")
+        .append(sanitizer.text(environment.getMenuPresentation()))
+        .append('\n');
+    text.append("graphicsDevice: ")
+        .append(sanitizer.text(environment.getGraphicsDevice()))
+        .append('\n');
+    text.append("graphicsDriver: ")
+        .append(sanitizer.text(environment.getGraphicsDriver()))
+        .append('\n');
     text.append("userDirSanitized: ")
         .append(sanitizer.path(environment.getUserDirSanitized()))
         .append('\n');
