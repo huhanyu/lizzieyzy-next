@@ -21,6 +21,7 @@ import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -183,6 +184,75 @@ public class ZhiziApiClient {
     return CreditPage.fromJson(response, Math.max(0, page), clampPageSize(pageSize));
   }
 
+  public List<MembershipProduct> fetchMembershipProducts()
+      throws IOException, InterruptedException {
+    JSONArray response =
+        getArray(
+            "/api/cluster/product?type=MEMBERSHIP",
+            "",
+            ZhiziApiException.Operation.FETCH_PRODUCTS);
+    List<MembershipProduct> products = new ArrayList<>();
+    for (int index = 0; index < response.length(); index++) {
+      JSONObject item = response.optJSONObject(index);
+      MembershipProduct product = MembershipProduct.fromJson(item);
+      if (product != null) {
+        products.add(product);
+      }
+    }
+    products.sort((left, right) -> Integer.compare(left.durationMonths, right.durationMonths));
+    return Collections.unmodifiableList(products);
+  }
+
+  public PaymentOrder createMembershipOrder(
+      String accountToken, MembershipProduct product, boolean autoRenew)
+      throws IOException, InterruptedException {
+    if (product == null || !product.isPurchasable()) {
+      throw new ZhiziApiException(
+          400, "invalid_product", "", 0, false, ZhiziApiException.Operation.CREATE_ORDER);
+    }
+    JSONObject body = new JSONObject();
+    body.put("payType", "WECHAT");
+    body.put("amount", product.priceFen);
+    body.put("tradeType", "NATIVE");
+    body.put("body", "LizzieYzy Next VIP membership");
+    body.put("orderType", "PURCHASE_PRODUCT");
+    body.put("productName", product.name);
+    body.put("extraInfo", new JSONObject().put("autoRenew", autoRenew));
+    PaymentOrder order =
+        PaymentOrder.fromJson(
+            post(
+                "/api/pay/orders",
+                body,
+                accountToken,
+                ZhiziApiException.Operation.CREATE_ORDER,
+                false),
+            ZhiziApiException.Operation.CREATE_ORDER);
+    if (order.amountFen != product.priceFen || !product.name.equals(order.productName)) {
+      throw invalidResponse(ZhiziApiException.Operation.CREATE_ORDER);
+    }
+    return order;
+  }
+
+  public PaymentOrder fetchOrder(String accountToken, String orderId)
+      throws IOException, InterruptedException {
+    String safeOrderId = orderId == null ? "" : orderId.trim();
+    if (!safeOrderId.matches("[0-9a-fA-F]{24}")) {
+      throw new ZhiziApiException(
+          400, "invalid_order_id", "", 0, false, ZhiziApiException.Operation.FETCH_ORDER);
+    }
+    PaymentOrder order =
+        PaymentOrder.fromJson(
+            get(
+                "/api/pay/orders/" + safeOrderId,
+                accountToken,
+                ZhiziApiException.Operation.FETCH_ORDER),
+            ZhiziApiException.Operation.FETCH_ORDER);
+    if (!safeOrderId.equalsIgnoreCase(order.id)) {
+      throw invalidResponse(ZhiziApiException.Operation.FETCH_ORDER);
+    }
+    return order;
+  }
+
   private JSONObject post(
       String path,
       JSONObject body,
@@ -223,7 +293,34 @@ public class ZhiziApiClient {
     return sendJson(builder.build(), operation, false).body;
   }
 
+  private JSONArray getArray(
+      String path, String bearerToken, ZhiziApiException.Operation operation)
+      throws IOException, InterruptedException {
+    HttpRequest.Builder builder =
+        HttpRequest.newBuilder(baseUri.resolve(path))
+            .timeout(REQUEST_TIMEOUT)
+            .header("Accept", "application/json")
+            .version(HttpClient.Version.HTTP_1_1)
+            .GET();
+    addAuthorization(builder, bearerToken);
+    Object body = sendJsonValue(builder.build(), operation, false).body;
+    if (!(body instanceof JSONArray)) {
+      throw invalidResponse(operation);
+    }
+    return (JSONArray) body;
+  }
+
   private JsonResponse sendJson(
+      HttpRequest request, ZhiziApiException.Operation operation, boolean allowEmpty)
+      throws IOException, InterruptedException {
+    JsonValueResponse parsed = sendJsonValue(request, operation, allowEmpty);
+    if (!(parsed.body instanceof JSONObject)) {
+      throw invalidResponse(operation);
+    }
+    return new JsonResponse((JSONObject) parsed.body, parsed.retryAfterSeconds);
+  }
+
+  private JsonValueResponse sendJsonValue(
       HttpRequest request, ZhiziApiException.Operation operation, boolean allowEmpty)
       throws IOException, InterruptedException {
     HttpResponse<String> response;
@@ -262,10 +359,14 @@ public class ZhiziApiClient {
       if (!allowEmpty) {
         throw invalidResponse(operation);
       }
-      return new JsonResponse(new JSONObject(), retryAfter);
+      return new JsonValueResponse(new JSONObject(), retryAfter);
     }
     try {
-      return new JsonResponse(new JSONObject(responseBody), retryAfter);
+      Object parsed = new JSONTokener(responseBody).nextValue();
+      if (!(parsed instanceof JSONObject) && !(parsed instanceof JSONArray)) {
+        throw new JSONException("JSON response must be an object or array");
+      }
+      return new JsonValueResponse(parsed, retryAfter);
     } catch (JSONException invalidJson) {
       throw new ZhiziApiException(
           status, "invalid_response", requestId, retryAfter, false, operation, invalidJson);
@@ -380,6 +481,19 @@ public class ZhiziApiClient {
       return new BigDecimal(String.valueOf(value).trim());
     } catch (NumberFormatException ignored) {
       return BigDecimal.ZERO;
+    }
+  }
+
+  private static Long positiveInteger(JSONObject json, String key) {
+    Object value = json == null ? null : json.opt(key);
+    if (value == null || value == JSONObject.NULL) {
+      return null;
+    }
+    try {
+      long parsed = new BigDecimal(String.valueOf(value).trim()).longValueExact();
+      return parsed > 0L ? parsed : null;
+    } catch (ArithmeticException | NumberFormatException ignored) {
+      return null;
     }
   }
 
@@ -659,11 +773,135 @@ public class ZhiziApiClient {
     }
   }
 
+  public static final class MembershipProduct {
+    private static final List<String> SUPPORTED_NAMES =
+        List.of(
+            "MEMBERSHIP_1_MONTH",
+            "MEMBERSHIP_3_MONTH",
+            "MEMBERSHIP_6_MONTH",
+            "MEMBERSHIP_12_MONTH");
+
+    public final String name;
+    public final long priceFen;
+    public final int durationMonths;
+
+    private MembershipProduct(String name, long priceFen, int durationMonths) {
+      this.name = name;
+      this.priceFen = priceFen;
+      this.durationMonths = durationMonths;
+    }
+
+    private static MembershipProduct fromJson(JSONObject json) {
+      if (json == null || !"MEMBERSHIP".equals(json.optString("type", ""))) {
+        return null;
+      }
+      String name = json.optString("name", "").trim();
+      if (!SUPPORTED_NAMES.contains(name)) {
+        return null;
+      }
+      Long priceFen = positiveInteger(json, "price");
+      if (priceFen == null) {
+        return null;
+      }
+      int start = "MEMBERSHIP_".length();
+      int end = name.indexOf("_MONTH", start);
+      try {
+        int months = Integer.parseInt(name.substring(start, end));
+        return new MembershipProduct(name, priceFen.longValue(), months);
+      } catch (RuntimeException invalidName) {
+        return null;
+      }
+    }
+
+    public boolean isPurchasable() {
+      return SUPPORTED_NAMES.contains(name) && priceFen > 0L && durationMonths > 0;
+    }
+  }
+
+  public enum PaymentStatus {
+    PENDING,
+    SUCCESS,
+    FAIL
+  }
+
+  public static final class PaymentOrder {
+    public final String id;
+    public final long amountFen;
+    public final String productName;
+    public final PaymentStatus status;
+    public final String codeUrl;
+    public final Instant paidAt;
+    public final Instant updatedAt;
+
+    private PaymentOrder(
+        String id,
+        long amountFen,
+        String productName,
+        PaymentStatus status,
+        String codeUrl,
+        Instant paidAt,
+        Instant updatedAt) {
+      this.id = id;
+      this.amountFen = amountFen;
+      this.productName = productName;
+      this.status = status;
+      this.codeUrl = codeUrl;
+      this.paidAt = paidAt;
+      this.updatedAt = updatedAt;
+    }
+
+    private static PaymentOrder fromJson(
+        JSONObject json, ZhiziApiException.Operation operation) throws ZhiziApiException {
+      String id = json.optString("id", "").trim();
+      Long amountFen = positiveInteger(json, "amount");
+      String statusValue = json.optString("paidStatus", "").trim();
+      PaymentStatus status;
+      try {
+        status = PaymentStatus.valueOf(statusValue);
+      } catch (IllegalArgumentException invalidStatus) {
+        throw invalidResponse(operation);
+      }
+      String productName = json.optString("productName", "").trim();
+      JSONObject nativePay = json.optJSONObject("nativePayRequest");
+      String codeUrl = nativePay == null ? "" : nativePay.optString("codeURL", "").trim();
+      if (!id.matches("[0-9a-fA-F]{24}") || amountFen == null) {
+        throw invalidResponse(operation);
+      }
+      if (status == PaymentStatus.PENDING && !isSafeWechatCodeUrl(codeUrl)) {
+        throw invalidResponse(operation);
+      }
+      return new PaymentOrder(
+          id,
+          amountFen.longValue(),
+          productName,
+          status,
+          codeUrl,
+          instant(json, "paidAt"),
+          instant(json, "updatedAt"));
+    }
+
+    private static boolean isSafeWechatCodeUrl(String value) {
+      return value != null
+          && value.length() <= 2048
+          && value.regionMatches(true, 0, "weixin://wxpay/", 0, "weixin://wxpay/".length());
+    }
+  }
+
   private static final class JsonResponse {
     private final JSONObject body;
     private final long retryAfterSeconds;
 
     private JsonResponse(JSONObject body, long retryAfterSeconds) {
+      this.body = body;
+      this.retryAfterSeconds = retryAfterSeconds;
+    }
+  }
+
+  private static final class JsonValueResponse {
+    private final Object body;
+    private final long retryAfterSeconds;
+
+    private JsonValueResponse(Object body, long retryAfterSeconds) {
       this.body = body;
       this.retryAfterSeconds = retryAfterSeconds;
     }
