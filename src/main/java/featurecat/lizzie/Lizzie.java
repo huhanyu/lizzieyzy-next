@@ -802,8 +802,6 @@ public class Lizzie {
             }
             if (Lizzie.config.analysisEnginePreLoad) {
               frame.preloadConfiguredAnalysisEngineAfterStartup();
-            } else {
-              frame.scheduleQuickAnalysisEngineWarmupAfterStartup();
             }
             KataGoRuntimeHelper.startAppleSiliconAutoOptimizationAsync();
             KataGoRuntimeHelper.startFirstRunBenchmarkAsync();
