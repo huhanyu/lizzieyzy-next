@@ -424,6 +424,80 @@ class RemoteComputeConfigTest {
   }
 
   @Test
+  void expiredTokenIsRemovedWithoutDiscardingAccountPlanOrSavedPassword() throws Exception {
+    withConfigAndStore(
+        store -> {
+          RemoteComputeConfig.saveZhiziToken(
+              "expired-token",
+              true,
+              RemoteComputeConfig.FASTER_ZHIZI_ARGS,
+              "user@example.com",
+              "remember-me",
+              true);
+          RemoteComputeConfig.State state = RemoteComputeConfig.load();
+          state.provider = RemoteComputeConfig.PROVIDER_ZHIZI;
+          RemoteComputeConfig.save(state);
+
+          RemoteComputeConfig.invalidateZhiziToken();
+
+          state = RemoteComputeConfig.load();
+          assertEquals("", state.zhiziAccountToken);
+          assertFalse(state.rememberZhiziToken);
+          assertEquals("user@example.com", state.zhiziIdentifier);
+          assertEquals(RemoteComputeConfig.PROVIDER_ZHIZI, state.provider);
+          assertEquals(RemoteComputeConfig.FASTER_ZHIZI_ARGS, state.zhiziArgs);
+          assertTrue(state.rememberZhiziPassword);
+          assertEquals("remember-me", state.zhiziPassword);
+          assertTrue(
+              store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com").isEmpty());
+          assertEquals(
+              "remember-me",
+              store.read(CredentialStore.Kind.PASSWORD, "user@example.com").orElseThrow());
+        });
+  }
+
+  @Test
+  void structuredErrorsAreLocalizedWithoutShowingServerJson() {
+    withResourceBundle(
+        AppLocale.SIMPLIFIED_CHINESE.loadBundle(),
+        () -> {
+          ZhiziApiException sendFailure =
+              new ZhiziApiException(
+                  500,
+                  "send_code_error",
+                  "request-42",
+                  0,
+                  false,
+                  ZhiziApiException.Operation.SEND_CODE);
+          String message =
+              RemoteComputeConfig.friendlyZhiziErrorMessage(
+                  sendFailure, RemoteComputeConfig.DEFAULT_ZHIZI_ARGS);
+          assertTrue(message.contains("验证码暂时发送失败"));
+          assertTrue(message.contains("request-42"));
+          assertFalse(message.contains("send_code_error"));
+
+          ZhiziApiException futureFailure =
+              new ZhiziApiException(
+                  409,
+                  "future_private_error",
+                  "",
+                  0,
+                  false,
+                  ZhiziApiException.Operation.OTHER);
+          String fallback =
+              RemoteComputeConfig.friendlyZhiziErrorMessage(
+                  futureFailure, RemoteComputeConfig.ON_DEMAND_1X_ZHIZI_ARGS);
+          assertEquals("远程算力连接失败。", fallback);
+
+          assertEquals(
+              "远程算力连接失败。",
+              RemoteComputeConfig.friendlyZhiziErrorMessage(
+                  "{\"statusCode\":500,\"key\":\"private\"}",
+                  RemoteComputeConfig.ON_DEMAND_1X_ZHIZI_ARGS));
+        });
+  }
+
+  @Test
   void zhiziLoginDoesNotSwitchActiveProviderUntilUserEnablesIt() throws Exception {
     withConfig(
         () -> {
