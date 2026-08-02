@@ -265,6 +265,18 @@ public final class RemoteComputeConfig {
     return save(state);
   }
 
+  /** Invalidates an expired account token without discarding the selected plan or saved account. */
+  public static CredentialSaveResult invalidateZhiziToken() {
+    State state = load();
+    state.zhiziAccountToken = "";
+    state.rememberZhiziToken = false;
+    synchronized (CREDENTIAL_LOCK) {
+      sessionZhiziToken = "";
+      sessionTokenStoredSecurely = false;
+    }
+    return save(state);
+  }
+
   public static void saveZhiziCatalog(ZhiziEngineCatalog catalog) {
     if (catalog == null) {
       return;
@@ -617,6 +629,11 @@ public final class RemoteComputeConfig {
             ? localizedText(
                 "RemoteCompute.error.genericConnection", "Remote compute connection failed.")
             : message.trim();
+    if (text.startsWith("{") || text.contains("\"statusCode\"") || text.contains("\"key\"")) {
+      text =
+          localizedText(
+              "RemoteCompute.error.genericConnection", "Remote compute connection failed.");
+    }
     if (!isVipShareArgs(args) || !looksLikeVipAccessProblem(text)) {
       return text;
     }
@@ -626,6 +643,144 @@ public final class RemoteComputeConfig {
             "RemoteCompute.error.vipHint",
             "This account may not have VIP monthly access, or no VIP worker is available. "
                 + "Switch to On-demand 1x in advanced settings, or check the Zhizi plan.");
+  }
+
+  public static String friendlyZhiziErrorMessage(Throwable error, String args) {
+    ZhiziApiException apiError = findZhiziApiException(error);
+    if (apiError == null) {
+      String message = error == null ? "" : error.getLocalizedMessage();
+      return friendlyZhiziErrorMessage(message, args);
+    }
+
+    String key = apiError.errorKey();
+    String message;
+    switch (key) {
+      case "invalid_phone":
+      case "invalid_email":
+        message =
+            localizedText(
+                "RemoteCompute.error.invalidAccount",
+                "Enter a valid phone number or email address.");
+        break;
+      case "invalid_password":
+      case "invalid_credentials":
+        message =
+            localizedText(
+                "RemoteCompute.error.invalidCredentials",
+                "The account or password is incorrect.");
+        break;
+      case "invalid_verification_code":
+        message =
+            localizedText(
+                "RemoteCompute.error.invalidVerificationCode",
+                "The verification code is incorrect or has expired.");
+        break;
+      case "fast_login_too_frequent":
+        message =
+            localizedText(
+                "RemoteCompute.error.codeTooFrequent",
+                "Verification requests are too frequent. Please wait before trying again.");
+        break;
+      case "password_too_short":
+        message =
+            localizedText(
+                "RemoteCompute.error.passwordTooShort",
+                "The new password must contain at least 8 characters.");
+        break;
+      case "duplicate_phone":
+      case "duplicate_email":
+        message =
+            localizedText(
+                "RemoteCompute.error.accountAlreadyExists",
+                "This account already exists. Sign in instead.");
+        break;
+      case "not_found":
+        message =
+            localizedText(
+                "RemoteCompute.error.accountNotFound",
+                "This account was not found. Check the phone number or email.");
+        break;
+      case "unauthorized":
+        message =
+            localizedText(
+                "RemoteCompute.error.sessionExpired",
+                "The Zhizi login has expired. Sign in again to continue.");
+        break;
+      case "send_code_error":
+        message =
+            localizedText(
+                "RemoteCompute.error.codeSendTemporary",
+                "The verification code could not be sent right now. Please try again later.");
+        break;
+      case "failed_to_insert_socket_io_token":
+        message =
+            localizedText(
+                "RemoteCompute.error.workerUnavailable",
+                "Zhizi could not allocate a compute session. Check the plan and try again later.");
+        break;
+      case "failed_aggerate":
+      case "count_usage_error":
+      case "list_usages_error":
+      case "count_credits_error":
+      case "list_credits_error":
+        message =
+            localizedText(
+                "RemoteCompute.error.billingUnavailable",
+                "Zhizi account usage is temporarily unavailable. Try again later.");
+        break;
+      case "invalid_pay_type":
+      case "invalid_amount":
+      case "missing_product_name":
+      case "invalid_product_name":
+      case "failed_create_prepay_id":
+      case "failed_insert_order":
+      case "order_not_found":
+        message =
+            localizedText(
+                "RemoteCompute.error.paymentUnavailable",
+                "The Zhizi payment request could not be completed. Check it in the Zhizi app.");
+        break;
+      case "network_error":
+        message =
+            localizedText(
+                "RemoteCompute.error.network",
+                "The Zhizi connection was interrupted. Check the network or proxy and try again.");
+        break;
+      case "invalid_response":
+        message =
+            localizedText(
+                "RemoteCompute.error.invalidResponse",
+                "Zhizi returned an incomplete response. Please try again later.");
+        break;
+      default:
+        message =
+            apiError.operation() == ZhiziApiException.Operation.SEND_CODE
+                ? localizedText(
+                    "RemoteCompute.error.codeSendTemporary",
+                    "The verification code could not be sent right now. Please try again later.")
+                : localizedText(
+                    "RemoteCompute.error.genericConnection", "Remote compute connection failed.");
+        break;
+    }
+    if (!apiError.requestId().isEmpty()) {
+      message +=
+          "\n"
+              + java.text.MessageFormat.format(
+                  localizedText("RemoteCompute.error.requestId", "Request ID: {0}"),
+                  apiError.requestId());
+    }
+    return friendlyZhiziErrorMessage(message, args);
+  }
+
+  private static ZhiziApiException findZhiziApiException(Throwable error) {
+    Throwable current = error;
+    for (int depth = 0; current != null && depth < 8; depth++) {
+      if (current instanceof ZhiziApiException) {
+        return (ZhiziApiException) current;
+      }
+      current = current.getCause();
+    }
+    return null;
   }
 
   static String localizedText(String key, String fallback) {

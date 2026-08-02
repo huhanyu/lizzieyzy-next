@@ -9,6 +9,7 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.analysis.remote.ZhiziApiClient;
+import featurecat.lizzie.analysis.remote.ZhiziApiException;
 import featurecat.lizzie.analysis.remote.ZhiziEngineCatalog;
 import featurecat.lizzie.analysis.remote.ZhiziServerCatalogClient;
 import java.awt.BasicStroke;
@@ -91,6 +92,8 @@ public class RemoteComputeDialog extends JDialog {
 
   private final JTextField accountField = new JTextField();
   private final JPasswordField passwordField = new JPasswordField();
+  private final JPasswordField resetPasswordField = new JPasswordField();
+  private final JPasswordField resetConfirmPasswordField = new JPasswordField();
   private final JTextField codeField = new JTextField();
   private final JTextField linkCodeField = new JTextField();
   private final JCheckBox rememberToken =
@@ -110,6 +113,8 @@ public class RemoteComputeDialog extends JDialog {
       secondaryButton(text("RemoteCompute.sendCode", "Send code"));
   private final JButton loginButton =
       primaryButton(text("RemoteCompute.login", "Sign in to Zhizi"));
+  private final JButton forgotPasswordButton =
+      linkButton(text("RemoteCompute.forgotPassword", "Forgot password?"));
   private final JButton zhiziWebsiteButton =
       secondaryButton(text("RemoteCompute.openWebsite", "Open Zhizi website"));
   private final JButton useZhiziButton =
@@ -130,14 +135,24 @@ public class RemoteComputeDialog extends JDialog {
   private JPanel passwordRowPanel;
   private JPanel passwordOptionsPanel;
   private JPanel codeRowPanel;
+  private JPanel resetPasswordRowPanel;
+  private JPanel resetConfirmPasswordRowPanel;
+  private JTextArea fastLoginHint;
+  private Component passwordRowGap;
+  private Component resetPasswordRowGap;
+  private Component resetConfirmPasswordRowGap;
+  private Component fastLoginHintGap;
   private JLabel loggedInAccountLabel;
   private boolean codeLoginMode;
+  private boolean resetPasswordMode;
   private String activePage = RemoteComputeConfig.PROVIDER_ZHIZI;
   private char passwordEchoChar;
   private boolean busy;
   private boolean refreshingWeights;
   private boolean updatingWeightOptions;
   private Timer zhiziStartupMonitor;
+  private Timer verificationCooldownTimer;
+  private int verificationCooldownSeconds;
   private SwingWorker<ZhiziEngineCatalog, Void> catalogRefreshWorker;
 
   public RemoteComputeDialog(Frame owner) throws IOException {
@@ -153,9 +168,23 @@ public class RemoteComputeDialog extends JDialog {
     initActions();
     configureAccessibility();
     loadState();
+    applySmokeLoginMode();
     pack();
     setLocationRelativeTo(owner);
     LizzieFrame.constrainWindowToAvailableWorkArea(this);
+  }
+
+  private void applySmokeLoginMode() {
+    String mode = System.getProperty("lizzie.smoke.remoteComputeLoginMode", "").trim();
+    if ("code".equalsIgnoreCase(mode)) {
+      codeLoginMode = true;
+      resetPasswordMode = false;
+      updateLoginMode();
+    } else if ("reset".equalsIgnoreCase(mode)) {
+      codeLoginMode = false;
+      resetPasswordMode = true;
+      updateLoginMode();
+    }
   }
 
   private JPanel buildContent() {
@@ -247,9 +276,35 @@ public class RemoteComputeDialog extends JDialog {
             passwordField,
             text("RemoteCompute.passwordPlaceholder", "Enter password"));
     loginFormPanel.add(passwordRowPanel);
-    loginFormPanel.add(Box.createVerticalStrut(12));
+    passwordRowGap = Box.createVerticalStrut(12);
+    loginFormPanel.add(passwordRowGap);
+    resetPasswordRowPanel =
+        fieldRow(
+            text("RemoteCompute.newPassword", "New password"),
+            resetPasswordField,
+            text("RemoteCompute.newPasswordPlaceholder", "At least 8 characters"));
+    loginFormPanel.add(resetPasswordRowPanel);
+    resetPasswordRowGap = Box.createVerticalStrut(12);
+    loginFormPanel.add(resetPasswordRowGap);
+    resetConfirmPasswordRowPanel =
+        fieldRow(
+            text("RemoteCompute.confirmPassword", "Confirm"),
+            resetConfirmPasswordField,
+            text("RemoteCompute.confirmPasswordPlaceholder", "Enter the new password again"));
+    loginFormPanel.add(resetConfirmPasswordRowPanel);
+    resetConfirmPasswordRowGap = Box.createVerticalStrut(12);
+    loginFormPanel.add(resetConfirmPasswordRowGap);
     codeRowPanel = buildCodeRow();
     loginFormPanel.add(codeRowPanel);
+    fastLoginHint =
+        multilineHint(
+            text(
+                "RemoteCompute.fastLoginCreatesAccount",
+                "If the account does not exist, verification-code login creates it automatically."));
+    fastLoginHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+    fastLoginHintGap = Box.createVerticalStrut(6);
+    loginFormPanel.add(fastLoginHintGap);
+    loginFormPanel.add(fastLoginHint);
     loginFormPanel.add(Box.createVerticalStrut(12));
     passwordOptionsPanel = buildRememberOptionsRow();
     loginFormPanel.add(passwordOptionsPanel);
@@ -403,7 +458,7 @@ public class RemoteComputeDialog extends JDialog {
   }
 
   private JPanel buildRememberOptionsRow() {
-    JPanel row = transparent(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    JPanel row = transparent(new BorderLayout(10, 0));
     row.setAlignmentX(Component.LEFT_ALIGNMENT);
     row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
     rememberPassword.setToolTipText(
@@ -414,9 +469,12 @@ public class RemoteComputeDialog extends JDialog {
         text(
             "RemoteCompute.rememberLoginTip",
             "Protect the login token with the operating system secure storage."));
-    row.add(rememberToken);
-    row.add(Box.createHorizontalStrut(10));
-    row.add(rememberPassword);
+    JPanel choices = transparent(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    choices.add(rememberToken);
+    choices.add(Box.createHorizontalStrut(10));
+    choices.add(rememberPassword);
+    row.add(choices, BorderLayout.WEST);
+    row.add(forgotPasswordButton, BorderLayout.EAST);
     return row;
   }
 
@@ -550,12 +608,23 @@ public class RemoteComputeDialog extends JDialog {
     customTab.addActionListener(e -> showPage(RemoteComputeConfig.PROVIDER_CUSTOM));
     passwordLoginButton.addActionListener(
         e -> {
+          resetPasswordMode = false;
           codeLoginMode = false;
           updateLoginMode();
         });
     codeLoginButton.addActionListener(
         e -> {
+          resetPasswordMode = false;
           codeLoginMode = true;
+          updateLoginMode();
+        });
+    forgotPasswordButton.addActionListener(
+        e -> {
+          resetPasswordMode = !resetPasswordMode;
+          codeLoginMode = false;
+          codeField.setText("");
+          resetPasswordField.setText("");
+          resetConfirmPasswordField.setText("");
           updateLoginMode();
         });
     showPasswordButton.addActionListener(e -> updatePasswordEcho());
@@ -580,7 +649,9 @@ public class RemoteComputeDialog extends JDialog {
         .addDocumentListener(newChangeListener(this::updateCustomActionButtonState));
     loginButton.addActionListener(
         e -> {
-          if (codeLoginMode) {
+          if (resetPasswordMode) {
+            resetPassword();
+          } else if (codeLoginMode) {
             loginWithCode();
           } else {
             loginWithPassword();
@@ -679,12 +750,28 @@ public class RemoteComputeDialog extends JDialog {
     boolean loggedIn = isZhiziLoggedIn();
     loginFormPanel.setVisible(!loggedIn);
     loggedInPanel.setVisible(loggedIn);
-    passwordLoginButton.setSelected(!codeLoginMode);
-    codeLoginButton.setSelected(codeLoginMode);
-    passwordRowPanel.setVisible(!codeLoginMode);
+    passwordLoginButton.setSelected(!codeLoginMode && !resetPasswordMode);
+    codeLoginButton.setSelected(codeLoginMode && !resetPasswordMode);
+    passwordRowPanel.setVisible(!codeLoginMode && !resetPasswordMode);
+    passwordRowGap.setVisible(!codeLoginMode && !resetPasswordMode);
+    resetPasswordRowPanel.setVisible(resetPasswordMode);
+    resetPasswordRowGap.setVisible(resetPasswordMode);
+    resetConfirmPasswordRowPanel.setVisible(resetPasswordMode);
+    resetConfirmPasswordRowGap.setVisible(resetPasswordMode);
     passwordOptionsPanel.setVisible(true);
-    rememberPassword.setVisible(!codeLoginMode);
-    codeRowPanel.setVisible(codeLoginMode);
+    rememberToken.setVisible(!resetPasswordMode);
+    rememberPassword.setVisible(!codeLoginMode && !resetPasswordMode);
+    codeRowPanel.setVisible(codeLoginMode || resetPasswordMode);
+    fastLoginHint.setVisible(codeLoginMode && !resetPasswordMode);
+    fastLoginHintGap.setVisible(codeLoginMode && !resetPasswordMode);
+    forgotPasswordButton.setText(
+        resetPasswordMode
+            ? text("RemoteCompute.backToLogin", "Back to sign in")
+            : text("RemoteCompute.forgotPassword", "Forgot password?"));
+    loginButton.setText(
+        resetPasswordMode
+            ? text("RemoteCompute.resetPasswordAndLogin", "Reset password and sign in")
+            : text("RemoteCompute.login", "Sign in to Zhizi"));
     if (loggedIn) {
       RemoteComputeConfig.State state = RemoteComputeConfig.load();
       boolean passwordSaved = state.passwordStoredSecurely;
@@ -701,6 +788,7 @@ public class RemoteComputeDialog extends JDialog {
       loggedInAccountLabel.setText(account);
     }
     updateWeightControlState();
+    updateVerificationCodeButton();
     revalidate();
     repaint();
   }
@@ -878,6 +966,48 @@ public class RemoteComputeDialog extends JDialog {
         token -> onZhiziLoggedIn(identifier, token));
   }
 
+  private void resetPassword() {
+    String identifier = accountField.getText().trim();
+    String code = codeField.getText().trim();
+    String password = new String(resetPasswordField.getPassword());
+    String confirmation = new String(resetConfirmPasswordField.getPassword());
+    if (identifier.isEmpty() || code.isEmpty()) {
+      updateStatus(
+          text(
+              "RemoteCompute.error.accountCodeRequired", "Enter an account and verification code."),
+          false);
+      return;
+    }
+    if (password.length() < 8) {
+      updateStatus(
+          text(
+              "RemoteCompute.error.passwordTooShort",
+              "The new password must contain at least 8 characters."),
+          false);
+      return;
+    }
+    if (!password.equals(confirmation)) {
+      updateStatus(
+          text("RemoteCompute.error.passwordMismatch", "The two passwords do not match."), false);
+      return;
+    }
+    runBackground(
+        text("RemoteCompute.status.resettingPassword", "Resetting the Zhizi password..."),
+        () -> apiClient.resetPassword(identifier, code, password),
+        token -> {
+          onZhiziPasswordLoggedIn(identifier, password, token);
+          resetPasswordMode = false;
+          resetPasswordField.setText("");
+          resetConfirmPasswordField.setText("");
+          updateLoginMode();
+          updateStatus(
+              text(
+                  "RemoteCompute.status.passwordReset",
+                  "Password reset. The new login is ready to use."),
+              true);
+        });
+  }
+
   private void onZhiziPasswordLoggedIn(String identifier, String password, String token) {
     RemoteComputeConfig.CredentialSaveResult saveResult =
         RemoteComputeConfig.saveZhiziToken(
@@ -940,16 +1070,55 @@ public class RemoteComputeDialog extends JDialog {
     }
     runBackground(
         text("RemoteCompute.status.sendingCode", "Sending verification code..."),
-        () -> {
-          apiClient.sendCode(identifier);
-          return "ok";
-        },
-        ignored ->
-            updateStatus(
-                text(
-                    "RemoteCompute.status.codeSent",
-                    "Verification code sent. Check your phone or email."),
-                true));
+        () ->
+            apiClient.sendCode(
+                identifier,
+                resetPasswordMode
+                    ? ZhiziApiClient.VerificationPurpose.RESET_PASSWORD
+                    : ZhiziApiClient.VerificationPurpose.FAST_LOGIN),
+        delivery -> {
+          startVerificationCooldown(delivery.retryAfterSeconds);
+          updateStatus(
+              text(
+                  "RemoteCompute.status.codeSent",
+                  "Verification code sent. Check your phone or email."),
+              true);
+        });
+  }
+
+  private void startVerificationCooldown(long seconds) {
+    verificationCooldownSeconds = (int) Math.max(1L, Math.min(600L, seconds));
+    if (verificationCooldownTimer != null) {
+      verificationCooldownTimer.stop();
+    }
+    verificationCooldownTimer =
+        new Timer(
+            1000,
+            event -> {
+              verificationCooldownSeconds = Math.max(0, verificationCooldownSeconds - 1);
+              updateVerificationCodeButton();
+              if (verificationCooldownSeconds == 0) {
+                ((Timer) event.getSource()).stop();
+              }
+            });
+    verificationCooldownTimer.start();
+    updateVerificationCodeButton();
+  }
+
+  private void updateVerificationCodeButton() {
+    if (verificationCooldownSeconds > 0) {
+      sendCodeButton.setText(
+          format(
+              "RemoteCompute.sendCodeCountdown",
+              "Retry in {0}s",
+              verificationCooldownSeconds));
+      sendCodeButton.setEnabled(false);
+    } else {
+      sendCodeButton.setText(text("RemoteCompute.sendCode", "Send code"));
+      sendCodeButton.setEnabled(!busy && (codeLoginMode || resetPasswordMode));
+    }
+    AccessibilitySupport.button(
+        sendCodeButton, sendCodeButton.getText(), sendCodeButton.getText());
   }
 
   private void openZhiziOfficialWebsite() {
@@ -1080,6 +1249,9 @@ public class RemoteComputeDialog extends JDialog {
     cancelCatalogRefresh();
     RemoteComputeConfig.CredentialSaveResult result = RemoteComputeConfig.clearZhiziToken();
     passwordField.setText("");
+    resetPasswordField.setText("");
+    resetConfirmPasswordField.setText("");
+    resetPasswordMode = false;
     rememberPassword.setSelected(false);
     showPasswordButton.setSelected(false);
     updatePasswordEcho();
@@ -1100,6 +1272,8 @@ public class RemoteComputeDialog extends JDialog {
   private void updatePasswordEcho() {
     boolean visible = showPasswordButton.isSelected();
     passwordField.setEchoChar(visible ? (char) 0 : passwordEchoChar);
+    resetPasswordField.setEchoChar(visible ? (char) 0 : passwordEchoChar);
+    resetConfirmPasswordField.setEchoChar(visible ? (char) 0 : passwordEchoChar);
     String passwordAction =
         visible
             ? text("RemoteCompute.hidePassword", "Hide password")
@@ -1227,6 +1401,9 @@ public class RemoteComputeDialog extends JDialog {
   public void dispose() {
     stopZhiziStartupMonitor();
     cancelCatalogRefresh();
+    if (verificationCooldownTimer != null) {
+      verificationCooldownTimer.stop();
+    }
     refreshWeightsButton.setRefreshing(false);
     super.dispose();
   }
@@ -1429,9 +1606,19 @@ public class RemoteComputeDialog extends JDialog {
           success.accept(get());
         } catch (Exception e) {
           Throwable cause = e.getCause() == null ? e : e.getCause();
-          String message =
-              cause.getLocalizedMessage() == null ? cause.toString() : cause.getLocalizedMessage();
-          message = RemoteComputeConfig.friendlyZhiziErrorMessage(message, currentArgs());
+          ZhiziApiException apiError = findZhiziApiException(cause);
+          if (apiError != null && apiError.operation() == ZhiziApiException.Operation.SEND_CODE) {
+            long cooldown = apiError.retryAfterSeconds();
+            if (cooldown > 0 || "fast_login_too_frequent".equals(apiError.errorKey())) {
+              startVerificationCooldown(cooldown > 0 ? cooldown : 60L);
+            }
+          }
+          if (apiError != null && apiError.isUnauthorized()) {
+            RemoteComputeConfig.invalidateZhiziToken();
+            updateLoginMode();
+            updateCurrentStatus();
+          }
+          String message = RemoteComputeConfig.friendlyZhiziErrorMessage(cause, currentArgs());
           updateStatus(message, false);
           JOptionPane.showMessageDialog(
               RemoteComputeDialog.this,
@@ -1447,6 +1634,8 @@ public class RemoteComputeDialog extends JDialog {
     this.busy = busy;
     accountField.setEnabled(!busy);
     passwordField.setEnabled(!busy);
+    resetPasswordField.setEnabled(!busy);
+    resetConfirmPasswordField.setEnabled(!busy);
     codeField.setEnabled(!busy);
     linkCodeField.setEnabled(!busy);
     rememberToken.setEnabled(!busy);
@@ -1456,7 +1645,8 @@ public class RemoteComputeDialog extends JDialog {
     updateWeightControlState();
     passwordLoginButton.setEnabled(!busy);
     codeLoginButton.setEnabled(!busy);
-    sendCodeButton.setEnabled(!busy);
+    forgotPasswordButton.setEnabled(!busy);
+    updateVerificationCodeButton();
     zhiziWebsiteButton.setEnabled(!busy);
     loginButton.setEnabled(!busy);
     updateZhiziActionButtonState();
@@ -1476,6 +1666,8 @@ public class RemoteComputeDialog extends JDialog {
         codeLoginButton, codeLoginButton.getText(), codeLoginButton.getText());
     AccessibilitySupport.button(sendCodeButton, sendCodeButton.getText(), sendCodeButton.getText());
     AccessibilitySupport.button(loginButton, loginButton.getText(), loginButton.getText());
+    AccessibilitySupport.button(
+        forgotPasswordButton, forgotPasswordButton.getText(), forgotPasswordButton.getText());
     AccessibilitySupport.button(
         zhiziWebsiteButton, zhiziWebsiteButton.getText(), zhiziWebsiteButton.getText());
     AccessibilitySupport.button(useZhiziButton, useZhiziButton.getText(), useZhiziButton.getText());
@@ -1534,6 +1726,17 @@ public class RemoteComputeDialog extends JDialog {
     };
   }
 
+  private static ZhiziApiException findZhiziApiException(Throwable error) {
+    Throwable current = error;
+    for (int depth = 0; current != null && depth < 8; depth++) {
+      if (current instanceof ZhiziApiException) {
+        return (ZhiziApiException) current;
+      }
+      current = current.getCause();
+    }
+    return null;
+  }
+
   private JPanel card(String title, String subtitle) {
     JPanel card = new RoundPanel(30, CARD, BORDER);
     card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
@@ -1577,7 +1780,8 @@ public class RemoteComputeDialog extends JDialog {
     JLabel labelView = new JLabel(label);
     labelView.setForeground(MUTED);
     labelView.setFont(labelView.getFont().deriveFont(Font.BOLD, 14F));
-    labelView.setPreferredSize(new Dimension(58, 44));
+    labelView.setPreferredSize(
+        new Dimension(Math.max(58, Math.min(128, labelView.getPreferredSize().width + 10)), 44));
     AccessibilitySupport.labelFor(labelView, field, placeholder);
     row.add(labelView, BorderLayout.WEST);
     row.add(field, BorderLayout.CENTER);
@@ -1605,7 +1809,8 @@ public class RemoteComputeDialog extends JDialog {
     JLabel labelView = new JLabel(label);
     labelView.setForeground(MUTED);
     labelView.setFont(labelView.getFont().deriveFont(Font.BOLD, 14F));
-    labelView.setPreferredSize(new Dimension(58, 44));
+    labelView.setPreferredSize(
+        new Dimension(Math.max(58, Math.min(128, labelView.getPreferredSize().width + 10)), 44));
     AccessibilitySupport.labelFor(labelView, field, placeholder);
     row.add(labelView, BorderLayout.WEST);
     row.add(inputShell, BorderLayout.CENTER);
@@ -1679,6 +1884,20 @@ public class RemoteComputeDialog extends JDialog {
     return label;
   }
 
+  private JTextArea multilineHint(String value) {
+    JTextArea area = new JTextArea(value, 2, 24);
+    area.setEditable(false);
+    area.setFocusable(false);
+    area.setOpaque(false);
+    area.setLineWrap(true);
+    area.setWrapStyleWord(true);
+    area.setForeground(MUTED);
+    area.setFont(area.getFont().deriveFont(Font.BOLD, 12.5F));
+    area.setBorder(null);
+    area.setMaximumSize(new Dimension(Integer.MAX_VALUE, area.getPreferredSize().height));
+    return area;
+  }
+
   private JButton primaryButton(String text) {
     return new RoundedButton(text, GREEN, new Color(34, 121, 77), Color.WHITE, 18);
   }
@@ -1695,6 +1914,18 @@ public class RemoteComputeDialog extends JDialog {
 
   private static JButton segmentButton(String text) {
     JButton button = new TabButton(text);
+    button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    button.setFont(button.getFont().deriveFont(Font.BOLD, 13F));
+    return button;
+  }
+
+  private static JButton linkButton(String text) {
+    JButton button = new JButton(text);
+    button.setBorder(new EmptyBorder(4, 2, 4, 2));
+    button.setBorderPainted(false);
+    button.setContentAreaFilled(false);
+    button.setFocusPainted(true);
+    button.setForeground(GREEN);
     button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     button.setFont(button.getFont().deriveFont(Font.BOLD, 13F));
     return button;

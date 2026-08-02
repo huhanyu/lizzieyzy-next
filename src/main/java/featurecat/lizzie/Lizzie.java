@@ -80,6 +80,10 @@ public class Lizzie {
   private static final String SMOKE_OPEN_YIKE_WEB_PROPERTY = "lizzie.smoke.openYikeWeb";
   private static final String SMOKE_OPEN_YIKE_WEB_DELAY_MS_PROPERTY =
       "lizzie.smoke.openYikeWebDelayMs";
+  private static final String SMOKE_OPEN_REMOTE_COMPUTE_PROPERTY =
+      "lizzie.smoke.openRemoteCompute";
+  private static final String SMOKE_OPEN_REMOTE_COMPUTE_DELAY_MS_PROPERTY =
+      "lizzie.smoke.openRemoteComputeDelayMs";
   private static final String UNKNOWN_HOST_NAME = "unknown-host";
   private static final long HOST_NAME_LOOKUP_TIMEOUT_MILLIS = 500L;
   private static final long LOCAL_HOST_NAME_COMMAND_TIMEOUT_MILLIS = 250L;
@@ -254,6 +258,7 @@ public class Lizzie {
     scheduleBoardSyncSmokeProbe();
     scheduleAutoSetupSmokeProbe();
     scheduleYikeWebSmokeProbe();
+    scheduleRemoteComputeSmokeProbe();
   }
 
   /**
@@ -457,6 +462,38 @@ public class Lizzie {
                   });
             },
             "lizzie-yike-web-smoke");
+    smokeThread.setDaemon(true);
+    smokeThread.start();
+  }
+
+  private static void scheduleRemoteComputeSmokeProbe() {
+    if (!Boolean.getBoolean(SMOKE_OPEN_REMOTE_COMPUTE_PROPERTY)) {
+      return;
+    }
+
+    int delayMs =
+        Math.max(0, Integer.getInteger(SMOKE_OPEN_REMOTE_COMPUTE_DELAY_MS_PROPERTY, 3000));
+    Thread smokeThread =
+        new Thread(
+            () -> {
+              try {
+                Thread.sleep(delayMs);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+              }
+
+              SwingUtilities.invokeLater(
+                  () -> {
+                    if (frame == null) {
+                      System.err.println("Remote compute smoke probe skipped: frame unavailable.");
+                      return;
+                    }
+                    System.out.println("Remote compute smoke probe: opening Remote Compute.");
+                    frame.openRemoteComputeCenter();
+                  });
+            },
+            "lizzie-remote-compute-smoke");
     smokeThread.setDaemon(true);
     smokeThread.start();
   }
