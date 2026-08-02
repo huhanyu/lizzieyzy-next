@@ -72,6 +72,75 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
+  void emptyRootHistoryTargetDoesNotEnterExactRestore() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history =
+          new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      Leelaz engine = new Leelaz("");
+      RecordingOutputStream output = new RecordingOutputStream(null);
+      setOutputStream(engine, output);
+
+      assertTrue(
+          ExactSnapshotEngineRestore.prepare(engine, history.getCurrentHistoryNode(), false)
+              .isEmpty(),
+          "an empty root is a history origin, not an exact snapshot anchor");
+      assertTrue(output.commands().isEmpty(), "a root replay caller must receive no exact commands");
+    }
+  }
+
+  @Test
+  void historyTargetCaptureUsesCurrentGameKomiWhenCallerOmitsOverride() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz engine = new Leelaz("");
+      engine.komi = 7.5f;
+      CommandMutationOutputStream output = new CommandMutationOutputStream(engine, null, null);
+      setOutputStream(engine, output);
+
+      ExactSnapshotEngineRestore.prepare(engine, history.getCurrentHistoryNode(), false)
+          .orElseThrow()
+          .execute();
+
+      assertTrue(
+          output.loadedSgf().contains("KM[6.5]"),
+          "history-target capture must use the current game's komi instead of engine cache");
+    }
+  }
+
+  @Test
+  void currentPositionCaptureUsesSuppliedSnapshotKomiInsteadOfLiveGameKomi() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      BoardData position = moveNode(2, 2, Stone.BLACK, true, 4);
+      position.komi = 8.5;
+      Leelaz engine = new Leelaz("");
+      engine.komi = 7.5f;
+      CommandMutationOutputStream output = new CommandMutationOutputStream(engine, null, null);
+      setOutputStream(engine, output);
+
+      ExactSnapshotEngineRestore.prepareCurrentPosition(engine, position).execute();
+
+      assertTrue(
+          output.loadedSgf().contains("KM[8.5]"),
+          "current-position capture must use supplied snapshot data instead of live history");
+    }
+  }
+
+  @Test
   void preparedRestoreCanExecuteOnlyOnce() throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
       BoardHistoryList history = new BoardHistoryList(snapshotRoot());
@@ -666,6 +735,39 @@ class ExactSnapshotEngineRestoreContractTest {
         System.setProperty("java.io.tmpdir", previousTempDirectory);
       }
       Files.deleteIfExists(tempDirectory);
+    }
+  }
+
+  @Test
+  void exactSnapshotRestoreDeletesSgfWhenSnapshotSerializationFails() throws Exception {
+    Path tempDirectory = Path.of(System.getProperty("java.io.tmpdir"));
+    List<Path> existingSnapshotFiles = snapshotSgfFiles(tempDirectory);
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardData malformedSnapshot =
+          BoardData.snapshot(
+              null,
+              java.util.Optional.empty(),
+              Stone.EMPTY,
+              false,
+              new Zobrist(),
+              1,
+              new int[BOARD_AREA],
+              0,
+              0,
+              50,
+              0);
+      malformedSnapshot.addProperty("SZ", String.valueOf(BOARD_SIZE));
+      BoardHistoryList history = new BoardHistoryList(malformedSnapshot);
+      Leelaz engine = new Leelaz("");
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepare(engine, history.getCurrentHistoryNode(), false)
+              .orElseThrow();
+
+      assertThrows(RuntimeException.class, preparedRestore::execute);
+      assertEquals(
+          existingSnapshotFiles,
+          snapshotSgfFiles(tempDirectory),
+          "snapshot serialization failure must delete the partially-created temporary SGF");
     }
   }
 
@@ -1459,6 +1561,15 @@ class ExactSnapshotEngineRestoreContractTest {
   private static ExactSnapshotEngineRestore.Completion executePositionRestore(
       Leelaz engine, BoardData positionData) {
     return ExactSnapshotEngineRestore.prepareCurrentPosition(engine, positionData).execute();
+  }
+
+  private static List<Path> snapshotSgfFiles(Path tempDirectory) throws IOException {
+    try (var files = Files.list(tempDirectory)) {
+      return files
+          .filter(path -> path.getFileName().toString().startsWith("lizzie-snapshot-"))
+          .sorted()
+          .toList();
+    }
   }
 
   private static BoardData snapshotRoot() {

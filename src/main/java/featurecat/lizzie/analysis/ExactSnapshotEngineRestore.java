@@ -120,6 +120,7 @@ public final class ExactSnapshotEngineRestore {
             sourceData.getPlayouts());
     snapshot.moveMNNumber = sourceData.moveMNNumber;
     snapshot.comment = sourceData.comment;
+    snapshot.komi = sourceData.komi;
     snapshot.setProperties(sourceData.getProperties());
     int[] boardSize = resolveSnapshotBoardSize(sourceData);
     snapshot.addProperty("SZ", formatBoardSizeTag(boardSize[0], boardSize[1]));
@@ -185,8 +186,9 @@ public final class ExactSnapshotEngineRestore {
   }
 
   private static Path writeSnapshotSgf(RestorePlan plan) {
+    Path sgfFile = null;
     try {
-      Path sgfFile = Files.createTempFile("lizzie-snapshot-", ".sgf");
+      sgfFile = Files.createTempFile("lizzie-snapshot-", ".sgf");
       String sgf = buildSnapshotSgf(plan);
       Files.writeString(sgfFile, sgf);
       if (TrialDiag.ENABLED) {
@@ -194,7 +196,23 @@ public final class ExactSnapshotEngineRestore {
       }
       return sgfFile;
     } catch (IOException ex) {
+      deleteFailedSnapshotFile(sgfFile, ex);
       throw new IllegalStateException("Failed to build snapshot SGF for engine restore", ex);
+    } catch (RuntimeException ex) {
+      deleteFailedSnapshotFile(sgfFile, ex);
+      throw ex;
+    }
+  }
+
+  private static void deleteFailedSnapshotFile(Path sgfFile, Throwable failure) {
+    if (sgfFile == null) {
+      return;
+    }
+    try {
+      Files.deleteIfExists(sgfFile);
+    } catch (IOException cleanupFailure) {
+      failure.addSuppressed(cleanupFailure);
+      deleteSnapshotFile(sgfFile, 0);
     }
   }
 
@@ -239,12 +257,16 @@ public final class ExactSnapshotEngineRestore {
   }
 
   private static Double captureKomi(Leelaz engine, BoardData snapshotData) {
+    if (snapshotData != null && snapshotData.komi != -999) {
+      return snapshotData.komi;
+    }
     if (engine != null && !Float.isNaN(engine.komi)) {
       return (double) engine.komi;
     }
-    if (snapshotData.komi != -999) {
-      return snapshotData.komi;
-    }
+    return null;
+  }
+
+  private static Double captureHistoryKomi() {
     Board board = Lizzie.board;
     if (board == null) {
       return null;
@@ -615,9 +637,10 @@ public final class ExactSnapshotEngineRestore {
       Leelaz.ExactSnapshotRestoreAdmission admission =
           engine.captureExactSnapshotRestoreAdmission(
               owner, ownerIdentity, mirrorEngine, mirrorLifecycleOwnedByOperation);
+      Double capturedKomi = komiOverride == null ? captureHistoryKomi() : komiOverride;
       return Optional.of(
           new RestorePlan(
-              engine, mirrorEngine, snapshotData, tail, resumePonder, komiOverride, admission));
+              engine, mirrorEngine, snapshotData, tail, resumePonder, capturedKomi, admission));
     }
 
     private static RestorePlan capture(
