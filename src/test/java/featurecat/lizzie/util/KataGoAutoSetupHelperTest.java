@@ -231,6 +231,7 @@ public class KataGoAutoSetupHelperTest {
   @Test
   void doesNotTreatAnotherGtpEngineAsLocalKataGo() throws Exception {
     Path root = Files.createTempDirectory("katago-discovery-non-katago");
+    touch(root.resolve("PROJECT_INFO.txt"));
     Path engine = touch(root.resolve("other-engine").resolve("leela-zero"));
     Path config = touch(root.resolve("other-engine").resolve("configs").resolve("gtp.cfg"));
     touch(root.resolve("other-engine").resolve("configs").resolve("analysis.cfg"));
@@ -448,6 +449,59 @@ public class KataGoAutoSetupHelperTest {
           assertEquals(analysis, result.analysisConfigPath);
           assertEquals(weight, result.activeWeightPath);
         });
+  }
+
+  @Test
+  void relativeEngineCommandDoesNotLeakFromJvmWorkingDirectory() throws Exception {
+    Path jvmWorkingDirectory = Path.of("").toAbsolutePath().normalize();
+    Path shadowDirectory =
+        Files.createTempDirectory(
+                Files.createDirectories(jvmWorkingDirectory.resolve("target")),
+                "katago-cwd-shadow-")
+            .toAbsolutePath()
+            .normalize();
+    Path shadowEngine = touch(shadowDirectory.resolve(testKataGoBinaryName()));
+    Path relativeEngine = jvmWorkingDirectory.relativize(shadowEngine);
+
+    try {
+      Path packageRoot = Files.createTempDirectory("katago-contextual-relative-command");
+      touch(packageRoot.resolve("PROJECT_INFO.txt"));
+      Path workDir = Files.createDirectories(packageRoot.resolve("user-data"));
+      Path packagedEngine = touch(packageRoot.resolve(relativeEngine));
+      Path configs = Files.createDirectories(packageRoot.resolve("configs"));
+      Path gtp = touch(configs.resolve("gtp.cfg"));
+      Path analysis = touch(configs.resolve("analysis.cfg"));
+      Path weight = touch(packageRoot.resolve("weights").resolve("default.bin.gz"));
+
+      withProcessDirAndConfig(
+          packageRoot,
+          workDir,
+          () -> {
+            EngineData relative = new EngineData();
+            relative.name = "KataGo contextual relative";
+            relative.commands =
+                quoteLiteral(relativeEngine)
+                    + " gtp -model "
+                    + quote(weight)
+                    + " -config "
+                    + quote(gtp);
+            relative.isDefault = true;
+            Utils.saveEngineSettings(new ArrayList<>(List.of(relative)));
+
+            KataGoAutoSetupHelper.LocalKataGoDiscoveryResult result =
+                KataGoAutoSetupHelper.inspectLocalKataGo();
+
+            assertTrue(result.isComplete());
+            assertEquals(KataGoAutoSetupHelper.DiscoverySource.DEFAULT_ENGINE, result.source);
+            assertEquals(packagedEngine, result.enginePath);
+            assertEquals(gtp, result.gtpConfigPath);
+            assertEquals(analysis, result.analysisConfigPath);
+            assertEquals(weight, result.activeWeightPath);
+          });
+    } finally {
+      Files.deleteIfExists(shadowEngine);
+      Files.deleteIfExists(shadowDirectory);
+    }
   }
 
   @Test

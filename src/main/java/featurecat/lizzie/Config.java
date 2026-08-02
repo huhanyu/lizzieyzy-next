@@ -596,6 +596,13 @@ public class Config {
   }
 
   private static Optional<Path> findBundledAppRoot() {
+    Path configuredWorkingDirectory =
+        Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
+    if (hasAppRootMarker(configuredWorkingDirectory)
+        && hasCompleteBundledKataGoAssets(configuredWorkingDirectory)) {
+      return Optional.of(configuredWorkingDirectory);
+    }
+
     LinkedHashSet<Path> seedPaths = new LinkedHashSet<>();
     try {
       File codeSource =
@@ -617,6 +624,16 @@ public class Config {
       }
     }
     return Optional.empty();
+  }
+
+  private static boolean hasAppRootMarker(Path directory) {
+    return directory != null
+        && (Files.isRegularFile(directory.resolve(WINDOWS_PORTABLE_MARKER_NAME))
+            || Files.isRegularFile(directory.resolve("PROJECT_INFO.txt"))
+            || Files.isRegularFile(directory.resolve("lizzieyzy-next-installed-manifest.json"))
+            || Files.isRegularFile(directory.resolve("app").resolve("PROJECT_INFO.txt"))
+            || Files.isRegularFile(
+                directory.resolve("app").resolve("lizzieyzy-next-installed-manifest.json")));
   }
 
   private static boolean hasCompleteBundledKataGoAssets(Path appRoot) {

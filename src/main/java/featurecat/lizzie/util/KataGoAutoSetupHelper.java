@@ -2651,11 +2651,28 @@ public final class KataGoAutoSetupHelper {
     if (Utils.isBlank(value)) {
       return null;
     }
+    Path contextual = resolvePath(value, workingDir, appRoot, null);
+    if (isRegularFile(contextual)) {
+      return contextual;
+    }
+    try {
+      Path raw = Paths.get(value.trim());
+      boolean qualifiedPath =
+          raw.isAbsolute()
+              || raw.getNameCount() > 1
+              || value.indexOf('/') >= 0
+              || value.indexOf('\\') >= 0;
+      if (qualifiedPath) {
+        return contextual;
+      }
+    } catch (RuntimeException e) {
+      return contextual;
+    }
     Path onPath = Utils.resolveExistingExecutable(value);
     if (isRegularFile(onPath)) {
       return normalize(onPath);
     }
-    return resolvePath(value, workingDir, appRoot, null);
+    return contextual;
   }
 
   private static Path resolveCommandOption(

@@ -549,6 +549,7 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   private static void createBundledKataGoAssets(Path root, String modelSource) throws Exception {
+    Files.writeString(root.resolve(".lizzie-portable"), "");
     Path katagoRoot = root.resolve("engines").resolve("katago");
     String[] platformDirs = {
       "macos-arm64", "macos-amd64", "linux-x64", "linux-x86", "windows-x64", "windows-x86"
