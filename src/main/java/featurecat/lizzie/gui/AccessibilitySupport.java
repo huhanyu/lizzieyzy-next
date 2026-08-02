@@ -27,6 +27,7 @@ import javax.swing.text.JTextComponent;
 public final class AccessibilitySupport {
   private static final String EXPLICIT_NAME = "lizzie.a11y.explicitName";
   private static final String EXPLICIT_DESCRIPTION = "lizzie.a11y.explicitDescription";
+  private static final String VISIBLE_TOOLTIP_DISABLED = "lizzie.a11y.visibleTooltipDisabled";
   private static final int LOCALIZED_CONTROL_WIDTH_PADDING = 12;
 
   private AccessibilitySupport() {}
@@ -48,15 +49,29 @@ public final class AccessibilitySupport {
   }
 
   public static <T extends AbstractButton> T button(T button, String name, String description) {
+    return configureButton(button, name, description, true);
+  }
+
+  /** Adds button semantics without showing a tooltip that can cover rapid-repeat controls. */
+  public static <T extends AbstractButton> T buttonWithoutTooltip(
+      T button, String name, String description) {
+    return configureButton(button, name, description, false);
+  }
+
+  private static <T extends AbstractButton> T configureButton(
+      T button, String name, String description, boolean showTooltip) {
     named(button, name, description);
     if (button != null) {
+      button.putClientProperty(VISIBLE_TOOLTIP_DISABLED, !showTooltip);
       button
           .getInputMap(JComponent.WHEN_FOCUSED)
           .put(KeyStroke.getKeyStroke("pressed ENTER"), "pressed");
       button
           .getInputMap(JComponent.WHEN_FOCUSED)
           .put(KeyStroke.getKeyStroke("released ENTER"), "released");
-      if (button.getToolTipText() == null || button.getToolTipText().isBlank()) {
+      if (!showTooltip) {
+        button.setToolTipText(null);
+      } else if (button.getToolTipText() == null || button.getToolTipText().isBlank()) {
         button.setToolTipText(clean(description).isEmpty() ? clean(name) : clean(description));
       }
     }
@@ -110,7 +125,11 @@ public final class AccessibilitySupport {
                   context == null ? null : context.getAccessibleDescription(),
                   firstNonBlank(button.getToolTipText(), name)));
       if (!name.isBlank()) {
-        button(button, name, description);
+        if (Boolean.TRUE.equals(button.getClientProperty(VISIBLE_TOOLTIP_DISABLED))) {
+          buttonWithoutTooltip(button, name, description);
+        } else {
+          button(button, name, description);
+        }
       }
     } else if (root instanceof JProgressBar) {
       JProgressBar progressBar = (JProgressBar) root;

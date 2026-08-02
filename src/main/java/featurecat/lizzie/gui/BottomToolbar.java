@@ -2514,27 +2514,27 @@ public class BottomToolbar extends JPanel {
   }
 
   private void configureAccessibility() {
-    AccessibilitySupport.button(
+    AccessibilitySupport.buttonWithoutTooltip(
         firstButton,
         text("Accessibility.firstMove", "First move"),
         text("Accessibility.firstMoveDescription", "Go to the first move"));
-    AccessibilitySupport.button(
+    AccessibilitySupport.buttonWithoutTooltip(
         backward10,
         text("Accessibility.previousTenMoves", "Previous ten moves"),
         text("Accessibility.previousTenMovesDescription", "Go back ten moves"));
-    AccessibilitySupport.button(
+    AccessibilitySupport.buttonWithoutTooltip(
         backward1,
         text("Accessibility.previousMove", "Previous move"),
         text("Accessibility.previousMoveDescription", "Go back one move"));
-    AccessibilitySupport.button(
+    AccessibilitySupport.buttonWithoutTooltip(
         forward1,
         text("Accessibility.nextMove", "Next move"),
         text("Accessibility.nextMoveDescription", "Go forward one move"));
-    AccessibilitySupport.button(
+    AccessibilitySupport.buttonWithoutTooltip(
         forward10,
         text("Accessibility.nextTenMoves", "Next ten moves"),
         text("Accessibility.nextTenMovesDescription", "Go forward ten moves"));
-    AccessibilitySupport.button(
+    AccessibilitySupport.buttonWithoutTooltip(
         lastButton,
         text("Accessibility.lastMove", "Last move"),
         text("Accessibility.lastMoveDescription", "Go to the last move"));
