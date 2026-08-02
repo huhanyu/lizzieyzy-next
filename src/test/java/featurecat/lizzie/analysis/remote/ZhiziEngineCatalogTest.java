@@ -57,33 +57,93 @@ class ZhiziEngineCatalogTest {
   }
 
   @Test
-  void fallbackIncludesEveryConfirmedZhiziWeightInStableOrder() {
+  void fallbackContainsOnlyWeightsInThePublicDocumentation() {
     ZhiziEngineCatalog catalog = ZhiziEngineCatalog.fallback();
 
     assertEquals("28bnbt", catalog.defaultWeight());
-    assertEquals(
-        List.of("18bnbt", "28bnbt", "fdx", "60b", "40b", "20b"), names(catalog));
+    assertEquals(List.of("18bnbt", "28bnbt", "fdx"), names(catalog));
     assertEquals("40B NBT extra-large weight", description(catalog, "fdx"));
-    assertTrue(description(catalog, "20b").contains("handicap"));
+    assertTrue(
+        catalog.weights().stream()
+            .allMatch(
+                option ->
+                    option.source()
+                        == ZhiziEngineCatalog.DiscoverySource.OFFICIAL_DOCUMENTED));
   }
 
   @Test
-  void confirmedWeightsCompleteOldCachesAndPreserveServerOnlyOptions() throws Exception {
+  void documentedWeightsCompleteOldCachesWithoutMislabelingLegacyOptions() throws Exception {
     ZhiziEngineCatalog oldCache =
         new ZhiziEngineCatalog(
             "7.9.0",
-            "28bnbt",
+            "40b",
             List.of(
                 new ZhiziEngineCatalog.Option("28bnbt", "server description"),
-                new ZhiziEngineCatalog.Option("future-net", "future option")));
+                new ZhiziEngineCatalog.Option("40b", "legacy large network"),
+                new ZhiziEngineCatalog.Option("20b", "legacy handicap network")));
 
-    ZhiziEngineCatalog completed = oldCache.withConfirmedWeights();
+    ZhiziEngineCatalog completed = oldCache.withDocumentedWeights();
 
     assertEquals(
-        List.of("18bnbt", "28bnbt", "fdx", "60b", "40b", "20b", "future-net"),
+        List.of("18bnbt", "28bnbt", "fdx", "40b", "20b"),
         names(completed));
     assertEquals("server description", description(completed, "28bnbt"));
-    assertEquals("future option", description(completed, "future-net"));
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.OFFICIAL_DOCUMENTED,
+        source(completed, "28bnbt"));
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY, source(completed, "40b"));
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY, source(completed, "20b"));
+  }
+
+  @Test
+  void oldCacheWithoutSourceMigratesToLegacyWhileStoredSourcesRoundTrip() throws Exception {
+    JSONObject oldCache =
+        new JSONObject()
+            .put("defaultKataWeight", "40b")
+            .put(
+                "supportKataWeights",
+                new JSONArray().put(option("40b", "old cached option")));
+
+    ZhiziEngineCatalog migrated = ZhiziEngineCatalog.fromJson(oldCache).withDocumentedWeights();
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY, source(migrated, "40b"));
+
+    ZhiziEngineCatalog restored = ZhiziEngineCatalog.fromJson(migrated.toJson());
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY, source(restored, "40b"));
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.OFFICIAL_DOCUMENTED,
+        source(restored, "28bnbt"));
+  }
+
+  @Test
+  void selectableAllowListExcludesArbitraryCachedNames() {
+    assertTrue(ZhiziEngineCatalog.isDocumentedWeight("28bnbt"));
+    assertTrue(ZhiziEngineCatalog.isLegacyCompatibleWeight("60b"));
+    assertTrue(ZhiziEngineCatalog.isSelectableWeight("20b"));
+    assertFalse(ZhiziEngineCatalog.isSelectableWeight("future-net"));
+    assertFalse(ZhiziEngineCatalog.isSelectableWeight("28bnbt --gpu-type 24x"));
+  }
+
+  @Test
+  void futureServerCapabilitiesMayConfirmAndSelectACompatibleLegacyWeight() throws Exception {
+    ZhiziEngineCatalog serverCatalog =
+        new ZhiziEngineCatalog(
+            "future-api",
+            "40b",
+            List.of(
+                new ZhiziEngineCatalog.Option(
+                    "40b",
+                    "server-confirmed large network",
+                    ZhiziEngineCatalog.DiscoverySource.SERVER_CAPABILITIES)));
+
+    ZhiziEngineCatalog completed = serverCatalog.withDocumentedWeights();
+
+    assertEquals("40b", completed.defaultWeight());
+    assertEquals(
+        ZhiziEngineCatalog.DiscoverySource.SERVER_CAPABILITIES, source(completed, "40b"));
   }
 
   @Test
@@ -124,5 +184,14 @@ class ZhiziEngineCatalogTest {
         .findFirst()
         .orElseThrow()
         .description();
+  }
+
+  private static ZhiziEngineCatalog.DiscoverySource source(
+      ZhiziEngineCatalog catalog, String name) {
+    return catalog.weights().stream()
+        .filter(option -> name.equals(option.name()))
+        .findFirst()
+        .orElseThrow()
+        .source();
   }
 }

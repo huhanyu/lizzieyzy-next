@@ -141,7 +141,7 @@ public final class RemoteComputeConfig {
     json.put("zhizi-identifier", identifier);
     json.put("custom-remote-code", state.customRemoteCode == null ? "" : state.customRemoteCode);
     if (state.zhiziCatalog != null) {
-      json.put("zhizi-engine-catalog", state.zhiziCatalog.withConfirmedWeights().toJson());
+      json.put("zhizi-engine-catalog", state.zhiziCatalog.withDocumentedWeights().toJson());
     }
     json.put("zhizi-catalog-updated-at", Math.max(0L, state.zhiziCatalogUpdatedAt));
     synchronized (CREDENTIAL_LOCK) {
@@ -282,7 +282,7 @@ public final class RemoteComputeConfig {
       return;
     }
     State state = load();
-    state.zhiziCatalog = catalog.withConfirmedWeights();
+    state.zhiziCatalog = catalog.withDocumentedWeights();
     state.zhiziCatalogUpdatedAt = System.currentTimeMillis();
     save(state);
   }
@@ -500,7 +500,7 @@ public final class RemoteComputeConfig {
 
   public static String withKataWeight(String args, String weight) {
     String safeWeight =
-        ZhiziEngineCatalog.isSafeOptionName(weight) ? weight.trim() : kataWeightForArgs(args);
+        ZhiziEngineCatalog.isSelectableWeight(weight) ? weight.trim() : "28bnbt";
     return withOptionValue(
         args == null || args.trim().isEmpty() ? DEFAULT_ZHIZI_ARGS : args,
         "--kata-weight",
@@ -847,7 +847,7 @@ public final class RemoteComputeConfig {
   private static ZhiziEngineCatalog loadZhiziCatalog(JSONObject json) {
     if (json != null) {
       try {
-        return ZhiziEngineCatalog.fromJson(json).withConfirmedWeights();
+        return ZhiziEngineCatalog.fromJson(json).withDocumentedWeights();
       } catch (IOException ignored) {
         // A corrupt cache must never prevent the remote-compute dialog from opening.
       }
