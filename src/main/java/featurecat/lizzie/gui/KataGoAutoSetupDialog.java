@@ -73,6 +73,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.DefaultListModel;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
@@ -176,6 +177,8 @@ public class KataGoAutoSetupDialog extends JDialog {
   private final StatusPillLabel lblCurrentWeightStatus = new StatusPillLabel();
   private final JLabel lblHumanSlModelValue = new JFontLabel();
   private final WeightStatusTagLabel lblHumanSlStatus = new WeightStatusTagLabel();
+  private final JTextArea lblQuickAnalysisModelValue = new JTextArea();
+  private final WeightStatusTagLabel lblQuickAnalysisModelStatus = new WeightStatusTagLabel();
   private final JLabel lblStatus = new JFontLabel();
   private final ExactHitList<String> sectionNav = new ExactHitList<String>();
   private final JButton btnRemoteCompute = new SidebarActionButton();
@@ -214,6 +217,8 @@ public class KataGoAutoSetupDialog extends JDialog {
   private final JFontButton btnUseWeight = new JFontButton();
   private final JFontButton btnDownloadHumanSlModel = new JFontButton();
   private final JFontButton btnImportHumanSlModel = new JFontButton();
+  private final JFontButton btnDownloadQuickAnalysisModel = new JFontButton();
+  private final JCheckBox chkUseQuickAnalysisModel = new JCheckBox();
   private final JFontButton btnInstallNvidiaRuntime = new JFontButton();
   private final JFontButton btnInstallTensorRt = new JFontButton();
   private final JFontButton btnSwitchBackCuda = new JFontButton();
@@ -388,6 +393,12 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnImportHumanSlModel.setText("");
     btnImportHumanSlModel.setIcon(new WeightActionIcon(WeightActionIcon.IMPORT));
     btnImportHumanSlModel.setToolTipText(text("AutoSetup.importHumanSlModel"));
+    btnDownloadQuickAnalysisModel.setText(text("AutoSetup.downloadOnDemand"));
+    btnDownloadQuickAnalysisModel.setIcon(new WeightActionIcon(WeightActionIcon.DOWNLOAD));
+    chkUseQuickAnalysisModel.setText(text("AutoSetup.quickAnalysisModelUse"));
+    chkUseQuickAnalysisModel.setOpaque(false);
+    chkUseQuickAnalysisModel.setForeground(TEXT_PRIMARY);
+    chkUseQuickAnalysisModel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     btnInstallNvidiaRuntime.setText(text("AutoSetup.installNvidiaRuntime"));
     btnInstallTensorRt.setText(text("AutoSetup.installTensorRt"));
     btnSwitchBackCuda.setText(text("AutoSetup.switchBackCuda"));
@@ -411,6 +422,7 @@ public class KataGoAutoSetupDialog extends JDialog {
     styleButton(btnUseWeight, true);
     styleButton(btnDownloadHumanSlModel, false);
     styleButton(btnImportHumanSlModel, false);
+    styleButton(btnDownloadQuickAnalysisModel, false);
     styleButton(btnInstallNvidiaRuntime, false);
     styleButton(btnInstallTensorRt, false);
     styleButton(btnSwitchBackCuda, false);
@@ -423,9 +435,14 @@ public class KataGoAutoSetupDialog extends JDialog {
     styleWeightButton(btnImportWeight, WeightButtonStyle.OUTLINE);
     styleWeightButton(btnDownloadHumanSlModel, WeightButtonStyle.PRIMARY);
     styleWeightButton(btnImportHumanSlModel, WeightButtonStyle.ICON);
+    styleWeightButton(btnDownloadQuickAnalysisModel, WeightButtonStyle.PRIMARY);
     styleWeightButton(btnReloadRemoteWeights, WeightButtonStyle.ICON);
     styleWeightCatalogTab(btnOfficialWeightTab);
     styleWeightCatalogTab(btnCustomWeightTab);
+    AccessibilitySupport.button(
+        chkUseQuickAnalysisModel,
+        text("AutoSetup.quickAnalysisModelUse"),
+        text("AutoSetup.quickAnalysisModelDescription"));
   }
 
   private void configureWeightCatalog() {
@@ -504,6 +521,8 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnUseWeight.addActionListener(e -> useSelectedWeight());
     btnDownloadHumanSlModel.addActionListener(e -> startHumanSlModelDownload());
     btnImportHumanSlModel.addActionListener(e -> importHumanSlModel());
+    btnDownloadQuickAnalysisModel.addActionListener(e -> startQuickAnalysisModelDownload());
+    chkUseQuickAnalysisModel.addActionListener(e -> updateQuickAnalysisModelPreference());
     btnInstallNvidiaRuntime.addActionListener(e -> startNvidiaRuntimeInstall());
     btnInstallTensorRt.addActionListener(e -> startTensorRtInstall());
     btnSwitchBackCuda.addActionListener(e -> switchBackToCuda());
@@ -751,6 +770,10 @@ public class KataGoAutoSetupDialog extends JDialog {
 
     constraints.gridy++;
     constraints.insets = new Insets(8, 0, 0, 0);
+    content.add(createQuickAnalysisModelBlock(), constraints);
+
+    constraints.gridy++;
+    constraints.insets = new Insets(8, 0, 0, 0);
     content.add(createHumanSlModelBlock(), constraints);
 
     JPanel contentWrap = new JPanel(new BorderLayout());
@@ -973,6 +996,42 @@ public class KataGoAutoSetupDialog extends JDialog {
     actions.add(lblHumanSlStatus);
     actions.add(btnDownloadHumanSlModel);
     actions.add(btnImportHumanSlModel);
+    block.add(actions, BorderLayout.EAST);
+    return block;
+  }
+
+  private JPanel createQuickAnalysisModelBlock() {
+    JPanel block = createWeightBlock();
+    JFontLabel icon = new JFontLabel();
+    icon.setIcon(new WeightStoneIcon(38, false));
+    block.add(icon, BorderLayout.WEST);
+
+    JFontLabel title = new JFontLabel(text("AutoSetup.quickAnalysisModel"));
+    title.setForeground(TEXT_PRIMARY);
+    title.setFont(title.getFont().deriveFont(Font.BOLD));
+    lblQuickAnalysisModelValue.setForeground(TEXT_SECONDARY);
+    lblQuickAnalysisModelValue.setEditable(false);
+    lblQuickAnalysisModelValue.setFocusable(false);
+    lblQuickAnalysisModelValue.setOpaque(false);
+    lblQuickAnalysisModelValue.setLineWrap(true);
+    lblQuickAnalysisModelValue.setWrapStyleWord(true);
+    lblQuickAnalysisModelValue.setFont(title.getFont().deriveFont(Font.PLAIN));
+    AccessibilitySupport.named(
+        lblQuickAnalysisModelValue,
+        text("AutoSetup.quickAnalysisModel"),
+        text("AutoSetup.quickAnalysisModelDescription"));
+    JPanel labels = new JPanel(new BorderLayout(0, 2));
+    labels.setOpaque(false);
+    labels.add(title, BorderLayout.NORTH);
+    labels.add(lblQuickAnalysisModelValue, BorderLayout.CENTER);
+    block.setBorder(BorderFactory.createEmptyBorder(9, 14, 9, 12));
+    block.add(labels, BorderLayout.CENTER);
+
+    JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+    actions.setOpaque(false);
+    actions.add(lblQuickAnalysisModelStatus);
+    actions.add(chkUseQuickAnalysisModel);
+    actions.add(btnDownloadQuickAnalysisModel);
     block.add(actions, BorderLayout.EAST);
     return block;
   }
@@ -1312,6 +1371,7 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
     setInfoValue(lblWeightModelValue, snapshot.hasWeight(), formatWeightModel(snapshot));
     renderLocalWeights();
+    renderQuickAnalysisModel();
     renderHumanSlModel();
     setInfoValue(
         lblGtpConfigValue,
@@ -1488,6 +1548,56 @@ public class KataGoAutoSetupDialog extends JDialog {
           activeDownloadSession == null && activeWorkerThread == null);
     }
     btnImportHumanSlModel.setEnabled(activeDownloadSession == null && activeWorkerThread == null);
+  }
+
+  private void renderQuickAnalysisModel() {
+    KataGoAutoSetupHelper.QuickAnalysisModelStatus status =
+        KataGoAutoSetupHelper.inspectQuickAnalysisModel();
+    boolean busy = activeDownloadSession != null || activeWorkerThread != null;
+    boolean requiresUpgrade = quickAnalysisModelRequiresKataGo117();
+    boolean configured =
+        Lizzie.config != null && Lizzie.config.quickAnalysisLightweightModelEnabled;
+    lblQuickAnalysisModelValue.setText(text("AutoSetup.quickAnalysisModelDescription"));
+    lblQuickAnalysisModelValue.setForeground(TEXT_SECONDARY);
+    lblQuickAnalysisModelValue.setToolTipText(
+        status.isInstalled()
+            ? status.modelPath.toAbsolutePath().normalize().toString()
+            : text("AutoSetup.quickAnalysisModelMissing"));
+    chkUseQuickAnalysisModel.setSelected(configured);
+    chkUseQuickAnalysisModel.setVisible(status.isInstalled());
+    chkUseQuickAnalysisModel.setEnabled(
+        !busy && status.isInstalled() && (configured || canEnableQuickAnalysisModel()));
+    btnDownloadQuickAnalysisModel.setVisible(!status.isInstalled());
+    btnDownloadQuickAnalysisModel.setEnabled(
+        !busy && !status.isInstalled() && canEnableQuickAnalysisModel());
+
+    if (!status.isInstalled()) {
+      lblQuickAnalysisModelStatus.setStatus(text("AutoSetup.notDownloaded"), StatusTagTone.GOLD);
+    } else if (requiresUpgrade) {
+      lblQuickAnalysisModelStatus.setStatus(
+          text("AutoSetup.quickAnalysisModelRequires117"), StatusTagTone.GOLD);
+    } else if (configured) {
+      lblQuickAnalysisModelStatus.setStatus(
+          text("AutoSetup.quickAnalysisModelEnabled"), StatusTagTone.SUCCESS);
+    } else {
+      lblQuickAnalysisModelStatus.setStatus(
+          text("AutoSetup.quickAnalysisModelInstalled"), StatusTagTone.TEAL);
+    }
+  }
+
+  private boolean canEnableQuickAnalysisModel() {
+    return snapshot != null
+        && snapshot.hasEngine()
+        && snapshot.hasConfigs()
+        && isEngineValidationReady()
+        && !quickAnalysisModelRequiresKataGo117();
+  }
+
+  private boolean quickAnalysisModelRequiresKataGo117() {
+    return engineValidationResult != null
+        && engineValidationResult.hasKnownVersion()
+        && !engineValidationResult.isVersionAtLeast(
+            KataGoAutoSetupHelper.TRANSFORMER_MINIMUM_KATAGO_VERSION);
   }
 
   private String discoverySourceText(DiscoverySource source) {
@@ -2337,6 +2447,86 @@ public class KataGoAutoSetupDialog extends JDialog {
     worker.start();
   }
 
+  private void startQuickAnalysisModelDownload() {
+    if (!canEnableQuickAnalysisModel()) {
+      Utils.showMsg(
+          quickAnalysisModelRequiresKataGo117()
+              ? text("AutoSetup.quickAnalysisModelRequires117")
+              : text("AutoSetup.quickAnalysisModelEngineUnavailable"),
+          this);
+      return;
+    }
+    final DownloadSession session = new DownloadSession();
+    activeDownloadSession = session;
+    setBusy(true, text("AutoSetup.downloadingQuickAnalysisModel"), 0, -1);
+    Thread worker =
+        new Thread(
+            () -> {
+              try {
+                KataGoAutoSetupHelper.downloadQuickAnalysisModel(
+                    (statusText, downloadedBytes, totalBytes) ->
+                        SwingUtilities.invokeLater(
+                            () ->
+                                setBusy(
+                                    true,
+                                    text("AutoSetup.downloadingQuickAnalysisModel")
+                                        + " "
+                                        + statusText,
+                                    downloadedBytes,
+                                    totalBytes)),
+                    session);
+                SwingUtilities.invokeLater(
+                    () -> {
+                      setBusy(false, text("AutoSetup.quickAnalysisModelDownloadDone"), 0, 0);
+                      snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+                      renderSnapshot();
+                      refreshAutomaticQuickAnalysisModelSelection();
+                    });
+              } catch (DownloadCancelledException e) {
+                SwingUtilities.invokeLater(() -> onDownloadCancelled());
+              } catch (IOException e) {
+                SwingUtilities.invokeLater(() -> onBackgroundError(e));
+              } finally {
+                clearActiveDownload(session, Thread.currentThread());
+              }
+            },
+            "katago-download-quick-analysis-model");
+    activeWorkerThread = worker;
+    worker.start();
+  }
+
+  private void updateQuickAnalysisModelPreference() {
+    boolean enabled = chkUseQuickAnalysisModel.isSelected();
+    if (enabled && !canEnableQuickAnalysisModel()) {
+      chkUseQuickAnalysisModel.setSelected(false);
+      lblStatus.setText(
+          quickAnalysisModelRequiresKataGo117()
+              ? text("AutoSetup.quickAnalysisModelRequires117")
+              : text("AutoSetup.quickAnalysisModelEngineUnavailable"));
+      lblStatus.setForeground(WARN_COLOR);
+      return;
+    }
+    try {
+      KataGoAutoSetupHelper.setQuickAnalysisModelEnabled(enabled);
+      lblStatus.setText(
+          enabled
+              ? text("AutoSetup.quickAnalysisModelEnabledMessage")
+              : text("AutoSetup.quickAnalysisModelDisabledMessage"));
+      lblStatus.setForeground(enabled ? OK_COLOR : TEXT_SECONDARY);
+      renderQuickAnalysisModel();
+      refreshAutomaticQuickAnalysisModelSelection();
+    } catch (IOException e) {
+      chkUseQuickAnalysisModel.setSelected(!enabled);
+      onBackgroundError(e);
+    }
+  }
+
+  private void refreshAutomaticQuickAnalysisModelSelection() {
+    if (Lizzie.frame != null) {
+      Lizzie.frame.refreshAutomaticQuickAnalysisModelSelection();
+    }
+  }
+
   private void startRecommendedWeightDownloadInternal() {
     final RemoteWeightInfo targetInfo = getSelectedRemoteWeight();
     if (targetInfo == null) {
@@ -2924,6 +3114,14 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnUseWeight.setEnabled(!busy && canUseSelectedLocalWeight());
     btnDownloadHumanSlModel.setEnabled(!busy && canDownloadHumanSlModel());
     btnImportHumanSlModel.setEnabled(!busy);
+    btnDownloadQuickAnalysisModel.setEnabled(
+        !busy
+            && !KataGoAutoSetupHelper.inspectQuickAnalysisModel().isInstalled()
+            && canEnableQuickAnalysisModel());
+    chkUseQuickAnalysisModel.setEnabled(
+        !busy
+            && KataGoAutoSetupHelper.inspectQuickAnalysisModel().isInstalled()
+            && (chkUseQuickAnalysisModel.isSelected() || canEnableQuickAnalysisModel()));
     weightCatalogList.setEnabled(!busy && !weightCatalogModel.isEmpty());
     btnOfficialWeightTab.setEnabled(!busy);
     btnCustomWeightTab.setEnabled(!busy);
@@ -3913,6 +4111,7 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnUseWeight.setEnabled(canUseSelectedLocalWeight());
     btnDownloadHumanSlModel.setEnabled(canDownloadHumanSlModel());
     btnImportHumanSlModel.setEnabled(true);
+    renderQuickAnalysisModel();
     weightCatalogList.setEnabled(!weightCatalogModel.isEmpty());
     btnOfficialWeightTab.setEnabled(true);
     btnCustomWeightTab.setEnabled(true);

@@ -94,6 +94,27 @@ public final class KataGoAutoSetupHelper {
   public static final long DEFAULT_TRANSFORMER_SIZE_BYTES = 94_281_753L;
   public static final String DEFAULT_TRANSFORMER_SHA256 =
       "c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995";
+  public static final String QUICK_ANALYSIS_MODEL_FILE_NAME =
+      TRANSFORMER_LIGHTWEIGHT_MODEL + ".bin.gz";
+  public static final String QUICK_ANALYSIS_MODEL_DOWNLOAD_URL =
+      KATAGO_117_RELEASE_BASE + QUICK_ANALYSIS_MODEL_FILE_NAME;
+  public static final long QUICK_ANALYSIS_MODEL_SIZE_BYTES = 38_245_488L;
+  public static final String QUICK_ANALYSIS_MODEL_SHA256 =
+      "0ba27eced5180b3e3d0b898b280c541112989765e789d1eb6cd0d31b2b2c1229";
+  private static final String QUICK_ANALYSIS_MODEL_URL_PROPERTY =
+      "lizzie.quick-analysis.model.url";
+  private static final String QUICK_ANALYSIS_MODEL_SHA256_PROPERTY =
+      "lizzie.quick-analysis.model.sha256";
+  private static final String QUICK_ANALYSIS_MODEL_SIZE_PROPERTY =
+      "lizzie.quick-analysis.model.size";
+  private static final String QUICK_ANALYSIS_MODEL_CONFIG_KEY =
+      "katago-quick-analysis-model-path";
+  private static final String QUICK_ANALYSIS_MODEL_DIR_NAME = "quick-analysis-models";
+  private static volatile Path quickAnalysisValidationPath;
+  private static volatile long quickAnalysisValidationSize = -1L;
+  private static volatile long quickAnalysisValidationModified = -1L;
+  private static volatile String quickAnalysisValidationSha256 = "";
+  private static volatile boolean quickAnalysisValidationResult;
   private static final Pattern KATAGO_VERSION_PATTERN =
       Pattern.compile("\\bKataGo\\s+v(\\d+)\\.(\\d+)(?:\\.(\\d+))?\\b", Pattern.CASE_INSENSITIVE);
   private static final String BUNDLED_2026_06_28B_MODEL =
@@ -513,6 +534,24 @@ public final class KataGoAutoSetupHelper {
 
     public boolean isInstalled() {
       return isValidHumanSlModelFile(modelPath);
+    }
+  }
+
+  public static final class QuickAnalysisModelStatus {
+    public final Path modelPath;
+
+    private QuickAnalysisModelStatus(Path modelPath) {
+      this.modelPath = modelPath == null ? null : modelPath.toAbsolutePath().normalize();
+    }
+
+    public boolean isInstalled() {
+      return isValidQuickAnalysisModelFile(modelPath);
+    }
+
+    public boolean isEnabled() {
+      return isInstalled()
+          && Lizzie.config != null
+          && Lizzie.config.quickAnalysisLightweightModelEnabled;
     }
   }
 
@@ -948,12 +987,16 @@ public final class KataGoAutoSetupHelper {
             211_660_960L,
             "1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6",
             TransformerTier.STRONGEST),
-        transformerWeight(
-            officialTransformer,
-            TRANSFORMER_LIGHTWEIGHT_MODEL,
-            38_245_488L,
-            "0ba27eced5180b3e3d0b898b280c541112989765e789d1eb6cd0d31b2b2c1229",
-            TransformerTier.LIGHTWEIGHT));
+        quickAnalysisWeightInfo(officialTransformer));
+  }
+
+  private static RemoteWeightInfo quickAnalysisWeightInfo(String typeLabel) {
+    return transformerWeight(
+        typeLabel,
+        TRANSFORMER_LIGHTWEIGHT_MODEL,
+        QUICK_ANALYSIS_MODEL_SIZE_BYTES,
+        QUICK_ANALYSIS_MODEL_SHA256,
+        TransformerTier.LIGHTWEIGHT);
   }
 
   private static RemoteWeightInfo transformerWeight(
@@ -1103,6 +1146,31 @@ public final class KataGoAutoSetupHelper {
     }
   }
 
+  public static Path downloadQuickAnalysisModel(
+      ProgressListener listener, DownloadSession session) throws IOException {
+    SetupSnapshot snapshot = inspectLocalSetup();
+    Path modelsDir = quickAnalysisModelsDir(snapshot.workingDir);
+    RemoteWeightInfo info = quickAnalysisDownloadInfo();
+    Path target = downloadWeightToDirectory(info, modelsDir, listener, session);
+    rememberQuickAnalysisModel(target, true);
+    return target;
+  }
+
+  private static RemoteWeightInfo quickAnalysisDownloadInfo() {
+    return new RemoteWeightInfo(
+        resource("AutoSetup.quickAnalysisModel", "Quick curve lightweight model"),
+        TRANSFORMER_LIGHTWEIGHT_MODEL,
+        quickAnalysisModelDownloadUrl(),
+        "2026-07-29",
+        "",
+        false,
+        false,
+        quickAnalysisModelSha256(),
+        quickAnalysisModelSizeBytes(),
+        TRANSFORMER_MINIMUM_KATAGO_VERSION,
+        TransformerTier.LIGHTWEIGHT);
+  }
+
   public static Path downloadWeight(RemoteWeightInfo info, ProgressListener listener)
       throws IOException {
     return downloadWeight(info, listener, null);
@@ -1113,6 +1181,18 @@ public final class KataGoAutoSetupHelper {
       throws IOException {
     SetupSnapshot snapshot = inspectLocalSetup();
     Path weightsDir = snapshot.workingDir.resolve("weights");
+    return downloadWeightToDirectory(info, weightsDir, listener, session);
+  }
+
+  private static Path downloadWeightToDirectory(
+      RemoteWeightInfo info,
+      Path weightsDir,
+      ProgressListener listener,
+      DownloadSession session)
+      throws IOException {
+    if (info == null || weightsDir == null) {
+      throw new IOException(resource("AutoSetup.noRemoteWeights", "No downloadable weight found."));
+    }
     Files.createDirectories(weightsDir);
     DownloadSession activeSession = session != null ? session : new DownloadSession();
     activeSession.throwIfCancelled();
@@ -1363,6 +1443,71 @@ public final class KataGoAutoSetupHelper {
     }
     Lizzie.config.uiConfig.put(
         HUMAN_SL_MODEL_CONFIG_KEY, modelPath.toAbsolutePath().normalize().toString());
+  }
+
+  public static QuickAnalysisModelStatus inspectQuickAnalysisModel() {
+    SetupSnapshot snapshot = inspectLocalSetup();
+    Path configured =
+        configuredWeightPath(
+            QUICK_ANALYSIS_MODEL_CONFIG_KEY, snapshot.workingDir, snapshot.appRoot);
+    if (isValidQuickAnalysisModelFile(configured)) {
+      return new QuickAnalysisModelStatus(configured);
+    }
+    Path managed = quickAnalysisModelsDir(snapshot.workingDir).resolve(QUICK_ANALYSIS_MODEL_FILE_NAME);
+    return new QuickAnalysisModelStatus(isValidQuickAnalysisModelFile(managed) ? managed : null);
+  }
+
+  public static void setQuickAnalysisModelEnabled(boolean enabled) throws IOException {
+    if (Lizzie.config == null || Lizzie.config.uiConfig == null) {
+      return;
+    }
+    if (enabled && !inspectQuickAnalysisModel().isInstalled()) {
+      throw new IOException(
+          resource(
+              "AutoSetup.quickAnalysisModelMissing",
+              "Install the lightweight quick-curve model before enabling it."));
+    }
+    Lizzie.config.quickAnalysisLightweightModelEnabled = enabled;
+    Lizzie.config.uiConfig.put("quick-analysis-lightweight-model-enabled", enabled);
+    Lizzie.config.save();
+  }
+
+  public static Optional<String> resolveQuickAnalysisEngineCommand() {
+    if (Lizzie.config == null
+        || !Lizzie.config.quickAnalysisLightweightModelEnabled
+        || Lizzie.config.analysisReuseCurrentEngine) {
+      return Optional.empty();
+    }
+    QuickAnalysisModelStatus modelStatus = inspectQuickAnalysisModel();
+    if (!modelStatus.isInstalled()) {
+      return Optional.empty();
+    }
+    SetupSnapshot snapshot = inspectLocalSetup();
+    if (!snapshot.hasEngine()
+        || snapshot.analysisConfigPath == null
+        || !Files.isRegularFile(snapshot.analysisConfigPath)) {
+      return Optional.empty();
+    }
+    String command =
+        quoteCommandPath(snapshot.workingDir, snapshot.enginePath)
+            + " analysis -model "
+            + quoteCommandPath(snapshot.workingDir, modelStatus.modelPath)
+            + " -config "
+            + quoteCommandPath(snapshot.workingDir, snapshot.analysisConfigPath)
+            + " -quit-without-waiting";
+    return Optional.of(command);
+  }
+
+  private static void rememberQuickAnalysisModel(Path modelPath, boolean enabled)
+      throws IOException {
+    if (modelPath == null || Lizzie.config == null || Lizzie.config.uiConfig == null) {
+      return;
+    }
+    Lizzie.config.uiConfig.put(
+        QUICK_ANALYSIS_MODEL_CONFIG_KEY, modelPath.toAbsolutePath().normalize().toString());
+    Lizzie.config.quickAnalysisLightweightModelEnabled = enabled;
+    Lizzie.config.uiConfig.put("quick-analysis-lightweight-model-enabled", enabled);
+    Lizzie.config.save();
   }
 
   public static String resolveActiveWeightModelName(SetupSnapshot snapshot) {
@@ -1648,6 +1793,10 @@ public final class KataGoAutoSetupHelper {
 
   private static Path humanSlModelsDir(Path workingDir) {
     return workingDir.resolve(HUMAN_SL_MODEL_DIR_NAME).toAbsolutePath().normalize();
+  }
+
+  private static Path quickAnalysisModelsDir(Path workingDir) {
+    return workingDir.resolve(QUICK_ANALYSIS_MODEL_DIR_NAME).toAbsolutePath().normalize();
   }
 
   private static int findAutoSetupEngineIndex(ArrayList<EngineData> engines) {
@@ -3081,6 +3230,72 @@ public final class KataGoAutoSetupHelper {
       }
     }
     return HUMAN_SL_MODEL_SIZE_BYTES;
+  }
+
+  private static boolean isValidQuickAnalysisModelFile(Path path) {
+    if (path == null
+        || !Files.isRegularFile(path)
+        || path.getFileName() == null
+        || !QUICK_ANALYSIS_MODEL_FILE_NAME.equalsIgnoreCase(path.getFileName().toString())) {
+      return false;
+    }
+    try {
+      Path normalized = path.toAbsolutePath().normalize();
+      long size = Files.size(normalized);
+      long modified = Files.getLastModifiedTime(normalized).toMillis();
+      String expectedSha = quickAnalysisModelSha256();
+      if (normalized.equals(quickAnalysisValidationPath)
+          && size == quickAnalysisValidationSize
+          && modified == quickAnalysisValidationModified
+          && expectedSha.equals(quickAnalysisValidationSha256)) {
+        return quickAnalysisValidationResult;
+      }
+      verifyDownloadedWeight(path, quickAnalysisDownloadInfo());
+      rememberQuickAnalysisValidation(normalized, size, modified, expectedSha, true);
+      return true;
+    } catch (IOException e) {
+      try {
+        Path normalized = path.toAbsolutePath().normalize();
+        rememberQuickAnalysisValidation(
+            normalized,
+            Files.size(normalized),
+            Files.getLastModifiedTime(normalized).toMillis(),
+            quickAnalysisModelSha256(),
+            false);
+      } catch (IOException ignored) {
+      }
+      return false;
+    }
+  }
+
+  private static synchronized void rememberQuickAnalysisValidation(
+      Path path, long size, long modified, String expectedSha, boolean valid) {
+    quickAnalysisValidationPath = path;
+    quickAnalysisValidationSize = size;
+    quickAnalysisValidationModified = modified;
+    quickAnalysisValidationSha256 = expectedSha == null ? "" : expectedSha;
+    quickAnalysisValidationResult = valid;
+  }
+
+  private static String quickAnalysisModelDownloadUrl() {
+    String value = System.getProperty(QUICK_ANALYSIS_MODEL_URL_PROPERTY, "").trim();
+    return value.isEmpty() ? QUICK_ANALYSIS_MODEL_DOWNLOAD_URL : value;
+  }
+
+  private static String quickAnalysisModelSha256() {
+    String value = System.getProperty(QUICK_ANALYSIS_MODEL_SHA256_PROPERTY, "").trim();
+    return value.isEmpty() ? QUICK_ANALYSIS_MODEL_SHA256 : value;
+  }
+
+  private static long quickAnalysisModelSizeBytes() {
+    String value = System.getProperty(QUICK_ANALYSIS_MODEL_SIZE_PROPERTY, "").trim();
+    if (!value.isEmpty()) {
+      try {
+        return Long.parseLong(value);
+      } catch (NumberFormatException ignored) {
+      }
+    }
+    return QUICK_ANALYSIS_MODEL_SIZE_BYTES;
   }
 
   private static String sha256(Path path) throws IOException {

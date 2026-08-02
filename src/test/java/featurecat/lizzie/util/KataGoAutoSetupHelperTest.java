@@ -554,6 +554,27 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @Test
+  void lightweightQuickAnalysisModelMetadataMatchesOfficialRelease() {
+    KataGoAutoSetupHelper.RemoteWeightInfo lightweight =
+        KataGoAutoSetupHelper.officialTransformerWeights().stream()
+            .filter(
+                info ->
+                    info.transformerTier
+                        == KataGoAutoSetupHelper.TransformerTier.LIGHTWEIGHT)
+            .findFirst()
+            .orElseThrow();
+
+    assertEquals(
+        KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME.replace(".bin.gz", ""),
+        lightweight.modelName);
+    assertEquals(
+        KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_SIZE_BYTES, lightweight.sizeBytes);
+    assertEquals(KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_SHA256, lightweight.sha256);
+    assertEquals(
+        KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_DOWNLOAD_URL, lightweight.downloadUrl);
+  }
+
+  @Test
   void engineVersionParserDistinguishesOldAndTransformerCapableKataGo() {
     assertEquals("1.17.0", KataGoAutoSetupHelper.parseKataGoVersion("KataGo v1.17.0"));
     assertEquals("1.16.5", KataGoAutoSetupHelper.parseKataGoVersion("KataGo v1.16.5\nUsing CUDA"));
@@ -764,6 +785,128 @@ public class KataGoAutoSetupHelperTest {
             assertFalse(Files.exists(tempRoot.resolve("weights").resolve("model.bin.gz.part")));
           });
     }
+  }
+
+  @Test
+  void quickAnalysisModelDownloadResumesIntoHiddenDirectoryAndEnablesIt() throws Exception {
+    Path tempRoot = Files.createTempDirectory("katago-quick-model-resume");
+    byte[] modelBytes = repeatedBytes(24 * 1024, (byte) 37);
+    int partialSize = 6 * 1024;
+    try (RangeFixtureServer server = RangeFixtureServer.start(modelBytes)) {
+      withQuickAnalysisDownloadProperties(
+          server.url(KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME),
+          sha256(modelBytes),
+          modelBytes.length,
+          () ->
+              withUserDirAndConfig(
+                  tempRoot,
+                  () -> {
+                    Path modelDir = Files.createDirectories(tempRoot.resolve("quick-analysis-models"));
+                    Path partial =
+                        modelDir.resolve(
+                            KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME + ".part");
+                    Files.write(
+                        partial, java.util.Arrays.copyOf(modelBytes, partialSize));
+
+                    Path downloaded =
+                        KataGoAutoSetupHelper.downloadQuickAnalysisModel(null, null);
+                    KataGoAutoSetupHelper.QuickAnalysisModelStatus status =
+                        KataGoAutoSetupHelper.inspectQuickAnalysisModel();
+                    KataGoAutoSetupHelper.SetupSnapshot snapshot =
+                        KataGoAutoSetupHelper.inspectLocalSetup();
+
+                    assertEquals("bytes=" + partialSize + "-", server.lastRangeHeader());
+                    assertArrayEquals(modelBytes, Files.readAllBytes(downloaded));
+                    assertTrue(downloaded.startsWith(modelDir));
+                    assertTrue(status.isInstalled());
+                    assertTrue(status.isEnabled());
+                    assertFalse(snapshot.weightCandidates.contains(downloaded));
+                    assertEquals(
+                        downloaded.toString(),
+                        Lizzie.config.uiConfig.optString("katago-quick-analysis-model-path"));
+                    assertTrue(
+                        Lizzie.config.uiConfig.getBoolean(
+                            "quick-analysis-lightweight-model-enabled"));
+                  }));
+    }
+  }
+
+  @Test
+  void quickAnalysisModelChecksumFailureDoesNotEnableOrExposePartialFile() throws Exception {
+    Path tempRoot = Files.createTempDirectory("katago-quick-model-bad-sha");
+    byte[] modelBytes = repeatedBytes(12 * 1024, (byte) 41);
+    try (RangeFixtureServer server = RangeFixtureServer.start(modelBytes)) {
+      withQuickAnalysisDownloadProperties(
+          server.url(KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME),
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          modelBytes.length,
+          () ->
+              withUserDirAndConfig(
+                  tempRoot,
+                  () -> {
+                    assertThrows(
+                        IOException.class,
+                        () -> KataGoAutoSetupHelper.downloadQuickAnalysisModel(null, null));
+                    Path modelDir = tempRoot.resolve("quick-analysis-models");
+                    assertFalse(
+                        Files.exists(
+                            modelDir.resolve(
+                                KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME)));
+                    assertFalse(
+                        Files.exists(
+                            modelDir.resolve(
+                                KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME + ".part")));
+                    assertFalse(Lizzie.config.quickAnalysisLightweightModelEnabled);
+                  }));
+    }
+  }
+
+  @Test
+  void quickAnalysisCommandUsesHiddenModelWithoutEditingNormalEngineList() throws Exception {
+    Path root = Files.createTempDirectory("katago-quick-model-command");
+    byte[] modelBytes = repeatedBytes(16 * 1024, (byte) 43);
+    Path engine = touch(root.resolve("engine").resolve(testKataGoBinaryName()));
+    Path gtp = touch(root.resolve("engine").resolve("configs").resolve("gtp.cfg"));
+    Path analysis = touch(root.resolve("engine").resolve("configs").resolve("analysis.cfg"));
+    Path activeWeight = touch(root.resolve("weights").resolve("main.bin.gz"));
+    Path quickModel =
+        writeModel(
+            root
+                .resolve("quick-analysis-models")
+                .resolve(KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME),
+            modelBytes);
+
+    withQuickAnalysisDownloadProperties(
+        "http://127.0.0.1/not-used/"
+            + KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME,
+        sha256(modelBytes),
+        modelBytes.length,
+        () ->
+            withUserDirAndConfig(
+                root,
+                () -> {
+                  EngineData configured =
+                      engineData("Primary KataGo", engine, gtp, activeWeight, true);
+                  Utils.saveEngineSettings(new ArrayList<>(List.of(configured)));
+                  Lizzie.config.uiConfig.put("default-engine", 0);
+                  Lizzie.config.uiConfig.put(
+                      "katago-quick-analysis-model-path", quickModel.toString());
+                  Lizzie.config.quickAnalysisLightweightModelEnabled = true;
+                  Lizzie.config.analysisReuseCurrentEngine = false;
+
+                  String command =
+                      KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().orElseThrow();
+
+                  assertTrue(command.contains(" analysis "));
+                  assertTrue(command.contains(quickModel.toString()));
+                  assertTrue(command.contains(analysis.toString()));
+                  assertEquals(1, Utils.getEngineData().size());
+                  assertEquals(configured.commands, Utils.getEngineData().get(0).commands);
+
+                  Lizzie.config.analysisReuseCurrentEngine = true;
+                  assertTrue(
+                      KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().isEmpty());
+                }));
   }
 
   private static KataGoAutoSetupHelper.RemoteWeightInfo transformerFixtureWeight(
@@ -1559,6 +1702,23 @@ public class KataGoAutoSetupHelperTest {
     }
   }
 
+  private static void withQuickAnalysisDownloadProperties(
+      String url, String sha256, long size, ThrowingRunnable action) throws Exception {
+    String previousUrl = System.getProperty("lizzie.quick-analysis.model.url");
+    String previousSha = System.getProperty("lizzie.quick-analysis.model.sha256");
+    String previousSize = System.getProperty("lizzie.quick-analysis.model.size");
+    try {
+      System.setProperty("lizzie.quick-analysis.model.url", url);
+      System.setProperty("lizzie.quick-analysis.model.sha256", sha256);
+      System.setProperty("lizzie.quick-analysis.model.size", Long.toString(size));
+      action.run();
+    } finally {
+      restoreProperty("lizzie.quick-analysis.model.url", previousUrl);
+      restoreProperty("lizzie.quick-analysis.model.sha256", previousSha);
+      restoreProperty("lizzie.quick-analysis.model.size", previousSize);
+    }
+  }
+
   private static void restoreProperty(String key, String previousValue) {
     if (previousValue == null) {
       System.clearProperty(key);
@@ -1629,7 +1789,7 @@ public class KataGoAutoSetupHelperTest {
       ExecutorService executor = Executors.newSingleThreadExecutor();
       RangeFixtureServer fixture = new RangeFixtureServer(server, executor);
       server.createContext(
-          "/model.bin.gz",
+          "/",
           exchange -> {
             String range = exchange.getRequestHeaders().getFirst("Range");
             fixture.lastRangeHeader = range == null ? "" : range;
@@ -1658,6 +1818,10 @@ public class KataGoAutoSetupHelperTest {
 
     private String url() {
       return "http://127.0.0.1:" + server.getAddress().getPort() + "/model.bin.gz";
+    }
+
+    private String url(String fileName) {
+      return "http://127.0.0.1:" + server.getAddress().getPort() + "/" + fileName;
     }
 
     private String lastRangeHeader() {

@@ -45,6 +45,7 @@ public class ConfigBundledKataGoDefaultsTest {
     assertFalse(config.showBlunderBar);
     assertFalse(ui.getBoolean("show-blunder-bar"));
     assertTrue(ui.getBoolean("auto-quick-analyze-on-load"));
+    assertFalse(ui.getBoolean("quick-analysis-lightweight-model-enabled"));
   }
 
   @Test

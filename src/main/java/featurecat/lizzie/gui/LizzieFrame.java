@@ -45,6 +45,7 @@ import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.theme.MorandiPalette;
 import featurecat.lizzie.util.GraphicsDriverDiagnostics;
+import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
 import featurecat.lizzie.util.YikeSyncDebugLog;
@@ -13797,6 +13798,31 @@ public class LizzieFrame extends JFrame {
     }
   }
 
+  /** Recreates only the automatic quick-analysis worker after its optional model changes. */
+  public void refreshAutomaticQuickAnalysisModelSelection() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(this::refreshAutomaticQuickAnalysisModelSelection);
+      return;
+    }
+    quickAnalysisEngineGeneration.incrementAndGet();
+    stopQuickAnalysisWarmupTimer();
+    stopQuickAnalysisNavigationResumeTimer();
+    stopLoadedGameQuickAnalysisRetry();
+    synchronized (pendingQuickAnalysisCallbacks) {
+      pendingQuickAnalysisCallbacks.clear();
+    }
+    AnalysisEngine staleEngine = analysisEngine;
+    if (staleEngine != null && staleEngine.isAutomaticBackgroundTask()) {
+      analysisEngine = null;
+      staleEngine.clearRequestCallbacks();
+      staleEngine.normalQuit();
+    }
+    if ((analysisEngine == null || !analysisEngine.isAnalysisInProgress())
+        && shouldAutoQuickAnalyzeLoadedGame()) {
+      ensureAnalysisResumedAfterLoad();
+    }
+  }
+
   public void openWholeGameDeepAnalysis() {
     if (!SwingUtilities.isEventDispatchThread()) {
       SwingUtilities.invokeLater(this::openWholeGameDeepAnalysis);
@@ -14430,8 +14456,14 @@ public class LizzieFrame extends JFrame {
       }
       return;
     }
+    if (!silentAnalyze) {
+      releaseDedicatedLightweightQuickAnalysisEngine();
+    }
+    boolean hasAutomaticQuickAnalysisCommand =
+        silentAnalyze && KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().isPresent();
     if (!Lizzie.config.analysisReuseCurrentEngine
         && !isAnalysisEngineReusable(analysisEngine)
+        && !hasAutomaticQuickAnalysisCommand
         && (Lizzie.config.analysisEngineCommand == null
             || Lizzie.config.analysisEngineCommand.trim().isEmpty())) {
       promptForMissingFlashAnalysisCommand(isAllGame, isAllBranches, silentAnalyze);
@@ -14550,9 +14582,34 @@ public class LizzieFrame extends JFrame {
   }
 
   private void stopBusyQuickAnalysisEngineBeforeLoadedKifuAnalysis() {
-    if (analysisEngine == null || !analysisEngine.isAnalysisInProgress()) {
+    if (analysisEngine == null) {
       return;
     }
+    boolean needsDedicatedLightweightModel =
+        KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().isPresent();
+    if (shouldReplaceAutomaticQuickAnalysisEngine(
+        needsDedicatedLightweightModel,
+        analysisEngine.usesDedicatedLightweightQuickModel(),
+        analysisEngine.isAnalysisInProgress())) {
+      analysisEngine.clearRequestCallbacks();
+      analysisEngine.normalQuit();
+      analysisEngine = null;
+    }
+  }
+
+  static boolean shouldReplaceAutomaticQuickAnalysisEngine(
+      boolean wantsDedicatedLightweightModel,
+      boolean currentUsesDedicatedLightweightModel,
+      boolean currentAnalysisInProgress) {
+    return currentAnalysisInProgress
+        || wantsDedicatedLightweightModel != currentUsesDedicatedLightweightModel;
+  }
+
+  private void releaseDedicatedLightweightQuickAnalysisEngine() {
+    if (analysisEngine == null || !analysisEngine.usesDedicatedLightweightQuickModel()) {
+      return;
+    }
+    analysisEngine.clearRequestCallbacks();
     analysisEngine.normalQuit();
     analysisEngine = null;
   }
