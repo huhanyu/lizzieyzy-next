@@ -79,6 +79,33 @@ class AccessibilitySupportTest {
   }
 
   @Test
+  void treeWideTooltipSuppressionPreservesButtonSemanticsAfterAnotherTreePass() {
+    JPanel toolbar = new JPanel();
+    JPanel details = new JPanel();
+    JButton labeled = new JButton("Auto analyze");
+    labeled.setToolTipText("Analyze every move");
+    JButton iconOnly = new JButton("...");
+    AccessibilitySupport.button(iconOnly, "More actions", "Show hidden toolbar actions");
+    details.add(labeled);
+    details.add(iconOnly);
+    toolbar.add(details);
+
+    AccessibilitySupport.applyToTree(toolbar);
+    AccessibilitySupport.disableVisibleButtonTooltips(toolbar);
+    AccessibilitySupport.applyToTree(toolbar);
+
+    assertNull(labeled.getToolTipText());
+    assertNull(iconOnly.getToolTipText());
+    assertEquals("Auto analyze", labeled.getAccessibleContext().getAccessibleName());
+    assertEquals(
+        "Analyze every move", labeled.getAccessibleContext().getAccessibleDescription());
+    assertEquals("More actions", iconOnly.getAccessibleContext().getAccessibleName());
+    assertEquals(
+        "Show hidden toolbar actions",
+        iconOnly.getAccessibleContext().getAccessibleDescription());
+  }
+
+  @Test
   void labelsAreAssociatedWithTheirInput() {
     JLabel label = new JLabel("Account");
     JTextField field = new JTextField();

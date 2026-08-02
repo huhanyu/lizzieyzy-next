@@ -509,6 +509,13 @@ public class BottomToolbar extends JPanel {
     if (text != null && !text.trim().isEmpty()) {
       return text;
     }
+    String accessibleName =
+        button.getAccessibleContext() == null
+            ? null
+            : button.getAccessibleContext().getAccessibleName();
+    if (accessibleName != null && !accessibleName.trim().isEmpty()) {
+      return accessibleName;
+    }
     String toolTip = button.getToolTipText();
     return toolTip == null ? "" : toolTip;
   }
@@ -2554,6 +2561,7 @@ public class BottomToolbar extends JPanel {
         text("Accessibility.moveNumber", "Move number"),
         text("Accessibility.moveNumberDescription", "Enter a move number and press Enter to jump"));
     AccessibilitySupport.applyToTree(this);
+    AccessibilitySupport.disableVisibleButtonTooltips(this);
   }
 
   private String text(String key, String fallback) {
