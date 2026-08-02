@@ -20,6 +20,7 @@
 - TensorRT 普通用户路径仍是软件内 `KataGo 一键设置` 按需安装，支持断点续传；RTX 20/30/40/50 用户可尝试。GTX 10 系不建议 TensorRT；普通 NVIDIA 包需要 `527.41` 或更高驱动，仍启动失败时改用 OpenCL 包
 - `KataGo 一键设置` 会检测本机 NVIDIA GPU / Compute Capability，并在安装 TensorRT 前显示推荐、可尝试、不推荐或未知状态
 - TensorRT 一键安装成功后会自动清理完整下载包缓存；首次运行产生的 CUDA/TensorRT 缓存会尽量写入软件自己的 `runtime/`，减少 C 盘额外占用
+- RTX 50 / TensorRT 吞吐与功耗对比必须固定模型、配置和缓存，并使用 [RTX 50 性能验收流程](RTX50_PERFORMANCE.md) 记录真实进程、功耗、显存和 KataGo 原始指标
 - Release 可附带高级可选 TensorRT 预装分卷包，但它不是默认推荐下载；必须下载全部 `.7z.00N` 并用 7-Zip 从 `.001` 解压
 
 如果你只想先看图再决定，先看这里：

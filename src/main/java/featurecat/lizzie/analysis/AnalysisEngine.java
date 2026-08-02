@@ -125,6 +125,8 @@ public class AnalysisEngine {
   private Map<BoardHistoryNode, WholeGameAnalysisPlan.PositionFingerprint>
       requestPositionFingerprints;
   private final Workload workload;
+  private final AnalysisResourceCoordinator.Purpose purpose;
+  private final boolean persistentPreload;
   private ArrayDeque<RemoteGtpAnalyzeJob> remoteGtpQueue;
   private RemoteGtpAnalyzeJob remoteGtpActiveJob;
   private boolean remoteGtpWaitingForStopAck;
@@ -161,13 +163,51 @@ public class AnalysisEngine {
   private Leelaz.ExclusiveGtpLeaseAvailability foregroundLeaseAvailability;
 
   public AnalysisEngine(boolean isPreLoad) throws IOException {
-    this(isPreLoad, Workload.STANDARD, -1);
+    this(
+        isPreLoad,
+        Workload.STANDARD,
+        -1,
+        isPreLoad
+            ? AnalysisResourceCoordinator.Purpose.PRELOADED_QUICK_ANALYSIS
+            : AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS,
+        isPreLoad);
   }
 
   public AnalysisEngine(boolean isPreLoad, Workload workload, int requestedMaxVisits)
       throws IOException {
+    this(
+        isPreLoad,
+        workload,
+        requestedMaxVisits,
+        workload == Workload.WHOLE_GAME
+            ? AnalysisResourceCoordinator.Purpose.WHOLE_GAME_ANALYSIS
+            : (isPreLoad
+                ? AnalysisResourceCoordinator.Purpose.PRELOADED_QUICK_ANALYSIS
+                : AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS),
+        isPreLoad);
+  }
+
+  public static AnalysisEngine createAutomaticQuickAnalysis() throws IOException {
+    return new AnalysisEngine(
+        true,
+        Workload.STANDARD,
+        -1,
+        AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+        false);
+  }
+
+  private AnalysisEngine(
+      boolean isPreLoad,
+      Workload workload,
+      int requestedMaxVisits,
+      AnalysisResourceCoordinator.Purpose purpose,
+      boolean persistentPreload)
+      throws IOException {
     this.isPreLoad = isPreLoad;
     this.workload = workload == null ? Workload.STANDARD : workload;
+    this.purpose =
+        purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
+    this.persistentPreload = persistentPreload;
     if (Lizzie.config.analysisReuseCurrentEngine) {
       useRemoteCompute = true;
       sharedForegroundEngine = Lizzie.leelaz;
@@ -298,6 +338,7 @@ public class AnalysisEngine {
     executorErr = Executors.newSingleThreadScheduledExecutor();
     executorErr.execute(this::readError);
     isNormalEnd = false;
+    AnalysisResourceCoordinator.processStarted(this, purpose, engineCommand, process);
   }
 
   private void showErrMsg(String errMsg) {
@@ -965,9 +1006,10 @@ public class AnalysisEngine {
               == Lizzie.board.getHistory().getStart()) Lizzie.board.nextMove(true);
       Lizzie.frame.refresh();
       Lizzie.frame.requestProblemListRefresh();
-      boolean shouldKeepAlive = isPreLoad || keepAliveAfterCurrentRequest;
+      boolean shouldKeepAlive =
+          !isAutomaticBackgroundTask() && (persistentPreload || keepAliveAfterCurrentRequest);
       keepAliveAfterCurrentRequest = false;
-      if (Lizzie.config.analysisAutoQuit
+      if ((Lizzie.config.analysisAutoQuit || isAutomaticBackgroundTask())
           && !Lizzie.frame.isBatchAna
           && !shouldKeepAlive
           && sharedForegroundEngine == null) {
@@ -977,8 +1019,7 @@ public class AnalysisEngine {
       if (Lizzie.config.analysisAlwaysOverride && !preserveExistingAnalysis)
         Lizzie.config.enableLizzieCache = oriEnableLizzieCache;
     }
-    if (sharedForegroundEngine == null && shouldRePonder && !Lizzie.leelaz.isPondering())
-      Lizzie.leelaz.togglePonder();
+    resumeForegroundAnalysisIfRequested();
     Lizzie.frame.renderVarTree(0, 0, false, false);
     Runnable finishSuccessfulRequest =
         () -> {
@@ -997,6 +1038,7 @@ public class AnalysisEngine {
     // TODO Auto-generated method stub
     requestShutdown();
     isNormalEnd = true;
+    AnalysisResourceCoordinator.processStopped(this, purpose, process);
     shutdownRemoteGtpSetupAckTimeoutExecutor();
     if (sharedForegroundEngine != null) {
       requestDispatchFailed = true;
@@ -1257,9 +1299,7 @@ public class AnalysisEngine {
     if (dispatchFailed) {
       return -1;
     }
-    if (requestCount == 0 && shouldRePonder && !Lizzie.leelaz.isPondering()) {
-      Lizzie.leelaz.togglePonder();
-    }
+    if (requestCount == 0) resumeForegroundAnalysisIfRequested();
     return requestCount;
   }
 
@@ -1425,10 +1465,38 @@ public class AnalysisEngine {
     requestRulesSignature = null;
     requestPositionFingerprints().clear();
     if (!showProgressDialog) waitFrame = null;
-    if (sharedForegroundEngine == null && showProgressDialog && Lizzie.leelaz.isPondering()) {
-      Lizzie.leelaz.togglePonder();
-      shouldRePonder = true;
-    } else shouldRePonder = false;
+    pauseForegroundAnalysisForRequest(showProgressDialog);
+  }
+
+  static boolean shouldPauseForegroundAnalysisForRequest(
+      boolean sharedForegroundEngine, boolean showProgressDialog, boolean automaticBackgroundTask) {
+    return !sharedForegroundEngine && (showProgressDialog || automaticBackgroundTask);
+  }
+
+  private void pauseForegroundAnalysisForRequest(boolean showProgressDialog) {
+    shouldRePonder = false;
+    if (Lizzie.leelaz == null
+        || !shouldPauseForegroundAnalysisForRequest(
+            sharedForegroundEngine != null, showProgressDialog, isAutomaticBackgroundTask())
+        || !Lizzie.leelaz.isPondering()) {
+      return;
+    }
+    Lizzie.leelaz.notPondering();
+    Lizzie.leelaz.nameCmd();
+    AnalysisResourceCoordinator.foregroundPausedForAuxiliary(Lizzie.leelaz, purpose());
+    // Automatic requests resume through their completion/failure callback after results are stored.
+    shouldRePonder = !isAutomaticBackgroundTask();
+  }
+
+  private void resumeForegroundAnalysisIfRequested() {
+    if (sharedForegroundEngine != null
+        || !shouldRePonder
+        || Lizzie.leelaz == null
+        || Lizzie.leelaz.isPondering()) {
+      return;
+    }
+    shouldRePonder = false;
+    Lizzie.leelaz.ponder();
   }
 
   private void showRequestProgressOrContinueBatch(boolean showProgressDialog) {
@@ -1480,7 +1548,7 @@ public class AnalysisEngine {
             ? null
             : () -> javax.swing.SwingUtilities.invokeLater(failedRequestCallback);
     boolean restorePending = releaseSharedForegroundLease(deliverFailure, deliverFailure);
-    if (shouldRePonder && !Lizzie.leelaz.isPondering()) Lizzie.leelaz.togglePonder();
+    resumeForegroundAnalysisIfRequested();
     if (Lizzie.frame.isBatchAnalysisMode) Lizzie.frame.isBatchAnalysisMode = false;
     if (waitFrame != null || showProgressDialog) {
       javax.swing.SwingUtilities.invokeLater(
@@ -2310,6 +2378,22 @@ public class AnalysisEngine {
     return sharedForegroundEngine != null;
   }
 
+  public AnalysisResourceCoordinator.Purpose purpose() {
+    return purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
+  }
+
+  public boolean isAutomaticBackgroundTask() {
+    return purpose() == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS;
+  }
+
+  public boolean isLocalDedicatedProcess() {
+    return sharedForegroundEngine == null
+        && !useJavaSSH
+        && !useRemoteCompute
+        && process != null
+        && process.isAlive();
+  }
+
   private enum ForegroundRequestKind {
     MAINLINE,
     ALL_BRANCHES,
@@ -2496,6 +2580,7 @@ public class AnalysisEngine {
   }
 
   public boolean sendCommand(String command) {
+    AnalysisResourceCoordinator.commandSent(this, purpose, command);
     if (sharedForegroundEngine != null) {
       return sharedForegroundEngine.sendExclusiveGtpCommand(command);
     }

@@ -62,6 +62,54 @@ class AnalysisEngineRequestTest {
   private static final int BOARD_AREA = BOARD_SIZE * BOARD_SIZE;
 
   @Test
+  void automaticSilentAnalysisPausesForegroundAndLeavesResumeToItsCallback() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      PonderTrackingLeelaz foreground = allocate(PonderTrackingLeelaz.class);
+      foreground.pondering = true;
+      Lizzie.leelaz = foreground;
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      setField(
+          AnalysisEngine.class,
+          engine,
+          "purpose",
+          AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS);
+
+      invokeAnalysisEnginePrepareRequestState(engine, false);
+
+      assertFalse(foreground.pondering);
+      assertEquals(1, foreground.notPonderingCalls);
+      assertEquals(1, foreground.nameCommandCalls);
+      assertFalse((boolean) getField(AnalysisEngine.class, engine, "shouldRePonder"));
+      invokeAnalysisEngineResumeForeground(engine);
+      assertEquals(0, foreground.ponderCalls);
+    }
+  }
+
+  @Test
+  void visibleUserAnalysisPausesAndRestoresForegroundExactlyOnce() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      PonderTrackingLeelaz foreground = allocate(PonderTrackingLeelaz.class);
+      foreground.pondering = true;
+      Lizzie.leelaz = foreground;
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      setField(
+          AnalysisEngine.class,
+          engine,
+          "purpose",
+          AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS);
+
+      invokeAnalysisEnginePrepareRequestState(engine, true);
+      invokeAnalysisEngineResumeForeground(engine);
+      invokeAnalysisEngineResumeForeground(engine);
+
+      assertEquals(1, foreground.notPonderingCalls);
+      assertEquals(1, foreground.nameCommandCalls);
+      assertEquals(1, foreground.ponderCalls);
+      assertTrue(foreground.pondering);
+    }
+  }
+
+  @Test
   void reuseModeBindsCurrentForegroundKatagoWithoutStartingAProcess() throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       Leelaz foreground = reusableForegroundEngine(true);
@@ -1815,6 +1863,7 @@ class AnalysisEngineRequestTest {
       BoardHistoryNode node = singleUnanalyzedMoveNode();
       TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
       setField(AnalysisEngine.class, engine, "isPreLoad", true);
+      setField(AnalysisEngine.class, engine, "persistentPreload", true);
       engine.trackPending(1, node);
 
       engine.parseResult(analysisResult(1, 200, 62.0));
@@ -3238,6 +3287,21 @@ class AnalysisEngineRequestTest {
     method.invoke(engine, false);
   }
 
+  private static void invokeAnalysisEnginePrepareRequestState(
+      AnalysisEngine engine, boolean showProgressDialog) throws Exception {
+    Method method =
+        AnalysisEngine.class.getDeclaredMethod("prepareRequestState", boolean.class);
+    method.setAccessible(true);
+    method.invoke(engine, showProgressDialog);
+  }
+
+  private static void invokeAnalysisEngineResumeForeground(AnalysisEngine engine) throws Exception {
+    Method method =
+        AnalysisEngine.class.getDeclaredMethod("resumeForegroundAnalysisIfRequested");
+    method.setAccessible(true);
+    method.invoke(engine);
+  }
+
   private static int countCommand(List<String> commands, String expected) {
     int count = 0;
     for (String command : commands) {
@@ -3509,6 +3573,39 @@ class AnalysisEngineRequestTest {
 
     @Override
     public void addCommand(String command, int commandNumber, String engineName) {}
+  }
+
+  private static final class PonderTrackingLeelaz extends Leelaz {
+    private boolean pondering;
+    private int notPonderingCalls;
+    private int nameCommandCalls;
+    private int ponderCalls;
+
+    private PonderTrackingLeelaz() throws IOException {
+      super("");
+    }
+
+    @Override
+    public boolean isPondering() {
+      return pondering;
+    }
+
+    @Override
+    public void notPondering() {
+      notPonderingCalls++;
+      pondering = false;
+    }
+
+    @Override
+    public void nameCmd() {
+      nameCommandCalls++;
+    }
+
+    @Override
+    public void ponder() {
+      ponderCalls++;
+      pondering = true;
+    }
   }
 
   private static final class DeferredRestoreLeelaz extends Leelaz {

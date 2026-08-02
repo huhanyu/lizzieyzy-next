@@ -1179,6 +1179,8 @@ public class Leelaz {
   }
 
   public void forceQuit() {
+    AnalysisResourceCoordinator.processStopped(
+        this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, process);
     isNormalEnd = true;
     started = false;
     isLoaded = false;
@@ -1747,6 +1749,9 @@ public class Leelaz {
       }
     }
     currentTotalPlayouts = MoveData.getPlayouts(bestMoves);
+    if (this == Lizzie.leelaz) {
+      AnalysisResourceCoordinator.foregroundPlayoutSample(this, currentTotalPlayouts);
+    }
     ArrayList<Double> estimateArray = new ArrayList<Double>();
     if (Lizzie.config.showKataGoEstimate) {
       if (hasOwnership && lineInfo != null && lineInfo.length > 1) {
@@ -4217,6 +4222,10 @@ public class Leelaz {
   }
 
   public void sendCommand(String command) {
+    if (this == Lizzie.leelaz) {
+      AnalysisResourceCoordinator.commandSent(
+          this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, command);
+    }
     if (command != null
         && (command.startsWith("clear_board") || command.startsWith("kata-analyze"))) {
       StringBuilder sb = new StringBuilder();
@@ -10091,6 +10100,8 @@ public class Leelaz {
       return;
     }
     if (this == Lizzie.leelaz && Lizzie.frame != null) {
+      AnalysisResourceCoordinator.processStarted(
+          this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, engineCommand, process);
       Lizzie.frame.onMainEnginePonder();
     }
     if (Lizzie.frame.isKeepingForce || LizzieFrame.isKeepForcing) {
@@ -10245,6 +10256,8 @@ public class Leelaz {
 
   /** End the process */
   public void shutdown() {
+    AnalysisResourceCoordinator.processStopped(
+        this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, process);
     cancelPositionEstimateRequest();
     leela0110StopPonder();
     if (this.useJavaSSH) {

@@ -223,6 +223,49 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
+  void foregroundAnalysisReleasesIdleDedicatedQuickEngine() throws Exception {
+    LizzieFrame frame = allocate(LizzieFrame.class);
+    ResourceTrackingAnalysisEngine engine = allocate(ResourceTrackingAnalysisEngine.class);
+    engine.localDedicated = true;
+    frame.analysisEngine = engine;
+
+    assertEquals(
+        featurecat.lizzie.analysis.AnalysisResourceCoordinator.ForegroundDecision
+            .RELEASE_IDLE_SECONDARY,
+        frame.releaseSecondaryAnalysisResourcesForForeground());
+    assertNull(frame.analysisEngine);
+    assertEquals(1, engine.normalQuitCount);
+  }
+
+  @Test
+  void foregroundAnalysisPreemptsOnlyAutomaticRunningQuickEngine() throws Exception {
+    LizzieFrame frame = allocate(LizzieFrame.class);
+    ResourceTrackingAnalysisEngine automatic = allocate(ResourceTrackingAnalysisEngine.class);
+    automatic.localDedicated = true;
+    automatic.analysisInProgress = true;
+    automatic.automatic = true;
+    frame.analysisEngine = automatic;
+
+    assertEquals(
+        featurecat.lizzie.analysis.AnalysisResourceCoordinator.ForegroundDecision
+            .PREEMPT_AUTOMATIC_SECONDARY,
+        frame.releaseSecondaryAnalysisResourcesForForeground());
+    assertNull(frame.analysisEngine);
+    assertEquals(1, automatic.normalQuitCount);
+
+    ResourceTrackingAnalysisEngine userTask = allocate(ResourceTrackingAnalysisEngine.class);
+    userTask.localDedicated = true;
+    userTask.analysisInProgress = true;
+    frame.analysisEngine = userTask;
+
+    assertEquals(
+        featurecat.lizzie.analysis.AnalysisResourceCoordinator.ForegroundDecision.KEEP_USER_TASK,
+        frame.releaseSecondaryAnalysisResourcesForForeground());
+    assertSame(userTask, frame.analysisEngine);
+    assertEquals(0, userTask.normalQuitCount);
+  }
+
+  @Test
   void startNewGameStopsBeforeMutatingStateWhenForegroundEngineIsReserved() throws Exception {
     LizzieFrame previousFrame = Lizzie.frame;
     Leelaz previousEngine = Lizzie.leelaz;
@@ -949,7 +992,7 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
-  void loadedGameStartsSilentQuickAnalyzeAndForegroundAnalysisForUnanalyzedMoves()
+  void loadedGameDefersForegroundAnalysisUntilSilentQuickAnalysisCompletes()
       throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
@@ -969,11 +1012,11 @@ class LizzieFrameRegressionTest {
       assertTrue(frame.lastIsAllGame);
       assertFalse(frame.lastIsAllBranches);
       assertTrue(frame.lastSilentAnalyze);
-      assertEquals(1, frame.refreshCount);
+      assertEquals(0, frame.refreshCount);
       assertEquals(
-          1,
+          0,
           leelaz.ponderCount,
-          "fast curve completion must not replace foreground candidate analysis.");
+          "foreground analysis must not contend with the automatic quick-curve process.");
     } finally {
       env.close();
     }
@@ -1169,7 +1212,7 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
-  void downloadedKifuStartsSilentQuickAnalyzeAndForegroundAnalysis() throws Exception {
+  void downloadedKifuDefersForegroundAnalysisUntilSilentQuickAnalysisCompletes() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze();
@@ -1187,8 +1230,8 @@ class LizzieFrameRegressionTest {
       assertTrue(frame.lastIsAllGame);
       assertFalse(frame.lastIsAllBranches);
       assertTrue(frame.lastSilentAnalyze);
-      assertEquals(1, frame.refreshCount);
-      assertEquals(1, leelaz.ponderCount);
+      assertEquals(0, frame.refreshCount);
+      assertEquals(0, leelaz.ponderCount);
     } finally {
       env.close();
     }
@@ -1213,9 +1256,9 @@ class LizzieFrameRegressionTest {
       SwingUtilities.invokeAndWait(frame::continueQuickAnalysisAfterHistoryNavigationWhenIdle);
 
       assertEquals(
-          1,
+          0,
           engine.keepAliveCount,
-          "navigation continuation should keep the warmed quick-analysis engine reusable.");
+          "automatic curve completion must release its dedicated engine instead of keeping it resident.");
       assertEquals(
           1,
           engine.missingMainlineRequestCount,
@@ -1388,7 +1431,10 @@ class LizzieFrameRegressionTest {
           2,
           frame.flashAnalyzeGameCount,
           "if the first silent quick-curve dispatch vanishes, the load guard should retry it.");
-      assertEquals(2, leelaz.ponderCount);
+      assertEquals(
+          0,
+          leelaz.ponderCount,
+          "a retry must not resume the foreground engine while quick analysis is still pending.");
       invokeStopLoadedGameQuickAnalysisRetry(frame);
     } finally {
       env.close();
@@ -2188,6 +2234,46 @@ class LizzieFrameRegressionTest {
     @Override
     public void refresh() {
       refreshCount++;
+    }
+  }
+
+  private static final class ResourceTrackingAnalysisEngine extends AnalysisEngine {
+    private boolean localDedicated;
+    private boolean analysisInProgress;
+    private boolean automatic;
+    private int normalQuitCount;
+
+    @SuppressWarnings("unused")
+    private ResourceTrackingAnalysisEngine() throws java.io.IOException {
+      super(false);
+    }
+
+    @Override
+    public boolean usesSharedForegroundEngine() {
+      return false;
+    }
+
+    @Override
+    public boolean isLocalDedicatedProcess() {
+      return localDedicated;
+    }
+
+    @Override
+    public synchronized boolean isAnalysisInProgress() {
+      return analysisInProgress;
+    }
+
+    @Override
+    public boolean isAutomaticBackgroundTask() {
+      return automatic;
+    }
+
+    @Override
+    public void clearRequestCallbacks() {}
+
+    @Override
+    public void normalQuit() {
+      normalQuitCount++;
     }
   }
 
