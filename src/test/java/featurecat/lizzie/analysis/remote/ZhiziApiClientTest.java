@@ -15,6 +15,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.json.JSONObject;
 import org.junit.jupiter.api.AfterEach;
@@ -163,6 +164,119 @@ class ZhiziApiClientTest {
     assertEquals("page=0&pageSize=20&creditType=CASH", lastQuery);
     assertEquals(new BigDecimal("30.50"), credits.items.get(0).amountYuan);
     assertEquals("MEMBERSHIP_1_MONTH", credits.items.get(0).productName);
+  }
+
+  @Test
+  void membershipCatalogUsesOfficialArrayAndIntegerFen() throws Exception {
+    responseBody =
+        "[{\"name\":\"MEMBERSHIP_12_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":28000},"
+            + "{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000},"
+            + "{\"name\":\"MEMBERSHIP_3_MONTH\",\"type\":\"OTHER\",\"price\":8000},"
+            + "{\"name\":\"MEMBERSHIP_FUTURE\",\"type\":\"MEMBERSHIP\",\"price\":1},"
+            + "{\"name\":\"MEMBERSHIP_6_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":15000.5}]";
+
+    List<ZhiziApiClient.MembershipProduct> products = client().fetchMembershipProducts();
+
+    assertEquals("GET", lastMethod);
+    assertEquals("/api/cluster/product", lastPath);
+    assertEquals("type=MEMBERSHIP", lastQuery);
+    assertEquals(2, products.size());
+    assertEquals("MEMBERSHIP_1_MONTH", products.get(0).name);
+    assertEquals(3000L, products.get(0).priceFen);
+    assertEquals(1, products.get(0).durationMonths);
+    assertEquals("MEMBERSHIP_12_MONTH", products.get(1).name);
+  }
+
+  @Test
+  void vipOrderUsesExactProductPriceAndIsNeverRetried() throws Exception {
+    responseBody =
+        "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
+    ZhiziApiClient client = client();
+    ZhiziApiClient.MembershipProduct product = client.fetchMembershipProducts().get(0);
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"userId\":\"user\","
+            + "\"amount\":3000,\"productName\":\"MEMBERSHIP_1_MONTH\","
+            + "\"paidStatus\":\"PENDING\",\"nativePayRequest\":{"
+            + "\"codeURL\":\"weixin://wxpay/bizpayurl?pr=opaque\"}}";
+
+    ZhiziApiClient.PaymentOrder order =
+        client.createMembershipOrder("account-token", product, false);
+
+    assertEquals("POST", lastMethod);
+    assertEquals("/api/pay/orders", lastPath);
+    assertEquals("Bearer account-token", lastAuthorization);
+    assertEquals(3000L, lastBody.getLong("amount"));
+    assertEquals("WECHAT", lastBody.getString("payType"));
+    assertEquals("NATIVE", lastBody.getString("tradeType"));
+    assertEquals("PURCHASE_PRODUCT", lastBody.getString("orderType"));
+    assertEquals("MEMBERSHIP_1_MONTH", lastBody.getString("productName"));
+    assertFalse(lastBody.getJSONObject("extraInfo").getBoolean("autoRenew"));
+    assertEquals(ZhiziApiClient.PaymentStatus.PENDING, order.status);
+    assertEquals("weixin://wxpay/bizpayurl?pr=opaque", order.codeUrl);
+
+    int requestsBeforeFailure = requestCount;
+    responseStatus = 500;
+    responseBody = "{\"statusCode\":500,\"key\":\"create_order_error\"}";
+    ZhiziApiException failure =
+        assertThrows(
+            ZhiziApiException.class,
+            () -> client.createMembershipOrder("account-token", product, false));
+    assertEquals(ZhiziApiException.Operation.CREATE_ORDER, failure.operation());
+    assertFalse(failure.isRetryable());
+    assertEquals(
+        requestsBeforeFailure + 1,
+        requestCount,
+        "an uncertain financial POST must never be retried automatically");
+  }
+
+  @Test
+  void orderPollingValidatesIdentityAndTerminalStates() throws Exception {
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"userId\":\"user\","
+            + "\"amount\":3000,\"productName\":\"MEMBERSHIP_1_MONTH\","
+            + "\"paidStatus\":\"SUCCESS\",\"paidAt\":\"2026-08-02T01:02:03Z\"}";
+
+    ZhiziApiClient.PaymentOrder order =
+        client().fetchOrder("account-token", "66a000000000000000000010");
+
+    assertEquals("GET", lastMethod);
+    assertEquals("/api/pay/orders/66a000000000000000000010", lastPath);
+    assertEquals(ZhiziApiClient.PaymentStatus.SUCCESS, order.status);
+    assertEquals("2026-08-02T01:02:03Z", order.paidAt.toString());
+
+    ZhiziApiException invalidId =
+        assertThrows(
+            ZhiziApiException.class,
+            () -> client().fetchOrder("account-token", "../../another-order"));
+    assertEquals("invalid_order_id", invalidId.errorKey());
+  }
+
+  @Test
+  void orderResponsesRejectPriceChangesAndUnsafeQrPayloads() throws Exception {
+    responseBody =
+        "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
+    ZhiziApiClient client = client();
+    ZhiziApiClient.MembershipProduct product = client.fetchMembershipProducts().get(0);
+
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"amount\":2999,"
+            + "\"productName\":\"MEMBERSHIP_1_MONTH\",\"paidStatus\":\"PENDING\","
+            + "\"nativePayRequest\":{\"codeURL\":\"weixin://wxpay/bizpayurl?pr=opaque\"}}";
+    ZhiziApiException changedPrice =
+        assertThrows(
+            ZhiziApiException.class,
+            () -> client.createMembershipOrder("account-token", product, false));
+    assertEquals("invalid_response", changedPrice.errorKey());
+
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"amount\":3000,"
+            + "\"productName\":\"MEMBERSHIP_1_MONTH\",\"paidStatus\":\"PENDING\","
+            + "\"nativePayRequest\":{\"codeURL\":\"https://example.com/not-wechat\"}}";
+    ZhiziApiException unsafeQr =
+        assertThrows(
+            ZhiziApiException.class,
+            () -> client.createMembershipOrder("account-token", product, false));
+    assertEquals("invalid_response", unsafeQr.errorKey());
   }
 
   @Test

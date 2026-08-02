@@ -15,6 +15,9 @@ public final class ZhiziApiException extends IOException {
     FETCH_BALANCE(true),
     FETCH_USAGE(true),
     FETCH_CREDITS(true),
+    FETCH_PRODUCTS(true),
+    CREATE_ORDER(false),
+    FETCH_ORDER(true),
     OTHER(false);
 
     private final boolean idempotent;
@@ -94,7 +97,9 @@ public final class ZhiziApiException extends IOException {
                 || operation == Operation.FETCH_ACCOUNT
                 || operation == Operation.FETCH_BALANCE
                 || operation == Operation.FETCH_USAGE
-                || operation == Operation.FETCH_CREDITS));
+                || operation == Operation.FETCH_CREDITS
+                || operation == Operation.CREATE_ORDER
+                || operation == Operation.FETCH_ORDER));
   }
 
   private static String buildSafeMessage(int statusCode, String errorKey, Operation operation) {
