@@ -123,6 +123,7 @@
 - Transformer 在 CUDA、Metal 上性能更好；OpenCL 仍可离线使用，但通常更慢
 - `core-update.zip` 只更新主程序，不包含 KataGo 1.17 或新权重；从旧默认模型升级必须安装最新完整包
 - 完整包升级只迁移仍使用旧内置 `zhizi 28B` / `default.bin.gz` 的托管引擎；自定义权重、远程算力和启动方式不会被覆盖
+- 快速曲线轻量模型：可在 `KataGo 一键设置 -> 权重管理` 按需下载官方 `b10c384h6nbttflrs.bin.gz`（约 38 MB），不进入完整包或普通引擎列表。它只补齐已加载棋谱的缺失曲线，主棋盘分析、对局或整盘精析开始时会退出并释放显存
 - TensorRT 加速：普通用户在软件内 `KataGo 一键设置` 中按需安装，支持断点续传；Release 上的 TensorRT 分卷包只作为高级可选离线路径
 - RTX 50 仍优先使用 `windows64.nvidia50.cuda` 主包，TensorRT 作为新架构按需加速项
 - TensorRT 安装界面会用 `nvidia-smi` 检测本机 NVIDIA GPU，并在无法读取 Compute Capability 时使用轻量型号映射作为 fallback

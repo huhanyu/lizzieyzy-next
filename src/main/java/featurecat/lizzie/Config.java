@@ -1260,6 +1260,7 @@ public class Config {
   public boolean trackingPointTextAutoColor = true;
   public Color trackingPointTextColor = Color.BLACK;
   public boolean autoQuickAnalyzeOnLoad = true;
+  public boolean quickAnalysisLightweightModelEnabled = false;
   public String analysisSpecificRules = "";
 
   public boolean analysisRecentIsPartGame = false;
@@ -2039,6 +2040,8 @@ public class Config {
     trackingAnalysisMaxVisits = migrateTrackingAnalysisConfig(uiConfig);
     loadTrackingPointAppearanceConfig(uiConfig);
     autoQuickAnalyzeOnLoad = uiConfig.optBoolean("auto-quick-analyze-on-load", true);
+    quickAnalysisLightweightModelEnabled =
+        uiConfig.optBoolean("quick-analysis-lightweight-model-enabled", false);
     analysisSpecificRules = uiConfig.optString("analysis-specific-rules", "");
     showScoreLeadLine = uiConfig.optBoolean("show-score-lead-line", true);
     showWinrateLine = uiConfig.optBoolean("show-win-rate-line", true);
@@ -3035,6 +3038,7 @@ public class Config {
     ui.put("winrate-stroke-width", 1.7);
     ui.put("show-blunder-bar", false);
     ui.put("auto-quick-analyze-on-load", true);
+    ui.put("quick-analysis-lightweight-model-enabled", false);
     ui.put("minimum-blunder-bar-width", 1);
     ui.put("weighted-blunder-bar-height", false);
     // ui.put("dynamic-winrate-graph-width", true);

@@ -223,6 +223,15 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
+  void automaticQuickAnalysisDoesNotReuseTheWrongModelBackend() {
+    assertTrue(LizzieFrame.shouldReplaceAutomaticQuickAnalysisEngine(true, false, false));
+    assertFalse(LizzieFrame.shouldReplaceAutomaticQuickAnalysisEngine(true, true, false));
+    assertFalse(LizzieFrame.shouldReplaceAutomaticQuickAnalysisEngine(false, false, false));
+    assertTrue(LizzieFrame.shouldReplaceAutomaticQuickAnalysisEngine(false, true, false));
+    assertTrue(LizzieFrame.shouldReplaceAutomaticQuickAnalysisEngine(false, true, true));
+  }
+
+  @Test
   void foregroundAnalysisReleasesIdleDedicatedQuickEngine() throws Exception {
     LizzieFrame frame = allocate(LizzieFrame.class);
     ResourceTrackingAnalysisEngine engine = allocate(ResourceTrackingAnalysisEngine.class);

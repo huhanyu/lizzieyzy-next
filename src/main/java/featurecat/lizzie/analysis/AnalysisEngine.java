@@ -17,6 +17,7 @@ import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.util.CommandLaunchHelper;
+import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
 import java.io.BufferedOutputStream;
@@ -127,6 +128,8 @@ public class AnalysisEngine {
   private final Workload workload;
   private final AnalysisResourceCoordinator.Purpose purpose;
   private final boolean persistentPreload;
+  private final boolean dedicatedLightweightQuickModel;
+  private final String dedicatedLightweightQuickModelCommand;
   private ArrayDeque<RemoteGtpAnalyzeJob> remoteGtpQueue;
   private RemoteGtpAnalyzeJob remoteGtpActiveJob;
   private boolean remoteGtpWaitingForStopAck;
@@ -170,7 +173,8 @@ public class AnalysisEngine {
         isPreLoad
             ? AnalysisResourceCoordinator.Purpose.PRELOADED_QUICK_ANALYSIS
             : AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS,
-        isPreLoad);
+        isPreLoad,
+        null);
   }
 
   public AnalysisEngine(boolean isPreLoad, Workload workload, int requestedMaxVisits)
@@ -184,7 +188,8 @@ public class AnalysisEngine {
             : (isPreLoad
                 ? AnalysisResourceCoordinator.Purpose.PRELOADED_QUICK_ANALYSIS
                 : AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS),
-        isPreLoad);
+        isPreLoad,
+        null);
   }
 
   public static AnalysisEngine createAutomaticQuickAnalysis() throws IOException {
@@ -193,7 +198,8 @@ public class AnalysisEngine {
         Workload.STANDARD,
         -1,
         AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
-        false);
+        false,
+        KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().orElse(null));
   }
 
   private AnalysisEngine(
@@ -201,13 +207,20 @@ public class AnalysisEngine {
       Workload workload,
       int requestedMaxVisits,
       AnalysisResourceCoordinator.Purpose purpose,
-      boolean persistentPreload)
+      boolean persistentPreload,
+      String commandOverride)
       throws IOException {
     this.isPreLoad = isPreLoad;
     this.workload = workload == null ? Workload.STANDARD : workload;
     this.purpose =
         purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
     this.persistentPreload = persistentPreload;
+    this.dedicatedLightweightQuickModel =
+        this.purpose == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS
+            && commandOverride != null
+            && !commandOverride.trim().isEmpty();
+    this.dedicatedLightweightQuickModelCommand =
+        this.dedicatedLightweightQuickModel ? commandOverride.trim() : "";
     if (Lizzie.config.analysisReuseCurrentEngine) {
       useRemoteCompute = true;
       sharedForegroundEngine = Lizzie.leelaz;
@@ -228,7 +241,7 @@ public class AnalysisEngine {
                 : Lizzie.config.analysisMaxVisits + 1);
     engineCommand =
         KataGoRuntimeHelper.optimizeAnalysisEngineCommand(
-            resolveConfiguredAnalysisEngineCommand(isPreLoad),
+            resolveConfiguredAnalysisEngineCommand(commandOverride),
             maxVisits,
             Lizzie.frame.isBatchAnalysisMode,
             this.workload == Workload.WHOLE_GAME);
@@ -248,8 +261,10 @@ public class AnalysisEngine {
     startEngine(engineCommand);
   }
 
-  private static String resolveConfiguredAnalysisEngineCommand(boolean isPreLoad) {
-    return Lizzie.config.analysisEngineCommand;
+  private static String resolveConfiguredAnalysisEngineCommand(String commandOverride) {
+    return commandOverride == null || commandOverride.trim().isEmpty()
+        ? Lizzie.config.analysisEngineCommand
+        : commandOverride;
   }
 
   static boolean shouldShowGeneratedConfigNotice(boolean isPreLoad, boolean generatedConfig) {
@@ -2363,6 +2378,12 @@ public class AnalysisEngine {
   }
 
   public boolean matchesCurrentAnalysisBackend() {
+    if (dedicatedLightweightQuickModel) {
+      return KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand()
+          .map(String::trim)
+          .filter(dedicatedLightweightQuickModelCommand::equals)
+          .isPresent();
+    }
     if (sharedForegroundEngine != null) {
       return Lizzie.config.analysisReuseCurrentEngine && sharedForegroundEngine == Lizzie.leelaz;
     }
@@ -2371,7 +2392,7 @@ public class AnalysisEngine {
     }
     return useRemoteCompute
         == RemoteComputeConfig.isRemoteComputeEngineCommand(
-            resolveConfiguredAnalysisEngineCommand(true));
+            resolveConfiguredAnalysisEngineCommand(null));
   }
 
   public boolean usesSharedForegroundEngine() {
@@ -2384,6 +2405,10 @@ public class AnalysisEngine {
 
   public boolean isAutomaticBackgroundTask() {
     return purpose() == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS;
+  }
+
+  public boolean usesDedicatedLightweightQuickModel() {
+    return dedicatedLightweightQuickModel;
   }
 
   public boolean isLocalDedicatedProcess() {
