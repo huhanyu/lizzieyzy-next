@@ -154,6 +154,40 @@ public final class AccessibilitySupport {
     }
   }
 
+  /** Keeps screen-reader semantics while suppressing visible tooltips for every button in a tree. */
+  public static void disableVisibleButtonTooltips(Component root) {
+    if (root == null) {
+      return;
+    }
+    if (root instanceof AbstractButton) {
+      AbstractButton button = (AbstractButton) root;
+      AccessibleContext context = button.getAccessibleContext();
+      String name =
+          firstNonBlank(
+              (String) button.getClientProperty(EXPLICIT_NAME),
+              firstNonBlank(
+                  context == null ? null : context.getAccessibleName(),
+                  firstNonBlank(button.getText(), button.getToolTipText())));
+      String description =
+          firstNonBlank(
+              (String) button.getClientProperty(EXPLICIT_DESCRIPTION),
+              firstNonBlank(
+                  context == null ? null : context.getAccessibleDescription(),
+                  firstNonBlank(button.getToolTipText(), name)));
+      if (!name.isBlank()) {
+        buttonWithoutTooltip(button, name, description);
+      } else {
+        button.putClientProperty(VISIBLE_TOOLTIP_DISABLED, Boolean.TRUE);
+        button.setToolTipText(null);
+      }
+    }
+    if (root instanceof Container) {
+      for (Component child : ((Container) root).getComponents()) {
+        disableVisibleButtonTooltips(child);
+      }
+    }
+  }
+
   public static void installWindowFocusCycling(
       Window window, JComponent board, JComponent... focusZones) {
     if (window == null || board == null || focusZones == null || focusZones.length == 0) {
