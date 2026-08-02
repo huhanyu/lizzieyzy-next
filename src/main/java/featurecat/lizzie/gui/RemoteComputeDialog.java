@@ -271,7 +271,7 @@ public class RemoteComputeDialog extends JDialog {
         smallText(
             text(
                 "RemoteCompute.loginSavedNoPassword",
-                "This login is saved. The password is not stored locally."));
+                "This login is saved. The password is not stored."));
     loggedInAccountLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
     loggedInPanel.add(loggedInAccountLabel);
     loggedInPanel.add(Box.createVerticalStrut(22));
@@ -407,11 +407,13 @@ public class RemoteComputeDialog extends JDialog {
     row.setAlignmentX(Component.LEFT_ALIGNMENT);
     row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
     rememberPassword.setToolTipText(
-        text("RemoteCompute.rememberPasswordTip", "Stored only in the local configuration."));
+        text(
+            "RemoteCompute.rememberPasswordTip",
+            "Protect the password with the operating system secure storage."));
     rememberToken.setToolTipText(
         text(
             "RemoteCompute.rememberLoginTip",
-            "Save the login token so you do not need to sign in next time."));
+            "Protect the login token with the operating system secure storage."));
     row.add(rememberToken);
     row.add(Box.createHorizontalStrut(10));
     row.add(rememberPassword);
@@ -645,6 +647,19 @@ public class RemoteComputeDialog extends JDialog {
     updateZhiziActionButtonState();
     updateCustomActionButtonState();
     updateWeightControlState();
+    if (state.credentialMigrationFailed) {
+      updateStatus(
+          text(
+              "RemoteCompute.status.credentialMigrationFailed",
+              "The saved login could not be moved to system secure storage. Sign in again; the old value was not used or deleted."),
+          false);
+    } else if (state.credentialReadFailed) {
+      updateStatus(
+          text(
+              "RemoteCompute.status.credentialReadFailed",
+              "System secure storage could not be read. Sign in again for this session."),
+          false);
+    }
     if (!state.zhiziAccountToken.trim().isEmpty()
         && RemoteComputeConfig.shouldRefreshZhiziCatalog(state, System.currentTimeMillis())) {
       SwingUtilities.invokeLater(() -> refreshZhiziWeightOptions(false));
@@ -672,18 +687,17 @@ public class RemoteComputeDialog extends JDialog {
     codeRowPanel.setVisible(codeLoginMode);
     if (loggedIn) {
       RemoteComputeConfig.State state = RemoteComputeConfig.load();
-      boolean passwordSaved =
-          state.rememberZhiziPassword
-              && state.zhiziPassword != null
-              && !state.zhiziPassword.isEmpty();
+      boolean passwordSaved = state.passwordStoredSecurely;
       String account =
           state.zhiziIdentifier == null || state.zhiziIdentifier.trim().isEmpty()
               ? text("RemoteCompute.loggedIn", "Account signed in")
               : format("RemoteCompute.accountValue", "Account: {0}", state.zhiziIdentifier);
       account +=
           passwordSaved
-              ? text("RemoteCompute.passwordStored", ". Password is stored locally.")
-              : text("RemoteCompute.passwordNotStored", ". Password is not stored locally.");
+              ? text(
+                  "RemoteCompute.passwordStored",
+                  ". Password is protected by system secure storage.")
+              : text("RemoteCompute.passwordNotStored", ". Password is not saved.");
       loggedInAccountLabel.setText(account);
     }
     updateWeightControlState();
@@ -865,35 +879,55 @@ public class RemoteComputeDialog extends JDialog {
   }
 
   private void onZhiziPasswordLoggedIn(String identifier, String password, String token) {
-    RemoteComputeConfig.saveZhiziToken(
-        token,
-        rememberToken.isSelected(),
-        currentArgs(),
-        identifier,
-        password,
-        rememberPassword.isSelected());
+    RemoteComputeConfig.CredentialSaveResult saveResult =
+        RemoteComputeConfig.saveZhiziToken(
+            token,
+            rememberToken.isSelected(),
+            currentArgs(),
+            identifier,
+            password,
+            rememberPassword.isSelected());
+    syncRememberControlsFromSavedState();
     if (!rememberPassword.isSelected()) {
       passwordField.setText("");
     }
     codeField.setText("");
     updateLoginMode();
     updateCurrentStatus();
-    updateStatus(
-        text("RemoteCompute.status.loginSuccess", "Signed in. Zhizi Cloud is ready to enable."),
-        true);
+    updateCredentialSaveStatus(saveResult);
     refreshZhiziWeightOptions(false);
   }
 
   private void onZhiziLoggedIn(String identifier, String token) {
-    RemoteComputeConfig.saveZhiziToken(
-        token, rememberToken.isSelected(), currentArgs(), identifier);
+    RemoteComputeConfig.CredentialSaveResult saveResult =
+        RemoteComputeConfig.saveZhiziToken(
+            token, rememberToken.isSelected(), currentArgs(), identifier);
+    syncRememberControlsFromSavedState();
     codeField.setText("");
     updateLoginMode();
     updateCurrentStatus();
+    updateCredentialSaveStatus(saveResult);
+    refreshZhiziWeightOptions(false);
+  }
+
+  private void syncRememberControlsFromSavedState() {
+    RemoteComputeConfig.State saved = RemoteComputeConfig.load();
+    rememberToken.setSelected(saved.rememberZhiziToken && saved.tokenStoredSecurely);
+    rememberPassword.setSelected(saved.rememberZhiziPassword && saved.passwordStoredSecurely);
+  }
+
+  private void updateCredentialSaveStatus(RemoteComputeConfig.CredentialSaveResult result) {
+    if (result != null && result.isSessionOnly()) {
+      updateStatus(
+          text(
+              "RemoteCompute.status.loginSessionOnly",
+              "Signed in for this session. System secure storage is unavailable, so you will need to sign in again after restarting."),
+          false);
+      return;
+    }
     updateStatus(
         text("RemoteCompute.status.loginSuccess", "Signed in. Zhizi Cloud is ready to enable."),
         true);
-    refreshZhiziWeightOptions(false);
   }
 
   private void sendCode() {
@@ -1044,14 +1078,22 @@ public class RemoteComputeDialog extends JDialog {
   private void logout() {
     stopZhiziStartupMonitor();
     cancelCatalogRefresh();
-    RemoteComputeConfig.clearZhiziToken();
+    RemoteComputeConfig.CredentialSaveResult result = RemoteComputeConfig.clearZhiziToken();
     passwordField.setText("");
     rememberPassword.setSelected(false);
     showPasswordButton.setSelected(false);
     updatePasswordEcho();
     updateLoginMode();
     updateCurrentStatus();
-    updateStatus(text("RemoteCompute.status.loggedOut", "Signed out of Zhizi Cloud."), true);
+    if (result.deletionFailed) {
+      updateStatus(
+          text(
+              "RemoteCompute.status.credentialCleanupFailed",
+              "Signed out, but system secure storage could not be fully cleaned. Check the operating system credential manager."),
+          false);
+    } else {
+      updateStatus(text("RemoteCompute.status.loggedOut", "Signed out of Zhizi Cloud."), true);
+    }
     updateWeightControlState();
   }
 

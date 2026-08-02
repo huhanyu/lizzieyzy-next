@@ -144,7 +144,7 @@ Windows `portable.zip` 是真正的免安装模式：配置、日志、保存棋
 - `只保留原生 readboard 同步工具`
   Windows 主发布包内置原生 `readboard.exe`，不再让普通用户在多个同步入口之间纠结。
 - `远程算力中心`
-  本机显卡不够时，可以在软件内登录智子云算力，默认使用“VIP 包月”（`--gpu-type vip-share`）远程 KataGo；非 VIP 用户可在高级设置切换到“按量 1x / 3x / 6x”等档位。默认预设使用智子28B模型，TensorRT/CUDA 表示云端引擎后端，不是充值套餐名。密码不保存，只有勾选“记住登录”时才保存 token；断线会自动重连，也可以一键切回本机引擎。
+  本机显卡不够时，可以在软件内登录智子云算力，默认使用“VIP 包月”（`--gpu-type vip-share`）远程 KataGo；非 VIP 用户可在高级设置切换到“按量 1x / 3x / 6x”等档位。默认预设使用智子28B模型，TensorRT/CUDA 表示云端引擎后端，不是充值套餐名。勾选“记住登录/密码”后，凭据由 Windows DPAPI、macOS Keychain 或 Linux Secret Service 保护，不写入普通配置；系统安全存储不可用时只在本次运行中保留。断线会自动重连，也可以一键切回本机引擎。
 - `真实发布 + 真实烟测`
   不是只改源码，Windows / macOS / Linux 的发布包和烟测链路也都持续在做。
 

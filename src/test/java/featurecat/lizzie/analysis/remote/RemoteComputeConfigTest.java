@@ -10,10 +10,17 @@ import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.gui.EngineData;
 import featurecat.lizzie.util.Utils;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.ResourceBundle;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
@@ -196,20 +203,28 @@ class RemoteComputeConfigTest {
   void zhiziPasswordIsOnlySavedWhenExplicitlyRemembered() throws Exception {
     withConfig(
         () -> {
-          RemoteComputeConfig.saveZhiziToken(
-              "token",
-              true,
-              RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
-              "user@example.com",
-              "secret-password",
-              true);
+          RemoteComputeConfig.CredentialSaveResult saved =
+              RemoteComputeConfig.saveZhiziToken(
+                  "super-secret-account-token-value",
+                  true,
+                  RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
+                  "user@example.com",
+                  "secret-password",
+                  true);
 
           RemoteComputeConfig.State state = RemoteComputeConfig.load();
           assertTrue(state.rememberZhiziPassword);
+          assertTrue(state.passwordStoredSecurely);
+          assertTrue(state.tokenStoredSecurely);
+          assertTrue(saved.passwordStored);
+          assertTrue(saved.tokenStored);
           assertEquals("secret-password", state.zhiziPassword);
           JSONObject json =
               Lizzie.config.leelazConfig.getJSONObject(RemoteComputeConfig.CONFIG_KEY);
-          assertFalse(json.optString("zhizi-password-v1").contains("secret-password"));
+          assertFalse(json.has("zhizi-password-v1"));
+          assertFalse(json.has("zhizi-account-token"));
+          assertFalse(json.toString().contains("secret-password"));
+          assertFalse(json.toString().contains("super-secret-account-token-value"));
 
           RemoteComputeConfig.saveZhiziToken(
               "token2",
@@ -224,6 +239,159 @@ class RemoteComputeConfigTest {
           assertEquals("", state.zhiziPassword);
           json = Lizzie.config.leelazConfig.getJSONObject(RemoteComputeConfig.CONFIG_KEY);
           assertFalse(json.has("zhizi-password-v1"));
+          assertFalse(json.has("zhizi-account-token"));
+        });
+  }
+
+  @Test
+  void legacyCredentialsMigrateOnlyAfterSecureStorageAcceptsThem() throws Exception {
+    withConfigAndStore(
+        store -> {
+          JSONObject json = new JSONObject();
+          json.put("zhizi-identifier", "legacy@example.com");
+          json.put("remember-zhizi-token", true);
+          json.put("remember-zhizi-password", true);
+          json.put("zhizi-account-token", "legacy-token");
+          json.put(
+              "zhizi-password-v1",
+              Base64.getEncoder()
+                  .encodeToString("legacy-password".getBytes(StandardCharsets.UTF_8)));
+          Lizzie.config.leelazConfig.put(RemoteComputeConfig.CONFIG_KEY, json);
+
+          RemoteComputeConfig.State state = RemoteComputeConfig.load();
+
+          assertEquals("legacy-token", state.zhiziAccountToken);
+          assertEquals("legacy-password", state.zhiziPassword);
+          assertTrue(state.tokenStoredSecurely);
+          assertTrue(state.passwordStoredSecurely);
+          assertFalse(state.credentialMigrationFailed);
+          assertFalse(json.has("zhizi-account-token"));
+          assertFalse(json.has("zhizi-password-v1"));
+          assertEquals(
+              "legacy-token",
+              store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "legacy@example.com").orElseThrow());
+          assertEquals(
+              "legacy-password",
+              store.read(CredentialStore.Kind.PASSWORD, "legacy@example.com").orElseThrow());
+        });
+  }
+
+  @Test
+  void failedLegacyMigrationLeavesLegacyDataButDoesNotAutoLogin() throws Exception {
+    withConfigAndStore(
+        store -> {
+          store.failWrites = true;
+          JSONObject json = new JSONObject();
+          json.put("zhizi-identifier", "legacy@example.com");
+          json.put("remember-zhizi-token", true);
+          json.put("remember-zhizi-password", true);
+          json.put("zhizi-account-token", "legacy-token");
+          json.put(
+              "zhizi-password-v1",
+              Base64.getEncoder()
+                  .encodeToString("legacy-password".getBytes(StandardCharsets.UTF_8)));
+          Lizzie.config.leelazConfig.put(RemoteComputeConfig.CONFIG_KEY, json);
+
+          RemoteComputeConfig.State state = RemoteComputeConfig.load();
+
+          assertEquals("", state.zhiziAccountToken);
+          assertEquals("", state.zhiziPassword);
+          assertTrue(state.credentialMigrationFailed);
+          assertTrue(json.has("zhizi-account-token"));
+          assertTrue(json.has("zhizi-password-v1"));
+
+          RemoteComputeConfig.save(state);
+          JSONObject preserved =
+              Lizzie.config.leelazConfig.getJSONObject(RemoteComputeConfig.CONFIG_KEY);
+          assertEquals("legacy-token", preserved.getString("zhizi-account-token"));
+          assertTrue(preserved.has("zhizi-password-v1"));
+        });
+  }
+
+  @Test
+  void unavailableSecureStorageKeepsNewLoginInMemoryForThisSessionOnly() throws Exception {
+    withConfigAndStore(
+        store -> {
+          store.available = false;
+
+          RemoteComputeConfig.CredentialSaveResult result =
+              RemoteComputeConfig.saveZhiziToken(
+                  "session-token",
+                  true,
+                  RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
+                  "session@example.com",
+                  "session-password",
+                  true);
+
+          assertTrue(result.isSessionOnly());
+          RemoteComputeConfig.State state = RemoteComputeConfig.load();
+          assertEquals("session-token", state.zhiziAccountToken);
+          assertEquals("session-password", state.zhiziPassword);
+          assertFalse(state.rememberZhiziToken);
+          assertFalse(state.rememberZhiziPassword);
+          JSONObject json =
+              Lizzie.config.leelazConfig.getJSONObject(RemoteComputeConfig.CONFIG_KEY);
+          assertFalse(json.has("zhizi-account-token"));
+          assertFalse(json.has("zhizi-password-v1"));
+
+          RemoteComputeConfig.setCredentialStoreForTests(store);
+          state = RemoteComputeConfig.load();
+          assertEquals("", state.zhiziAccountToken);
+          assertEquals("", state.zhiziPassword);
+        });
+  }
+
+  @Test
+  void switchingAccountsAndLogoutRemoveOldSecureCredentials() throws Exception {
+    withConfigAndStore(
+        store -> {
+          RemoteComputeConfig.saveZhiziToken(
+              "first-token",
+              true,
+              RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
+              "first@example.com",
+              "first-password",
+              true);
+
+          RemoteComputeConfig.saveZhiziToken(
+              "second-token",
+              true,
+              RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
+              "second@example.com",
+              "second-password",
+              true);
+
+          assertTrue(store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "first@example.com").isEmpty());
+          assertTrue(store.read(CredentialStore.Kind.PASSWORD, "first@example.com").isEmpty());
+          assertEquals(
+              "second-token",
+              store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "second@example.com").orElseThrow());
+
+          RemoteComputeConfig.clearZhiziToken();
+          assertTrue(
+              store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "second@example.com").isEmpty());
+          assertTrue(store.read(CredentialStore.Kind.PASSWORD, "second@example.com").isEmpty());
+        });
+  }
+
+  @Test
+  void ordinarySettingsSaveDoesNotRewriteUnchangedSecureCredentials() throws Exception {
+    withConfigAndStore(
+        store -> {
+          RemoteComputeConfig.saveZhiziToken(
+              "stable-token",
+              true,
+              RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
+              "stable@example.com",
+              "stable-password",
+              true);
+          int writesAfterLogin = store.writeCount;
+
+          RemoteComputeConfig.State state = RemoteComputeConfig.load();
+          state.provider = RemoteComputeConfig.PROVIDER_ZHIZI;
+          RemoteComputeConfig.save(state);
+
+          assertEquals(writesAfterLogin, store.writeCount);
         });
   }
 
@@ -468,8 +636,13 @@ class RemoteComputeConfigTest {
   }
 
   private static void withConfig(ThrowingRunnable action) throws Exception {
+    withConfigAndStore(store -> action.run());
+  }
+
+  private static void withConfigAndStore(ThrowingStoreRunnable action) throws Exception {
     Config previousConfig = Lizzie.config;
     Path runtimeRoot = Files.createTempDirectory("remote-compute-config");
+    TestCredentialStore store = new TestCredentialStore();
     try {
       Config config = ConfigTestHelper.createForTests(runtimeRoot);
       config.config = new JSONObject();
@@ -478,14 +651,68 @@ class RemoteComputeConfigTest {
       config.config.put("leelaz", config.leelazConfig);
       config.config.put("ui", config.uiConfig);
       Lizzie.config = config;
-      action.run();
+      RemoteComputeConfig.setCredentialStoreForTests(store);
+      action.run(store);
     } finally {
+      RemoteComputeConfig.resetCredentialStateForTests();
       Lizzie.config = previousConfig;
     }
   }
 
   private interface ThrowingRunnable {
     void run() throws Exception;
+  }
+
+  private interface ThrowingStoreRunnable {
+    void run(TestCredentialStore store) throws Exception;
+  }
+
+  private static final class TestCredentialStore implements CredentialStore {
+    private final Map<String, String> secrets = new HashMap<>();
+    boolean available = true;
+    boolean failReads;
+    boolean failWrites;
+    boolean failDeletes;
+    int writeCount;
+
+    @Override
+    public String backendName() {
+      return "test-memory";
+    }
+
+    @Override
+    public boolean isAvailable() {
+      return available;
+    }
+
+    @Override
+    public Optional<String> read(Kind kind, String account) throws IOException {
+      if (failReads) {
+        throw new IOException("read failed");
+      }
+      return Optional.ofNullable(secrets.get(key(kind, account)));
+    }
+
+    @Override
+    public void write(Kind kind, String account, String secret) throws IOException {
+      if (!available || failWrites) {
+        throw new IOException("write failed");
+      }
+      writeCount++;
+      secrets.put(key(kind, account), secret);
+    }
+
+    @Override
+    public void delete(Kind kind, String account) throws IOException {
+      if (failDeletes) {
+        throw new IOException("delete failed");
+      }
+      secrets.remove(key(kind, account));
+    }
+
+    private static String key(Kind kind, String account) {
+      return kind.id() + ":" + (account == null ? "" : account.trim().toLowerCase(Locale.ROOT));
+    }
   }
 
   private interface ResultSupplier<T> {

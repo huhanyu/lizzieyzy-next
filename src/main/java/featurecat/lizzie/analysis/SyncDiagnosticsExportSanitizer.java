@@ -14,6 +14,11 @@ public final class SyncDiagnosticsExportSanitizer {
   private static final Pattern SGF_PAYLOAD = Pattern.compile("\\(;.*?\\)", Pattern.DOTALL);
   private static final Pattern TOKEN_PARAMETER =
       Pattern.compile("(?i)\\b(?:roomToken|authToken|token)\\b(?:\\s*[=:]\\s*|\\s+)[^\\s&;,]+");
+  private static final Pattern BEARER_CREDENTIAL =
+      Pattern.compile("(?i)\\bBearer\\s+[A-Za-z0-9._~+\\-/]+=*");
+  private static final Pattern SENSITIVE_CREDENTIAL_PARAMETER =
+      Pattern.compile(
+          "(?i)([\\\"']?(?:password|connectPassword|zhizi-account-token|zz-socketio-token|authorization)[\\\"']?\\s*(?:[=:]\\s*|\\s+)[\\\"']?)([^\\\"'\\s,;}&]+)([\\\"']?)");
   private static final Pattern YIKE_ROOM_PARAMETER =
       Pattern.compile("(?i)\\b(?:room|roomId|id)\\b(?:\\s*[=:]\\s*|\\s+)(\\d+)\\b");
   private static final Pattern WINDOWS_USER_PATH =
@@ -56,6 +61,8 @@ public final class SyncDiagnosticsExportSanitizer {
   public String text(String value) {
     String safe = unescapeDiagnosticSeparators(normalize(value, "none"));
     safe = SGF_PAYLOAD.matcher(safe).replaceAll("<redacted-sgf>");
+    safe = BEARER_CREDENTIAL.matcher(safe).replaceAll("<redacted-credential>");
+    safe = SENSITIVE_CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1<redacted-credential>$3");
     safe = replaceYikeUrls(safe);
     safe = RAW_URL.matcher(safe).replaceAll("<redacted-url>");
     safe = TOKEN_PARAMETER.matcher(safe).replaceAll("<redacted-token>");
