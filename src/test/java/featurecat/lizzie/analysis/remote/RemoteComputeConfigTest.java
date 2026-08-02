@@ -105,6 +105,11 @@ class RemoteComputeConfigTest {
 
     assertEquals("28bnbt", RemoteComputeConfig.kataWeightForArgs(selected));
     assertEquals("1x", RemoteComputeConfig.gpuTypeForArgs(selected));
+
+    String unsupported =
+        RemoteComputeConfig.withKataWeight(
+            RemoteComputeConfig.ON_DEMAND_1X_ZHIZI_ARGS, "future-net");
+    assertEquals("28bnbt", RemoteComputeConfig.kataWeightForArgs(unsupported));
   }
 
   @Test
@@ -124,10 +129,12 @@ class RemoteComputeConfigTest {
           RemoteComputeConfig.save(state);
 
           RemoteComputeConfig.State restored = RemoteComputeConfig.load();
-          assertEquals("40b", restored.zhiziCatalog.defaultWeight());
-          assertEquals(6, restored.zhiziCatalog.weights().size());
-          assertTrue(restored.zhiziCatalog.containsWeight("20b"));
-          assertTrue(restored.zhiziCatalog.containsWeight("60b"));
+          assertEquals("28bnbt", restored.zhiziCatalog.defaultWeight());
+          assertEquals(4, restored.zhiziCatalog.weights().size());
+          assertTrue(restored.zhiziCatalog.containsWeight("18bnbt"));
+          assertTrue(restored.zhiziCatalog.containsWeight("fdx"));
+          assertFalse(restored.zhiziCatalog.containsWeight("20b"));
+          assertFalse(restored.zhiziCatalog.containsWeight("60b"));
           assertFalse(
               RemoteComputeConfig.shouldRefreshZhiziCatalog(
                   restored,

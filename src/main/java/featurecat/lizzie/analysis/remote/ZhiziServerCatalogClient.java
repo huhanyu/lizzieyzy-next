@@ -16,8 +16,14 @@ import java.time.Duration;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Reads the live iKataGo resource catalog associated with a Zhizi account. */
-public final class ZhiziServerCatalogClient {
+/**
+ * Legacy iKataGo SSH catalog reader.
+ *
+ * <p>This is retained only for compatibility tests and explicit migration tooling. The normal UI
+ * must not request connection credentials or use this private SSH path.
+ */
+@Deprecated
+final class ZhiziServerCatalogClient {
   static final URI DEFAULT_WORLD_URI =
       URI.create("https://ikatago-fairyland.oss-cn-beijing.aliyuncs.com/world.json");
   private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(15);
@@ -28,7 +34,7 @@ public final class ZhiziServerCatalogClient {
   private final HttpClient httpClient;
   private final SshCatalogQuery sshQuery;
 
-  public ZhiziServerCatalogClient() throws IOException {
+  ZhiziServerCatalogClient() throws IOException {
     this(
         DEFAULT_WORLD_URI,
         NetworkProxy.configure(HttpClient.newBuilder()).connectTimeout(HTTP_TIMEOUT).build(),
@@ -54,7 +60,7 @@ public final class ZhiziServerCatalogClient {
     String response =
         sshQuery.query(
             endpoint.host, endpoint.port, endpoint.username, account.password, "query-server");
-    return ZhiziEngineCatalog.fromJson(response).withConfirmedWeights();
+    return ZhiziEngineCatalog.fromJson(response).withDocumentedWeights();
   }
 
   private JSONObject getJson(URI uri) throws IOException, InterruptedException {

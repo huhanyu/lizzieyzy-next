@@ -126,7 +126,7 @@ public class ZhiziApiClient {
     return new SocketToken(token, socketIOURL);
   }
 
-  public ConnectAccount fetchConnectAccount(String accountToken)
+  ConnectAccount fetchConnectAccount(String accountToken)
       throws IOException, InterruptedException {
     JSONObject response =
         get(
