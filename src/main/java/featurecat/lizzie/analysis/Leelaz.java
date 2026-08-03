@@ -8314,10 +8314,6 @@ public class Leelaz {
       requiresMatchingResponseCommandId = true;
     }
 
-    private boolean requiresMatchingResponseCommandId() {
-      return requiresMatchingResponseCommandId;
-    }
-
     private void run() {
       queuedCommand.publishStateResetAfterOutputWrite();
       try {
@@ -10107,10 +10103,6 @@ public class Leelaz {
         return true;
       }
     }
-  }
-
-  boolean beginReadBoardGmaSessionForTest() {
-    return beginReadBoardGmaSession();
   }
 
   private boolean beginReadBoardGmaSession(TrackingHandoffTarget target) {
