@@ -771,19 +771,10 @@ public class BoardHistoryNode {
     if (stepIn) {
       Leelaz engine = Lizzie.leelaz;
       boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
-      Optional<Double> currentHistoryKomi = currentHistoryKomi();
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
-          (currentHistoryKomi.isPresent()
-                  ? ExactSnapshotEngineRestore.prepare(
-                      engine, this, resumePonder, currentHistoryKomi.orElseThrow())
-                  : ExactSnapshotEngineRestore.prepare(engine, this, resumePonder))
-              .orElseThrow();
+          ExactSnapshotEngineRestore.prepare(engine, this, resumePonder, true).orElseThrow();
       engine.notPondering();
-      engine.clear();
-      ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
-      if (completion.shouldResumePonder()) {
-        engine.ponder();
-      }
+      executePreparedRestore(engine, preparedRestore);
     } else {
       //  System.out.println("out");
       Lizzie.board.resendMoveToEngine(Lizzie.leelaz, false);
@@ -795,31 +786,21 @@ public class BoardHistoryNode {
     if (marker == null) {
       return false;
     }
-    Optional<Double> currentHistoryKomi = currentHistoryKomi();
-    if (currentHistoryKomi.isPresent()) {
-      ExactSnapshotEngineRestore.prepare(
-              Lizzie.leelaz, this, Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking(),
-              currentHistoryKomi.orElseThrow())
-          .map(ExactSnapshotEngineRestore.PreparedRestore::execute)
-          .orElseThrow();
-    } else {
-      ExactSnapshotEngineRestore.prepare(
-              Lizzie.leelaz,
-              this,
-              Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking())
-          .map(ExactSnapshotEngineRestore.PreparedRestore::execute)
-          .orElseThrow();
-    }
+    Leelaz engine = Lizzie.leelaz;
+    boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
+    ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+        ExactSnapshotEngineRestore.prepare(engine, this, resumePonder).orElseThrow();
+    engine.notPondering();
+    executePreparedRestore(engine, preparedRestore);
     return true;
   }
 
-  private static Optional<Double> currentHistoryKomi() {
-    if (Lizzie.board == null
-        || Lizzie.board.getHistory() == null
-        || Lizzie.board.getHistory().getGameInfo() == null) {
-      return Optional.empty();
+  private static void executePreparedRestore(
+      Leelaz engine, ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
+    ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
+    if (completion.shouldResumePonder()) {
+      engine.ponder();
     }
-    return Optional.of(Lizzie.board.getHistory().getGameInfo().getKomi());
   }
 
   private static ArrayList<ExtraStones> cloneExtraStones(ArrayList<ExtraStones> stones) {

@@ -50,17 +50,8 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     }
 
     boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
-    Board currentBoard = Lizzie.board;
     java.util.Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
-        currentBoard == null
-            || currentBoard.getHistory() == null
-            || currentBoard.getHistory().getGameInfo() == null
-            ? ExactSnapshotEngineRestore.prepare(engine, target, resumePonder)
-            : ExactSnapshotEngineRestore.prepare(
-                engine,
-                target,
-                resumePonder,
-                currentBoard.getHistory().getGameInfo().getKomi());
+        ExactSnapshotEngineRestore.prepare(engine, target, resumePonder);
     // 先停 ponder，避免后续 sync 命令期间 KataGo 仍在跑旧 ponder 输出 info 行
     engine.notPondering();
     engine.nameCmdfornoponder();

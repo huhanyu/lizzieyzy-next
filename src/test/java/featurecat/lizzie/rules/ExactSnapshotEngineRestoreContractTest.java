@@ -2052,6 +2052,9 @@ class ExactSnapshotEngineRestoreContractTest {
       ExactSnapshotRestoreProtocolFixture.install(
           this,
           command -> {
+            if ("clear_board".equals(command)) {
+              clearCalls++;
+            }
             if (command.startsWith("loadsgf ")) {
               loadSgfCalls++;
             }
@@ -2081,10 +2084,6 @@ class ExactSnapshotEngineRestoreContractTest {
       nameCalls++;
     }
 
-    @Override
-    public void clear() {
-      clearCalls++;
-    }
 
     @Override
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {

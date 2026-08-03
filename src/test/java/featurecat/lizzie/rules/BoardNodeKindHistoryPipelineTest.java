@@ -3874,7 +3874,7 @@ class BoardNodeKindHistoryPipelineTest {
       assertTrue(
           setupNode.getData().blackToPlay,
           "setup snapshot should keep the original side to play after rebuild.");
-      assertEquals("clear", leelaz.commandsSinceLastClear().get(0));
+      assertEquals("clear_board", leelaz.commandsSinceLastClear().get(0));
       assertTrue(
           leelaz.commandsSinceLastClear().get(1).startsWith("loadsgf "),
           "stepping onto the setup snapshot should restore through exact loadsgf.");
@@ -3945,7 +3945,7 @@ class BoardNodeKindHistoryPipelineTest {
       board.moveToAnyPosition(targetMove);
 
       assertEquals(
-          "clear",
+          "clear_board",
           leelaz.recordedCommands().get(0),
           "branch jumps through setup snapshots should clear the engine before exact restore.");
       assertTrue(
@@ -4761,7 +4761,7 @@ class BoardNodeKindHistoryPipelineTest {
 
     private List<String> commandsSinceLastClear() {
       List<String> recorded = recordedCommands();
-      int lastClear = recorded.lastIndexOf("clear");
+      int lastClear = recorded.lastIndexOf("clear_board");
       return recorded.subList(lastClear, recorded.size());
     }
 
