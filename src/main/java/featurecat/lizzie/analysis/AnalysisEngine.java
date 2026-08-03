@@ -317,6 +317,11 @@ public class AnalysisEngine {
         return;
       }
     } else {
+      if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+        process = null;
+        isLoaded = false;
+        return;
+      }
       Path engineExecutable = KataGoRuntimeHelper.resolveCommandExecutable(commands);
       if (Config.isBundledKataGoCommand(engineCommand)) {
         try {
@@ -330,7 +335,8 @@ public class AnalysisEngine {
         }
       }
       List<String> launchCommands =
-          KataGoRuntimeHelper.prepareBundledLaunchCommand(commands, engineExecutable);
+          KataGoRuntimeHelper.prepareBundledLaunchCommand(
+              commands, engineExecutable, KataGoRuntimeHelper.LaunchPurpose.ANALYSIS);
       ProcessBuilder processBuilder = new ProcessBuilder(launchCommands);
       CommandLaunchHelper.configureProcessBuilder(processBuilder, launchSpec);
       KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, engineExecutable);

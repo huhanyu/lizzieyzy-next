@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
@@ -11,6 +12,7 @@ import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.analysis.gtpconfig.GtpConfigurationProbe;
 import featurecat.lizzie.gui.LizzieFrame;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -93,6 +95,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
 
       assertTrue(pause.accepted());
       assertTrue(pause.analysisWasPondering());
+      assertTrue(pause.computeIsolated());
       assertEquals(pausePonderCalls + 1, pausedEngine.ponderingCallCount);
       assertEquals(2, pausedEngine.reservationAttempts);
       assertEquals(1, pausedEngine.restartCount);
@@ -102,8 +105,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
   }
 
   @Test
-  void suppressionStaysUntilPausedReservationThenAllowsSelectedForegroundLease()
-      throws Exception {
+  void suppressionStaysUntilPausedReservationThenAllowsSelectedForegroundLease() throws Exception {
     try (BenchmarkEnvironment environment = new BenchmarkEnvironment(2)) {
       RecordingBenchmarkLeelaz pausedEngine = environment.engine(0);
       RecordingBenchmarkLeelaz selectedEngine = environment.engine(1);
@@ -358,6 +360,8 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       Lizzie.leelaz = engine;
 
       assertTrue(result.accepted());
+      assertTrue(result.computeIsolated());
+      assertFalse(KataGoRuntimeHelper.isLayeredBenchmarkComputeIsolated());
       assertEquals(
           Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_LIFECYCLE,
           engine.previewForegroundAnalysisLeaseAvailability());
@@ -372,8 +376,40 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
   }
 
   @Test
-  void benchmarkPauseClaimsActiveTrackingAndRestoresSavedPonderIntentInOneClick()
-      throws Exception {
+  void acceptedBenchmarkPauseBlocksLocalGtpConfigurationProbe() throws Exception {
+    Config previousConfig = Lizzie.config;
+    Leelaz previousEngine = Lizzie.leelaz;
+    LizzieFrame previousFrame = Lizzie.frame;
+    Config config =
+        ConfigTestHelper.createForTests(Files.createTempDirectory("katago-benchmark-probe-gate"));
+    boolean pauseAccepted = false;
+    try {
+      Lizzie.config = config;
+      Lizzie.leelaz = null;
+      Lizzie.frame = null;
+
+      KataGoRuntimeHelper.BenchmarkPauseResult result =
+          KataGoRuntimeHelper.pauseCurrentAnalysisForBenchmark();
+      pauseAccepted = result.accepted();
+      IOException error =
+          assertThrows(
+              IOException.class,
+              () -> new GtpConfigurationProbe().inspect("definitely-missing-local-engine"));
+
+      assertTrue(result.accepted());
+      assertTrue(error.getMessage().contains("tuning"));
+    } finally {
+      if (pauseAccepted) {
+        KataGoRuntimeHelper.restoreAnalysisAfterBenchmark(false);
+      }
+      Lizzie.config = previousConfig;
+      Lizzie.leelaz = previousEngine;
+      Lizzie.frame = previousFrame;
+    }
+  }
+
+  @Test
+  void benchmarkPauseClaimsActiveTrackingAndRestoresSavedPonderIntentInOneClick() throws Exception {
     try (BenchmarkEnvironment environment = new BenchmarkEnvironment(1)) {
       RecordingBenchmarkLeelaz engine = environment.engine(0);
       ByteArrayOutputStream output = installOutput(engine);
@@ -416,7 +452,9 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
 
       assertTrue(pause.accepted());
       assertTrue(pause.analysisWasPondering());
-      assertFalse(engine.isPondering(), "benchmark must not restart ponder while tracking settles.");
+      assertFalse(pause.computeIsolated());
+      assertFalse(
+          engine.isPondering(), "benchmark must not restart ponder while tracking settles.");
 
       assertTrue(dispatchExclusiveLine(engine, "=800000001"));
       assertTrue(dispatchExclusiveLine(engine, ""));
@@ -424,6 +462,19 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
 
       assertTrue(engine.isPondering());
       assertFalse(engine.hasExclusiveGtpWorkInProgress());
+    }
+  }
+
+  @Test
+  void shutdownWaitReportsOnlyConfirmedIsolation() throws Exception {
+    try (BenchmarkEnvironment environment = new BenchmarkEnvironment(1)) {
+      RecordingBenchmarkLeelaz engine = environment.engine(0);
+
+      assertFalse(KataGoRuntimeHelper.waitForEngineShutdown(engine, 1L));
+
+      engine.shutdown();
+
+      assertTrue(KataGoRuntimeHelper.waitForEngineShutdown(engine, 1L));
     }
   }
 
@@ -536,6 +587,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     private int normalQuitCount;
     private int shutdownCount;
     private int ponderingCallCount;
+    private boolean processDead;
 
     private RecordingBenchmarkLeelaz() throws Exception {
       super("");
@@ -569,14 +621,21 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     @Override
     public void shutdown() {
       shutdownCount++;
+      processDead = true;
       started = false;
       isLoaded = false;
+    }
+
+    @Override
+    public boolean isProcessDead() {
+      return processDead;
     }
 
     @Override
     public void restartClosedEngine(int index) {
       restartCount++;
       lastRestartIndex = index;
+      processDead = false;
     }
 
     @Override

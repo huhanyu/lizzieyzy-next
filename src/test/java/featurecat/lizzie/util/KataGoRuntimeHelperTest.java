@@ -428,7 +428,8 @@ public class KataGoRuntimeHelperTest {
                     KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
 
                 assertTrue(status.applicable);
-                assertTrue(status.ready, "KataGo 1.17's official z.dll must satisfy the runtime check.");
+                assertTrue(
+                    status.ready, "KataGo 1.17's official z.dll must satisfy the runtime check.");
                 assertTrue(status.missingDlls.isEmpty());
               });
         });
@@ -1561,6 +1562,18 @@ public class KataGoRuntimeHelperTest {
         Math.abs((third - second) - (fourth - third)) <= 1,
         "Progress should advance by completed benchmark positions, not by elapsed time.");
     assertEquals(fourth, duplicate, "Repeating the same KataGo status line must not add progress.");
+  }
+
+  @Test
+  void fixedThreadBenchmarkProgressUsesItsSingleExpectedThreadTest() {
+    KataGoRuntimeHelper.BenchmarkProgressTracker tracker =
+        new KataGoRuntimeHelper.BenchmarkProgressTracker(1);
+
+    int completed = tracker.update("numSearchThreads = 6: 1/1 positions");
+
+    assertTrue(
+        completed >= 950,
+        "A completed fixed-thread cell should nearly complete its segment instead of assuming 12 tests.");
   }
 
   @Test

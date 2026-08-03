@@ -153,6 +153,10 @@ public class KataEstimate {
         return;
       }
     } else {
+      if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+        process = null;
+        return;
+      }
       Path engineExecutable = KataGoRuntimeHelper.resolveCommandExecutable(commands);
       if (Config.isBundledKataGoCommand(engineCommand)) {
         try {
@@ -164,7 +168,8 @@ public class KataEstimate {
         }
       }
       List<String> launchCommands =
-          KataGoRuntimeHelper.prepareBundledLaunchCommand(commands, engineExecutable);
+          KataGoRuntimeHelper.prepareBundledLaunchCommand(
+              commands, engineExecutable, KataGoRuntimeHelper.LaunchPurpose.ESTIMATE);
       ProcessBuilder processBuilder = new ProcessBuilder(launchCommands);
       CommandLaunchHelper.configureProcessBuilder(processBuilder, launchSpec);
       KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, engineExecutable);
@@ -178,6 +183,10 @@ public class KataEstimate {
         return;
       }
       initializeStreams();
+    }
+    if (process != null) {
+      AnalysisResourceCoordinator.processStarted(
+          this, AnalysisResourceCoordinator.Purpose.OTHER, engineCommand, process);
     }
     executor = Executors.newSingleThreadScheduledExecutor();
     executor.execute(this::read);
@@ -534,6 +543,8 @@ public class KataEstimate {
   public void shutdown() {
     // isShuttingdown = true;
     isNormalEnd = true;
+    AnalysisResourceCoordinator.processStopped(
+        this, AnalysisResourceCoordinator.Purpose.OTHER, process);
     if (this.useJavaSSH) this.javaSSH.close();
     else if (this.useRemoteCompute && remoteTransport != null) remoteTransport.close();
     else if (process != null && process.isAlive()) process.destroy();

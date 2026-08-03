@@ -21,6 +21,7 @@ import featurecat.lizzie.rules.Movelist;
 import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.util.KataGoRuntimeHelper;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -926,6 +927,33 @@ class AnalysisEngineRequestTest {
       assertNull(frame.contributeEngine);
       assertTrue(foreground.hasExclusiveGtpLease());
       foreground.endExclusiveGtpSession();
+    }
+  }
+
+  @Test
+  void benchmarkSuppressionRejectsLocalContributionBeforeReservedLifecycle() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      TrackingLizzieFrame frame = (TrackingLizzieFrame) Lizzie.frame;
+      Lizzie.config.contributeUseCommand = false;
+      Lizzie.leelaz = null;
+      boolean pauseAccepted = false;
+      try {
+        KataGoRuntimeHelper.BenchmarkPauseResult pause =
+            KataGoRuntimeHelper.pauseCurrentAnalysisForBenchmark();
+        pauseAccepted = pause.accepted();
+
+        frame.startContributeEngine();
+
+        assertTrue(pause.accepted());
+        assertEquals(1, frame.contributeBenchmarkConflictCount);
+        assertEquals(0, frame.contributionStarts);
+        assertFalse(frame.isContributing);
+        assertNull(frame.contributeEngine);
+      } finally {
+        if (pauseAccepted) {
+          KataGoRuntimeHelper.restoreAnalysisAfterBenchmark(false);
+        }
+      }
     }
   }
 
@@ -3535,6 +3563,7 @@ class AnalysisEngineRequestTest {
     private int flashAutoAnaSaveAndLoadCalls;
     private int foregroundReservationConflictCount;
     private int contributionStarts;
+    private int contributeBenchmarkConflictCount;
     private int retainedModeConflictCount;
 
     private TrackingLizzieFrame() {}
@@ -3563,6 +3592,11 @@ class AnalysisEngineRequestTest {
     @Override
     protected void startContributeEngineReserved() {
       contributionStarts++;
+    }
+
+    @Override
+    protected void showContributeBenchmarkConflict() {
+      contributeBenchmarkConflictCount++;
     }
   }
 
