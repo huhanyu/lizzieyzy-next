@@ -1813,6 +1813,13 @@ class ReadBoardEngineResumeTest {
       assertTrue(
           waitForSentCommandPrefix(harness.leelaz, "loadsgf "),
           "non-board GMA terminal result must restore the authoritative snapshot exactly.");
+      String restoredSgf = harness.leelaz.lastLoadedSgfContent();
+      assertTrue(
+          restoredSgf.contains("AB[aa]"),
+          "GMA exact restore must capture the authoritative current stone placement.");
+      assertTrue(
+          restoredSgf.contains("PL[W]"),
+          "GMA exact restore must capture the authoritative current side to play.");
     }
   }
 
