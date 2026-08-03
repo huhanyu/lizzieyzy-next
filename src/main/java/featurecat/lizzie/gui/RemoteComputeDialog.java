@@ -137,8 +137,8 @@ public class RemoteComputeDialog extends JDialog {
       linkButton(text("RemoteCompute.account.usageDetails", "Usage details"));
   private final JButton creditDetailsButton =
       linkButton(text("RemoteCompute.account.creditDetails", "Funds details"));
-  private final JButton purchaseVipButton =
-      primaryButton(text("RemoteCompute.payment.open", "Buy or renew VIP"));
+  private final JButton paymentButton =
+      primaryButton(text("RemoteCompute.payment.open", "Top up or buy VIP"));
   private final JButton localFromZhiziButton =
       secondaryButton(text("RemoteCompute.backToLocal", "Switch to local engine"));
   private final JButton importQrButton =
@@ -380,7 +380,7 @@ public class RemoteComputeDialog extends JDialog {
     accountActions.add(creditDetailsButton);
     loggedInPanel.add(accountActions);
     loggedInPanel.add(Box.createVerticalStrut(12));
-    loggedInPanel.add(fullWidth(purchaseVipButton, 44));
+    loggedInPanel.add(fullWidth(paymentButton, 44));
     loggedInPanel.add(Box.createVerticalStrut(10));
     loggedInPanel.add(fullWidth(logoutButton, 48));
     loggedInPanel.setVisible(false);
@@ -720,7 +720,7 @@ public class RemoteComputeDialog extends JDialog {
     refreshAccountButton.addActionListener(e -> refreshAccountOverview(true));
     usageDetailsButton.addActionListener(e -> openAccountDetails(0));
     creditDetailsButton.addActionListener(e -> openAccountDetails(1));
-    purchaseVipButton.addActionListener(e -> openVipPurchase());
+    paymentButton.addActionListener(e -> openPayment());
     useZhiziButton.addActionListener(e -> useZhiziEngine());
     localFromZhiziButton.addActionListener(e -> switchToLocalProvider());
     importQrButton.addActionListener(e -> importQrCode());
@@ -985,7 +985,7 @@ public class RemoteComputeDialog extends JDialog {
     refreshAccountButton.setEnabled(!loading && isZhiziLoggedIn());
     usageDetailsButton.setEnabled(!loading && isZhiziLoggedIn());
     creditDetailsButton.setEnabled(!loading && isZhiziLoggedIn());
-    purchaseVipButton.setEnabled(!loading && isZhiziLoggedIn());
+    paymentButton.setEnabled(!loading && isZhiziLoggedIn());
     if (loading) {
       refreshAccountButton.setText(text("RemoteCompute.account.refreshing", "Refreshing..."));
     } else {
@@ -1005,7 +1005,7 @@ public class RemoteComputeDialog extends JDialog {
     new ZhiziAccountDetailsDialog(frameOwner, accountService, token, selectedTab).setVisible(true);
   }
 
-  private void openVipPurchase() {
+  private void openPayment() {
     String token = RemoteComputeConfig.load().zhiziAccountToken.trim();
     if (token.isEmpty()) {
       updateStatus(text("RemoteCompute.error.loginFirst", "Sign in to Zhizi Cloud first."), false);
@@ -1149,8 +1149,7 @@ public class RemoteComputeDialog extends JDialog {
 
   private void updateOfficialBaselineButton() {
     Object selected = weightBox.getSelectedItem();
-    boolean unconfirmed =
-        selected instanceof WeightItem && !((WeightItem) selected).isConfirmed();
+    boolean unconfirmed = selected instanceof WeightItem && !((WeightItem) selected).isConfirmed();
     officialBaselineButton.setVisible(unconfirmed);
     officialBaselineButton.setEnabled(unconfirmed && !busy);
   }
@@ -1889,7 +1888,7 @@ public class RemoteComputeDialog extends JDialog {
     refreshAccountButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
     usageDetailsButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
     creditDetailsButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
-    purchaseVipButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
+    paymentButton.setEnabled(!busy && accountIdle && isZhiziLoggedIn());
     localFromZhiziButton.setEnabled(!busy);
     importQrButton.setEnabled(!busy);
     updateCustomActionButtonState();
@@ -1918,11 +1917,11 @@ public class RemoteComputeDialog extends JDialog {
     AccessibilitySupport.button(
         creditDetailsButton, creditDetailsButton.getText(), creditDetailsButton.getText());
     AccessibilitySupport.button(
-        purchaseVipButton,
-        purchaseVipButton.getText(),
+        paymentButton,
+        paymentButton.getText(),
         text(
             "RemoteCompute.payment.openDescription",
-            "Choose an official Zhizi VIP plan and pay with WeChat."));
+            "Top up your Zhizi balance or choose an official VIP plan."));
     AccessibilitySupport.button(
         localFromZhiziButton, localFromZhiziButton.getText(), localFromZhiziButton.getText());
     AccessibilitySupport.button(importQrButton, importQrButton.getText(), importQrButton.getText());
@@ -2277,15 +2276,11 @@ public class RemoteComputeDialog extends JDialog {
       this.name = name == null ? "" : name.trim();
       this.description = description == null ? "" : description.replaceAll("\\s+", " ").trim();
       this.defaultOption = defaultOption;
-      this.source =
-          source == null
-              ? ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY
-              : source;
+      this.source = source == null ? ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY : source;
     }
 
     static WeightItem preserved(String name) {
-      return new WeightItem(
-          name, "", false, ZhiziEngineCatalog.DiscoverySource.USER_PRESERVED);
+      return new WeightItem(name, "", false, ZhiziEngineCatalog.DiscoverySource.USER_PRESERVED);
     }
 
     boolean isConfirmed() {
@@ -2311,9 +2306,7 @@ public class RemoteComputeDialog extends JDialog {
     }
 
     String tooltip() {
-      return description.isEmpty()
-          ? displayLabel()
-          : displayLabel() + " - " + description;
+      return description.isEmpty() ? displayLabel() : displayLabel() + " - " + description;
     }
 
     @Override

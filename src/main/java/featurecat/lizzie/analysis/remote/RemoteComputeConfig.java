@@ -499,8 +499,7 @@ public final class RemoteComputeConfig {
   }
 
   public static String withKataWeight(String args, String weight) {
-    String safeWeight =
-        ZhiziEngineCatalog.isSelectableWeight(weight) ? weight.trim() : "28bnbt";
+    String safeWeight = ZhiziEngineCatalog.isSelectableWeight(weight) ? weight.trim() : "28bnbt";
     return withOptionValue(
         args == null || args.trim().isEmpty() ? DEFAULT_ZHIZI_ARGS : args,
         "--kata-weight",
@@ -534,8 +533,7 @@ public final class RemoteComputeConfig {
       return localizedText("RemoteCompute.weightHint.fdx", "Extra-large network");
     }
     if ("20b".equalsIgnoreCase(normalized)) {
-      return localizedText(
-          "RemoteCompute.weightHint.20b", "Commonly used for handicap games");
+      return localizedText("RemoteCompute.weightHint.20b", "Commonly used for handicap games");
     }
     return "";
   }
@@ -666,8 +664,7 @@ public final class RemoteComputeConfig {
       case "invalid_credentials":
         message =
             localizedText(
-                "RemoteCompute.error.invalidCredentials",
-                "The account or password is incorrect.");
+                "RemoteCompute.error.invalidCredentials", "The account or password is incorrect.");
         break;
       case "invalid_verification_code":
         message =
@@ -730,6 +727,8 @@ public final class RemoteComputeConfig {
         break;
       case "invalid_pay_type":
       case "invalid_amount":
+      case "invalid_top_up_amount":
+      case "invalid_product":
       case "missing_product_name":
       case "invalid_product_name":
       case "failed_create_prepay_id":

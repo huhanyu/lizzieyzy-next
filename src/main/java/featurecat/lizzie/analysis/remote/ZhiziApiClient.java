@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 public class ZhiziApiClient {
   public static final URI DEFAULT_BASE_URI = URI.create("https://www.zhizigo.com");
+  public static final List<Long> BALANCE_TOP_UP_PRESETS_FEN = List.of(1000L, 3000L, 5000L, 10000L);
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
   private static final long DEFAULT_CODE_COOLDOWN_SECONDS = 60L;
   private static final Logger LOGGER = LoggerFactory.getLogger(ZhiziApiClient.class);
@@ -126,8 +127,7 @@ public class ZhiziApiClient {
     return new SocketToken(token, socketIOURL);
   }
 
-  ConnectAccount fetchConnectAccount(String accountToken)
-      throws IOException, InterruptedException {
+  ConnectAccount fetchConnectAccount(String accountToken) throws IOException, InterruptedException {
     JSONObject response =
         get(
             "/api/cluster/account/connectAccount/fetch",
@@ -188,9 +188,7 @@ public class ZhiziApiClient {
       throws IOException, InterruptedException {
     JSONArray response =
         getArray(
-            "/api/cluster/product?type=MEMBERSHIP",
-            "",
-            ZhiziApiException.Operation.FETCH_PRODUCTS);
+            "/api/cluster/product?type=MEMBERSHIP", "", ZhiziApiException.Operation.FETCH_PRODUCTS);
     List<MembershipProduct> products = new ArrayList<>();
     for (int index = 0; index < response.length(); index++) {
       JSONObject item = response.optJSONObject(index);
@@ -227,7 +225,37 @@ public class ZhiziApiClient {
                 ZhiziApiException.Operation.CREATE_ORDER,
                 false),
             ZhiziApiException.Operation.CREATE_ORDER);
-    if (order.amountFen != product.priceFen || !product.name.equals(order.productName)) {
+    if (order.amountFen != product.priceFen
+        || order.purpose != PaymentPurpose.VIP_MEMBERSHIP
+        || !product.name.equals(order.productName)) {
+      throw invalidResponse(ZhiziApiException.Operation.CREATE_ORDER);
+    }
+    return order;
+  }
+
+  public PaymentOrder createBalanceTopUpOrder(String accountToken, long amountFen)
+      throws IOException, InterruptedException {
+    if (!BALANCE_TOP_UP_PRESETS_FEN.contains(amountFen)) {
+      throw new ZhiziApiException(
+          400, "invalid_top_up_amount", "", 0, false, ZhiziApiException.Operation.CREATE_ORDER);
+    }
+    JSONObject body = new JSONObject();
+    body.put("payType", "WECHAT");
+    body.put("amount", amountFen);
+    body.put("tradeType", "NATIVE");
+    body.put("body", "LizzieYzy Next account top-up");
+    PaymentOrder order =
+        PaymentOrder.fromJson(
+            post(
+                "/api/pay/orders",
+                body,
+                accountToken,
+                ZhiziApiException.Operation.CREATE_ORDER,
+                false),
+            ZhiziApiException.Operation.CREATE_ORDER);
+    if (order.amountFen != amountFen
+        || order.purpose != PaymentPurpose.BALANCE_TOP_UP
+        || !order.productName.isEmpty()) {
       throw invalidResponse(ZhiziApiException.Operation.CREATE_ORDER);
     }
     return order;
@@ -293,8 +321,7 @@ public class ZhiziApiClient {
     return sendJson(builder.build(), operation, false).body;
   }
 
-  private JSONArray getArray(
-      String path, String bearerToken, ZhiziApiException.Operation operation)
+  private JSONArray getArray(String path, String bearerToken, ZhiziApiException.Operation operation)
       throws IOException, InterruptedException {
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(baseUri.resolve(path))
@@ -589,6 +616,7 @@ public class ZhiziApiClient {
 
   public static final class BalanceInfo {
     public final BigDecimal remainingBalanceYuan;
+    public final BigDecimal totalCashAmountYuan;
     public final BigDecimal yesterdayConsumptionYuan;
     public final BigDecimal totalConsumptionYuan;
     public final long totalDurationSeconds;
@@ -599,6 +627,7 @@ public class ZhiziApiClient {
 
     private BalanceInfo(
         BigDecimal remainingBalanceYuan,
+        BigDecimal totalCashAmountYuan,
         BigDecimal yesterdayConsumptionYuan,
         BigDecimal totalConsumptionYuan,
         long totalDurationSeconds,
@@ -607,6 +636,7 @@ public class ZhiziApiClient {
         int currentConnections,
         int currentNodes) {
       this.remainingBalanceYuan = remainingBalanceYuan;
+      this.totalCashAmountYuan = totalCashAmountYuan;
       this.yesterdayConsumptionYuan = yesterdayConsumptionYuan;
       this.totalConsumptionYuan = totalConsumptionYuan;
       this.totalDurationSeconds = Math.max(0L, totalDurationSeconds);
@@ -619,6 +649,7 @@ public class ZhiziApiClient {
     private static BalanceInfo fromJson(JSONObject json) {
       return new BalanceInfo(
           decimal(json, "remainingBalance"),
+          decimal(json, "totalCashAmount"),
           decimal(json, "yesterdayConsumption"),
           decimal(json, "totalConsumption"),
           json.optLong("totalDuration", 0L),
@@ -824,10 +855,16 @@ public class ZhiziApiClient {
     FAIL
   }
 
+  public enum PaymentPurpose {
+    BALANCE_TOP_UP,
+    VIP_MEMBERSHIP
+  }
+
   public static final class PaymentOrder {
     public final String id;
     public final long amountFen;
     public final String productName;
+    public final PaymentPurpose purpose;
     public final PaymentStatus status;
     public final String codeUrl;
     public final Instant paidAt;
@@ -837,6 +874,7 @@ public class ZhiziApiClient {
         String id,
         long amountFen,
         String productName,
+        PaymentPurpose purpose,
         PaymentStatus status,
         String codeUrl,
         Instant paidAt,
@@ -844,14 +882,15 @@ public class ZhiziApiClient {
       this.id = id;
       this.amountFen = amountFen;
       this.productName = productName;
+      this.purpose = purpose;
       this.status = status;
       this.codeUrl = codeUrl;
       this.paidAt = paidAt;
       this.updatedAt = updatedAt;
     }
 
-    private static PaymentOrder fromJson(
-        JSONObject json, ZhiziApiException.Operation operation) throws ZhiziApiException {
+    private static PaymentOrder fromJson(JSONObject json, ZhiziApiException.Operation operation)
+        throws ZhiziApiException {
       String id = json.optString("id", "").trim();
       Long amountFen = positiveInteger(json, "amount");
       String statusValue = json.optString("paidStatus", "").trim();
@@ -862,6 +901,14 @@ public class ZhiziApiClient {
         throw invalidResponse(operation);
       }
       String productName = json.optString("productName", "").trim();
+      String orderType = json.optString("orderType", "").trim();
+      if (!orderType.isEmpty() && !"PURCHASE_PRODUCT".equals(orderType)) {
+        throw invalidResponse(operation);
+      }
+      PaymentPurpose purpose =
+          "PURCHASE_PRODUCT".equals(orderType) || !productName.isEmpty()
+              ? PaymentPurpose.VIP_MEMBERSHIP
+              : PaymentPurpose.BALANCE_TOP_UP;
       JSONObject nativePay = json.optJSONObject("nativePayRequest");
       String codeUrl = nativePay == null ? "" : nativePay.optString("codeURL", "").trim();
       if (!id.matches("[0-9a-fA-F]{24}") || amountFen == null) {
@@ -874,6 +921,7 @@ public class ZhiziApiClient {
           id,
           amountFen.longValue(),
           productName,
+          purpose,
           status,
           codeUrl,
           instant(json, "paidAt"),

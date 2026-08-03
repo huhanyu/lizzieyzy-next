@@ -28,6 +28,10 @@ public class ZhiziGtpTransport implements EngineTransport {
   private static final Duration READY_TIMEOUT = Duration.ofSeconds(60);
   private static final Duration ANALYSIS_RESPONSE_TIMEOUT = Duration.ofSeconds(20);
   private static final int MAX_START_ATTEMPTS = 3;
+  private static final String SMOKE_DISCONNECT_DELAY_PROPERTY =
+      "lizzie.smoke.zhiziDisconnectAfterReadyMs";
+  private static final long MAX_SMOKE_DISCONNECT_DELAY_MILLIS = 60_000L;
+  private static final AtomicBoolean SMOKE_DISCONNECT_SCHEDULED = new AtomicBoolean(false);
 
   private final ZhiziApiClient apiClient;
   private final String accountToken;
@@ -54,7 +58,8 @@ public class ZhiziGtpTransport implements EngineTransport {
       throws IOException {
     this.apiClient = apiClient;
     this.accountToken = accountToken == null ? "" : accountToken.trim();
-    this.args = args == null || args.trim().isEmpty() ? RemoteComputeConfig.DEFAULT_ZHIZI_ARGS : args;
+    this.args =
+        args == null || args.trim().isEmpty() ? RemoteComputeConfig.DEFAULT_ZHIZI_ARGS : args;
     this.analysisWatchdog =
         new AnalysisResponseWatchdog(
             reconnectExecutor,
@@ -110,9 +115,7 @@ public class ZhiziGtpTransport implements EngineTransport {
       }
     }
     close();
-    throw lastFailure == null
-        ? new IOException("智子云算力自动重启后仍未准备好。")
-        : lastFailure;
+    throw lastFailure == null ? new IOException("智子云算力自动重启后仍未准备好。") : lastFailure;
   }
 
   private void startSession() throws IOException {
@@ -190,21 +193,13 @@ public class ZhiziGtpTransport implements EngineTransport {
         objects -> {
           String reason = summarize(first(objects));
           String suffix = reason.isEmpty() ? "" : "（" + reason + "）";
-          handleSessionFailure(
-              generation,
-              "智子云算力连接断开" + suffix,
-              startupError,
-              failureLatch);
+          handleSessionFailure(generation, "智子云算力连接断开" + suffix, startupError, failureLatch);
         });
     sessionSocket.on(
         Socket.EVENT_CONNECT_ERROR,
         objects -> {
           String error = summarize(first(objects));
-          handleSessionFailure(
-              generation,
-              "智子云算力连接失败: " + error,
-              startupError,
-              failureLatch);
+          handleSessionFailure(generation, "智子云算力连接失败: " + error, startupError, failureLatch);
         });
     sessionSocket.connect();
     long deadline = System.currentTimeMillis() + READY_TIMEOUT.toMillis();
@@ -213,9 +208,7 @@ public class ZhiziGtpTransport implements EngineTransport {
         if (failureLatch.getCount() == 0) {
           String detail = startupError.get();
           throw new IOException(
-              detail == null || detail.isBlank()
-                  ? "智子云算力连接失败，正在重新建立会话。"
-                  : detail);
+              detail == null || detail.isBlank() ? "智子云算力连接失败，正在重新建立会话。" : detail);
         }
         if (Thread.currentThread().isInterrupted()) {
           Thread.currentThread().interrupt();
@@ -237,6 +230,40 @@ public class ZhiziGtpTransport implements EngineTransport {
       throw new IOException("智子云算力在启用前已断开，正在重新建立会话。");
     }
     open.set(true);
+    scheduleSmokeDisconnect(sessionSocket);
+  }
+
+  private void scheduleSmokeDisconnect(Socket sessionSocket) {
+    long delayMillis =
+        smokeDisconnectDelayMillis(System.getProperty(SMOKE_DISCONNECT_DELAY_PROPERTY, ""));
+    if (delayMillis <= 0L || !SMOKE_DISCONNECT_SCHEDULED.compareAndSet(false, true)) {
+      return;
+    }
+    reconnectExecutor.schedule(
+        () -> {
+          if (closed.get()
+              || socket != sessionSocket
+              || !sessionSocket.connected()
+              || !lifecycle.isActive()) {
+            return;
+          }
+          writeStderrLine("智子云算力验收探针正在断开当前会话，以验证自动恢复。");
+          sessionSocket.disconnect();
+        },
+        delayMillis,
+        TimeUnit.MILLISECONDS);
+  }
+
+  static long smokeDisconnectDelayMillis(String value) {
+    if (value == null || value.isBlank()) {
+      return 0L;
+    }
+    try {
+      long parsed = Long.parseLong(value.trim());
+      return parsed <= 0L ? 0L : Math.min(parsed, MAX_SMOKE_DISCONNECT_DELAY_MILLIS);
+    } catch (NumberFormatException ignored) {
+      return 0L;
+    }
   }
 
   @Override
@@ -870,7 +897,8 @@ public class ZhiziGtpTransport implements EngineTransport {
     private static String normalizedCommand(String command) {
       String normalized = firstCommandLine(command).trim();
       int separator = normalized.indexOf(' ');
-      if (separator > 0 && normalized.substring(0, separator).chars().allMatch(Character::isDigit)) {
+      if (separator > 0
+          && normalized.substring(0, separator).chars().allMatch(Character::isDigit)) {
         return normalized.substring(separator + 1).trim();
       }
       return normalized;
