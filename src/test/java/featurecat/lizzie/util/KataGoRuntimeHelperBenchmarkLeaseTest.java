@@ -789,14 +789,14 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
         ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
       preparedRestoreReceived = true;
       try {
-      preparedRestore.execute();
+        preparedRestore.execute();
       } catch (Throwable failure) {
         restoreFailure.set(failure);
         throw failure;
       } finally {
-      restoreCompleted.countDown();
+        restoreCompleted.countDown();
+      }
     }
-  }
   }
 
   private static Leelaz reusableKatagoEngine() throws Exception {

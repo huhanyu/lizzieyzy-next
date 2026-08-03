@@ -606,7 +606,6 @@ class LeelazLoadSgfResponseBindingTest {
     method.invoke(engine, line);
   }
 
-
   private static void waitForCommandCount(
       RecordingOutputStream output, int expectedCount, long timeoutMillis, String message)
       throws InterruptedException {
@@ -753,7 +752,6 @@ class LeelazLoadSgfResponseBindingTest {
     @Override
     public void write(int b) {}
   }
-
 
   private static final class RecordingOutputStream extends OutputStream {
     private final StringBuilder currentCommand = new StringBuilder();

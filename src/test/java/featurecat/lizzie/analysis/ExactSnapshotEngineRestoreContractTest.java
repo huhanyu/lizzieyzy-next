@@ -11,7 +11,13 @@ import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
-import featurecat.lizzie.rules.*;
+import featurecat.lizzie.rules.Board;
+import featurecat.lizzie.rules.BoardData;
+import featurecat.lizzie.rules.BoardHistoryList;
+import featurecat.lizzie.rules.BoardHistoryNode;
+import featurecat.lizzie.rules.Movelist;
+import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.rules.Zobrist;
 import java.awt.Window;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -244,13 +250,13 @@ class ExactSnapshotEngineRestoreContractTest {
       preparedRestore.execute();
       int commandCount = output.commands().size();
 
-      assertThrows(IllegalStateException.class, preparedRestore::execute);
+        assertThrows(IllegalStateException.class, preparedRestore::execute);
       assertEquals(
           commandCount,
           output.commands().size(),
           "a repeated execute must fail before issuing another command");
-    }
-  }
+        }
+      }
 
   @Test
   void preparedBoardRestoreDoesNotReadLiveMoveListAfterPlanCapture() throws Exception {
@@ -270,7 +276,7 @@ class ExactSnapshotEngineRestoreContractTest {
           prepareHistoryRestore(engine, history.getCurrentHistoryNode()).orElseThrow();
 
       board.resendMoveToEngine(engine, false, preparedRestore);
-    }
+      }
   }
 
   @Test
@@ -392,6 +398,75 @@ class ExactSnapshotEngineRestoreContractTest {
       assertTrue(
           mirrorTransport.commands().isEmpty(),
           "prepared restore precommands must not re-resolve an execution-time mirror");
+    }
+  }
+
+  @Test
+  void productionResyncFreezesHistoryPlanBeforeOwnerPrecommands() throws Exception {
+    try (TestHarness harness = TestHarness.open(true)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz primary = new Leelaz("");
+      Leelaz mirror = new Leelaz("");
+      Leelaz replacementMirror = new Leelaz("");
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = mirror;
+
+      CommandMutationOutputStream primaryOutput =
+          new CommandMutationOutputStream(
+              primary,
+              "name",
+              () -> {
+                history.getStart().getData().stones[Board.getIndex(0, 0)] = Stone.EMPTY;
+                history.getData().lastMove = java.util.Optional.of(new int[] {0, 2});
+                Lizzie.leelaz2 = replacementMirror;
+              });
+      CommandMutationOutputStream mirrorOutput =
+          new CommandMutationOutputStream(mirror, null, null);
+      RecordingOutputStream replacementOutput = new RecordingOutputStream(null);
+      setOutputStream(primary, primaryOutput);
+      setOutputStream(mirror, mirrorOutput);
+      setOutputStream(replacementMirror, replacementOutput);
+
+      new LeelazEngineCommandSink().resyncFromCurrentHistory(history.getCurrentHistoryNode());
+
+      assertEquals(1, primaryOutput.matchingCommandCount());
+      assertTrue(primaryOutput.loadedSgf().contains("AB[aa]"));
+      assertTrue(primaryOutput.loadedSgf().contains("KM[6.5]"));
+      String capturedMove = "play B " + Board.convertCoordinatesToName(2, 2);
+      assertEquals(List.of(capturedMove), collectPlayCommands(primaryOutput.commands()));
+      assertEquals(List.of(capturedMove), collectPlayCommands(mirrorOutput.commands()));
+      assertTrue(
+          replacementOutput.commands().isEmpty(),
+          "replacement mirror must receive no commands: " + replacementOutput.commands());
+    }
+  }
+
+  @Test
+  void productionResyncRestoresPonderOnCapturedPrimary() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      ProductionResyncPonderLeelaz original = new ProductionResyncPonderLeelaz();
+      ProductionResyncPonderLeelaz replacement = new ProductionResyncPonderLeelaz();
+      original.replacePrimaryOnNotPondering(replacement);
+      Lizzie.leelaz = original;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+
+      new LeelazEngineCommandSink().resyncFromCurrentHistory(history.getCurrentHistoryNode());
+
+      assertEquals(1, original.ponderCalls);
+      assertTrue(original.commands().stream().anyMatch(command -> command.equals("name")));
+      assertTrue(
+          original.commands().stream()
+              .anyMatch(ExactSnapshotEngineRestoreContractTest::isLoadSgfCommand));
+      assertEquals(0, replacement.ponderCalls);
+      assertTrue(replacement.commands().isEmpty());
     }
   }
 
@@ -528,7 +603,8 @@ class ExactSnapshotEngineRestoreContractTest {
         IllegalStateException thrown =
             assertThrows(
                 IllegalStateException.class, () -> board.resendMoveToEngine(primary, false));
-        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        long elapsedMillis =
+            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
         assertTrue(thrown.getMessage().contains("rejected"), thrown.getMessage());
         assertTrue(
@@ -1522,6 +1598,47 @@ class ExactSnapshotEngineRestoreContractTest {
     }
   }
 
+  private static final class ProductionResyncPonderLeelaz extends Leelaz {
+    private final List<String> commands = new ArrayList<>();
+    private int ponderCalls;
+    private Leelaz replacementPrimary;
+
+    private ProductionResyncPonderLeelaz() throws IOException {
+      super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this,
+          command -> {
+            commands.add(command);
+            return ExactSnapshotRestoreProtocolFixture.Response.success();
+          });
+    }
+
+    @Override
+    public boolean isPonderingOrWasPonderingBeforeTracking() {
+      return true;
+    }
+
+    @Override
+    public void notPondering() {
+      if (replacementPrimary != null) {
+        Lizzie.leelaz = replacementPrimary;
+      }
+    }
+
+    @Override
+    public void ponder() {
+      ponderCalls++;
+    }
+
+    private void replacePrimaryOnNotPondering(Leelaz replacement) {
+      replacementPrimary = replacement;
+    }
+
+    private List<String> commands() {
+      return commands;
+    }
+  }
+
   private static final class CommandMutationOutputStream extends RecordedCommandOutputStream {
     private final Leelaz engine;
     private final String mutationCommand;
@@ -1529,7 +1646,8 @@ class ExactSnapshotEngineRestoreContractTest {
     private int matchingCommandCount;
     private String loadedSgf = "";
 
-    private CommandMutationOutputStream(Leelaz engine, String mutationCommand, Runnable mutation) {
+    private CommandMutationOutputStream(
+        Leelaz engine, String mutationCommand, Runnable mutation) {
       this.engine = engine;
       this.mutationCommand = mutationCommand;
       this.mutation = mutation;
@@ -1621,6 +1739,7 @@ class ExactSnapshotEngineRestoreContractTest {
       }
       return null;
     }
+
   }
 
   private static final class TailReplayAwareOutputStream extends RecordedCommandOutputStream {
@@ -1672,6 +1791,7 @@ class ExactSnapshotEngineRestoreContractTest {
       invokeResponseHandlerForLine(engine, buildSuccessResponseLine(command));
       engine.beginForegroundRestoreForTest();
     }
+
   }
 
   private static final class SilentFrame extends LizzieFrame {

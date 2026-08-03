@@ -3194,7 +3194,6 @@ class LeelazTrackingStreamLeaseTest {
         assertTrue(lease.release());
       }
 
-
       @Override
       Leelaz.TrackingStreamLeaseFailure failure() {
         return Leelaz.TrackingStreamLeaseFailure.FINAL_STOP_TIMEOUT;

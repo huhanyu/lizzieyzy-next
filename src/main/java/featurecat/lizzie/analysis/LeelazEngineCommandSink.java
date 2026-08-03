@@ -50,16 +50,18 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     }
 
     boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
+    Leelaz mirror = engine.resolveLoadSgfMirrorEngine();
     Leelaz.ExactSnapshotRestoreAdmission admission =
         engine.captureExactSnapshotRestoreAdmission(
-            Leelaz.ExactSnapshotRestoreOwner.ORDINARY,
-            null,
-            engine.resolveLoadSgfMirrorEngine());
+            Leelaz.ExactSnapshotRestoreOwner.ORDINARY, null, mirror);
     java.util.Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
         ExactSnapshotEngineRestore.prepare(admission, target);
     // 先停 ponder，避免后续 sync 命令期间 KataGo 仍在跑旧 ponder 输出 info 行
     engine.notPondering();
-    engine.nameCmdfornoponder();
+    sendStopOrName(engine, admission);
+    if (mirror != null) {
+      sendStopOrName(mirror, admission);
+    }
 
     if (preparedRestore.isPresent()) {
       preparedRestore.orElseThrow().execute();
@@ -80,7 +82,9 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     if (TrialDiag.ENABLED) {
       System.out.printf(
           "[trial-resync] target moveNum=%d snapshotAnchor=%s chainLen=%d%n",
-          target.getData() == null ? -1 : target.getData().moveNumber, "(root)", chain.size());
+          target.getData() == null ? -1 : target.getData().moveNumber,
+          "(root)",
+          chain.size());
     }
 
     int played = 0;
@@ -100,6 +104,14 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
           played,
           chain.size() - played,
           resumePonder);
+    }
+  }
+
+  private static void sendStopOrName(
+      Leelaz target, Leelaz.ExactSnapshotRestoreAdmission admission) {
+    String command = target.isKatago ? "stop" : "name";
+    if (!target.sendCommandToCapturedRestoreTarget(command, admission)) {
+      throw new IllegalStateException("Exact snapshot restore precommand was rejected: " + command);
     }
   }
 

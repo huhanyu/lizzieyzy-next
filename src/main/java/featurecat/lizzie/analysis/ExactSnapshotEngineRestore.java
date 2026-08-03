@@ -54,7 +54,6 @@ public final class ExactSnapshotEngineRestore {
     }
   }
 
-
   private static BoardData materializeCurrentPosition(BoardData sourceData) {
     validateCurrentPosition(sourceData);
     BoardData snapshot =
@@ -225,7 +224,7 @@ public final class ExactSnapshotEngineRestore {
       return (double) engine.komi;
     }
     return null;
-  }
+    }
 
   private static Double captureHistoryKomi() {
     Board board = Lizzie.board;
@@ -368,7 +367,7 @@ public final class ExactSnapshotEngineRestore {
     public Completion execute() {
       if (!executed.compareAndSet(false, true)) {
         throw new IllegalStateException("Exact snapshot restore has already been executed");
-    }
+      }
       return ExactSnapshotEngineRestore.execute(plan);
     }
   }
@@ -410,7 +409,7 @@ public final class ExactSnapshotEngineRestore {
         BoardHistoryNode target) {
       if (admission == null) {
         throw new IllegalArgumentException("admission");
-      }
+    }
       Leelaz engine = admission.authority();
       Leelaz mirrorEngine = admission.mirror();
       requireEngine(engine);
@@ -436,7 +435,7 @@ public final class ExactSnapshotEngineRestore {
         BoardData sourceData) {
       if (admission == null) {
         throw new IllegalArgumentException("admission");
-      }
+    }
       Leelaz engine = admission.authority();
       Leelaz mirrorEngine = admission.mirror();
       requireEngine(engine);

@@ -1,10 +1,10 @@
 package featurecat.lizzie.analysis;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -1178,8 +1178,7 @@ class EngineManagerLifecycleReservationTest {
     return history;
   }
 
-  private static BoardData moveNode(
-      int x, int y, Stone color, boolean blackToPlay, int moveNumber) {
+  private static BoardData moveNode(int x, int y, Stone color, boolean blackToPlay, int moveNumber) {
     Stone[] stones = new Stone[19 * 19];
     java.util.Arrays.fill(stones, Stone.EMPTY);
     stones[Board.getIndex(x, y)] = color;
@@ -1411,7 +1410,8 @@ class EngineManagerLifecycleReservationTest {
     Leelaz current = new Leelaz("");
     Leelaz target = new Leelaz("");
     Leelaz mirror = new Leelaz("");
-    DeferredSwitchEngineManager manager = new DeferredSwitchEngineManager(List.of(current, target));
+    DeferredSwitchEngineManager manager =
+        new DeferredSwitchEngineManager(List.of(current, target));
     Leelaz.EngineModeReservation mirrorReservation = null;
     try {
       Config config = allocate(Config.class);
@@ -1463,7 +1463,8 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void activeRestartResumesPonderAfterFinalBoardFenceAndRetiresTrackingOnRebind() throws Exception {
+  void activeRestartResumesPonderAfterFinalBoardFenceAndRetiresTrackingOnRebind()
+      throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     LizzieFrame previousFrame = Lizzie.frame;
     boolean previousEmpty = EngineManager.isEmpty;
@@ -1681,7 +1682,8 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void automaticProcessRestartLosesTheRaceWhenGmaReservesBeforeRestartDispatch() throws Exception {
+  void automaticProcessRestartLosesTheRaceWhenGmaReservesBeforeRestartDispatch()
+      throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     boolean previousEmpty = EngineManager.isEmpty;
     boolean previousEngineGame = EngineManager.isEngineGame;
@@ -1787,7 +1789,8 @@ class EngineManagerLifecycleReservationTest {
     Leelaz previousEngine = Lizzie.leelaz;
     Leelaz current = new Leelaz("");
     Leelaz target = new Leelaz("");
-    DeferredSwitchEngineManager manager = new DeferredSwitchEngineManager(List.of(current, target));
+    DeferredSwitchEngineManager manager =
+        new DeferredSwitchEngineManager(List.of(current, target));
     try {
       Lizzie.leelaz = current;
 
@@ -1927,7 +1930,8 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void failedRecoverySwitchFenceLeavesTargetUnavailableAndReleasesReservations() throws Exception {
+  void failedRecoverySwitchFenceLeavesTargetUnavailableAndReleasesReservations()
+      throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Leelaz current = new Leelaz("");
     setEngineStateUnrestored(current, true);
@@ -2044,7 +2048,8 @@ class EngineManagerLifecycleReservationTest {
     CountingRestartGateFrame frame = allocate(CountingRestartGateFrame.class);
     engine.started = true;
     engine.isLoaded = true;
-    RecoverySwitchEngineManager manager = new RecoverySwitchEngineManager(List.of(engine), engine);
+    RecoverySwitchEngineManager manager =
+        new RecoverySwitchEngineManager(List.of(engine), engine);
     try {
       Lizzie.leelaz = engine;
       Lizzie.frame = frame;
@@ -2287,7 +2292,8 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void switchWaitsForPublishedNameCheckAndBoardSynchronizationBeforeCompleting() throws Exception {
+  void switchWaitsForPublishedNameCheckAndBoardSynchronizationBeforeCompleting()
+      throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Leelaz current = new Leelaz("");
     ControlledReadinessLeelaz target = unavailableControlledEngine(500L);
@@ -2447,8 +2453,8 @@ class EngineManagerLifecycleReservationTest {
     }
   }
 
-  private static ControlledReadinessLeelaz unavailableControlledEngine(long tuningTimeoutMillis)
-      throws Exception {
+  private static ControlledReadinessLeelaz unavailableControlledEngine(
+      long tuningTimeoutMillis) throws Exception {
     ControlledReadinessLeelaz engine = new ControlledReadinessLeelaz(tuningTimeoutMillis);
     engine.started = true;
     engine.isLoaded = false;
@@ -2664,7 +2670,10 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     protected void switchEngineInternal(
-        int index, boolean isMain, PreparedEngineSwitch preparedSwitch, Runnable afterSync) {
+        int index,
+        boolean isMain,
+        PreparedEngineSwitch preparedSwitch,
+        Runnable afterSync) {
       switchCount++;
       this.afterSync = afterSync;
     }
@@ -3550,7 +3559,10 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     protected void switchEngineInternal(
-        int index, boolean isMain, PreparedEngineSwitch preparedSwitch, Runnable afterSync) {
+        int index,
+        boolean isMain,
+        PreparedEngineSwitch preparedSwitch,
+        Runnable afterSync) {
       Lizzie.leelaz = target;
       target.started = true;
       target.isLoaded = true;
@@ -3578,7 +3590,10 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     protected void switchEngineInternal(
-        int index, boolean isMain, PreparedEngineSwitch preparedSwitch, Runnable afterSync) {
+        int index,
+        boolean isMain,
+        PreparedEngineSwitch preparedSwitch,
+        Runnable afterSync) {
       Lizzie.leelaz = target;
       synchronizeEngineWhenReady(
           target,
@@ -3618,7 +3633,10 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     protected void switchEngineInternal(
-        int index, boolean isMain, PreparedEngineSwitch preparedSwitch, Runnable afterSync) {
+        int index,
+        boolean isMain,
+        PreparedEngineSwitch preparedSwitch,
+        Runnable afterSync) {
       Lizzie.leelaz = target;
       synchronizeEngineWhenReady(
           target,
