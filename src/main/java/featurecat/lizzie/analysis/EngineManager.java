@@ -1731,7 +1731,7 @@ public class EngineManager {
           history == null || history.getGameInfo() == null ? null : history.getGameInfo().getKomi();
       boolean exactEligible =
           restoreBoard != null
-          && preparedTarget.oriWidth == Board.boardWidth
+              && preparedTarget.oriWidth == Board.boardWidth
               && preparedTarget.oriHeight == Board.boardHeight;
       restoreRoute =
           PreparedLifecycleRestore.capture(
@@ -1743,7 +1743,7 @@ public class EngineManager {
               rootMoves,
               resumePonder);
       preparedRestore = restoreRoute.exactRestore;
-      }
+    }
     EngineLifecycleReservations updateReservations =
         restoreRoute == null ? null : reserveEngineLifecycle(restoreRoute);
     if (restoreRoute != null && updateReservations == null) {
@@ -1755,98 +1755,97 @@ public class EngineManager {
     final EngineLifecycleReservations frozenUpdateReservations = updateReservations;
     try {
       if (restoreRoute == null) {
-    if (!killAllEngines()) {
-      isUpdating = false;
-      return;
-    }
+        if (!killAllEngines()) {
+          isUpdating = false;
+          return;
+        }
       } else {
         killAllEnginesUnderReservation();
       }
-    final Leelaz frozenPreparedTarget = preparedTarget;
-    final Optional<ExactSnapshotEngineRestore.PreparedRestore> frozenPreparedRestore =
-        preparedRestore;
+      final Leelaz frozenPreparedTarget = preparedTarget;
+      final Optional<ExactSnapshotEngineRestore.PreparedRestore> frozenPreparedRestore =
+          preparedRestore;
       final PreparedLifecycleRestore frozenRestoreRoute = restoreRoute;
-    engineList = new ArrayList<Leelaz>();
-    // engineList.add(lz);
-    boolean loadLeelaz = false;
-    for (int i = 0; i < engineData.size(); i++) {
-      EngineData engineDt = engineData.get(i);
-      Leelaz e;
-      if (engineDt == selectedEngineData) {
-        e = frozenPreparedTarget;
-      } else {
-        e = createUnstartedEngine(engineDt);
-      }
-      if (!loadLeelaz && engineDt.name.equals(currentEngineName)) {
-        loadLeelaz = true;
-        if (e.oriWidth != Board.boardWidth || e.oriHeight != Board.boardHeight) {
-          Board.boardWidth = e.oriWidth;
-          Board.boardHeight = e.oriHeight;
-          Zobrist.init();
-          Lizzie.board.clear(false);
+      engineList = new ArrayList<Leelaz>();
+      // engineList.add(lz);
+      boolean loadLeelaz = false;
+      for (int i = 0; i < engineData.size(); i++) {
+        EngineData engineDt = engineData.get(i);
+        Leelaz e;
+        if (engineDt == selectedEngineData) {
+          e = frozenPreparedTarget;
+        } else {
+          e = createUnstartedEngine(engineDt);
         }
-        Lizzie.leelaz = e;
-        e.preload = true;
-        e.firstLoad = true;
-        currentEngineNo = i;
-        engineNo = i;
-        Thread replacementStart =
-            new Thread() {
-              public void run() {
-                boolean synchronizationScheduled = false;
-                try {
+        if (!loadLeelaz && engineDt.name.equals(currentEngineName)) {
+          loadLeelaz = true;
+          if (e.oriWidth != Board.boardWidth || e.oriHeight != Board.boardHeight) {
+            Board.boardWidth = e.oriWidth;
+            Board.boardHeight = e.oriHeight;
+            Zobrist.init();
+            Lizzie.board.clear(false);
+          }
+          Lizzie.leelaz = e;
+          e.preload = true;
+          e.firstLoad = true;
+          currentEngineNo = i;
+          engineNo = i;
+          Thread replacementStart =
+              new Thread() {
+                public void run() {
+                  boolean synchronizationScheduled = false;
                   try {
-                    e.startEngine(engineDt.index);
-                    Menu.engineMenu.setText(
-                        "[" + (e.currentEngineN() + 1) + "]: " + e.oriEnginename);
-                  } catch (IOException e2) {
-                    e.isLoaded = false;
-                    e2.printStackTrace();
-                    return;
-                  }
-                  if (currentEngineNo > 20) LizzieFrame.menu.changeEngineIcon(20, 3);
-                  else LizzieFrame.menu.changeEngineIcon(currentEngineNo, 3);
-                  Runnable syncBoard =
-                      () -> {
-                        if (frozenPreparedRestore.isPresent()) {
-                          restoreBoard.resendMoveToEngine(
-                              e, false, frozenPreparedRestore.orElseThrow());
-                        } else {
-                          frozenRestoreRoute.executeRootReplay(restoreBoard, false, false);
-                        }
-                        frozenRestoreRoute.initializeAfterRestore(false);
-                      };
-                  synchronizeEngineWhenReady(
-                      e,
-                      syncBoard,
-                      frozenUpdateReservations == null
-                          ? null
-                          : () -> {
-                            try {
-                              frozenRestoreRoute.resumePonderAfterSuccessfulSynchronization();
-                            } finally {
-                              frozenUpdateReservations.close();
-                            }
-                          });
-                  synchronizationScheduled = true;
-                } finally {
-                  if (!synchronizationScheduled && frozenUpdateReservations != null) {
-                    frozenUpdateReservations.close();
+                    try {
+                      e.startEngine(engineDt.index);
+                      Menu.engineMenu.setText(
+                          "[" + (e.currentEngineN() + 1) + "]: " + e.oriEnginename);
+                    } catch (IOException e2) {
+                      e.isLoaded = false;
+                      e2.printStackTrace();
+                      return;
+                    }
+                    if (currentEngineNo > 20) LizzieFrame.menu.changeEngineIcon(20, 3);
+                    else LizzieFrame.menu.changeEngineIcon(currentEngineNo, 3);
+                    Runnable syncBoard =
+                        () -> {
+                          if (frozenPreparedRestore.isPresent()) {
+                            restoreBoard.resendMoveToEngine(
+                                e, false, frozenPreparedRestore.orElseThrow());
+                          } else {
+                            frozenRestoreRoute.executeRootReplay(restoreBoard, false, false);
+                          }
+                          frozenRestoreRoute.initializeAfterRestore(false);
+                        };
+                    synchronizeEngineWhenReady(
+                        e,
+                        syncBoard,
+                        frozenUpdateReservations == null
+                            ? null
+                            : () -> {
+                              try {
+                                frozenRestoreRoute.resumePonderAfterSuccessfulSynchronization();
+                              } finally {
+                                frozenUpdateReservations.close();
+                              }
+                            });
+                    synchronizationScheduled = true;
+                  } finally {
+                    if (!synchronizationScheduled && frozenUpdateReservations != null) {
+                      frozenUpdateReservations.close();
+                    }
                   }
                 }
-              }
-            };
-        if (frozenUpdateReservations != null) {
-          updateReservationDelegated = true;
-        }
-        try {
-          replacementStart.start();
-        } catch (RuntimeException failure) {
-          updateReservationDelegated = false;
-          throw failure;
-        }
-      } else {
-        if (e.preload) {
+              };
+          if (frozenUpdateReservations != null) {
+            updateReservationDelegated = true;
+          }
+          try {
+            replacementStart.start();
+          } catch (RuntimeException failure) {
+            updateReservationDelegated = false;
+            throw failure;
+          }
+        } else if (e.preload) {
           new Thread() {
             public void run() {
               try {
@@ -1855,126 +1854,40 @@ public class EngineManager {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
               }
-            },
-            "lizzie-remote-engine-restart");
-    restartThread.setDaemon(true);
-    restartThread.start();
-  }
-
-  void restartUnresponsiveRemoteEngine(Leelaz engine, int index) {
-    if (engine == null
-        || engine != Lizzie.leelaz
-        || index != currentEngineNo
-        || isEmpty
-        || !engine.isProcessDead()) {
-      return;
-    }
-    restartRemoteEngineInBackground(engine, index);
-  }
-
-  private void restartEngineAutomatically(Leelaz engine, int index) throws IOException {
-    Leelaz.ExclusiveGtpLifecycleReservation reservation =
-        engine.beginAutomaticEngineRestartReservation();
-    if (reservation == null) {
-      return;
-    }
-    try {
-      engine.restartClosedEngine(index, reservation::close);
-    } catch (IOException | RuntimeException failure) {
-      reservation.close();
-      throw failure;
-    }
-  }
-
-  public void refreshEngineCatalog() throws JSONException, IOException {
-    if (engineList == null) {
-      updateEngines();
-      return;
-    }
-    ArrayList<EngineData> engineData = Utils.getEngineData();
-    List<Leelaz> previousEngines = new ArrayList<Leelaz>(engineList);
-    boolean[] matched = new boolean[previousEngines.size()];
-    List<Leelaz> refreshedEngines = new ArrayList<Leelaz>();
-    Leelaz currentMainEngine = Lizzie.leelaz;
-    Leelaz currentSecondaryEngine = Lizzie.leelaz2;
-    int refreshedCurrentEngineNo = -1;
-    int refreshedCurrentEngineNo2 = -1;
-
-    for (int i = 0; i < engineData.size(); i++) {
-      EngineData engineDt = engineData.get(i);
-      int matchIndex = findMatchingEngine(previousEngines, matched, engineDt, i);
-      Leelaz engine =
-          matchIndex >= 0 ? previousEngines.get(matchIndex) : createUnstartedEngine(engineDt);
-      applySavedEngineMetadata(engine, engineDt, i);
-      refreshedEngines.add(engine);
-      if (engine == currentMainEngine) refreshedCurrentEngineNo = i;
-      if (engine == currentSecondaryEngine) refreshedCurrentEngineNo2 = i;
-    }
-
-    if (!isEmpty && currentMainEngine != null && refreshedCurrentEngineNo < 0) {
-      updateEngines();
-      return;
-    }
-
-    engineList = refreshedEngines;
-    if (refreshedCurrentEngineNo >= 0) {
-      currentEngineNo = refreshedCurrentEngineNo;
-      engineNo = refreshedCurrentEngineNo;
-    }
-    currentEngineNo2 = refreshedCurrentEngineNo2;
-    refreshEngineSelectionControls(engineData);
-    LizzieFrame.menu.updateEngineMenu();
-    if (!isEmpty && currentEngineNo >= 0 && currentEngineNo < engineList.size()) {
-      Menu.engineMenu.setText(
-          "[" + (currentEngineNo + 1) + "]: " + engineList.get(currentEngineNo).oriEnginename);
-    }
-  }
-
-  private int findMatchingEngine(
-      List<Leelaz> previousEngines, boolean[] matched, EngineData engineDt, int preferredIndex) {
-    if (preferredIndex >= 0
-        && preferredIndex < previousEngines.size()
-        && !matched[preferredIndex]
-        && isSameEngineProcess(previousEngines.get(preferredIndex), engineDt)) {
-      matched[preferredIndex] = true;
-      return preferredIndex;
-    }
-    for (int i = 0; i < previousEngines.size(); i++) {
-      if (!matched[i] && isSameEngineProcess(previousEngines.get(i), engineDt)) {
-        matched[i] = true;
-        return i;
+            }
+          }.start();
+        }
+        engineList.add(e);
       }
-      engineList.add(e);
-    }
-    if (!loadLeelaz && preIndex >= 0) {
-      switchEngine(preIndex, true);
-    }
+      if (!loadLeelaz && preIndex >= 0) {
+        switchEngine(preIndex, true);
+      }
 
-    int j = LizzieFrame.toolbar.enginePkBlack.getItemCount();
-    LizzieFrame.toolbar.removeEngineLis();
-    for (int i = 0; i < j; i++) {
-      LizzieFrame.toolbar.enginePkBlack.removeItemAt(0);
-      LizzieFrame.toolbar.enginePkWhite.removeItemAt(0);
-    }
-    for (int i = 0; i < engineData.size(); i++) {
-      EngineData engineDt = engineData.get(i);
-      LizzieFrame.toolbar.enginePkBlack.addItem("[" + (i + 1) + "]" + engineDt.name);
-      LizzieFrame.toolbar.enginePkWhite.addItem("[" + (i + 1) + "]" + engineDt.name);
-    }
-    LizzieFrame.toolbar.engineBlackToolbar = 0;
-    LizzieFrame.toolbar.engineWhiteToolbar = 0;
-    LizzieFrame.toolbar.addEngineLis();
-    LizzieFrame.menu.updateEngineMenu();
-    if (!isEmpty) {
-      Menu.engineMenu.setText(
-          "["
-              + (EngineManager.currentEngineNo > 0
-                  ? EngineManager.currentEngineNo + 1
-                  : engineNo + 1)
-              + "]: "
-              + Lizzie.leelaz.oriEnginename);
-    }
-    isUpdating = false;
+      int j = LizzieFrame.toolbar.enginePkBlack.getItemCount();
+      LizzieFrame.toolbar.removeEngineLis();
+      for (int i = 0; i < j; i++) {
+        LizzieFrame.toolbar.enginePkBlack.removeItemAt(0);
+        LizzieFrame.toolbar.enginePkWhite.removeItemAt(0);
+      }
+      for (int i = 0; i < engineData.size(); i++) {
+        EngineData engineDt = engineData.get(i);
+        LizzieFrame.toolbar.enginePkBlack.addItem("[" + (i + 1) + "]" + engineDt.name);
+        LizzieFrame.toolbar.enginePkWhite.addItem("[" + (i + 1) + "]" + engineDt.name);
+      }
+      LizzieFrame.toolbar.engineBlackToolbar = 0;
+      LizzieFrame.toolbar.engineWhiteToolbar = 0;
+      LizzieFrame.toolbar.addEngineLis();
+      LizzieFrame.menu.updateEngineMenu();
+      if (!isEmpty) {
+        Menu.engineMenu.setText(
+            "["
+                + (EngineManager.currentEngineNo > 0
+                    ? EngineManager.currentEngineNo + 1
+                    : engineNo + 1)
+                + "]: "
+                + Lizzie.leelaz.oriEnginename);
+      }
+      isUpdating = false;
     } finally {
       if (!updateReservationDelegated && updateReservations != null) {
         updateReservations.close();
@@ -2029,7 +1942,6 @@ public class EngineManager {
         || engine != Lizzie.leelaz
         || index != currentEngineNo
         || isEmpty
-        || !engine.isPondering()
         || !engine.isProcessDead()) {
       return;
     }
