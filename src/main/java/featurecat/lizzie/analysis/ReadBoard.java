@@ -2713,8 +2713,13 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
                 engine, data, currentHistoryKomi)
             : ExactSnapshotEngineRestore.prepareCurrentPosition(
                 engine, data, currentHistoryKomi);
-    engine.clearWithoutPonder();
-    localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
+    if (readBoardGmaRecovery) {
+      engine.clearWithoutPonder();
+      localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
+    } else {
+      engine.notPondering();
+      engine.nameCmdfornoponder();
+    }
     preparedRestore.execute();
     localMoveSyncDebug(
         "syncEngineToRebuiltSnapshot loadsgf completed node=" + historyNodeSummary(rebuiltNode));

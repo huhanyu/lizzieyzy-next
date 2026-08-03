@@ -4897,6 +4897,15 @@ public class Leelaz {
       String command, ExactSnapshotRestoreAdmission admission) {
     return sendExactSnapshotRestoreCommand(command, admission);
   }
+  void onCapturedRestoreClearCommandSent() {
+    if (isKatago) {
+      scoreMean = 0;
+      scoreStdev = 0;
+    }
+    bestMoves = new ArrayList<>();
+    currentTotalPlayouts = 0;
+    currentCmdNum = Math.max(cmdNumber - 2, currentCmdNum);
+  }
 
   public final void sendCapturedRestoreCommand(String command) {
     ExactSnapshotRestoreAdmission admission = exactSnapshotRestoreAdmissionContext.get();

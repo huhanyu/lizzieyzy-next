@@ -3042,8 +3042,8 @@ public class Board {
     Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
         capturedKomi.isPresent()
             ? ExactSnapshotEngineRestore.prepare(
-                engine, currentNode, wasPondering, capturedKomi.orElseThrow())
-            : ExactSnapshotEngineRestore.prepare(engine, currentNode, wasPondering);
+                engine, currentNode, wasPondering, capturedKomi.orElseThrow(), true)
+            : ExactSnapshotEngineRestore.prepare(engine, currentNode, wasPondering, true);
     Optional<Double> preCommandKomi = nonDefaultCurrentGameKomiForSync(engine, capturedKomi);
     restoreEnginePosition(
         engine, fallbackMoves, preparedRestore.orElse(null), preCommandKomi);
@@ -3067,8 +3067,7 @@ public class Board {
             engine.sendCommand("komi " + (value == 0.0 ? "0" : value));
             engine.komi = value.floatValue();
           });
-      ExactSnapshotEngineRestore.Completion completion =
-          preparedRestore.executeAfterCapturedTargetClear();
+      ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
       if (completion.shouldResumePonder()) engine.ponder();
       return;
     }
