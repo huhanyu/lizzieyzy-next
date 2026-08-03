@@ -42,6 +42,16 @@ class ZhiziGtpTransportTest {
   }
 
   @Test
+  void smokeDisconnectDelayIsExplicitBoundedAndSafeByDefault() {
+    assertEquals(0L, ZhiziGtpTransport.smokeDisconnectDelayMillis(null));
+    assertEquals(0L, ZhiziGtpTransport.smokeDisconnectDelayMillis(""));
+    assertEquals(0L, ZhiziGtpTransport.smokeDisconnectDelayMillis("not-a-number"));
+    assertEquals(0L, ZhiziGtpTransport.smokeDisconnectDelayMillis("-1"));
+    assertEquals(12_500L, ZhiziGtpTransport.smokeDisconnectDelayMillis(" 12500 "));
+    assertEquals(60_000L, ZhiziGtpTransport.smokeDisconnectDelayMillis("999999"));
+  }
+
+  @Test
   void sessionLifecycleRequiresTokenConnectAndRealReadyInOrder() {
     ZhiziGtpTransport.SessionLifecycle lifecycle = new ZhiziGtpTransport.SessionLifecycle();
     long generation = lifecycle.beginAttempt();
@@ -75,8 +85,7 @@ class ZhiziGtpTransportTest {
     long startup = lifecycle.beginAttempt();
     assertTrue(lifecycle.tokenFetched(startup));
     assertEquals(
-        ZhiziGtpTransport.SessionFailureAction.STARTUP_FAILED,
-        lifecycle.sessionFailed(startup));
+        ZhiziGtpTransport.SessionFailureAction.STARTUP_FAILED, lifecycle.sessionFailed(startup));
 
     long active = lifecycle.beginAttempt();
     assertTrue(lifecycle.tokenFetched(active));
@@ -84,8 +93,7 @@ class ZhiziGtpTransportTest {
     assertTrue(lifecycle.ready(active));
     assertTrue(lifecycle.activate(active));
     assertEquals(
-        ZhiziGtpTransport.SessionFailureAction.RECOVERY_REQUIRED,
-        lifecycle.sessionFailed(active));
+        ZhiziGtpTransport.SessionFailureAction.RECOVERY_REQUIRED, lifecycle.sessionFailed(active));
     assertEquals(ZhiziGtpTransport.SessionState.RECOVERY_REQUIRED, lifecycle.state());
   }
 

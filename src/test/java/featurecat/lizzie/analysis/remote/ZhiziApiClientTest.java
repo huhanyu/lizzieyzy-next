@@ -14,6 +14,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,7 @@ class ZhiziApiClientTest {
   private int responseStatus;
   private String responseBody;
   private final Map<String, String> responseHeaders = new LinkedHashMap<>();
+  private final Map<String, String> responseBodiesByPath = new LinkedHashMap<>();
   private int requestCount;
 
   @BeforeEach
@@ -42,6 +44,7 @@ class ZhiziApiClientTest {
     responseStatus = 200;
     responseBody = null;
     responseHeaders.clear();
+    responseBodiesByPath.clear();
     requestCount = 0;
   }
 
@@ -129,10 +132,12 @@ class ZhiziApiClientTest {
 
     responseBody =
         "{\"remainingBalance\":\"12.3456\",\"yesterdayConsumption\":0.10,"
-            + "\"totalConsumption\":\"100.0001\",\"totalDuration\":3661,"
+            + "\"totalCashAmount\":\"40.25\",\"totalConsumption\":\"100.0001\","
+            + "\"totalDuration\":3661,"
             + "\"currentNumOfMyConnections\":2,\"currentNumOfNodes\":8}";
     ZhiziApiClient.BalanceInfo balance = client.fetchBalance("account-token");
     assertEquals(new BigDecimal("12.3456"), balance.remainingBalanceYuan);
+    assertEquals(new BigDecimal("40.25"), balance.totalCashAmountYuan);
     assertEquals(new BigDecimal("0.10"), balance.yesterdayConsumptionYuan);
     assertEquals(new BigDecimal("100.0001"), balance.totalConsumptionYuan);
     assertEquals(3661L, balance.totalDurationSeconds);
@@ -189,8 +194,7 @@ class ZhiziApiClientTest {
 
   @Test
   void vipOrderUsesExactProductPriceAndIsNeverRetried() throws Exception {
-    responseBody =
-        "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
+    responseBody = "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
     ZhiziApiClient client = client();
     ZhiziApiClient.MembershipProduct product = client.fetchMembershipProducts().get(0);
     responseBody =
@@ -211,6 +215,7 @@ class ZhiziApiClientTest {
     assertEquals("PURCHASE_PRODUCT", lastBody.getString("orderType"));
     assertEquals("MEMBERSHIP_1_MONTH", lastBody.getString("productName"));
     assertFalse(lastBody.getJSONObject("extraInfo").getBoolean("autoRenew"));
+    assertEquals(ZhiziApiClient.PaymentPurpose.VIP_MEMBERSHIP, order.purpose);
     assertEquals(ZhiziApiClient.PaymentStatus.PENDING, order.status);
     assertEquals("weixin://wxpay/bizpayurl?pr=opaque", order.codeUrl);
 
@@ -227,6 +232,61 @@ class ZhiziApiClientTest {
         requestsBeforeFailure + 1,
         requestCount,
         "an uncertain financial POST must never be retried automatically");
+  }
+
+  @Test
+  void balanceTopUpUsesFixedFenWithoutProductFieldsOrAutomaticRetry() throws Exception {
+    assertEquals(List.of(1000L, 3000L, 5000L, 10000L), ZhiziApiClient.BALANCE_TOP_UP_PRESETS_FEN);
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"userId\":\"user\","
+            + "\"amount\":1000,\"productName\":null,\"orderType\":null,"
+            + "\"paidStatus\":\"PENDING\",\"nativePayRequest\":{"
+            + "\"codeURL\":\"weixin://wxpay/bizpayurl?pr=topup\"}}";
+    ZhiziApiClient client = client();
+
+    ZhiziApiClient.PaymentOrder order = client.createBalanceTopUpOrder("account-token", 1000L);
+
+    assertEquals("POST", lastMethod);
+    assertEquals("/api/pay/orders", lastPath);
+    assertEquals("Bearer account-token", lastAuthorization);
+    assertEquals(1000L, lastBody.getLong("amount"));
+    assertEquals("WECHAT", lastBody.getString("payType"));
+    assertEquals("NATIVE", lastBody.getString("tradeType"));
+    assertFalse(lastBody.has("orderType"));
+    assertFalse(lastBody.has("productName"));
+    assertFalse(lastBody.has("extraInfo"));
+    assertEquals(ZhiziApiClient.PaymentPurpose.BALANCE_TOP_UP, order.purpose);
+    assertEquals("", order.productName);
+
+    int requestsBeforeFailure = requestCount;
+    responseStatus = 500;
+    responseBody = "{\"statusCode\":500,\"key\":\"create_order_error\"}";
+    ZhiziApiException failure =
+        assertThrows(
+            ZhiziApiException.class, () -> client.createBalanceTopUpOrder("account-token", 1000L));
+    assertEquals(ZhiziApiException.Operation.CREATE_ORDER, failure.operation());
+    assertFalse(failure.isRetryable());
+    assertEquals(requestsBeforeFailure + 1, requestCount);
+  }
+
+  @Test
+  void balanceTopUpRejectsUnsupportedAndMismatchedAmountsBeforePayment() throws Exception {
+    ZhiziApiClient client = client();
+
+    ZhiziApiException unsupported =
+        assertThrows(
+            ZhiziApiException.class, () -> client.createBalanceTopUpOrder("account-token", 999L));
+    assertEquals("invalid_top_up_amount", unsupported.errorKey());
+    assertEquals(0, requestCount, "unsupported amounts must be rejected before network I/O");
+
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"amount\":3000,"
+            + "\"paidStatus\":\"PENDING\",\"nativePayRequest\":{"
+            + "\"codeURL\":\"weixin://wxpay/bizpayurl?pr=wrong-amount\"}}";
+    ZhiziApiException mismatch =
+        assertThrows(
+            ZhiziApiException.class, () -> client.createBalanceTopUpOrder("account-token", 1000L));
+    assertEquals("invalid_response", mismatch.errorKey());
   }
 
   @Test
@@ -253,8 +313,7 @@ class ZhiziApiClientTest {
 
   @Test
   void orderResponsesRejectPriceChangesAndUnsafeQrPayloads() throws Exception {
-    responseBody =
-        "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
+    responseBody = "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
     ZhiziApiClient client = client();
     ZhiziApiClient.MembershipProduct product = client.fetchMembershipProducts().get(0);
 
@@ -277,6 +336,84 @@ class ZhiziApiClientTest {
             ZhiziApiException.class,
             () -> client.createMembershipOrder("account-token", product, false));
     assertEquals("invalid_response", unsafeQr.errorKey());
+
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"amount\":3000,"
+            + "\"productName\":null,\"orderType\":null,\"paidStatus\":\"SUCCESS\"}";
+    ZhiziApiException wrongPurpose =
+        assertThrows(
+            ZhiziApiException.class,
+            () -> client.createMembershipOrder("account-token", product, false));
+    assertEquals("invalid_response", wrongPurpose.errorKey());
+  }
+
+  @Test
+  void topUpSettlementRequiresCashTotalAndMatchingPaymentCredit() throws Exception {
+    ZhiziApiClient client = client();
+    ZhiziAccountService service = new ZhiziAccountService(client);
+    responseBodiesByPath.put(
+        "/api/cluster/balance", "{\"remainingBalance\":\"8.50\",\"totalCashAmount\":\"5.00\"}");
+    ZhiziAccountService.PaymentBaseline baseline =
+        service.capturePaymentBaseline(
+            "account-token", ZhiziApiClient.PaymentPurpose.BALANCE_TOP_UP);
+
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"amount\":1000,"
+            + "\"paidStatus\":\"SUCCESS\",\"paidAt\":\"2026-08-03T01:02:03Z\"}";
+    ZhiziApiClient.PaymentOrder order = client.createBalanceTopUpOrder("account-token", 1000L);
+    responseBodiesByPath.put(
+        "/api/cluster/balance", "{\"remainingBalance\":\"18.50\",\"totalCashAmount\":\"15.00\"}");
+    responseBodiesByPath.put(
+        "/api/cluster/credit/my-credits",
+        "{\"total\":1,\"page\":0,\"pageSize\":20,\"items\":[{"
+            + "\"creditType\":\"CASH\",\"amount\":\"10.00\",\"source\":\"PAYMENT\","
+            + "\"createdAt\":\""
+            + Instant.now().plusSeconds(1)
+            + "\"}]}");
+
+    ZhiziAccountService.PaymentVerification verified =
+        service.verifyPayment("account-token", baseline, order);
+    assertTrue(verified.settled);
+    assertTrue(verified.remainingBalanceChanged);
+    assertTrue(verified.cashCreditFound);
+
+    responseBodiesByPath.put(
+        "/api/cluster/credit/my-credits",
+        "{\"total\":1,\"page\":0,\"pageSize\":20,\"items\":[{"
+            + "\"creditType\":\"CASH\",\"amount\":\"10.00\",\"source\":\"COUPON\","
+            + "\"createdAt\":\""
+            + Instant.now().plusSeconds(1)
+            + "\"}]}");
+    assertFalse(service.verifyPayment("account-token", baseline, order).settled);
+  }
+
+  @Test
+  void vipSettlementRequiresMembershipExpiryToAdvance() throws Exception {
+    ZhiziApiClient client = client();
+    ZhiziAccountService service = new ZhiziAccountService(client);
+    responseBodiesByPath.put(
+        "/api/cluster/account/me",
+        "{\"isMembership\":true,\"membershipExpiresAt\":\"2026-08-31T00:00:00Z\"}");
+    ZhiziAccountService.PaymentBaseline baseline =
+        service.capturePaymentBaseline(
+            "account-token", ZhiziApiClient.PaymentPurpose.VIP_MEMBERSHIP);
+
+    responseBody = "[{\"name\":\"MEMBERSHIP_1_MONTH\",\"type\":\"MEMBERSHIP\",\"price\":3000}]";
+    ZhiziApiClient.MembershipProduct product = client.fetchMembershipProducts().get(0);
+    responseBody =
+        "{\"id\":\"66a000000000000000000010\",\"amount\":3000,"
+            + "\"orderType\":\"PURCHASE_PRODUCT\","
+            + "\"productName\":\"MEMBERSHIP_1_MONTH\",\"paidStatus\":\"SUCCESS\"}";
+    ZhiziApiClient.PaymentOrder order =
+        client.createMembershipOrder("account-token", product, false);
+
+    responseBodiesByPath.put(
+        "/api/cluster/account/me",
+        "{\"isMembership\":true,\"membershipExpiresAt\":\"2026-09-30T00:00:00Z\"}");
+    ZhiziAccountService.PaymentVerification verified =
+        service.verifyPayment("account-token", baseline, order);
+    assertTrue(verified.settled);
+    assertTrue(verified.membershipAdvanced);
   }
 
   @Test
@@ -421,7 +558,7 @@ class ZhiziApiClientTest {
     lastAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
     String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     lastBody = request.isBlank() ? new JSONObject() : new JSONObject(request);
-    String payload = responseBody;
+    String payload = responseBodiesByPath.getOrDefault(lastPath, responseBody);
     if (payload == null) {
       JSONObject response = new JSONObject();
       if (lastPath.endsWith("/fetch-socketio-token")) {
