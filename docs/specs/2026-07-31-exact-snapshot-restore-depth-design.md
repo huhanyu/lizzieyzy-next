@@ -19,6 +19,10 @@
    不能以本文替代合同。
 4. Review handoff 只记录审查进度和待核证事项，不是设计 source of truth。
 
+## 2026-08 exact-core rebaseline note
+
+本文件保留 2026-07-31 的事后重建设计证据；其中关于 `LifecycleRestoreHandoff`、lifecycle root route、reservation endpoint inclusion、product-specific `prepare*` wrapper 与 ponder capture 的段落属于历史方案，不是当前实现合同。当前 exact-core 以 `.scratch/exact-snapshot-restore-core/spec.md` 与 issue 04 为准：exact module 只保留 opaque admission + immutable exact capture + one-shot execute/completion；switch/restart/PK/foreground/GMA 的 root replay、reservation、readiness、availability、restart fence 和 ponder 由各 owner-local adapter 持有。`docs/SNAPSHOT_NODE_KIND.md` 是当前 tracked contract。
+
 ## 重建证据
 
 本设计由以下证据交叉恢复：
@@ -415,7 +419,7 @@ exact 与 root 都使用同一 target/mirror/identity 完成本次 board synchro
 
 主要证据文件：
 
-- `src/test/java/featurecat/lizzie/rules/ExactSnapshotEngineRestoreContractTest.java`
+- `src/test/java/featurecat/lizzie/analysis/ExactSnapshotEngineRestoreContractTest.java`
 - `src/test/java/featurecat/lizzie/analysis/EngineManagerLifecycleReservationTest.java`
 - `src/test/java/featurecat/lizzie/analysis/LeelazExclusiveRemoteGtpSessionTest.java`
 - `src/test/java/featurecat/lizzie/analysis/LeelazOpenClRecoveryTest.java`

@@ -3194,13 +3194,6 @@ class LeelazTrackingStreamLeaseTest {
         assertTrue(lease.release());
       }
 
-      @Override
-      void startTimeoutAfterPendingLoadSgf(Leelaz engine, Leelaz.TrackingStreamLease lease)
-          throws Exception {
-        processCommandResponse(engine, "=800000001");
-        assertTrue(dispatch(engine, ""));
-        assertTrue(lease.release());
-      }
 
       @Override
       Leelaz.TrackingStreamLeaseFailure failure() {

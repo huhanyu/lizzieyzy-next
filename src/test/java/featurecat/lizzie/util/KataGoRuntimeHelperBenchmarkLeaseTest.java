@@ -795,8 +795,8 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
         throw failure;
       } finally {
       restoreCompleted.countDown();
-      }
     }
+  }
   }
 
   private static Leelaz reusableKatagoEngine() throws Exception {

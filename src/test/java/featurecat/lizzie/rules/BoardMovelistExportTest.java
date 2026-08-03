@@ -249,8 +249,10 @@ class BoardMovelistExportTest {
       assertThrows(
           IllegalStateException.class,
           () ->
-              ExactSnapshotEngineRestore.prepareCurrentPosition(
-                      engine, snapshotRootNeedingBookkeepingPass())
+              ExactSnapshotEngineRestore.prepareCurrentPositionWithAdmission(
+                      engine.captureBoardSyncExactSnapshotRestorePermit(),
+                      snapshotRootNeedingBookkeepingPass(),
+                      null)
                   .execute());
 
       assertTempFileEventuallyDeleted(
@@ -275,8 +277,10 @@ class BoardMovelistExportTest {
           new Thread(
               () -> {
                 try {
-                  ExactSnapshotEngineRestore.prepareCurrentPosition(
-                          engine, snapshotRootNeedingBookkeepingPass())
+                  ExactSnapshotEngineRestore.prepareCurrentPositionWithAdmission(
+                          engine.captureBoardSyncExactSnapshotRestorePermit(),
+                          snapshotRootNeedingBookkeepingPass(),
+                          null)
                       .execute();
                 } catch (Throwable failure) {
                   restoreFailure.set(failure);

@@ -1291,11 +1291,12 @@ public class Board {
       Leelaz mirrorEngine,
       boolean loadEngine,
       boolean isEngineGame,
-      ArrayList<Movelist> moves) {
+      ArrayList<Movelist> moves,
+      Double capturedKomi) {
     if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
       return;
     }
-    Optional<Double> currentGameKomi = captureNonDefaultCurrentGameKomi(engine);
+    Optional<Double> currentGameKomi = Optional.ofNullable(capturedKomi);
     currentGameKomi.ifPresent(
         value -> {
           syncCapturedRestoreKomi(engine, value);
@@ -3039,36 +3040,37 @@ public class Board {
     boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
     BoardHistoryNode currentNode = getHistory().getCurrentHistoryNode();
     Optional<Double> capturedKomi = captureCurrentGameKomi();
+    Leelaz.ExactSnapshotRestorePermit permit =
+        engine.captureBoardSyncExactSnapshotRestorePermit();
     Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
-        capturedKomi.isPresent()
-            ? ExactSnapshotEngineRestore.prepare(
-                engine, currentNode, wasPondering, capturedKomi.orElseThrow(), true)
-            : ExactSnapshotEngineRestore.prepare(engine, currentNode, wasPondering, true);
+        ExactSnapshotEngineRestore.prepareWithAdmission(
+            permit, currentNode, capturedKomi.orElse(null));
     Optional<Double> preCommandKomi = nonDefaultCurrentGameKomiForSync(engine, capturedKomi);
     restoreEnginePosition(
-        engine, fallbackMoves, preparedRestore.orElse(null), preCommandKomi);
+        engine, fallbackMoves, preparedRestore.orElse(null), preCommandKomi, wasPondering);
   }
 
   private void restoreEnginePosition(
       Leelaz engine,
       ArrayList<Movelist> fallbackMoves,
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
-    restoreEnginePosition(engine, fallbackMoves, preparedRestore, Optional.empty());
+    restoreEnginePosition(engine, fallbackMoves, preparedRestore, Optional.empty(), false);
   }
 
   private void restoreEnginePosition(
       Leelaz engine,
       ArrayList<Movelist> fallbackMoves,
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore,
-      Optional<Double> gameKomi) {
+      Optional<Double> gameKomi,
+      boolean resumePonder) {
     if (preparedRestore != null) {
       gameKomi.ifPresent(
           value -> {
             engine.sendCommand("komi " + (value == 0.0 ? "0" : value));
             engine.komi = value.floatValue();
           });
-      ExactSnapshotEngineRestore.Completion completion = preparedRestore.execute();
-      if (completion.shouldResumePonder()) engine.ponder();
+      preparedRestore.execute();
+      if (resumePonder) engine.ponder();
       return;
     }
     restoreEnginePositionFromRoot(engine, fallbackMoves);

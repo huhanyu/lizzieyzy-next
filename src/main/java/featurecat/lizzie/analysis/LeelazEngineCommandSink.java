@@ -50,15 +50,20 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     }
 
     boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
+    Leelaz.ExactSnapshotRestoreAdmission admission =
+        engine.captureExactSnapshotRestoreAdmission(
+            Leelaz.ExactSnapshotRestoreOwner.ORDINARY,
+            null,
+            engine.resolveLoadSgfMirrorEngine());
     java.util.Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
-        ExactSnapshotEngineRestore.prepare(engine, target, resumePonder);
+        ExactSnapshotEngineRestore.prepareWithAdmission(admission, target, null);
     // 先停 ponder，避免后续 sync 命令期间 KataGo 仍在跑旧 ponder 输出 info 行
     engine.notPondering();
     engine.nameCmdfornoponder();
 
     if (preparedRestore.isPresent()) {
-      ExactSnapshotEngineRestore.Completion completion = preparedRestore.orElseThrow().execute();
-      if (completion.shouldResumePonder()) {
+      preparedRestore.orElseThrow().execute();
+      if (resumePonder) {
         engine.ponder();
       }
       if (TrialDiag.ENABLED) {
@@ -75,9 +80,7 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     if (TrialDiag.ENABLED) {
       System.out.printf(
           "[trial-resync] target moveNum=%d snapshotAnchor=%s chainLen=%d%n",
-          target.getData() == null ? -1 : target.getData().moveNumber,
-          "(root)",
-          chain.size());
+          target.getData() == null ? -1 : target.getData().moveNumber, "(root)", chain.size());
     }
 
     int played = 0;

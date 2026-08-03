@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
-import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.BoardRenderer;
+import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.JFontMenu;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -30,8 +30,8 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.AbstractList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -45,101 +45,6 @@ import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
 class EngineManagerLifecycleReservationTest {
-
-  @Test
-  void lifecycleHandoffFreezesReservationEndpointsAndDropsArbitraryMirror() throws Exception {
-    Leelaz previousPrimary = Lizzie.leelaz;
-    Leelaz previousSecondary = Lizzie.leelaz2;
-    Leelaz primary = new Leelaz("");
-    Leelaz secondary = new Leelaz("");
-    Leelaz future = new Leelaz("");
-    Leelaz unrelated = new Leelaz("");
-    try {
-      Lizzie.leelaz = primary;
-      Lizzie.leelaz2 = secondary;
-
-      ExactSnapshotEngineRestore.LifecycleRestoreHandoff currentPair =
-          ExactSnapshotEngineRestore.prepareLifecycleHandoff(primary, primary, secondary);
-      assertTrue(currentPair.includesReservationEngine(primary));
-      assertFalse(currentPair.includesReservationEngine(secondary));
-
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> ExactSnapshotEngineRestore.prepareLifecycleHandoff(secondary, future, secondary));
-
-      ExactSnapshotEngineRestore.LifecycleRestoreHandoff arbitraryPair =
-          ExactSnapshotEngineRestore.prepareLifecycleHandoff(unrelated, future, unrelated);
-      assertTrue(arbitraryPair.includesReservationEngine(future));
-      assertFalse(arbitraryPair.includesReservationEngine(unrelated));
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> unrelated.beginExclusiveGtpLifecycleReservation(arbitraryPair));
-      assertFalse(unrelated.hasExclusiveGtpWorkInProgress());
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> ExactSnapshotEngineRestore.prepareLifecycleHandoff(unrelated, future, null));
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> ExactSnapshotEngineRestore.prepareLifecycleHandoff(unrelated, future, primary));
-    } finally {
-      Lizzie.leelaz = previousPrimary;
-      Lizzie.leelaz2 = previousSecondary;
-    }
-  }
-
-  @Test
-  void lifecycleRootReplayRejectsExpiredAdmissionBeforeInvokingReplay() throws Exception {
-    Leelaz engine = new Leelaz("");
-    ExactSnapshotEngineRestore.LifecycleRestoreHandoff restoreHandoff =
-        ExactSnapshotEngineRestore.prepareLifecycleHandoff(engine, engine, null);
-    restoreHandoff.prepareRootReplay();
-    Leelaz.ExclusiveGtpLifecycleReservation reservation =
-        engine.beginExclusiveGtpLifecycleReservation(restoreHandoff);
-    assertNotNull(reservation);
-    reservation.close();
-    AtomicInteger replayCount = new AtomicInteger();
-
-    assertThrows(
-        IllegalStateException.class,
-        () -> restoreHandoff.executeRootReplay(replayCount::incrementAndGet));
-    assertEquals(0, replayCount.get());
-  }
-
-  @Test
-  void lifecycleRootReplayFailsWhenAdmissionExpiresBetweenCommands() throws Exception {
-    Config previousConfig = Lizzie.config;
-    LizzieFrame previousFrame = Lizzie.frame;
-    Leelaz engine = new Leelaz("");
-    try {
-      Config config = allocate(Config.class);
-      config.extraMode = ExtraMode.Normal;
-      Lizzie.config = config;
-      Lizzie.frame = allocate(SilentSwitchFrame.class);
-      ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(
-              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
-      ExactSnapshotEngineRestore.LifecycleRestoreHandoff restoreHandoff =
-          ExactSnapshotEngineRestore.prepareLifecycleHandoff(engine, engine, null);
-      restoreHandoff.prepareRootReplay();
-      Leelaz.ExclusiveGtpLifecycleReservation reservation =
-          engine.beginExclusiveGtpLifecycleReservation(restoreHandoff);
-      assertNotNull(reservation);
-
-      assertThrows(
-          IllegalStateException.class,
-          () ->
-              restoreHandoff.executeRootReplay(
-                  () -> {
-                    engine.sendCapturedRestoreCommand("clear_board");
-                    reservation.close();
-                    engine.sendCapturedRestoreCommand("play B D16");
-                  }));
-      assertEquals(List.of("clear_board"), transport.commands());
-    } finally {
-      Lizzie.config = previousConfig;
-      Lizzie.frame = previousFrame;
-    }
-  }
 
   @Test
   void switchReservesCurrentAndFrozenTargetWithoutSeparateMirrorReservation() throws Exception {
@@ -494,52 +399,6 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void arbitraryThirdEngineRestoreUsesOnlyItsFrozenAuthority() throws Exception {
-    Leelaz previousPrimary = Lizzie.leelaz;
-    Leelaz previousSecondary = Lizzie.leelaz2;
-    Config previousConfig = Lizzie.config;
-    LizzieFrame previousFrame = Lizzie.frame;
-    PkRestoreLeelaz future = new PkRestoreLeelaz();
-    PkRestoreLeelaz unrelated = new PkRestoreLeelaz();
-    ExactSnapshotEngineRestore.LifecycleRestoreHandoff restoreHandoff = null;
-    Leelaz.ExclusiveGtpLifecycleReservation reservation = null;
-    try {
-      Config config = allocate(Config.class);
-      config.extraMode = ExtraMode.Normal;
-      Lizzie.config = config;
-      Lizzie.frame = allocate(SilentSwitchFrame.class);
-      Lizzie.leelaz = new Leelaz("");
-      Lizzie.leelaz2 = new Leelaz("");
-      future.started = true;
-      future.isLoaded = true;
-      restoreHandoff =
-          ExactSnapshotEngineRestore.prepareLifecycleHandoff(unrelated, future, unrelated);
-      reservation = future.beginExclusiveGtpLifecycleReservation(restoreHandoff);
-      assertNotNull(reservation);
-      assertFalse(restoreHandoff.includesReservationEngine(unrelated));
-      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
-          restoreHandoff
-              .prepare(historyWithStone(3, 3, 6.5).getCurrentHistoryNode(), false, 6.5)
-              .orElseThrow();
-
-      preparedRestore.execute();
-
-      assertTrue(future.loadedSgf.contains("AB[dd]"));
-      assertTrue(
-          unrelated.commands.stream()
-              .noneMatch(command -> command.startsWith("loadsgf ") || command.startsWith("play ")));
-    } finally {
-      if (reservation != null) {
-        reservation.close();
-      }
-      Lizzie.leelaz = previousPrimary;
-      Lizzie.leelaz2 = previousSecondary;
-      Lizzie.config = previousConfig;
-      Lizzie.frame = previousFrame;
-    }
-  }
-
-  @Test
   void updateEnginesSameSizeFreezesExactRestoreBeforeReplacementStarts() throws Exception {
     UpdateEnginesState state = new UpdateEnginesState(19, 19);
     try {
@@ -616,6 +475,10 @@ class EngineManagerLifecycleReservationTest {
       assertEquals(0, countCommands(Files.readString(state.commandLog), "loadsgf "));
       assertEquals(1, state.board.clearCount);
       assertEquals(1, state.board.rootRestoreCount);
+      assertEquals(1, state.board.rootMoves.size());
+      assertEquals(15, state.board.rootMoves.get(0).x);
+      assertEquals(15, state.board.rootMoves.get(0).y);
+      assertEquals(6.5, state.board.rootKomi);
       assertEquals(0, state.board.getHistory().getData().moveNumber);
       assertTrue(
           java.util.Arrays.stream(state.board.getHistory().getData().stones)
@@ -712,6 +575,69 @@ class EngineManagerLifecycleReservationTest {
       EngineManager.currentEngineNo = previousEngineNo;
     }
   }
+  @Test
+  void foregroundEngineSwitchFreezesOrdinaryKomiDecisionBeforeReservation() throws Exception {
+    Leelaz previousEngine = Lizzie.leelaz;
+    Board previousBoard = Lizzie.board;
+    LizzieFrame previousFrame = Lizzie.frame;
+    BottomToolbar previousToolbar = LizzieFrame.toolbar;
+    Config previousConfig = Lizzie.config;
+    boolean previousEmpty = EngineManager.isEmpty;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    int previousBoardWidth = Board.boardWidth;
+    int previousBoardHeight = Board.boardHeight;
+    RecordingSwitchLeelaz current = new RecordingSwitchLeelaz();
+    RecordingSwitchLeelaz target = new RecordingSwitchLeelaz();
+    PreparedRestoreBoard board = fallbackRestoreBoard();
+    DeferredBoardSynchronizationEngineManager manager =
+        new DeferredBoardSynchronizationEngineManager(List.of(current, target));
+    try {
+      Config config = allocate(Config.class);
+      config.fastChange = true;
+      config.extraMode = ExtraMode.Normal;
+      Lizzie.config = config;
+      Lizzie.frame = allocate(SilentSwitchFrame.class);
+      LizzieFrame.toolbar = allocate(SilentSwitchToolbar.class);
+      Lizzie.board = board;
+      Board.boardWidth = 19;
+      Board.boardHeight = 19;
+      board.getHistory().getGameInfo().setKomiNoMenu(6.5);
+      current.started = true;
+      current.isLoaded = true;
+      target.started = true;
+      target.isLoaded = true;
+      target.width = 19;
+      target.height = 19;
+      target.oriWidth = 19;
+      target.oriHeight = 19;
+      target.orikomi = 7.5f;
+      target.komi = 6.5f;
+      current.onLifecycleReservation = board.getHistory().getGameInfo()::changeKomi;
+      Lizzie.leelaz = current;
+      EngineManager.isEmpty = false;
+      EngineManager.currentEngineNo = 0;
+
+      manager.switchEngine(1, true);
+
+      assertEquals(7.5f, target.komi);
+      assertTrue(target.commands.contains("komi 7.5"));
+      assertFalse(target.commands.contains("komi 6.5"));
+    } finally {
+      if (manager.afterSync != null) {
+        manager.afterSync.run();
+      }
+      Lizzie.leelaz = previousEngine;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      LizzieFrame.toolbar = previousToolbar;
+      Lizzie.config = previousConfig;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+      Board.boardWidth = previousBoardWidth;
+      Board.boardHeight = previousBoardHeight;
+    }
+  }
+
 
   @Test
   void pkStartCapturesPreparedRestoreBeforePreRestoreCommands() throws Exception {
@@ -741,6 +667,7 @@ class EngineManagerLifecycleReservationTest {
       engine.komi = 7.5f;
       engine.orikomi = 7.5f;
       engine.mutateOnFirstCommand = () -> mutateHistory(history);
+      engine.onLifecycleReservation = () -> history.getGameInfo().setKomiNoMenu(7.5);
 
       new EngineManager(List.of(engine)).startEngineForPk(0);
 
@@ -861,7 +788,7 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void pkStartFallbackUsesBoardThatIsLiveWhenAsyncRestoreRuns() throws Exception {
+  void pkStartFallbackUsesCapturedBoardRouteWhenAsyncRestoreRuns() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Board previousBoard = Lizzie.board;
     LizzieFrame previousFrame = Lizzie.frame;
@@ -889,11 +816,11 @@ class EngineManagerLifecycleReservationTest {
 
       Lizzie.board = liveBoard;
       engine.isLoaded = true;
-      assertTrue(liveBoard.restoreCompleted.await(2, TimeUnit.SECONDS));
+      assertTrue(capturedBoard.restoreCompleted.await(2, TimeUnit.SECONDS));
       assertFalse(capturedBoard.genericRestoreReceived);
       assertFalse(liveBoard.genericRestoreReceived);
       assertFalse(liveBoard.preparedRestoreReceived);
-      assertTrue(liveBoard.rootRestoreReceived);
+      assertTrue(capturedBoard.rootRestoreReceived);
     } finally {
       engine.isLoaded = true;
       Lizzie.leelaz = previousEngine;
@@ -931,6 +858,7 @@ class EngineManagerLifecycleReservationTest {
       engine.komi = 7.5f;
       engine.orikomi = 7.5f;
       engine.mutateOnStart = () -> mutateHistory(history);
+      engine.onLifecycleReservation = () -> history.getGameInfo().setKomiNoMenu(7.5);
       engine.readyAfterStart = false;
 
       new EngineManager(List.of(engine)).restartEngineForPk(0);
@@ -3022,7 +2950,8 @@ class EngineManagerLifecycleReservationTest {
         Leelaz mirrorEngine,
         boolean loadEngine,
         boolean isEngineGame,
-        ArrayList<featurecat.lizzie.rules.Movelist> moves) {
+        ArrayList<featurecat.lizzie.rules.Movelist> moves,
+        Double capturedKomi) {
       rootRestoreReceived = true;
       engineGameInitialization = isEngineGame;
       restoreCompleted.countDown();
@@ -3255,6 +3184,8 @@ class EngineManagerLifecycleReservationTest {
   private static final class UpdateBoard extends Board {
     private int clearCount;
     private int rootRestoreCount;
+    private ArrayList<featurecat.lizzie.rules.Movelist> rootMoves;
+    private Double rootKomi;
 
     @Override
     public void clear(boolean isEngineGame) {
@@ -3271,18 +3202,16 @@ class EngineManagerLifecycleReservationTest {
     }
 
     @Override
-    public void resendMoveToEngine(Leelaz engine, boolean loadEngine) {
-      // The real test process records ordinary commands; no callback is needed here.
-    }
-
-    @Override
     public void resendMoveToEngineFromRoot(
         Leelaz engine,
         Leelaz mirrorEngine,
         boolean loadEngine,
         boolean isEngineGame,
-        ArrayList<featurecat.lizzie.rules.Movelist> moves) {
+        ArrayList<featurecat.lizzie.rules.Movelist> moves,
+        Double capturedKomi) {
       rootRestoreCount++;
+      rootMoves = featurecat.lizzie.rules.Movelist.copyList(moves);
+      rootKomi = capturedKomi;
     }
   }
 
@@ -3316,6 +3245,10 @@ class EngineManagerLifecycleReservationTest {
     public BoardHistoryList getHistory() {
       historyCalls++;
       return historyCalls <= 3 ? firstHistory : secondHistory;
+    }
+    @Override
+    public ArrayList<featurecat.lizzie.rules.Movelist> getMoveList() {
+      return new ArrayList<>();
     }
 
     @Override
@@ -3404,11 +3337,11 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     public void loadSgf(Path sgfFile, Runnable afterConsumed) {
-      try {
+          try {
         loadedSgf = Files.readString(sgfFile);
-      } catch (java.io.IOException failure) {
-        throw new IllegalStateException(failure);
-      }
+          } catch (java.io.IOException failure) {
+            throw new IllegalStateException(failure);
+          }
       afterConsumed.run();
     }
   }

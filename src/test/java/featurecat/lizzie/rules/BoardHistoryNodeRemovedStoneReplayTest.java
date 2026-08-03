@@ -9,6 +9,7 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.gui.LizzieFrame;
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -31,10 +32,7 @@ class BoardHistoryNodeRemovedStoneReplayTest {
                   BoardNodeKind.SNAPSHOT));
 
       assertTrue(current.checkForRemovedStone(), "removed-stone path should trigger replay.");
-      assertEquals(
-          1,
-          env.leelaz.recordedCommands().size(),
-          "snapshot roots should restore through loadsgf.");
+      assertSingleExactSnapshotRestore(env.leelaz.recordedCommands(), "snapshot roots should restore through loadsgf.");
       assertArrayEquals(
           current.getData().stones,
           env.leelaz.copyStones(),
@@ -70,10 +68,7 @@ class BoardHistoryNodeRemovedStoneReplayTest {
                   BoardNodeKind.MOVE));
 
       assertTrue(current.checkForRemovedStone(), "removed-stone path should trigger replay.");
-      assertEquals(
-          1,
-          env.leelaz.recordedCommands().size(),
-          "removed-stone replay should land the current board through one exact snapshot restore.");
+      assertSingleExactSnapshotRestore(env.leelaz.recordedCommands(), "removed-stone replay should land the current board through one exact snapshot restore.");
       assertArrayEquals(
           current.getData().stones,
           env.leelaz.copyStones(),
@@ -105,10 +100,7 @@ class BoardHistoryNodeRemovedStoneReplayTest {
                   BoardNodeKind.MOVE));
 
       assertTrue(current.checkForRemovedStone(), "removed-stone path should trigger replay.");
-      assertEquals(
-          1,
-          env.leelaz.recordedCommands().size(),
-          "removed-stone replay should keep earlier pass history behind the current static board.");
+      assertSingleExactSnapshotRestore(env.leelaz.recordedCommands(), "removed-stone replay should keep earlier pass history behind the current static board.");
       assertArrayEquals(
           current.getData().stones,
           env.leelaz.copyStones(),
@@ -140,10 +132,7 @@ class BoardHistoryNodeRemovedStoneReplayTest {
                   BoardNodeKind.MOVE));
 
       assertTrue(current.checkForRemovedStone(), "removed-stone path should trigger replay.");
-      assertEquals(
-          1,
-          env.leelaz.recordedCommands().size(),
-          "removed current moves should collapse to one exact snapshot restore.");
+      assertSingleExactSnapshotRestore(env.leelaz.recordedCommands(), "removed current moves should collapse to one exact snapshot restore.");
       assertArrayEquals(
           current.getData().stones,
           env.leelaz.copyStones(),
@@ -273,6 +262,12 @@ class BoardHistoryNodeRemovedStoneReplayTest {
 
   private static String moveRecord(Stone color, int x, int y) {
     return color.name() + ":" + Board.convertCoordinatesToName(x, y);
+  }
+
+  private static void assertSingleExactSnapshotRestore(List<String> commands, String message) {
+    assertEquals(2, commands.size(), message);
+    assertEquals("clear_board", commands.get(0), message);
+    assertTrue(commands.get(1).startsWith("loadsgf "), message);
   }
 
   private static BoardData capturedCenterSnapshotData() {

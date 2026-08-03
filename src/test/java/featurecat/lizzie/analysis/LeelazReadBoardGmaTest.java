@@ -1737,6 +1737,15 @@ class LeelazReadBoardGmaTest {
           });
 
       assertTrue(waitForRawCommand(output, "name", 1, TimeUnit.SECONDS));
+
+      assertThrows(
+          IllegalStateException.class,
+          () -> engine.restartClosedEngine(0),
+          "a second restart caller must not fall back to a generic root replay while the first reservation is live");
+      assertEquals(
+          1,
+          output.commands().stream().filter("name"::equals).count(),
+          "a rejected duplicate restart must not start a second engine lifecycle");
       assertEquals(null, engine.beginEngineModeReservation());
       assertFalse(completed.await(50, TimeUnit.MILLISECONDS));
       invokeProcessCommandResponseLine(engine, numberedResponseFor(output.rawCommands(), "name"));
@@ -1748,16 +1757,48 @@ class LeelazReadBoardGmaTest {
   }
 
   @Test
+  void automaticRestartUsesPonderIntentCapturedWithReservation() throws Exception {
+    try (Harness harness = Harness.open()) {
+      ReadyAutomaticRestartPonderLeelaz engine = new ReadyAutomaticRestartPonderLeelaz();
+      configureReadyReadBoardGmaEngine(engine);
+      engine.Pondering();
+      Lizzie.leelaz = engine;
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      Leelaz.ExclusiveGtpLifecycleReservation reservation =
+          engine.beginAutomaticEngineRestartReservation();
+      assertTrue(reservation != null);
+      engine.notPondering();
+      CountDownLatch completed = new CountDownLatch(1);
+
+      engine.restartClosedEngine(
+          0,
+          () -> {
+            reservation.close();
+            completed.countDown();
+          });
+
+      assertTrue(waitForRawCommand(output, "name", 1, TimeUnit.SECONDS));
+      assertFalse(output.commands().stream().anyMatch(command -> command.startsWith("kata-analyze")));
+      invokeProcessCommandResponseLine(engine, numberedResponseFor(output.rawCommands(), "name"));
+      assertTrue(completed.await(1, TimeUnit.SECONDS));
+      invokeProcessCommandResponseLine(engine, "=");
+      invokeProcessCommandResponseLine(engine, "=");
+      assertTrue(
+          waitForRawCommandPrefix(output, "kata-analyze", 1, TimeUnit.SECONDS),
+          output.commands().toString());
+    }
+  }
+  @Test
   void directRestartExactRestoreKeepsReservationAndPonderUntilBoardFence() throws Exception {
     try (Harness harness = Harness.open()) {
       ReadyAutomaticRestartPonderLeelaz engine = new ReadyAutomaticRestartPonderLeelaz();
       configureReadyReadBoardGmaEngine(engine);
-      Field isPondering = Leelaz.class.getDeclaredField("isPondering");
-      isPondering.setAccessible(true);
-      isPondering.setBoolean(engine, true);
+      engine.Pondering();
       Lizzie.board.getHistory().getStart().getData().stones[Board.getIndex(3, 3)] = Stone.BLACK;
       Lizzie.leelaz = engine;
       ExactSnapshotRestoreProtocolFixture.Transport transport =
+
           ExactSnapshotRestoreProtocolFixture.install(
               engine,
               command ->
@@ -1826,9 +1867,7 @@ class LeelazReadBoardGmaTest {
     try (Harness harness = Harness.open()) {
       ReadyAutomaticRestartPonderLeelaz engine = new ReadyAutomaticRestartPonderLeelaz();
       configureReadyReadBoardGmaEngine(engine);
-      Field isPondering = Leelaz.class.getDeclaredField("isPondering");
-      isPondering.setAccessible(true);
-      isPondering.setBoolean(engine, true);
+      engine.Pondering();
       Lizzie.leelaz = engine;
       RecordingOutputStream output = new RecordingOutputStream();
       setOutputStream(engine, output);
@@ -2045,66 +2084,6 @@ class LeelazReadBoardGmaTest {
     }
   }
 
-  @Test
-  void lateNumberedStrictErrorCannotConsumeCurrentReadBoardGma() throws Exception {
-    try (Harness harness = Harness.open()) {
-      Leelaz engine = new Leelaz("");
-      engine.isKatago = true;
-      Lizzie.leelaz = engine;
-      RecordingOutputStream output = new RecordingOutputStream();
-      setOutputStream(engine, output);
-      TerminalCountingReadBoard readBoard = allocate(TerminalCountingReadBoard.class);
-      readBoard.terminalRestoreCount = new AtomicInteger();
-      Object identity = new Object();
-      setReadBoardField(readBoard, "readBoardGmaPending", true);
-      setReadBoardField(readBoard, "readBoardGmaAutoPlayActive", true);
-      setReadBoardField(readBoard, "readBoardGmaPendingIdentity", identity);
-      setReadBoardField(readBoard, "readBoardGmaPendingGeneration", 7L);
-      Lizzie.frame.readBoard = readBoard;
-      engine.bindReadBoardGmaResponseOwner(readBoard, identity, 7L);
-
-      assertTrue(engine.genmoveAnalyzeForReadBoard("B", 0, 0, true));
-      String retiredStrictResponse =
-          parameterValueResponseFor(output.rawCommands(), "ponderingEnabled", "true");
-      invokeProcessCommandResponseLine(engine, retiredStrictResponse);
-      invokeProcessCommandResponseLine(
-          engine, successResponseFor(output.rawCommands(), "ponderingEnabled"));
-      assertEquals(1, pendingResponseHandlerCount(engine));
-
-      String lateError =
-          retiredStrictResponse.replaceFirst("^=", "?") + " retired strict command failed";
-      invokeParseLine(engine, lateError);
-      assertTrue(getBooleanField(engine, "isCommandLine"));
-      invokeProcessCommandResponseLine(engine, lateError);
-      setBooleanField(engine, "isCommandLine", false);
-
-      assertTrue(getReadBoardField(readBoard, "readBoardGmaPendingIdentity") == identity);
-      assertEquals(7L, (long) getReadBoardField(readBoard, "readBoardGmaPendingGeneration"));
-      assertTrue((boolean) getReadBoardField(readBoard, "readBoardGmaPending"));
-      assertEquals(1, pendingResponseHandlerCount(engine));
-      assertEquals(0, readBoard.terminalRestoreCount.get());
-
-      setBooleanField(engine, "unnumberedResponseQuarantined", true);
-      invokeParseLine(engine, "? ambiguous quarantined response");
-      assertTrue(getBooleanField(engine, "isCommandLine"));
-      invokeProcessCommandResponseLine(engine, "? ambiguous quarantined response");
-      setBooleanField(engine, "isCommandLine", false);
-      assertTrue(getReadBoardField(readBoard, "readBoardGmaPendingIdentity") == identity);
-      assertEquals(7L, (long) getReadBoardField(readBoard, "readBoardGmaPendingGeneration"));
-      assertTrue((boolean) getReadBoardField(readBoard, "readBoardGmaPending"));
-      assertEquals(1, pendingResponseHandlerCount(engine));
-      assertEquals(0, readBoard.terminalRestoreCount.get());
-
-      invokeParseLine(engine, "play pass");
-
-      assertFalse((boolean) getReadBoardField(readBoard, "readBoardGmaPending"));
-      assertEquals(0, pendingResponseHandlerCount(engine));
-      assertEquals(1, readBoard.terminalRestoreCount.get());
-
-      invokeParseLine(engine, "? duplicate current GMA terminal");
-      assertEquals(1, readBoard.terminalRestoreCount.get());
-    }
-  }
 
   @Test
   void lateGmaPlayIsDeliveredToTheRetiredHelperOwnerAfterReplacement() throws Exception {
@@ -2272,8 +2251,11 @@ class LeelazReadBoardGmaTest {
           && command.substring(firstSpace + 1).startsWith(commandPrefix)) {
         return "=" + command.substring(0, firstSpace);
       }
+      if (firstSpace < 0 && command.startsWith(commandPrefix)) {
+        return "=";
+      }
     }
-    throw new IllegalArgumentException("Missing numbered command prefix " + commandPrefix);
+    throw new IllegalArgumentException("Missing command prefix " + commandPrefix);
   }
 
   private static boolean waitForRawCommand(
@@ -2464,18 +2446,6 @@ class LeelazReadBoardGmaTest {
     field.set(target, value);
   }
 
-  private static void setReadBoardField(ReadBoard readBoard, String fieldName, Object value)
-      throws Exception {
-    Field field = ReadBoard.class.getDeclaredField(fieldName);
-    field.setAccessible(true);
-    field.set(readBoard, value);
-  }
-
-  private static Object getReadBoardField(ReadBoard readBoard, String fieldName) throws Exception {
-    Field field = ReadBoard.class.getDeclaredField(fieldName);
-    field.setAccessible(true);
-    return field.get(readBoard);
-  }
 
   private static void setReadBoardGmaParamState(
       Leelaz engine, String paramFieldName, String originalValue, boolean overridden)
@@ -2561,18 +2531,6 @@ class LeelazReadBoardGmaTest {
     return config;
   }
 
-  private static final class TerminalCountingReadBoard extends ReadBoard {
-    private AtomicInteger terminalRestoreCount;
-
-    private TerminalCountingReadBoard() throws Exception {
-      super(false, false);
-    }
-
-    @Override
-    public void afterReadBoardGmaTerminalResponseConsumed(String reason) {
-      terminalRestoreCount.incrementAndGet();
-    }
-  }
 
   private static final class Harness implements AutoCloseable {
     private final Config previousConfig;

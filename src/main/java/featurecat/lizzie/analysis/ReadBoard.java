@@ -2707,18 +2707,21 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
             + (data.isSnapshotNode() ? "snapshot" : "move")
             + " enginePondering="
             + wasPondering);
-    ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+    ExactSnapshotEngineRestore.PreparedRestore preparedRestore;
+    Leelaz.ExactSnapshotRestoreOwner restoreOwner =
         readBoardGmaRecovery
-            ? ExactSnapshotEngineRestore.prepareForReadBoardGma(
-                engine, data, currentHistoryKomi)
-            : ExactSnapshotEngineRestore.prepareCurrentPosition(
-                engine, data, currentHistoryKomi);
+            ? Leelaz.ExactSnapshotRestoreOwner.READ_BOARD_GMA
+            : Leelaz.ExactSnapshotRestoreOwner.BOARD_SYNC;
+    Leelaz.ExactSnapshotRestoreAdmission admission =
+        engine.captureExactSnapshotRestoreAdmission(
+            restoreOwner, null, engine.resolveLoadSgfMirrorEngine());
+    preparedRestore =
+        ExactSnapshotEngineRestore.prepareCurrentPositionWithAdmission(
+            admission, data, currentHistoryKomi);
+    engine.notPondering();
+    engine.nameCmdfornoponder();
     if (readBoardGmaRecovery) {
-      engine.clearWithoutPonder();
-      localMoveSyncDebug("syncEngineToRebuiltSnapshot clearWithoutPonder sent");
-    } else {
-      engine.notPondering();
-      engine.nameCmdfornoponder();
+      localMoveSyncDebug("syncEngineToRebuiltSnapshot clear_board preclear sent");
     }
     preparedRestore.execute();
     localMoveSyncDebug(

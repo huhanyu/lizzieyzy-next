@@ -2,8 +2,6 @@ package featurecat.lizzie.analysis;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,14 +11,8 @@ public final class ExactSnapshotRestoreProtocolFixture {
 
   public static Transport install(Leelaz engine, CommandBehavior behavior) {
     Transport transport = new Transport(engine, behavior);
-    try {
-      Field outputField = Leelaz.class.getDeclaredField("outputStream");
-      outputField.setAccessible(true);
-      outputField.set(engine, Leelaz.createCommandOutputStream(transport));
-      return transport;
-    } catch (ReflectiveOperationException failure) {
-      throw new AssertionError(failure);
-    }
+    engine.installCommandOutputForTest(transport);
+    return transport;
   }
 
   @FunctionalInterface
@@ -92,10 +84,8 @@ public final class ExactSnapshotRestoreProtocolFixture {
       return List.copyOf(rawCommands);
     }
 
-    private void invokeResponse(String responseLine) throws Exception {
-      Method method = Leelaz.class.getDeclaredMethod("processCommandResponseLine", String.class);
-      method.setAccessible(true);
-      method.invoke(engine, responseLine);
+    private void invokeResponse(String responseLine) {
+      engine.processCommandResponseLineForTest(responseLine);
     }
 
     private static String commandPayload(String commandLine) {
