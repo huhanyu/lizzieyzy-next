@@ -112,17 +112,6 @@ public class Leelaz {
       return preclear;
     }
   }
-  public static final class ExactSnapshotRestorePermit {
-    private final ExactSnapshotRestoreAdmission admission;
-
-    private ExactSnapshotRestorePermit(ExactSnapshotRestoreAdmission admission) {
-      this.admission = admission;
-    }
-
-    ExactSnapshotRestoreAdmission admission() {
-      return admission;
-    }
-  }
 
   public enum TrackingStreamLeaseFailure {
     INITIAL_STOP_SEND_FAILED,
@@ -6571,10 +6560,10 @@ public class Leelaz {
     }
   }
 
-  public ExactSnapshotRestorePermit captureBoardSyncExactSnapshotRestorePermit() {
-    return new ExactSnapshotRestorePermit(
-        captureExactSnapshotRestoreAdmission(
-            ExactSnapshotRestoreOwner.BOARD_SYNC, null, resolveLoadSgfMirrorEngine()));
+  /** Captures the board-sync owner for one immutable exact restore plan. */
+  public ExactSnapshotRestoreAdmission captureBoardSyncExactSnapshotRestoreAdmission() {
+    return captureExactSnapshotRestoreAdmission(
+        ExactSnapshotRestoreOwner.BOARD_SYNC, null, resolveLoadSgfMirrorEngine());
   }
 
   /** Captures the arbitration owner for one immutable exact restore plan. */
@@ -6833,16 +6822,12 @@ public class Leelaz {
     Board board = Lizzie.board;
     BoardHistoryList history = board == null ? null : board.getHistory();
     if (history == null) {
-      session.preparedRestoreKomi = null;
       return null;
     }
-    Double currentGameKomi = history.getGameInfo() == null ? null : history.getGameInfo().getKomi();
-    session.preparedRestoreKomi = currentGameKomi;
     Leelaz mirror = resolveLoadSgfMirrorEngine();
     ExactSnapshotRestoreAdmission admission =
         captureExactSnapshotRestoreAdmission(ExactSnapshotRestoreOwner.FOREGROUND, session, mirror);
-    return ExactSnapshotEngineRestore.prepareWithAdmission(
-            admission, history.getCurrentHistoryNode(), currentGameKomi)
+    return ExactSnapshotEngineRestore.prepare(admission, history.getCurrentHistoryNode())
         .orElse(null);
   }
 
@@ -7269,11 +7254,6 @@ public class Leelaz {
     foregroundRestoreCommandSession.set(session);
     try {
       if (session.preparedRestore != null) {
-        if (session.preparedRestoreKomi != null) {
-          double value = session.preparedRestoreKomi;
-                  sendCommand("komi " + (value == 0.0 ? "0" : value));
-                  komi = (float) value;
-        }
         if (session.originalRules != null) {
           sendCommand("kata-set-rules " + session.originalRules);
         }
@@ -8350,7 +8330,6 @@ public class Leelaz {
     private volatile boolean restoreInvalidated;
     private boolean restoreStarted;
     private ExactSnapshotEngineRestore.PreparedRestore preparedRestore;
-    private Double preparedRestoreKomi;
     private String originalRules;
     private Runnable afterRestore;
     private Runnable afterRestoreFailure;
@@ -8689,7 +8668,7 @@ public class Leelaz {
     }
   }
 
-  static final class ExactSnapshotRestoreAdmission {
+  public static final class ExactSnapshotRestoreAdmission {
     private final Leelaz authority;
     private final Leelaz mirror;
     private final ExactSnapshotRestoreOwner owner;
@@ -8762,9 +8741,9 @@ public class Leelaz {
           target.captureExactSnapshotRestoreAdmission(
               ExactSnapshotRestoreOwner.LIFECYCLE, owner, mirror);
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore = null;
-      if (historyTarget != null && komi != null) {
+      if (historyTarget != null) {
         preparedRestore =
-            ExactSnapshotEngineRestore.prepareWithAdmission(admission, historyTarget, komi)
+            ExactSnapshotEngineRestore.prepare(admission, historyTarget)
                 .orElse(null);
       }
       return new RestartRestorePreparation(
@@ -8774,7 +8753,6 @@ public class Leelaz {
     private Object owner() {
       return owner;
     }
-
     private ExactSnapshotEngineRestore.PreparedRestore preparedRestore() {
       return preparedRestore;
     }

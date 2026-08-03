@@ -30,45 +30,29 @@ public final class ExactSnapshotEngineRestore {
 
   private ExactSnapshotEngineRestore() {}
 
-  public static Optional<PreparedRestore> prepareWithAdmission(
-      Leelaz.ExactSnapshotRestorePermit permit, BoardHistoryNode target, Double komi) {
-    if (permit == null) {
-      throw new IllegalArgumentException("permit");
-  }
-    return prepareWithAdmission(permit.admission(), target, komi);
+  public static Optional<PreparedRestore> prepare(
+      Leelaz.ExactSnapshotRestoreAdmission admission, BoardHistoryNode target) {
+    return RestorePlan.capture(admission, target).map(PreparedRestore::new);
   }
 
-  static Optional<PreparedRestore> prepareWithAdmission(
-      Leelaz.ExactSnapshotRestoreAdmission admission, BoardHistoryNode target, Double komi) {
-    return RestorePlan.capture(admission, target, komi).map(PreparedRestore::new);
-  }
-
-  public static PreparedRestore prepareCurrentPositionWithAdmission(
-      Leelaz.ExactSnapshotRestorePermit permit, BoardData positionData, Double komi) {
-    if (permit == null) {
-      throw new IllegalArgumentException("permit");
-  }
-    return prepareCurrentPositionWithAdmission(permit.admission(), positionData, komi);
-  }
-
-  static PreparedRestore prepareCurrentPositionWithAdmission(
-      Leelaz.ExactSnapshotRestoreAdmission admission, BoardData positionData, Double komi) {
-    return new PreparedRestore(RestorePlan.capture(admission, positionData, komi));
+  public static PreparedRestore prepareCurrentPosition(
+      Leelaz.ExactSnapshotRestoreAdmission admission, BoardData positionData) {
+    return new PreparedRestore(RestorePlan.capture(admission, positionData));
   }
 
   private static void validateCurrentPosition(BoardData sourceData) {
     if (sourceData == null) {
       throw new IllegalArgumentException("positionData");
-  }
+    }
     if (sourceData.stones == null || sourceData.stones.length == 0) {
       throw new IllegalArgumentException("positionData.stones");
-  }
+    }
     for (int index = 0; index < sourceData.stones.length; index++) {
       if (sourceData.stones[index] == null) {
         throw new IllegalArgumentException("positionData.stones[" + index + "]");
-  }
-  }
+      }
     }
+  }
 
 
   private static BoardData materializeCurrentPosition(BoardData sourceData) {
@@ -233,12 +217,15 @@ public final class ExactSnapshotEngineRestore {
     if (snapshotData != null && snapshotData.komi != -999) {
       return snapshotData.komi;
     }
+    Double historyKomi = captureHistoryKomi();
+    if (historyKomi != null) {
+      return historyKomi;
+    }
     if (engine != null && !Float.isNaN(engine.komi)) {
       return (double) engine.komi;
     }
     return null;
-    }
-
+  }
 
   private static Double captureHistoryKomi() {
     Board board = Lizzie.board;
@@ -403,7 +390,7 @@ public final class ExactSnapshotEngineRestore {
         Leelaz mirrorEngine,
         BoardData snapshotData,
         List<TailAction> tail,
-        Double komiOverride,
+        Double restoreKomi,
         Leelaz.ExactSnapshotRestoreAdmission admission) {
       this.engine = engine;
       this.mirrorEngine = mirrorEngine;
@@ -412,7 +399,7 @@ public final class ExactSnapshotEngineRestore {
       int[] boardSize = resolveSnapshotBoardSize(this.snapshotData);
       this.boardWidth = boardSize[0];
       this.boardHeight = boardSize[1];
-      this.komi = komiOverride == null ? captureKomi(engine, this.snapshotData) : komiOverride;
+      this.komi = restoreKomi == null ? captureKomi(engine, this.snapshotData) : restoreKomi;
       this.tail = List.copyOf(tail);
       this.admission = admission;
       this.preclear = admission.preclear();
@@ -420,11 +407,10 @@ public final class ExactSnapshotEngineRestore {
 
     private static Optional<RestorePlan> capture(
         Leelaz.ExactSnapshotRestoreAdmission admission,
-        BoardHistoryNode target,
-        Double komiOverride) {
+        BoardHistoryNode target) {
       if (admission == null) {
         throw new IllegalArgumentException("admission");
-    }
+      }
       Leelaz engine = admission.authority();
       Leelaz mirrorEngine = admission.mirror();
       requireEngine(engine);
@@ -440,16 +426,14 @@ public final class ExactSnapshotEngineRestore {
           anchor.data.isSnapshotNode() ? anchor.data : materializeCurrentPosition(anchor.data);
       int[] boardSize = resolveSnapshotBoardSize(snapshotData);
       List<TailAction> tail = captureTail(target, anchor.node, boardSize[0], boardSize[1]);
-      Double capturedKomi = komiOverride == null ? captureHistoryKomi() : komiOverride;
+      Double restoreKomi = captureHistoryKomi();
       return Optional.of(
-          new RestorePlan(
-              engine, mirrorEngine, snapshotData, tail, capturedKomi, admission));
+          new RestorePlan(engine, mirrorEngine, snapshotData, tail, restoreKomi, admission));
     }
 
     private static RestorePlan capture(
         Leelaz.ExactSnapshotRestoreAdmission admission,
-        BoardData sourceData,
-        Double komiOverride) {
+        BoardData sourceData) {
       if (admission == null) {
         throw new IllegalArgumentException("admission");
       }
@@ -465,7 +449,7 @@ public final class ExactSnapshotEngineRestore {
           mirrorEngine,
           snapshotData,
           Collections.emptyList(),
-          komiOverride,
+          null,
           admission);
     }
 

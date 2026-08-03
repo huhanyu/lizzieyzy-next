@@ -101,7 +101,7 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - 所有 `loadEngine=true` 的恢复入口都遵守同一套 `SNAPSHOT/setup` 恢复契约。
 - `restoreMoveNumber(...)` 恢复时也先命中最近 `SNAPSHOT` 边界，再续接后面的真实 `MOVE/PASS`。
 - `ExactSnapshotEngineRestore` 是 exact snapshot restore core owner：负责 immutable snapshot/current-position plan、静态锚点 materialization、真实 `MOVE/PASS` tail、临时 SGF、captured target 的 `loadsgf -> tail` sequencing、cleanup 与 completion。它不拥有 generic lifecycle、root replay、reservation、restart fence 或 ponder。
-- 普通 capture 在 module 内取得 ordinary admission；switch/restart/PK/foreground/GMA adapter 在自己的 owner 语境中先冻结 opaque admission，再通过窄 capture seam 取得 exact plan。`PreparedRestore` 只暴露 one-shot `execute() -> Completion`，不暴露 komi、target、mirror、tail、SGF、root payload 或 dispatch state。
+- 普通 caller 在自己的 owner 语境中捕获 ordinary admission；switch/restart/PK/foreground/GMA adapter 在自己的 owner 语境中先冻结 opaque admission，再通过窄 capture seam 取得 exact plan。`PreparedRestore` 只暴露 one-shot `execute() -> Completion`，不暴露 komi、target、mirror、tail、SGF、root payload 或 dispatch state。
 - 所有 lifecycle 入口在第一个外部副作用前冻结 exact route，或明确冻结 owner-local root route；后续 stop/name/komi/clear/start/readiness/replacement callback 只能执行该 frozen route，不能重新读取 mutable history、engine slot 或 mirror。
 - `EngineManager` 与 `Leelaz` lifecycle owner 各自持有 target、captured mirror、owner/admission、root/exact decision、reservation lifetime、readiness、availability、restart board fence 与 ponder disposition；本轮不新增通用 lifecycle module。
 - lifecycle handoff、root initialization/payload/route state、reservation acquisition、restart orchestration、endpoint inclusion、ponder disposition 与 raw target/mirror getter 不属于 exact module；`LifecycleRestoreHandoff`、`mirrorLifecycleOwnedByOperation`、precommand choreography 和 `capturedKomi()` introspection 均不保留。

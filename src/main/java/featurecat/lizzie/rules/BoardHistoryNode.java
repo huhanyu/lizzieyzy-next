@@ -771,10 +771,10 @@ public class BoardHistoryNode {
     if (stepIn) {
       Leelaz engine = Lizzie.leelaz;
       boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
-      Leelaz.ExactSnapshotRestorePermit permit =
-          engine.captureBoardSyncExactSnapshotRestorePermit();
+      Leelaz.ExactSnapshotRestoreAdmission admission =
+          engine.captureBoardSyncExactSnapshotRestoreAdmission();
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
-          ExactSnapshotEngineRestore.prepareWithAdmission(permit, this, null).orElseThrow();
+          ExactSnapshotEngineRestore.prepare(admission, this).orElseThrow();
       engine.notPondering();
       executePreparedRestore(engine, preparedRestore, resumePonder);
     } else {
@@ -790,10 +790,10 @@ public class BoardHistoryNode {
     }
     Leelaz engine = Lizzie.leelaz;
     boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
-    Leelaz.ExactSnapshotRestorePermit permit =
-        engine.captureBoardSyncExactSnapshotRestorePermit();
+    Leelaz.ExactSnapshotRestoreAdmission admission =
+        engine.captureBoardSyncExactSnapshotRestoreAdmission();
     ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
-        ExactSnapshotEngineRestore.prepareWithAdmission(permit, this, null).orElseThrow();
+        ExactSnapshotEngineRestore.prepare(admission, this).orElseThrow();
     engine.notPondering();
     executePreparedRestore(engine, preparedRestore, resumePonder);
     return true;

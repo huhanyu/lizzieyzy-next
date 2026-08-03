@@ -3119,9 +3119,9 @@ public class EngineManager {
           targetEngine.captureExactSnapshotRestoreAdmission(
               Leelaz.ExactSnapshotRestoreOwner.LIFECYCLE, owner, mirrorEngine);
       Optional<ExactSnapshotEngineRestore.PreparedRestore> exactRestore = Optional.empty();
-      if (historyTarget != null && komi != null) {
+      if (historyTarget != null) {
         exactRestore =
-            ExactSnapshotEngineRestore.prepareWithAdmission(admission, historyTarget, komi);
+            ExactSnapshotEngineRestore.prepare(admission, historyTarget);
       }
       return new PreparedLifecycleRestore(
           previousEngine,

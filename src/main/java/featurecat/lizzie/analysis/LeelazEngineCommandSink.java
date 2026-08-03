@@ -56,7 +56,7 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
             null,
             engine.resolveLoadSgfMirrorEngine());
     java.util.Optional<ExactSnapshotEngineRestore.PreparedRestore> preparedRestore =
-        ExactSnapshotEngineRestore.prepareWithAdmission(admission, target, null);
+        ExactSnapshotEngineRestore.prepare(admission, target);
     // 先停 ponder，避免后续 sync 命令期间 KataGo 仍在跑旧 ponder 输出 info 行
     engine.notPondering();
     engine.nameCmdfornoponder();

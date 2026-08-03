@@ -249,10 +249,9 @@ class BoardMovelistExportTest {
       assertThrows(
           IllegalStateException.class,
           () ->
-              ExactSnapshotEngineRestore.prepareCurrentPositionWithAdmission(
-                      engine.captureBoardSyncExactSnapshotRestorePermit(),
-                      snapshotRootNeedingBookkeepingPass(),
-                      null)
+              ExactSnapshotEngineRestore.prepareCurrentPosition(
+                      engine.captureBoardSyncExactSnapshotRestoreAdmission(),
+                      snapshotRootNeedingBookkeepingPass())
                   .execute());
 
       assertTempFileEventuallyDeleted(
@@ -277,10 +276,9 @@ class BoardMovelistExportTest {
           new Thread(
               () -> {
                 try {
-                  ExactSnapshotEngineRestore.prepareCurrentPositionWithAdmission(
-                          engine.captureBoardSyncExactSnapshotRestorePermit(),
-                          snapshotRootNeedingBookkeepingPass(),
-                          null)
+                  ExactSnapshotEngineRestore.prepareCurrentPosition(
+                          engine.captureBoardSyncExactSnapshotRestoreAdmission(),
+                          snapshotRootNeedingBookkeepingPass())
                       .execute();
                 } catch (Throwable failure) {
                   restoreFailure.set(failure);
@@ -737,7 +735,7 @@ class BoardMovelistExportTest {
   }
 
   @Test
-  void resendMoveToEngineSnapshotRestoreSyncsLoadedGameKomiBeforeLoadsgf() throws Exception {
+  void resendMoveToEngineSnapshotRestoreLoadsGameKomiWithoutPreSync() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     Board previousBoard = Lizzie.board;
     double previousDefaultKomi = GameInfo.DEFAULT_KOMI;
@@ -758,9 +756,9 @@ class BoardMovelistExportTest {
       engine.orikomi = 7.5f;
       board.resendMoveToEngine(engine, false);
 
-      assertTrue(
+      assertFalse(
           engine.recordedCommands().contains("komi 0"),
-          "engine replay should sync to the loaded game's komi before clear/loadsgf.");
+          "exact snapshot restore must not issue a komi precommand before clear/loadsgf.");
       assertFalse(
           engine.loadedSgf().contains("KM[7.5]"),
           "stale engine komi must not leak into KataGo loadsgf.");

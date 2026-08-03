@@ -2951,7 +2951,7 @@ class EngineManagerLifecycleReservationTest {
         boolean loadEngine,
         boolean isEngineGame,
         ArrayList<featurecat.lizzie.rules.Movelist> moves,
-        Double capturedKomi) {
+        Double gameKomi) {
       rootRestoreReceived = true;
       engineGameInitialization = isEngineGame;
       restoreCompleted.countDown();
@@ -3208,10 +3208,10 @@ class EngineManagerLifecycleReservationTest {
         boolean loadEngine,
         boolean isEngineGame,
         ArrayList<featurecat.lizzie.rules.Movelist> moves,
-        Double capturedKomi) {
+        Double gameKomi) {
       rootRestoreCount++;
       rootMoves = featurecat.lizzie.rules.Movelist.copyList(moves);
-      rootKomi = capturedKomi;
+      rootKomi = gameKomi;
     }
   }
 

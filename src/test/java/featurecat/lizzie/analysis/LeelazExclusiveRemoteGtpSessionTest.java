@@ -1457,7 +1457,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
           harness
               .output
               .toString(StandardCharsets.UTF_8)
-              .contains("\nkomi 7.5\nkata-set-rules " + originalRules + "\n"));
+              .contains("\nkata-set-rules " + originalRules + "\n"));
       completeForegroundRestore(harness.engine);
     } finally {
       harness.close();
@@ -1669,11 +1669,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
       assertTrue(dispatch(harness.engine, "=800000001"));
       assertTrue(dispatch(harness.engine, ""));
-      waitUntil(() -> harness.board.resendCount == 1 || failures.get() == 1);
-      if (failures.get() == 0) {
-        completeForegroundRestore(harness.engine);
-      }
-      waitUntil(() -> failures.get() == 1 || harness.completions.get() == 1);
+      waitUntil(() -> failures.get() == 1);
 
       assertFalse(harness.engine.isLoaded());
       assertEquals(0, harness.completions.get());
