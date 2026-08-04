@@ -183,9 +183,19 @@ class R2ReleaseTest(unittest.TestCase):
         def put(client, bucket, key, body, **kwargs):
             events.append(("put", key))
 
-        with mock.patch.object(r2_release, "verify_public_objects", side_effect=verify), mock.patch.object(
-            r2_release, "put_bytes", side_effect=put
-        ):
+        with mock.patch.object(
+            r2_release, "verify_public_objects", side_effect=verify
+        ), mock.patch.object(
+            r2_release,
+            "verify_public_homepage",
+            side_effect=lambda public_base: events.append(("verify-home", public_base)),
+        ), mock.patch.object(
+            r2_release,
+            "verify_public_stable_channel",
+            side_effect=lambda public_base, **kwargs: events.append(
+                ("verify-channel", public_base)
+            ),
+        ), mock.patch.object(r2_release, "put_bytes", side_effect=put):
             catalog_body, envelope_body = r2_release.verify_and_activate_stable_channel(
                 object(),
                 "bucket",
@@ -197,12 +207,114 @@ class R2ReleaseTest(unittest.TestCase):
             )
 
         self.assertEqual("verify", events[0][0])
+        self.assertEqual("verify-home", events[1][0])
         self.assertEqual(
             "channels/stable/update-envelope.json",
-            events[-1][1],
+            [event for event in events if event[0] == "put"][-1][1],
         )
+        self.assertEqual("verify-channel", events[-1][0])
         self.assertEqual({"tag": TAG}, json.loads(catalog_body))
         self.assertEqual({"payload": "signed"}, json.loads(envelope_body))
+
+    def test_public_homepage_route_accepts_cache_busting_query(self):
+        response = mock.Mock(
+            status_code=200,
+            url=r2_release.DEFAULT_PUBLIC_BASE + "/?r2-verify=1-1",
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+        response.iter_content.return_value = iter([b"<title>LizzieYzy Next</title>"])
+        requests = mock.Mock()
+        requests.RequestException = RuntimeError
+        requests.get.return_value = response
+
+        with mock.patch.dict(sys.modules, {"requests": requests}), mock.patch.object(
+            r2_release.time, "time", return_value=1
+        ):
+            r2_release.verify_public_homepage(r2_release.DEFAULT_PUBLIC_BASE)
+
+        requested_url = requests.get.call_args.args[0]
+        self.assertEqual(
+            r2_release.DEFAULT_PUBLIC_BASE + "/?r2-verify=1-1", requested_url
+        )
+        self.assertTrue(requests.get.call_args.kwargs["stream"])
+        response.close.assert_called_once_with()
+
+    def test_public_stable_channel_matches_exact_uploaded_bodies(self):
+        bodies = {
+            r2_release.DEFAULT_PUBLIC_BASE + "/": b"<title>LizzieYzy Next</title>",
+            r2_release.DEFAULT_PUBLIC_BASE + "/index.html": b"<title>LizzieYzy Next</title>",
+            r2_release.DEFAULT_PUBLIC_BASE
+            + "/channels/stable/catalog.json": b'{"releaseTag":"test"}\n',
+            r2_release.DEFAULT_PUBLIC_BASE
+            + "/channels/stable/update-envelope.json": b'{"payload":"signed"}\n',
+        }
+
+        def response_for(url, **kwargs):
+            base_url = url.split("?", 1)[0]
+            response = mock.Mock(
+                status_code=200,
+                url=url,
+                headers={
+                    "Content-Type": (
+                        "text/html; charset=utf-8"
+                        if base_url.endswith("/") or base_url.endswith("index.html")
+                        else "application/json; charset=utf-8"
+                    )
+                },
+            )
+            response.iter_content.return_value = iter([bodies[base_url]])
+            return response
+
+        requests = mock.Mock()
+        requests.RequestException = RuntimeError
+        requests.get.side_effect = response_for
+        with mock.patch.dict(sys.modules, {"requests": requests}), mock.patch.object(
+            r2_release.time, "time", return_value=2
+        ):
+            r2_release.verify_public_stable_channel(
+                r2_release.DEFAULT_PUBLIC_BASE,
+                index_body=bodies[r2_release.DEFAULT_PUBLIC_BASE + "/"],
+                catalog_body=bodies[
+                    r2_release.DEFAULT_PUBLIC_BASE + "/channels/stable/catalog.json"
+                ],
+                envelope_body=bodies[
+                    r2_release.DEFAULT_PUBLIC_BASE
+                    + "/channels/stable/update-envelope.json"
+                ],
+            )
+
+        self.assertEqual(4, requests.get.call_count)
+        self.assertTrue(
+            all("?r2-verify=2-1" in call.args[0] for call in requests.get.call_args_list)
+        )
+
+    def test_public_stable_channel_rejects_body_mismatch(self):
+        def mismatched_response(url, **kwargs):
+            response = mock.Mock(
+                status_code=200,
+                url=url,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+            response.iter_content.return_value = iter([b"stale homepage"])
+            return response
+
+        requests = mock.Mock()
+        requests.RequestException = RuntimeError
+        requests.get.side_effect = mismatched_response
+        with mock.patch.dict(sys.modules, {"requests": requests}), mock.patch.object(
+            r2_release.time, "time", return_value=3
+        ), mock.patch.object(r2_release.time, "sleep") as sleep, self.assertRaisesRegex(
+            r2_release.ReleaseError, "download homepage after 5 attempts"
+        ):
+            r2_release.verify_public_stable_channel(
+                r2_release.DEFAULT_PUBLIC_BASE,
+                index_body=b"fresh homepage",
+                catalog_body=b"{}\n",
+                envelope_body=b"{}\n",
+            )
+
+        self.assertEqual(r2_release.PUBLIC_VERIFY_ATTEMPTS, requests.get.call_count)
+        self.assertEqual(r2_release.PUBLIC_VERIFY_ATTEMPTS - 1, sleep.call_count)
 
     def test_public_range_verification_retries_transient_failure(self):
         selected = r2_release.select_r2_assets(
