@@ -20,6 +20,11 @@ Windows 安装器、Linux 包、pre-release 和历史版本不占用 R2。版本
 - `channels/stable/catalog.json`
 - `index.html`
 
+R2 自定义域名本身不会把 `/` 自动映射到 `index.html`。Cloudflare URL 重写规则必须使用
+`URI Path equals /`，将路径重写为 `/index.html`，并保留原查询字符串。不要按完整 URL
+精确匹配，否则 `/?source=...` 这类正常链接会返回 404。发布器会用带缓存穿透参数的根地址
+验证这条规则。
+
 镜像资产总量不得超过 `9,000,000,000` 字节。门禁失败、旧版本对象清理失败或任一 SHA-256
 不一致时，GitHub Release 保持原状态，不会被晋升为正式版。
 
@@ -32,10 +37,11 @@ Windows 安装器、Linux 包、pre-release 和历史版本不占用 R2。版本
 2. 先把下载首页切换到 GitHub 维护模式，再删除旧 R2 正式版对象。
 3. 使用 GitHub HTTP Range 与 R2 multipart 流式上传，不在 runner 保存完整大包。
 4. 上传过程中计算完整 SHA-256；上传后再核对 R2 对象大小和 SHA 元数据。
-5. 通过自定义域名检查 HTTPS、长度、Range、缓存和下载响应头。
+5. 通过自定义域名检查 HTTPS、长度、Range、缓存、下载响应头和根首页重写。
 6. 发布 catalog 与下载首页，最后发布签名 envelope 作为稳定频道的激活指针。
-7. 将 v2 签名清单、catalog 和旧客户端使用的 v1 GitHub 清单上传到 Release。
-8. 最后才把 GitHub pre-release 改为正式版和 latest。
+7. 使用缓存穿透参数逐字节核对公网首页、catalog 和 envelope 与本次上传内容一致。
+8. 将 v2 签名清单、catalog 和旧客户端使用的 v1 GitHub 清单上传到 Release。
+9. 最后才把 GitHub pre-release 改为正式版和 latest。
 
 重复执行同一 tag 会复用大小与 SHA 已匹配的 R2 对象。已是正式版时，只有明确启用
 `allow_stable_recovery` 才能恢复稳定频道。

@@ -32,6 +32,7 @@ MULTIPART_PART_SIZE = 64 * 1024 * 1024
 SMALL_OBJECT_LIMIT = 16 * 1024 * 1024
 PUBLIC_VERIFY_ATTEMPTS = 5
 PUBLIC_VERIFY_BACKOFF_SECONDS = (2, 4, 8, 16)
+MAX_PUBLIC_METADATA_BYTES = 2 * 1024 * 1024
 
 WINDOWS_PORTABLE = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2})-windows64\."
@@ -852,6 +853,146 @@ def verify_public_objects(public_base: str, assets: Iterable[Asset]) -> None:
                 time.sleep(delay)
 
 
+def _cache_busted_url(url: str, attempt: int) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}r2-verify={int(time.time())}-{attempt}"
+
+
+def _verify_public_document(
+    requests,
+    url: str,
+    *,
+    expected_content_type: str,
+    expected_body: bytes | None = None,
+    required_marker: bytes | None = None,
+) -> None:
+    response = requests.get(
+        url,
+        headers={
+            "Accept-Encoding": "identity",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+        allow_redirects=True,
+        timeout=60,
+        stream=True,
+    )
+    try:
+        if response.status_code != 200:
+            raise ReleaseError(f"GET returned HTTP {response.status_code}")
+        expected_host = urllib.parse.urlparse(url).hostname
+        final_host = urllib.parse.urlparse(str(response.url)).hostname
+        if final_host != expected_host:
+            raise ReleaseError(
+                f"request redirected from {expected_host} to {final_host}"
+            )
+        actual_type = response.headers.get("Content-Type", "").lower()
+        if not actual_type.startswith(expected_content_type.lower()):
+            raise ReleaseError(
+                f"Content-Type is {actual_type!r}, expected {expected_content_type!r}"
+            )
+
+        body = bytearray()
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            body.extend(chunk)
+            if len(body) > MAX_PUBLIC_METADATA_BYTES:
+                raise ReleaseError(
+                    f"response exceeds {MAX_PUBLIC_METADATA_BYTES} bytes"
+                )
+        actual_body = bytes(body)
+        if expected_body is not None and actual_body != expected_body:
+            actual_sha = hashlib.sha256(actual_body).hexdigest()[:12]
+            expected_sha = hashlib.sha256(expected_body).hexdigest()[:12]
+            raise ReleaseError(
+                "public body differs from the uploaded object "
+                f"({len(actual_body)} bytes, sha256 {actual_sha}; expected "
+                f"{len(expected_body)} bytes, sha256 {expected_sha})"
+            )
+        if required_marker is not None and required_marker not in actual_body:
+            raise ReleaseError("public body is missing the expected page marker")
+    finally:
+        response.close()
+
+
+def _verify_public_with_retry(requests, description: str, url: str, **kwargs) -> None:
+    for attempt in range(1, PUBLIC_VERIFY_ATTEMPTS + 1):
+        request_url = _cache_busted_url(url, attempt)
+        try:
+            _verify_public_document(requests, request_url, **kwargs)
+            return
+        except (ReleaseError, requests.RequestException) as exc:
+            if attempt == PUBLIC_VERIFY_ATTEMPTS:
+                raise ReleaseError(
+                    f"Public R2 verification failed for {description} after "
+                    f"{PUBLIC_VERIFY_ATTEMPTS} attempts: {exc}"
+                ) from exc
+            delay = PUBLIC_VERIFY_BACKOFF_SECONDS[attempt - 1]
+            print(
+                f"Public R2 verification retry {attempt}/"
+                f"{PUBLIC_VERIFY_ATTEMPTS} for {description} in {delay}s: {exc}",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+
+
+def verify_public_homepage(public_base: str) -> None:
+    try:
+        import requests
+    except ImportError as exc:
+        raise ReleaseError("requests is required for public R2 verification") from exc
+    if not public_base.lower().startswith("https://"):
+        raise ReleaseError("Public R2 base URL must use HTTPS")
+    _verify_public_with_retry(
+        requests,
+        "download homepage route",
+        public_base.rstrip("/") + "/",
+        expected_content_type="text/html",
+        required_marker=b"LizzieYzy Next",
+    )
+
+
+def verify_public_stable_channel(
+    public_base: str,
+    *,
+    index_body: bytes,
+    catalog_body: bytes,
+    envelope_body: bytes,
+) -> None:
+    try:
+        import requests
+    except ImportError as exc:
+        raise ReleaseError("requests is required for public R2 verification") from exc
+    if not public_base.lower().startswith("https://"):
+        raise ReleaseError("Public R2 base URL must use HTTPS")
+    base = public_base.rstrip("/")
+    documents = (
+        ("download homepage", base + "/", "text/html", index_body),
+        ("download index", base + "/index.html", "text/html", index_body),
+        (
+            "stable catalog",
+            base + "/channels/stable/catalog.json",
+            "application/json",
+            catalog_body,
+        ),
+        (
+            "stable update envelope",
+            base + "/channels/stable/update-envelope.json",
+            "application/json",
+            envelope_body,
+        ),
+    )
+    for description, url, content_type, expected_body in documents:
+        _verify_public_with_retry(
+            requests,
+            description,
+            url,
+            expected_content_type=content_type,
+            expected_body=expected_body,
+        )
+
+
 def verify_and_activate_stable_channel(
     client,
     bucket: str,
@@ -865,6 +1006,7 @@ def verify_and_activate_stable_channel(
     asset_list = list(assets)
     if not skip_public_verify:
         verify_public_objects(public_base, asset_list)
+        verify_public_homepage(public_base)
 
     catalog_body = json_bytes(catalog)
     envelope_body = json_bytes(envelope)
@@ -892,6 +1034,13 @@ def verify_and_activate_stable_channel(
         envelope_body,
         cache_control="public, max-age=60, must-revalidate",
     )
+    if not skip_public_verify:
+        verify_public_stable_channel(
+            public_base,
+            index_body=index_body,
+            catalog_body=catalog_body,
+            envelope_body=envelope_body,
+        )
     return catalog_body, envelope_body
 
 
