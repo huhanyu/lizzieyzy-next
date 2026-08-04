@@ -24,9 +24,56 @@ class KataGoTuningProfileStoreTest {
     Optional<KataGoTuningProfile> decoded = KataGoTuningProfile.fromJson(profile.toJson());
 
     assertEquals(Optional.of(profile), decoded);
+    assertEquals(KataGoTuningProfile.Mode.EXPERIMENTAL_HARDWARE, decoded.orElseThrow().mode());
+    assertTrue(decoded.orElseThrow().managesHardwareSettings());
     assertEquals(List.of(0, 0, 100), decoded.orElseThrow().devices());
     assertEquals(7, decoded.orElseThrow().searchThreads());
     assertEquals(1_729_999_123_456L, decoded.orElseThrow().updatedAtMillis());
+    assertEquals(KataGoTuningProfile.SCHEMA_VERSION, profile.toJson().getInt("schemaVersion"));
+    assertEquals("EXPERIMENTAL_HARDWARE", profile.toJson().getString("mode"));
+  }
+
+  @Test
+  void officialThreadProfileRoundTripsWithoutHardwareOverrides() throws IOException {
+    KataGoTuningFingerprint fingerprint = fingerprint("Apple M4 Pro");
+    KataGoTuningProfile profile =
+        KataGoTuningProfile.officialThreads(
+            fingerprint,
+            3,
+            new KataGoTuningProfile.Metrics(100, 100, 88.5, 101.0, 42.0, 2.4),
+            "Metal",
+            1_729_999_123_456L);
+
+    JSONObject json = profile.toJson();
+    Optional<KataGoTuningProfile> decoded = KataGoTuningProfile.fromJson(json);
+
+    assertEquals(Optional.of(profile), decoded);
+    assertEquals(KataGoTuningProfile.Mode.OFFICIAL_THREADS, profile.mode());
+    assertFalse(profile.managesHardwareSettings());
+    assertTrue(profile.devices().isEmpty());
+    assertEquals(0, profile.batch());
+    assertFalse(json.has("devices"));
+    assertFalse(json.has("batch"));
+    assertEquals("OFFICIAL_THREADS", json.getString("mode"));
+
+    JSONObject backingJson = new JSONObject();
+    KataGoTuningStore store = new KataGoTuningStore(backingJson);
+    store.save(profile);
+    assertEquals(Optional.of(profile), store.loadMatching(fingerprint));
+  }
+
+  @Test
+  void legacyJsonWithoutModeMigratesAsExperimentalHardwareProfile() {
+    KataGoTuningProfile expected = profile("fingerprint-a");
+    JSONObject legacy = expected.toJson();
+    legacy.remove("schemaVersion");
+    legacy.remove("mode");
+
+    Optional<KataGoTuningProfile> decoded = KataGoTuningProfile.fromJson(legacy);
+
+    assertEquals(Optional.of(expected), decoded);
+    assertEquals(KataGoTuningProfile.Mode.EXPERIMENTAL_HARDWARE, decoded.orElseThrow().mode());
+    assertTrue(decoded.orElseThrow().managesHardwareSettings());
   }
 
   @Test
@@ -76,6 +123,27 @@ class KataGoTuningProfileStoreTest {
     JSONObject unsafeMixedBatch =
         profile("fingerprint-a").toJson().put("devices", List.of(0, 100)).put("batch", 1);
     backingJson.put(KataGoTuningStore.KEY, unsafeMixedBatch);
+    assertFalse(store.hasStoredProfile());
+
+    JSONObject unsupportedSchema = profile("fingerprint-a").toJson().put("schemaVersion", 999);
+    backingJson.put(KataGoTuningStore.KEY, unsupportedSchema);
+    assertFalse(store.hasStoredProfile());
+
+    JSONObject unknownMode = profile("fingerprint-a").toJson().put("mode", "FUTURE_MODE");
+    backingJson.put(KataGoTuningStore.KEY, unknownMode);
+    assertFalse(store.hasStoredProfile());
+
+    JSONObject officialWithHardwareFields =
+        KataGoTuningProfile.officialThreads(
+                "fingerprint-a",
+                2,
+                new KataGoTuningProfile.Metrics(1, 1, 80.0, 80.0, 40.0, 2.0),
+                "Metal",
+                123L)
+            .toJson()
+            .put("devices", List.of(0))
+            .put("batch", 1);
+    backingJson.put(KataGoTuningStore.KEY, officialWithHardwareFields);
     assertFalse(store.hasStoredProfile());
 
     store.save(profile("fingerprint-a"));

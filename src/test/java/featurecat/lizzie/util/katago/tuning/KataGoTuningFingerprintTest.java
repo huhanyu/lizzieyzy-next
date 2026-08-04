@@ -28,7 +28,7 @@ class KataGoTuningFingerprintTest {
     ArtifactSet baselineFiles = createArtifacts("baseline", "engine-v1", "model-v1", "config-v1");
     KataGoTuningFingerprint baseline = fingerprint(baselineFiles, hardware("Apple M4 Pro"));
 
-    assertEquals(2, baseline.plannerVersion());
+    assertEquals(3, baseline.plannerVersion());
 
     KataGoTuningFingerprint changedEngine =
         fingerprint(

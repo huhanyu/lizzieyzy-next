@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentMap;
 /** Content-addressed identity for the host, engine, model, config, and tuning algorithm. */
 public final class KataGoTuningFingerprint {
   public static final int SCHEMA_VERSION = 1;
-  public static final int PLANNER_VERSION = 2;
+  public static final int PLANNER_VERSION = 3;
 
   private static final int HASH_BUFFER_BYTES = 64 * 1024;
   private static final int MAX_STABLE_HASH_ATTEMPTS = 3;

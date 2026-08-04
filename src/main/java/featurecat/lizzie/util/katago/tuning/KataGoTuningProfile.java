@@ -9,6 +9,7 @@ import org.json.JSONObject;
 /** The selected runtime settings and benchmark evidence for one tuning fingerprint. */
 public record KataGoTuningProfile(
     String fingerprintDigest,
+    Mode mode,
     List<Integer> devices,
     int batch,
     int threads,
@@ -16,29 +17,47 @@ public record KataGoTuningProfile(
     String backend,
     long updatedAt) {
 
+  public static final int SCHEMA_VERSION = 2;
+
+  /**
+   * Whether a profile owns only KataGo's thread recommendation or the Metal hardware layout too.
+   */
+  public enum Mode {
+    OFFICIAL_THREADS,
+    EXPERIMENTAL_HARDWARE
+  }
+
   public KataGoTuningProfile {
     fingerprintDigest = normalize(fingerprintDigest);
     if (fingerprintDigest.isEmpty()) {
       throw new IllegalArgumentException("fingerprintDigest must not be blank");
     }
-    if (devices == null || devices.isEmpty()) {
-      throw new IllegalArgumentException("devices must not be empty");
-    }
-    devices = List.copyOf(devices);
-    for (Integer device : devices) {
-      if (device == null
-          || (device != KataGoTuningCandidate.METAL_GPU
-              && device != KataGoTuningCandidate.METAL_ANE)) {
-        throw new IllegalArgumentException("devices must contain only Metal GPU or ANE lanes");
+    Objects.requireNonNull(mode, "mode");
+    devices = devices == null ? List.of() : List.copyOf(devices);
+    if (mode == Mode.OFFICIAL_THREADS) {
+      if (!devices.isEmpty() || batch != 0) {
+        throw new IllegalArgumentException(
+            "official thread profiles must not contain hardware settings");
       }
-    }
-    if (batch <= 0 || batch > 65536) {
-      throw new IllegalArgumentException("batch must be between 1 and 65536");
-    }
-    if (batch == 1
-        && devices.contains(KataGoTuningCandidate.METAL_GPU)
-        && devices.contains(KataGoTuningCandidate.METAL_ANE)) {
-      throw new IllegalArgumentException("mixed GPU/ANE topology must not use batch 1");
+    } else {
+      if (devices.isEmpty()) {
+        throw new IllegalArgumentException("experimental hardware profiles must contain devices");
+      }
+      for (Integer device : devices) {
+        if (device == null
+            || (device != KataGoTuningCandidate.METAL_GPU
+                && device != KataGoTuningCandidate.METAL_ANE)) {
+          throw new IllegalArgumentException("devices must contain only Metal GPU or ANE lanes");
+        }
+      }
+      if (batch <= 0 || batch > 65536) {
+        throw new IllegalArgumentException("batch must be between 1 and 65536");
+      }
+      if (batch == 1
+          && devices.contains(KataGoTuningCandidate.METAL_GPU)
+          && devices.contains(KataGoTuningCandidate.METAL_ANE)) {
+        throw new IllegalArgumentException("mixed GPU/ANE topology must not use batch 1");
+      }
     }
     if (threads <= 0 || threads > 4096) {
       throw new IllegalArgumentException("threads must be between 1 and 4096");
@@ -48,6 +67,26 @@ public record KataGoTuningProfile(
     if (updatedAt < 0L) {
       throw new IllegalArgumentException("updatedAt must not be negative");
     }
+  }
+
+  /** Backwards-compatible constructor for the original hardware-owning tuning profile. */
+  public KataGoTuningProfile(
+      String fingerprintDigest,
+      List<Integer> devices,
+      int batch,
+      int threads,
+      Metrics metrics,
+      String backend,
+      long updatedAt) {
+    this(
+        fingerprintDigest,
+        Mode.EXPERIMENTAL_HARDWARE,
+        devices,
+        batch,
+        threads,
+        metrics,
+        backend,
+        updatedAt);
   }
 
   public KataGoTuningProfile(
@@ -66,6 +105,40 @@ public record KataGoTuningProfile(
         metrics,
         backend,
         updatedAt);
+  }
+
+  /** Creates a profile that applies only the thread count chosen by KataGo's official benchmark. */
+  public static KataGoTuningProfile officialThreads(
+      KataGoTuningFingerprint fingerprint,
+      int threads,
+      Metrics metrics,
+      String backend,
+      long updatedAt) {
+    return officialThreads(
+        Objects.requireNonNull(fingerprint, "fingerprint").canonicalDigest(),
+        threads,
+        metrics,
+        backend,
+        updatedAt);
+  }
+
+  /** Digest-based variant useful when the caller already has a canonical fingerprint. */
+  public static KataGoTuningProfile officialThreads(
+      String fingerprintDigest, int threads, Metrics metrics, String backend, long updatedAt) {
+    return new KataGoTuningProfile(
+        fingerprintDigest,
+        Mode.OFFICIAL_THREADS,
+        List.of(),
+        0,
+        threads,
+        metrics,
+        backend,
+        updatedAt);
+  }
+
+  /** Official profiles leave Metal devices and batch size under KataGo's own defaults. */
+  public boolean managesHardwareSettings() {
+    return mode == Mode.EXPERIMENTAL_HARDWARE;
   }
 
   public KataGoTuningProfile(
@@ -90,18 +163,23 @@ public record KataGoTuningProfile(
   }
 
   public JSONObject toJson() {
-    JSONArray deviceArray = new JSONArray();
-    for (Integer device : devices) {
-      deviceArray.put(device.intValue());
+    JSONObject json =
+        new JSONObject()
+            .put("schemaVersion", SCHEMA_VERSION)
+            .put("mode", mode.name())
+            .put("fingerprint", fingerprintDigest)
+            .put("threads", threads)
+            .put("metrics", metrics.toJson())
+            .put("backend", backend)
+            .put("updatedAt", updatedAt);
+    if (managesHardwareSettings()) {
+      JSONArray deviceArray = new JSONArray();
+      for (Integer device : devices) {
+        deviceArray.put(device.intValue());
+      }
+      json.put("devices", deviceArray).put("batch", batch);
     }
-    return new JSONObject()
-        .put("fingerprint", fingerprintDigest)
-        .put("devices", deviceArray)
-        .put("batch", batch)
-        .put("threads", threads)
-        .put("metrics", metrics.toJson())
-        .put("backend", backend)
-        .put("updatedAt", updatedAt);
+    return json;
   }
 
   /** Parses and validates persisted data, returning empty for any corrupt or incompatible value. */
@@ -110,24 +188,46 @@ public record KataGoTuningProfile(
       return Optional.empty();
     }
     try {
+      boolean legacyHardwareProfile = !json.has("schemaVersion") && !json.has("mode");
+      Mode parsedMode;
+      if (legacyHardwareProfile) {
+        if (!json.has("devices") || !json.has("batch")) {
+          return Optional.empty();
+        }
+        parsedMode = Mode.EXPERIMENTAL_HARDWARE;
+      } else {
+        if (json.getInt("schemaVersion") != SCHEMA_VERSION) {
+          return Optional.empty();
+        }
+        parsedMode = Mode.valueOf(json.getString("mode"));
+      }
       String fingerprint =
           json.has("fingerprint")
               ? json.getString("fingerprint")
               : json.getString("fingerprintDigest");
-      JSONArray deviceArray = json.getJSONArray("devices");
-      if (deviceArray.isEmpty()) {
+      List<Integer> parsedDevices = List.of();
+      int parsedBatch = 0;
+      if (parsedMode == Mode.EXPERIMENTAL_HARDWARE) {
+        JSONArray deviceArray = json.getJSONArray("devices");
+        if (deviceArray.isEmpty()) {
+          return Optional.empty();
+        }
+        Integer[] devices = new Integer[deviceArray.length()];
+        for (int i = 0; i < deviceArray.length(); i++) {
+          devices[i] = Integer.valueOf(deviceArray.getInt(i));
+        }
+        parsedDevices = List.of(devices);
+        parsedBatch = json.getInt("batch");
+      } else if (json.has("devices") || json.has("batch")) {
         return Optional.empty();
-      }
-      Integer[] parsedDevices = new Integer[deviceArray.length()];
-      for (int i = 0; i < deviceArray.length(); i++) {
-        parsedDevices[i] = Integer.valueOf(deviceArray.getInt(i));
       }
       Metrics parsedMetrics = Metrics.fromJson(json.getJSONObject("metrics"));
       return Optional.of(
           new KataGoTuningProfile(
               fingerprint,
-              List.of(parsedDevices),
-              json.getInt("batch"),
+              parsedMode,
+              parsedDevices,
+              parsedBatch,
               json.has("threads") ? json.getInt("threads") : json.getInt("searchThreads"),
               parsedMetrics,
               json.optString("backend", ""),

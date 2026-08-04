@@ -18,10 +18,10 @@ import featurecat.lizzie.util.katago.tuning.AppleSiliconTuningPlanner;
 import featurecat.lizzie.util.katago.tuning.KataGoBenchmarkObservation;
 import featurecat.lizzie.util.katago.tuning.KataGoBenchmarkParser;
 import featurecat.lizzie.util.katago.tuning.KataGoCommandSpec;
+import featurecat.lizzie.util.katago.tuning.KataGoExperimentalTuningSelector;
 import featurecat.lizzie.util.katago.tuning.KataGoTuningCandidate;
 import featurecat.lizzie.util.katago.tuning.KataGoTuningFingerprint;
 import featurecat.lizzie.util.katago.tuning.KataGoTuningProfile;
-import featurecat.lizzie.util.katago.tuning.KataGoTuningSelector;
 import featurecat.lizzie.util.katago.tuning.KataGoTuningStore;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -223,7 +223,7 @@ public final class KataGoRuntimeHelper {
   private static final int BENCHMARK_PRE_POSITION_PROGRESS_CAP = 90;
   private static final int BENCHMARK_FINALIZING_PROGRESS = 880;
   private static final int BENCHMARK_PROGRESS_VISIBLE_CAP = 995;
-  private static final int APPLE_AUTO_OPTIMIZE_VERSION = 4;
+  private static final int APPLE_AUTO_OPTIMIZE_VERSION = 5;
   private static final int APPLE_AUTO_OPTIMIZE_DELAY_MILLIS = 8000;
   private static final int APPLE_AUTO_OPTIMIZE_READY_TIMEOUT_MILLIS = 45000;
   private static final long BENCHMARK_AUXILIARY_SHUTDOWN_WAIT_MILLIS = 2000L;
@@ -742,7 +742,7 @@ public final class KataGoRuntimeHelper {
     return launchCommand;
   }
 
-  private static List<String> applyStoredAppleTuningProfile(List<String> command, Path enginePath) {
+  static List<String> applyStoredAppleTuningProfile(List<String> command, Path enginePath) {
     if (!isAppleSiliconHost()
         || command == null
         || enginePath == null
@@ -760,19 +760,32 @@ public final class KataGoRuntimeHelper {
       return command;
     }
     try {
-      KataGoTuningFingerprint fingerprint =
+      KataGoTuningFingerprint officialFingerprint =
           KataGoTuningFingerprint.create(
               enginePath,
               modelPath,
               configPath,
               currentAppleHardwareProfile(),
-              tuningCommandSemantics(command));
-      Optional<KataGoTuningProfile> stored = tuningStore.loadMatching(fingerprint);
+              officialTuningCommandSemantics(command));
+      Optional<KataGoTuningProfile> stored = tuningStore.loadMatching(officialFingerprint);
+      if (stored.isEmpty()) {
+        KataGoTuningFingerprint experimentalFingerprint =
+            KataGoTuningFingerprint.create(
+                enginePath,
+                modelPath,
+                configPath,
+                currentAppleHardwareProfile(),
+                tuningCommandSemantics(command));
+        stored = tuningStore.loadMatching(experimentalFingerprint);
+      }
       if (stored.isEmpty()) {
         return command;
       }
 
       KataGoTuningProfile profile = stored.get();
+      if (!profile.managesHardwareSettings()) {
+        return mergeStoredAppleThreadProfile(command, profile.threads());
+      }
       KataGoTuningCandidate candidate =
           new KataGoTuningCandidate("stored", profile.devices(), profile.batch());
       return mergeStoredAppleTuningProfile(command, candidate, profile.threads());
@@ -825,6 +838,18 @@ public final class KataGoRuntimeHelper {
       managedOverrides.remove("numSearchThreads");
     }
     return commandSpec.withManagedOverrides(managedOverrides);
+  }
+
+  static List<String> mergeStoredAppleThreadProfile(List<String> command, int profileThreads) {
+    if (profileThreads <= 0 || profileThreads > 4096) {
+      throw new IllegalArgumentException("profileThreads must be between 1 and 4096");
+    }
+    KataGoCommandSpec commandSpec = KataGoCommandSpec.parse(command);
+    if (commandSpec.hasOverrideMatching(KataGoRuntimeHelper::isNumSearchThreadsOverride)) {
+      return command;
+    }
+    return commandSpec.withManagedOverrides(
+        Map.of("numSearchThreads", String.valueOf(profileThreads)));
   }
 
   /** Returns whether the effective launch command explicitly sets KataGo's search threads. */
@@ -1317,6 +1342,23 @@ public final class KataGoRuntimeHelper {
         null);
   }
 
+  /** Returns the displayed result only when it still belongs to the selected Apple setup. */
+  public static BenchmarkResult getStoredBenchmarkResult(SetupSnapshot snapshot) {
+    BenchmarkResult stored = getStoredBenchmarkResult();
+    if (stored == null || !isAppleSiliconOptimizationEligible(snapshot)) {
+      return stored;
+    }
+    String expectedSignature = buildBenchmarkSignature(snapshot);
+    String storedSignature = Lizzie.config.uiConfig.optString(BENCHMARK_SIGNATURE_KEY, "").trim();
+    boolean currentVersion =
+        Lizzie.config.uiConfig.optInt(APPLE_AUTO_OPTIMIZE_VERSION_KEY, 0)
+            == APPLE_AUTO_OPTIMIZE_VERSION;
+    boolean matchingProfile = matchingAppleTuningProfile(snapshot).isPresent();
+    return currentVersion && matchingProfile && expectedSignature.equals(storedSignature)
+        ? stored
+        : null;
+  }
+
   public static BenchmarkResult runBenchmark(
       SetupSnapshot snapshot, ProgressListener listener, DownloadSession session)
       throws IOException {
@@ -1506,9 +1548,38 @@ public final class KataGoRuntimeHelper {
     command.add(String.valueOf(BENCHMARK_VISITS));
     command.add("-time");
     command.add(String.valueOf(benchmarkTime));
-    command.add("-override-config");
-    command.add("logToStderr=false,logAllGTPCommunication=false,logSearchInfo=false");
+    command =
+        KataGoCommandSpec.parse(command)
+            .withForcedOverrides(inheritedOfficialBenchmarkOverrides(snapshot));
+    command =
+        KataGoCommandSpec.parse(command)
+            .withForcedOverrides(
+                Map.of(
+                    "logToStderr", "false",
+                    "logAllGTPCommunication", "false",
+                    "logSearchInfo", "false"));
     return prepareBundledLaunchCommand(command, snapshot.enginePath, LaunchPurpose.BENCHMARK);
+  }
+
+  private static Map<String, String> inheritedOfficialBenchmarkOverrides(SetupSnapshot snapshot) {
+    return officialBenchmarkOverrides(snapshotSourceCommand(snapshot));
+  }
+
+  static Map<String, String> officialBenchmarkOverrides(List<String> sourceCommand) {
+    Map<String, String> inherited = new LinkedHashMap<String, String>();
+    for (Map.Entry<String, String> entry :
+        KataGoCommandSpec.parse(sourceCommand == null ? List.of() : sourceCommand)
+            .effectiveOverrides()
+            .entrySet()) {
+      String key = entry.getKey();
+      if (!isNumSearchThreadsOverride(key)
+          && !"numAnalysisThreads".equalsIgnoreCase(key)
+          && !"numSearchThreadsPerAnalysisThread".equalsIgnoreCase(key)
+          && !"homeDataDir".equalsIgnoreCase(key)) {
+        inherited.put(key, entry.getValue());
+      }
+    }
+    return inherited;
   }
 
   static List<String> buildLayeredBenchmarkCommand(
@@ -1827,17 +1898,111 @@ public final class KataGoRuntimeHelper {
     if (snapshot == null) {
       snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
     }
-    boolean layeredAppleSilicon = isAppleSiliconOptimizationEligible(snapshot);
+    DownloadSession activeSession = session != null ? session : new DownloadSession();
+    boolean officialAppleSilicon = isAppleSiliconOptimizationEligible(snapshot);
     BenchmarkResult result =
-        layeredAppleSilicon
-            ? runLayeredAppleSiliconBenchmark(snapshot, listener, session)
-            : runBenchmark(snapshot, listener, session);
-    if (layeredAppleSilicon) {
+        officialAppleSilicon
+            ? runOfficialAppleSiliconBenchmark(snapshot, listener, activeSession)
+            : runBenchmark(snapshot, listener, activeSession);
+    if (officialAppleSilicon) {
       requireLayeredBenchmarkComputeIsolation();
     }
+    activeSession.throwIfCancelled();
     applyBenchmarkResult(result);
     rememberBenchmarkContext(snapshot, result);
     return result;
+  }
+
+  private static BenchmarkResult runOfficialAppleSiliconBenchmark(
+      SetupSnapshot snapshot, ProgressListener listener, DownloadSession session)
+      throws IOException {
+    validateBenchmarkSnapshot(snapshot);
+    DownloadSession activeSession = session != null ? session : new DownloadSession();
+    activeSession.throwIfCancelled();
+    requireLayeredBenchmarkComputeIsolation();
+    notifyProgress(
+        listener,
+        resource("AutoSetup.benchmarkPreparing", "Preparing benchmark and pausing analysis..."),
+        20L,
+        1000L);
+
+    KataGoTuningFingerprint fingerprint =
+        KataGoTuningFingerprint.create(
+            snapshot.enginePath,
+            snapshot.activeWeightPath,
+            snapshot.gtpConfigPath,
+            currentAppleHardwareProfile(),
+            officialTuningCommandSemantics(snapshotSourceCommand(snapshot)),
+            activeSession::throwIfCancelled);
+    activeSession.throwIfCancelled();
+
+    String output =
+        runBenchmarkProcess(
+            snapshot, buildBenchmarkCommand(snapshot), listener, activeSession, 0, true);
+    BenchmarkResult parsed = parseBenchmarkOutput(output);
+    if (parsed == null) {
+      throw benchmarkFailedException();
+    }
+    KataGoBenchmarkObservation observation = KataGoBenchmarkParser.parse(output, 0);
+    if (observation.failureDetected()) {
+      throw benchmarkFailedException();
+    }
+    KataGoTuningProfile.Metrics metrics =
+        observation
+            .recommendedMetric()
+            .map(KataGoTuningProfile.Metrics::from)
+            .orElseGet(() -> new KataGoTuningProfile.Metrics(0.0, 0.0, 0.0, 0.0));
+    String backend =
+        parsed.backendLabel == null || parsed.backendLabel.isEmpty()
+            ? observation.backend()
+            : parsed.backendLabel;
+    long completedAt = System.currentTimeMillis();
+    KataGoTuningProfile profile =
+        KataGoTuningProfile.officialThreads(
+            fingerprint, parsed.recommendedThreads, metrics, backend, completedAt);
+    String officialSummary =
+        "KataGo official benchmark (-time "
+            + resolveBenchmarkTimeSeconds()
+            + "s)"
+            + (parsed.summary == null || parsed.summary.isEmpty() ? "" : " | " + parsed.summary);
+    return new BenchmarkResult(
+        parsed.recommendedThreads,
+        parsed.currentThreads,
+        backend,
+        officialSummary,
+        completedAt,
+        "",
+        0,
+        metrics.visitsPerSecond(),
+        metrics.nnEvalsPerSecond(),
+        metrics.averageBatchSize(),
+        profile);
+  }
+
+  /** Runs the opt-in Apple Silicon GPU/ANE and batch search. This is never the default path. */
+  public static BenchmarkResult runExperimentalAppleSiliconBenchmarkAndApply(
+      SetupSnapshot snapshot, ProgressListener listener, DownloadSession session)
+      throws IOException {
+    if (snapshot == null) {
+      snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+    }
+    if (!isAppleSiliconOptimizationEligible(snapshot)) {
+      throw new IOException(
+          resource(
+              "AutoSetup.experimentalBenchmarkUnavailable",
+              "Experimental hardware tuning requires the bundled Apple Silicon Metal engine."));
+    }
+    DownloadSession activeSession = session != null ? session : new DownloadSession();
+    BenchmarkResult result = runLayeredAppleSiliconBenchmark(snapshot, listener, activeSession);
+    requireLayeredBenchmarkComputeIsolation();
+    activeSession.throwIfCancelled();
+    applyBenchmarkResult(result);
+    rememberBenchmarkContext(snapshot, result);
+    return result;
+  }
+
+  public static boolean isExperimentalAppleSiliconTuningAvailable(SetupSnapshot snapshot) {
+    return isAppleSiliconOptimizationEligible(snapshot);
   }
 
   private static BenchmarkResult runLayeredAppleSiliconBenchmark(
@@ -1848,9 +2013,7 @@ public final class KataGoRuntimeHelper {
     activeSession.throwIfCancelled();
     if (!isLayeredBenchmarkComputeIsolated()) {
       throw new IOException(
-          resource(
-              "AutoSetup.benchmarkFailed",
-              "Unable to run KataGo benchmark right now."));
+          resource("AutoSetup.benchmarkFailed", "Unable to run KataGo benchmark right now."));
     }
     notifyProgress(
         listener,
@@ -1874,11 +2037,16 @@ public final class KataGoRuntimeHelper {
       throw benchmarkFailedException();
     }
 
-    int totalSegments = candidates.size() * 2 + 2;
-    int segment = 1;
+    long scheduleSeed = System.nanoTime() ^ ((long) fingerprint.canonicalDigest().hashCode() << 32);
+    int totalSegments =
+        candidates.size()
+            + KataGoExperimentalTuningSelector.DEFAULT_SHORTLIST_LIMIT
+                * (1 + KataGoExperimentalTuningSelector.REQUIRED_VERIFICATION_SAMPLES);
+    int segment = 0;
     Map<KataGoTuningCandidate, KataGoBenchmarkObservation> smokeResults =
         new LinkedHashMap<KataGoTuningCandidate, KataGoBenchmarkObservation>();
-    for (KataGoTuningCandidate candidate : candidates) {
+    for (KataGoTuningCandidate candidate :
+        KataGoExperimentalTuningSelector.shuffledCopy(candidates, scheduleSeed)) {
       activeSession.throwIfCancelled();
       try {
         KataGoBenchmarkObservation observation =
@@ -1907,9 +2075,17 @@ public final class KataGoRuntimeHelper {
       throw benchmarkFailedException();
     }
 
+    List<KataGoTuningCandidate> shortlist =
+        KataGoExperimentalTuningSelector.shortlist(smokeResults);
+    if (shortlist.isEmpty()) {
+      throw new IOException(
+          "The mandatory single-GPU baseline did not complete the experimental smoke test.");
+    }
+
     Map<KataGoTuningCandidate, KataGoBenchmarkObservation> officialResults =
         new LinkedHashMap<KataGoTuningCandidate, KataGoBenchmarkObservation>();
-    for (KataGoTuningCandidate candidate : smokeResults.keySet()) {
+    for (KataGoTuningCandidate candidate :
+        KataGoExperimentalTuningSelector.shuffledCopy(shortlist, scheduleSeed ^ 0x5DEECE66DL)) {
       activeSession.throwIfCancelled();
       try {
         KataGoBenchmarkObservation observation =
@@ -1940,127 +2116,144 @@ public final class KataGoRuntimeHelper {
       }
       segment++;
     }
+    KataGoTuningCandidate baseline = shortlist.get(0);
+    if (!officialResults.containsKey(baseline)) {
+      throw new IOException(
+          "The mandatory single-GPU baseline did not complete KataGo's official thread search.");
+    }
 
-    IOException lastVerificationFailure = null;
-    while (!officialResults.isEmpty()) {
-      Optional<KataGoTuningSelector.Selection> selected =
-          selectByOfficialRecommendation(officialResults);
-      if (selected.isEmpty()) {
-        break;
-      }
-      KataGoTuningSelector.Selection selection = selected.get();
-      KataGoTuningCandidate candidate = selection.candidate();
-      try {
+    List<KataGoTuningCandidate> verificationCandidates =
+        shortlist.stream().filter(officialResults::containsKey).toList();
+    Map<KataGoTuningCandidate, List<KataGoBenchmarkObservation>> verificationSamples =
+        new LinkedHashMap<KataGoTuningCandidate, List<KataGoBenchmarkObservation>>();
+    for (KataGoTuningCandidate candidate : verificationCandidates) {
+      verificationSamples.put(candidate, new ArrayList<KataGoBenchmarkObservation>());
+    }
+    List<List<KataGoTuningCandidate>> verificationRounds =
+        KataGoExperimentalTuningSelector.verificationRounds(
+            verificationCandidates,
+            KataGoExperimentalTuningSelector.REQUIRED_VERIFICATION_SAMPLES,
+            scheduleSeed ^ 0x9E3779B97F4A7C15L);
+    int roundNumber = 0;
+    for (List<KataGoTuningCandidate> round : verificationRounds) {
+      roundNumber++;
+      for (KataGoTuningCandidate candidate : round) {
         activeSession.throwIfCancelled();
-        KataGoBenchmarkObservation verification =
-            runLayeredBenchmarkCell(
-                snapshot,
-                candidate,
-                selection.searchThreads(),
-                LAYERED_BENCHMARK_FINAL_POSITIONS,
-                LAYERED_BENCHMARK_FINAL_VISITS,
-                layeredProgressListener(
-                    listener,
-                    "Metal " + candidate.displayId() + " verification",
-                    segment,
-                    totalSegments),
-                activeSession);
-        KataGoBenchmarkObservation.ThreadMetrics verifiedMetrics =
-            verification
-                .recommendedMetric()
-                .orElseThrow(KataGoRuntimeHelper::benchmarkFailedException);
-        double referenceVisits = selection.metrics().visitsPerSecond();
-        double drift =
-            referenceVisits <= 0.0
-                ? 1.0
-                : Math.abs(verifiedMetrics.visitsPerSecond() - referenceVisits) / referenceVisits;
-        if (drift > 0.25) {
-          throw new IOException(
-              String.format(
-                  Locale.ROOT, "Benchmark stability check failed (%.0f%% drift).", drift * 100));
+        KataGoBenchmarkObservation official = officialResults.get(candidate);
+        try {
+          KataGoBenchmarkObservation verification =
+              runLayeredBenchmarkCell(
+                  snapshot,
+                  candidate,
+                  official.recommendedThreads(),
+                  LAYERED_BENCHMARK_FINAL_POSITIONS,
+                  LAYERED_BENCHMARK_FINAL_VISITS,
+                  layeredProgressListener(
+                      listener,
+                      "Metal "
+                          + candidate.displayId()
+                          + " verification "
+                          + roundNumber
+                          + "/"
+                          + KataGoExperimentalTuningSelector.REQUIRED_VERIFICATION_SAMPLES,
+                      segment,
+                      totalSegments),
+                  activeSession);
+          verificationSamples.get(candidate).add(verification);
+        } catch (DownloadCancelledException e) {
+          throw e;
+        } catch (IOException e) {
+          if (!isLayeredBenchmarkComputeIsolated()) {
+            throw e;
+          }
+          System.err.println(
+              "KataGo verification failed for "
+                  + candidate.displayId()
+                  + " in round "
+                  + roundNumber
+                  + ": "
+                  + e.getLocalizedMessage());
         }
-
-        requireLayeredBenchmarkComputeIsolation();
-        long completedAt = System.currentTimeMillis();
-        String backend =
-            verification.backend().isEmpty()
-                ? selection.observation().backend()
-                : verification.backend();
-        KataGoTuningProfile profile =
-            new KataGoTuningProfile(
-                fingerprint,
-                candidate.devices(),
-                candidate.batch(),
-                selection.searchThreads(),
-                verifiedMetrics,
-                backend,
-                completedAt);
-        String topology = candidate.id() + " " + candidate.devices();
-        String summary =
-            String.format(
-                Locale.ROOT,
-                "Layered Metal %s | batch=%d | officialThreads=%d | verified=%.1f visits/s |"
-                    + " nn=%.1f/s | drift=%.1f%%",
-                topology,
-                candidate.batch(),
-                selection.searchThreads(),
-                verifiedMetrics.visitsPerSecond(),
-                verifiedMetrics.nnEvalsPerSecond(),
-                drift * 100.0);
-        notifyProgress(
-            listener, resource("AutoSetup.benchmarkDone", "Benchmark complete."), 1000L, 1000L);
-        return new BenchmarkResult(
-            selection.searchThreads(),
-            selection.observation().currentThreads(),
-            backend,
-            summary,
-            completedAt,
-            topology,
-            candidate.batch(),
-            verifiedMetrics.visitsPerSecond(),
-            verifiedMetrics.nnEvalsPerSecond(),
-            verifiedMetrics.averageBatchSize(),
-            profile);
-      } catch (DownloadCancelledException e) {
-        throw e;
-      } catch (IOException e) {
-        lastVerificationFailure = e;
-        officialResults.remove(candidate);
         segment++;
       }
     }
-    if (lastVerificationFailure != null) {
-      throw lastVerificationFailure;
-    }
-    throw benchmarkFailedException();
-  }
 
-  private static Optional<KataGoTuningSelector.Selection> selectByOfficialRecommendation(
-      Map<KataGoTuningCandidate, KataGoBenchmarkObservation> observations) {
-    Map<KataGoTuningCandidate, KataGoBenchmarkObservation> recommendedOnly =
-        new LinkedHashMap<KataGoTuningCandidate, KataGoBenchmarkObservation>();
-    for (Map.Entry<KataGoTuningCandidate, KataGoBenchmarkObservation> entry :
-        observations.entrySet()) {
-      KataGoBenchmarkObservation observation = entry.getValue();
-      Optional<KataGoBenchmarkObservation.ThreadMetrics> metric =
-          observation
-              .recommendedMetric()
-              .filter(KataGoBenchmarkObservation.ThreadMetrics::validForThroughputSelection);
-      if (metric.isEmpty()) {
-        continue;
-      }
-      recommendedOnly.put(
-          entry.getKey(),
-          new KataGoBenchmarkObservation(
-              observation.backend(),
-              observation.currentThreads(),
-              observation.recommendedThreads(),
-              List.of(metric.get()),
-              observation.mpsGraphInitialized(),
-              observation.coreMlInitialized(),
-              observation.failureDetected()));
+    KataGoExperimentalTuningSelector.Selection selection =
+        KataGoExperimentalTuningSelector.selectValidated(officialResults, verificationSamples)
+            .orElseThrow(KataGoRuntimeHelper::benchmarkFailedException);
+    if (selection.usesBaselineFallback()
+        && selection
+            .verification()
+            .filter(KataGoExperimentalTuningSelector.Aggregate::stable)
+            .isEmpty()) {
+      throw new IOException(
+          "The single-GPU baseline stability check was inconclusive; keeping the previous profile.");
     }
-    return KataGoTuningSelector.select(recommendedOnly);
+    requireLayeredBenchmarkComputeIsolation();
+    KataGoTuningCandidate candidate = selection.candidate();
+    KataGoBenchmarkObservation official = officialResults.get(candidate);
+    KataGoBenchmarkObservation.ThreadMetrics selectedMetrics = selection.metrics();
+    long completedAt = System.currentTimeMillis();
+    String backend = official.backend();
+    if (backend.isEmpty()) {
+      backend = "Metal";
+    }
+    KataGoTuningProfile profile =
+        new KataGoTuningProfile(
+            fingerprint,
+            candidate.devices(),
+            candidate.batch(),
+            selection.searchThreads(),
+            selectedMetrics,
+            backend,
+            completedAt);
+    String topology = candidate.id() + " " + candidate.devices();
+    String verificationSummary =
+        selection
+            .verification()
+            .map(
+                aggregate ->
+                    String.format(
+                        Locale.ROOT,
+                        "median=%.1f visits/s | spread=%.1f%%",
+                        aggregate.medianVisitsPerSecond(),
+                        aggregate.relativeSpread() * 100.0))
+            .orElse(
+                String.format(
+                    Locale.ROOT,
+                    "official=%.1f visits/s | verification=incomplete",
+                    selectedMetrics.visitsPerSecond()));
+    String decision =
+        selection.challengerAccepted()
+            ? String.format(
+                Locale.ROOT,
+                "accepted challenger | baselineGain=%.1f%%",
+                selection.gainOverBaseline() * 100.0)
+            : "safe single-GPU baseline fallback";
+    String summary =
+        String.format(
+            Locale.ROOT,
+            "Experimental Metal %s | batch=%d | officialThreads=%d | %s | %s | nn=%.1f/s",
+            topology,
+            candidate.batch(),
+            selection.searchThreads(),
+            verificationSummary,
+            decision,
+            selectedMetrics.nnEvalsPerSecond());
+    notifyProgress(
+        listener, resource("AutoSetup.benchmarkDone", "Benchmark complete."), 1000L, 1000L);
+    return new BenchmarkResult(
+        selection.searchThreads(),
+        official.currentThreads(),
+        backend,
+        summary,
+        completedAt,
+        topology,
+        candidate.batch(),
+        selectedMetrics.visitsPerSecond(),
+        selectedMetrics.nnEvalsPerSecond(),
+        selectedMetrics.averageBatchSize(),
+        profile);
   }
 
   private static ProgressListener layeredProgressListener(
@@ -2079,38 +2272,46 @@ public final class KataGoRuntimeHelper {
   }
 
   public static void applyBenchmarkResult(BenchmarkResult result) throws IOException {
-    if (result == null || result.recommendedThreads <= 0 || Lizzie.config == null) {
+    if (result == null
+        || result.recommendedThreads <= 0
+        || Lizzie.config == null
+        || Lizzie.config.uiConfig == null) {
       return;
     }
+    JSONObject candidateUi = new JSONObject(Lizzie.config.uiConfig.toString());
+    if (result.tuningProfile == null) {
+      candidateUi.put("chk-kata-engine-threads", true);
+      candidateUi.put("autoload-kata-engine-threads", true);
+      candidateUi.put("txt-kata-engine-threads", String.valueOf(result.recommendedThreads));
+    }
+    candidateUi.put("katago-benchmark-threads", result.recommendedThreads);
+    candidateUi.put("katago-benchmark-current-threads", result.currentThreads);
+    candidateUi.put("katago-benchmark-backend", result.backendLabel);
+    candidateUi.put("katago-benchmark-summary", result.summary);
+    candidateUi.put("katago-benchmark-updated-at", result.completedAtMillis);
+    candidateUi.put("katago-benchmark-topology", result.topologyLabel);
+    candidateUi.put("katago-benchmark-batch-size", result.maxBatchSize);
+    candidateUi.put("katago-benchmark-visits-per-second", result.visitsPerSecond);
+    candidateUi.put("katago-benchmark-nn-evals-per-second", result.nnEvalsPerSecond);
+    candidateUi.put("katago-benchmark-average-batch-size", result.averageBatchSize);
+    if (result.tuningProfile != null) {
+      new KataGoTuningStore(candidateUi).save(result.tuningProfile);
+    }
+    JSONObject currentLeelaz =
+        Lizzie.config.leelazConfig == null ? new JSONObject() : Lizzie.config.leelazConfig;
+    Lizzie.config.saveConfigSections(candidateUi, currentLeelaz);
     if (result.tuningProfile == null) {
       Lizzie.config.chkKataEngineThreads = true;
       Lizzie.config.autoLoadKataEngineThreads = true;
       Lizzie.config.txtKataEngineThreads = String.valueOf(result.recommendedThreads);
-      Lizzie.config.uiConfig.put("chk-kata-engine-threads", true);
-      Lizzie.config.uiConfig.put("autoload-kata-engine-threads", true);
-      Lizzie.config.uiConfig.put("txt-kata-engine-threads", Lizzie.config.txtKataEngineThreads);
     }
-    Lizzie.config.uiConfig.put("katago-benchmark-threads", result.recommendedThreads);
-    Lizzie.config.uiConfig.put("katago-benchmark-current-threads", result.currentThreads);
-    Lizzie.config.uiConfig.put("katago-benchmark-backend", result.backendLabel);
-    Lizzie.config.uiConfig.put("katago-benchmark-summary", result.summary);
-    Lizzie.config.uiConfig.put("katago-benchmark-updated-at", result.completedAtMillis);
-    Lizzie.config.uiConfig.put("katago-benchmark-topology", result.topologyLabel);
-    Lizzie.config.uiConfig.put("katago-benchmark-batch-size", result.maxBatchSize);
-    Lizzie.config.uiConfig.put("katago-benchmark-visits-per-second", result.visitsPerSecond);
-    Lizzie.config.uiConfig.put("katago-benchmark-nn-evals-per-second", result.nnEvalsPerSecond);
-    Lizzie.config.uiConfig.put("katago-benchmark-average-batch-size", result.averageBatchSize);
-    if (result.tuningProfile != null) {
-      new KataGoTuningStore(Lizzie.config.uiConfig).save(result.tuningProfile);
-    }
-    Lizzie.config.save();
   }
 
   public static void applyBenchmarkResultToRunningEngines(BenchmarkResult result) {
     if (result == null || result.recommendedThreads <= 0) {
       return;
     }
-    if (result.tuningProfile != null) {
+    if (result.tuningProfile != null && result.tuningProfile.managesHardwareSettings()) {
       // Metal topology and batch size are startup-only. The benchmark lifecycle lease restarts the
       // main engine after this call, so avoid briefly applying only the thread portion.
       restartIdlePreloadedAnalysisEngine();
@@ -2252,8 +2453,7 @@ public final class KataGoRuntimeHelper {
       }
       if (computeIsolated) {
         computeIsolated =
-            waitForRegisteredLocalComputeShutdown(
-                BENCHMARK_AUXILIARY_SHUTDOWN_WAIT_MILLIS);
+            waitForRegisteredLocalComputeShutdown(BENCHMARK_AUXILIARY_SHUTDOWN_WAIT_MILLIS);
         synchronized (BENCHMARK_ANALYSIS_PAUSE_LOCK) {
           benchmarkComputeIsolated = computeIsolated;
         }
@@ -2347,8 +2547,7 @@ public final class KataGoRuntimeHelper {
       benchmarkRestartEstimatePreload = false;
       benchmarkEngineSyncSuppressed = false;
     }
-    restartAuxiliaryComputeAfterBenchmark(
-        restartQuickAnalysisPreload, restartEstimatePreload);
+    restartAuxiliaryComputeAfterBenchmark(restartQuickAnalysisPreload, restartEstimatePreload);
     if (pausedEngineByShutdown) {
       if (reservation == null) {
         return;
@@ -2496,9 +2695,9 @@ public final class KataGoRuntimeHelper {
                 notice =
                     showBenchmarkNotice(
                         "正在进行 Apple Silicon 智能提升算棋速度",
-                        "正在分层测试 Metal GPU/ANE 拓扑、多个批量大小和 KataGo 官方推荐线程数。<br/>"
-                            + "通常需要 5-25 分钟；电脑较慢、模型较大时可能更久。<br/>"
-                            + "完成后只会为完全匹配的电脑、引擎、模型和配置保存调优结果。<br/>"
+                        "正在使用当前模型和当前硬件配置运行 KataGo 官方 benchmark。<br/>"
+                            + "通常需要 2-10 分钟；不会更换模型，也不会默认尝试实验性 GPU/ANE 组合。<br/>"
+                            + "完成后只会为完全匹配的电脑、引擎、模型和配置保存官方推荐线程数。<br/>"
                             + "优化期间会暂停当前分析，完成后会自动恢复。<br/>"
                             + "你可以继续使用主窗口；如果暂时不想优化，关闭这个窗口即可停止本次优化。",
                         session);
@@ -2887,10 +3086,9 @@ public final class KataGoRuntimeHelper {
                       ? showBenchmarkNotice(
                           "KataGo 智能提升算棋速度",
                           "首次启动正在进行一次 KataGo 智能提升算棋速度，<br/>"
-                              + "Apple 芯片会分层选择 Metal 拓扑、批量大小和官方推荐线程数，<br/>"
-                              + "完成后分析速度会更稳定、更快。<br/><br/>"
-                              + "通常需要 5-25 分钟；其他平台继续使用 KataGo 官方线程 benchmark。<br/>"
-                              + "电脑较慢、模型较大时可能更久，请稍候，<br/>"
+                              + "将使用当前模型运行 KataGo 官方线程 benchmark，<br/>"
+                              + "不会自动更换模型或启用实验性硬件组合。<br/><br/>"
+                              + "通常需要 2-10 分钟；电脑较慢、模型较大时可能更久，请稍候。<br/>"
                               + "期间分析会被暂停，完成后会自动恢复。<br/>"
                               + "如果暂时不想优化，可以关闭这个窗口停止优化。",
                           benchmarkSession)
@@ -3422,7 +3620,7 @@ public final class KataGoRuntimeHelper {
     return null;
   }
 
-  private static String tuningCommandSemantics(List<String> command) {
+  static String tuningCommandSemantics(List<String> command) {
     if (command == null || command.isEmpty()) {
       return "";
     }
@@ -3442,6 +3640,43 @@ public final class KataGoRuntimeHelper {
     } catch (RuntimeException e) {
       return "";
     }
+  }
+
+  static String officialTuningCommandSemantics(List<String> command) {
+    StringBuilder result = new StringBuilder();
+    if (command != null && !command.isEmpty()) {
+      try {
+        Map<String, String> canonical = new TreeMap<String, String>();
+        for (Map.Entry<String, String> entry :
+            KataGoCommandSpec.parse(command).effectiveOverrides().entrySet()) {
+          if (!isOfficialTuningFingerprintOverride(entry.getKey())) {
+            canonical.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
+          }
+        }
+        for (Map.Entry<String, String> entry : canonical.entrySet()) {
+          result.append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
+        }
+      } catch (RuntimeException ignored) {
+      }
+    }
+    result
+        .append("benchmarkMode=officialThreads\n")
+        .append("benchmarkTimeSeconds=")
+        .append(resolveBenchmarkTimeSeconds())
+        .append('\n');
+    return result.toString();
+  }
+
+  private static boolean isOfficialTuningFingerprintOverride(String key) {
+    String normalized = key == null ? "" : key.trim().toLowerCase(Locale.ROOT);
+    return normalized.equals("numsearchthreads")
+        || normalized.equals("numanalysisthreads")
+        || normalized.equals("numsearchthreadsperanalysisthread")
+        || normalized.equals("homedatadir")
+        || normalized.equals("analysispvlen")
+        || normalized.equals("logtostderr")
+        || normalized.equals("logallgtpcommunication")
+        || normalized.equals("logsearchinfo");
   }
 
   private static boolean isTuningFingerprintOverride(String key) {
@@ -3679,14 +3914,25 @@ public final class KataGoRuntimeHelper {
       return Optional.empty();
     }
     try {
-      KataGoTuningFingerprint fingerprint =
+      KataGoTuningFingerprint officialFingerprint =
+          KataGoTuningFingerprint.create(
+              snapshot.enginePath,
+              snapshot.activeWeightPath,
+              snapshot.gtpConfigPath,
+              currentAppleHardwareProfile(),
+              officialTuningCommandSemantics(snapshotSourceCommand(snapshot)));
+      Optional<KataGoTuningProfile> official = tuningStore.loadMatching(officialFingerprint);
+      if (official.isPresent()) {
+        return official;
+      }
+      KataGoTuningFingerprint experimentalFingerprint =
           KataGoTuningFingerprint.create(
               snapshot.enginePath,
               snapshot.activeWeightPath,
               snapshot.gtpConfigPath,
               currentAppleHardwareProfile(),
               tuningCommandSemantics(snapshotSourceCommand(snapshot)));
-      return tuningStore.loadMatching(fingerprint);
+      return tuningStore.loadMatching(experimentalFingerprint);
     } catch (IOException | RuntimeException e) {
       return Optional.empty();
     }
@@ -3752,7 +3998,7 @@ public final class KataGoRuntimeHelper {
     }
   }
 
-  private static String buildBenchmarkSignature(SetupSnapshot snapshot) {
+  static String buildBenchmarkSignature(SetupSnapshot snapshot) {
     if (snapshot == null) {
       return "";
     }
