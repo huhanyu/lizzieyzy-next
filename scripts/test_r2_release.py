@@ -1,5 +1,6 @@
 import base64
 import json
+import sys
 import unittest
 from unittest import mock
 
@@ -202,6 +203,86 @@ class R2ReleaseTest(unittest.TestCase):
         )
         self.assertEqual({"tag": TAG}, json.loads(catalog_body))
         self.assertEqual({"payload": "signed"}, json.loads(envelope_body))
+
+    def test_public_range_verification_retries_transient_failure(self):
+        selected = r2_release.select_r2_assets(
+            release(), r2_release.DEFAULT_PUBLIC_BASE
+        )[:1]
+        entry = selected[0]
+        head = mock.Mock(
+            status_code=200,
+            headers={
+                "Content-Length": str(entry.size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "Content-Disposition": f'attachment; filename="{entry.name}"',
+            },
+        )
+        transient = mock.Mock(status_code=503, headers={})
+        success = mock.Mock(
+            status_code=206,
+            headers={
+                "Content-Length": "1",
+                "Content-Range": f"bytes 0-0/{entry.size}",
+            },
+        )
+        success.iter_content.return_value = iter([b"x"])
+        requests = mock.Mock()
+        requests.RequestException = RuntimeError
+        requests.head.return_value = head
+        requests.get.side_effect = [transient, success]
+
+        with mock.patch.dict(sys.modules, {"requests": requests}), mock.patch.object(
+            r2_release.time, "sleep"
+        ) as sleep:
+            r2_release.verify_public_objects(
+                r2_release.DEFAULT_PUBLIC_BASE, selected
+            )
+
+        self.assertEqual(2, requests.get.call_count)
+        self.assertTrue(requests.get.call_args.kwargs["stream"])
+        self.assertEqual(
+            {"Accept-Encoding": "identity"},
+            requests.head.call_args.kwargs["headers"],
+        )
+        transient.iter_content.assert_not_called()
+        transient.close.assert_called_once_with()
+        success.close.assert_called_once_with()
+        sleep.assert_called_once_with(2)
+
+    def test_public_range_verification_fails_after_retry_budget(self):
+        selected = r2_release.select_r2_assets(
+            release(), r2_release.DEFAULT_PUBLIC_BASE
+        )[:1]
+        entry = selected[0]
+        head = mock.Mock(
+            status_code=200,
+            headers={
+                "Content-Length": str(entry.size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "Content-Disposition": f'attachment; filename="{entry.name}"',
+            },
+        )
+        requests = mock.Mock()
+        requests.RequestException = RuntimeError
+        requests.head.return_value = head
+        failed_range = mock.Mock(status_code=503, headers={})
+        requests.get.return_value = failed_range
+
+        with mock.patch.dict(sys.modules, {"requests": requests}), mock.patch.object(
+            r2_release.time, "sleep"
+        ) as sleep, self.assertRaisesRegex(
+            r2_release.ReleaseError, "after 5 attempts"
+        ):
+            r2_release.verify_public_objects(
+                r2_release.DEFAULT_PUBLIC_BASE, selected
+            )
+
+        self.assertEqual(r2_release.PUBLIC_VERIFY_ATTEMPTS, requests.get.call_count)
+        failed_range.iter_content.assert_not_called()
+        self.assertEqual(r2_release.PUBLIC_VERIFY_ATTEMPTS, failed_range.close.call_count)
+        self.assertEqual(r2_release.PUBLIC_VERIFY_ATTEMPTS - 1, sleep.call_count)
 
 
 if __name__ == "__main__":

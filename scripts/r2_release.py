@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 from typing import Any, Iterable
@@ -29,6 +30,8 @@ RELEASE_NOTE_START = "<!-- lizzie-r2-stable-downloads:start -->"
 RELEASE_NOTE_END = "<!-- lizzie-r2-stable-downloads:end -->"
 MULTIPART_PART_SIZE = 64 * 1024 * 1024
 SMALL_OBJECT_LIMIT = 16 * 1024 * 1024
+PUBLIC_VERIFY_ATTEMPTS = 5
+PUBLIC_VERIFY_BACKOFF_SECONDS = (2, 4, 8, 16)
 
 WINDOWS_PORTABLE = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2})-windows64\."
@@ -770,6 +773,57 @@ def replace_github_asset(
         raise ReleaseError(f"GitHub asset upload failed for {name}: HTTP {response.status_code} {response.text[:300]}")
 
 
+def _verify_public_object(requests, public_url: str, asset: Asset) -> None:
+    response = requests.head(
+        public_url,
+        headers={"Accept-Encoding": "identity"},
+        allow_redirects=True,
+        timeout=60,
+    )
+    if response.status_code != 200:
+        raise ReleaseError(f"HEAD returned HTTP {response.status_code}")
+    actual_length = int(response.headers.get("Content-Length", -1))
+    if actual_length != asset.size:
+        raise ReleaseError(
+            f"Content-Length is {actual_length}, expected {asset.size}"
+        )
+    if response.headers.get("Accept-Ranges", "").lower() != "bytes":
+        raise ReleaseError("object does not advertise byte ranges")
+    if "immutable" not in response.headers.get("Cache-Control", "").lower():
+        raise ReleaseError("object is missing immutable cache metadata")
+    if "attachment" not in response.headers.get("Content-Disposition", "").lower():
+        raise ReleaseError("object is missing attachment metadata")
+
+    partial = requests.get(
+        public_url,
+        headers={"Range": "bytes=0-0", "Accept-Encoding": "identity"},
+        allow_redirects=True,
+        timeout=60,
+        stream=True,
+    )
+    try:
+        if partial.status_code != 206:
+            raise ReleaseError(f"byte range returned HTTP {partial.status_code}")
+        range_length = int(partial.headers.get("Content-Length", -1))
+        if range_length != 1:
+            raise ReleaseError(
+                f"byte range Content-Length is {range_length}, expected 1"
+            )
+        expected_range = f"bytes 0-0/{asset.size}"
+        actual_range = partial.headers.get("Content-Range", "")
+        if actual_range.lower() != expected_range.lower():
+            raise ReleaseError(
+                f"Content-Range is {actual_range!r}, expected {expected_range!r}"
+            )
+        first_chunk = next(partial.iter_content(chunk_size=2), b"")
+        if len(first_chunk) != 1:
+            raise ReleaseError(
+                f"byte range body has {len(first_chunk)} bytes, expected 1"
+            )
+    finally:
+        partial.close()
+
+
 def verify_public_objects(public_base: str, assets: Iterable[Asset]) -> None:
     try:
         import requests
@@ -779,28 +833,23 @@ def verify_public_objects(public_base: str, assets: Iterable[Asset]) -> None:
         raise ReleaseError("Public R2 base URL must use HTTPS")
     for asset in assets:
         public_url = r2_url(public_base, asset)
-        response = requests.head(public_url, allow_redirects=True, timeout=60)
-        if response.status_code != 200:
-            raise ReleaseError(f"Public R2 HEAD failed for {asset.name}: HTTP {response.status_code}")
-        if int(response.headers.get("Content-Length", -1)) != asset.size:
-            raise ReleaseError(f"Public R2 Content-Length mismatch for {asset.name}")
-        if response.headers.get("Accept-Ranges", "").lower() != "bytes":
-            raise ReleaseError(f"Public R2 object does not advertise byte ranges: {asset.name}")
-        if "immutable" not in response.headers.get("Cache-Control", "").lower():
-            raise ReleaseError(f"Public R2 object is missing immutable cache metadata: {asset.name}")
-        if "attachment" not in response.headers.get("Content-Disposition", "").lower():
-            raise ReleaseError(f"Public R2 object is missing attachment metadata: {asset.name}")
-        partial = requests.get(
-            public_url,
-            headers={"Range": "bytes=0-0", "Accept-Encoding": "identity"},
-            allow_redirects=True,
-            timeout=60,
-        )
-        if partial.status_code != 206 or len(partial.content) != 1:
-            raise ReleaseError(f"Public R2 byte range failed for {asset.name}")
-        expected_range = f"bytes 0-0/{asset.size}"
-        if partial.headers.get("Content-Range", "").lower() != expected_range.lower():
-            raise ReleaseError(f"Public R2 Content-Range mismatch for {asset.name}")
+        for attempt in range(1, PUBLIC_VERIFY_ATTEMPTS + 1):
+            try:
+                _verify_public_object(requests, public_url, asset)
+                break
+            except (ReleaseError, requests.RequestException) as exc:
+                if attempt == PUBLIC_VERIFY_ATTEMPTS:
+                    raise ReleaseError(
+                        f"Public R2 verification failed for {asset.name} after "
+                        f"{PUBLIC_VERIFY_ATTEMPTS} attempts: {exc}"
+                    ) from exc
+                delay = PUBLIC_VERIFY_BACKOFF_SECONDS[attempt - 1]
+                print(
+                    f"Public R2 verification retry {attempt}/"
+                    f"{PUBLIC_VERIFY_ATTEMPTS} for {asset.name} in {delay}s: {exc}",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
 
 
 def verify_and_activate_stable_channel(
