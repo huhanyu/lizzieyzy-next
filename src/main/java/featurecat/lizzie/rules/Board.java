@@ -1264,6 +1264,12 @@ public class Board {
       Lizzie.initializeAfterVersionCheck(false, leelaz);
     }
   }
+  public void resendMoveToEngineFromCurrentRoot(Leelaz leelaz) {
+    if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+      return;
+    }
+    restoreEnginePositionFromRoot(leelaz, getMoveList());
+  }
 
   public void resendMoveToEngine(
       Leelaz leelaz,

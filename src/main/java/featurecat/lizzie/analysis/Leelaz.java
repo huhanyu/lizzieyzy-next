@@ -7298,7 +7298,7 @@ public class Leelaz {
         if (session.originalRules != null) {
           sendCommand("kata-set-rules " + session.originalRules);
         }
-        Lizzie.board.resendMoveToEngine(this, false);
+        Lizzie.board.resendMoveToEngineFromCurrentRoot(this);
       }
       if (isForegroundRestoreCompleted(session)) {
         return;

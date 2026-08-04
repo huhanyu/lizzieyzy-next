@@ -2041,6 +2041,11 @@ class LeelazExclusiveRemoteGtpSessionTest {
     }
 
     @Override
+    public void resendMoveToEngineFromCurrentRoot(Leelaz leelaz) {
+      resendMoveToEngine(leelaz, false);
+    }
+
+    @Override
     public void resendMoveToEngine(
         Leelaz leelaz,
         boolean loadEngine,
