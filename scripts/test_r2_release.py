@@ -140,17 +140,42 @@ class R2ReleaseTest(unittest.TestCase):
         key.public_key().verify(signature, payload)
         self.assertEqual(manifest, json.loads(payload))
 
-    def test_download_page_has_clear_primary_and_advanced_paths(self):
+    def test_download_page_has_beginner_friendly_direct_downloads(self):
         source = release()
         selected = r2_release.select_r2_assets(source, r2_release.DEFAULT_PUBLIC_BASE)
         catalog = r2_release.build_catalog(source, selected, r2_release.DEFAULT_PUBLIC_BASE)
         page = r2_release.render_index(catalog)
         maintenance = r2_release.render_index(catalog, maintenance=True)
 
-        self.assertIn("首次下载请选择完整免安装包", page)
-        self.assertIn("高级可选：TensorRT 分卷包", page)
-        self.assertIn("GitHub 下载量不包含本页 R2 下载量", page)
-        self.assertIn("当前按钮临时使用 GitHub 备用源", maintenance)
+        self.assertIn("选择你的版本", page)
+        self.assertIn("NVIDIA 显卡", page)
+        self.assertIn("RTX 50 CUDA", page)
+        self.assertIn("TensorRT 高性能版", page)
+        self.assertIn("两个分卷都要下载", page)
+        self.assertIn("分卷 1", page)
+        self.assertIn("分卷 2", page)
+        self.assertIn("CPU 通用版", page)
+        self.assertIn("OpenCL 兼容版", page)
+        self.assertIn("下载小更新", page)
+        self.assertIn("data:image/png;base64,", page)
+        self.assertIn("data:image/webp;base64,", page)
+        self.assertIn("data:image/svg+xml;base64,", page)
+        self.assertEqual(10, page.count('class="download-action"'))
+        self.assertEqual(1, page.count('class="volume-actions"'))
+        self.assertEqual(1, page.count(".7z.001"))
+        self.assertEqual(1, page.count(".7z.002"))
+        self.assertNotIn("Cloudflare", page)
+        self.assertNotIn("GitHub 下载量", page)
+        self.assertNotIn("README.txt", page)
+        self.assertNotIn("manifest.json", page)
+        self.assertNotIn("sha256.txt", page)
+        self.assertNotIn("<details", page)
+        for hidden_suffix in ("README.txt", "manifest.json", "sha256.txt"):
+            hidden_entry = next(
+                entry for entry in catalog["assets"] if entry["name"].endswith(hidden_suffix)
+            )
+            self.assertNotIn(hidden_entry["downloadUrl"], page)
+        self.assertIn("下载页面正在更新，当前下载仍可正常使用", maintenance)
 
     def test_stable_release_body_uses_r2_and_keeps_one_github_fallback(self):
         source = release()
@@ -185,6 +210,10 @@ class R2ReleaseTest(unittest.TestCase):
 
         with mock.patch.object(
             r2_release, "verify_public_objects", side_effect=verify
+        ), mock.patch.object(
+            r2_release,
+            "render_index",
+            return_value="<title>LizzieYzy Next</title>",
         ), mock.patch.object(
             r2_release,
             "verify_public_homepage",

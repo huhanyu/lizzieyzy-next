@@ -20,6 +20,12 @@ Windows 安装器、Linux 包、pre-release 和历史版本不占用 R2。版本
 - `channels/stable/catalog.json`
 - `index.html`
 
+下载首页面向普通用户，只展示可直接安装的 Windows、macOS 和主程序小更新。Windows
+区直接列出 NVIDIA、RTX 50 CUDA、TensorRT、OpenCL、CPU 与无引擎版；TensorRT 只展示
+必须下载的两个 `.7z` 分卷，README、manifest 和 SHA-256 等发布元数据不进入用户界面。
+首页也不展示 R2、镜像切换或对象存储等实现细节。
+下载页图标来自 Bootstrap Icons（MIT），已随仓库保存并内联，不依赖第三方 CDN。
+
 R2 自定义域名本身不会把 `/` 自动映射到 `index.html`。Cloudflare URL 重写规则必须使用
 `URI Path equals /`，将路径重写为 `/index.html`，并保留原查询字符串。不要按完整 URL
 精确匹配，否则 `/?source=...` 这类正常链接会返回 404。发布器会用带缓存穿透参数的根地址
