@@ -45,15 +45,16 @@
 > It is the fastest place for day-to-day user feedback, bug reports, and feature discussion.
 
 > [!IMPORTANT]
-> If you only want the shortest possible answer, remember these 9 points:
+> If you only want the shortest possible answer, remember these 10 points:
 > - Most Windows users should open [Stable Downloads](https://goagent.top/download/) and download `*windows64.opencl.portable.zip`
 > - If your PC has an RTX 20/30/40 NVIDIA GPU and you want more speed, download `*windows64.nvidia.portable.zip`
 > - RTX 5070/5080/5090 users should try `*windows64.nvidia50.cuda.portable.zip` first; install TensorRT from the in-app KataGo Auto Setup only if needed
 > - TensorRT is not RTX 50-only: RTX 20/30/40/50 NVIDIA users can install it on demand; GTX 10 series and older cards should prefer CUDA/OpenCL
+> - In-app and advanced split TensorRT installs now use the KataGo `v1.17.2` TensorRT fixes; regular CUDA, OpenCL, CPU, and Metal bundles remain on `v1.17.1`, the latest official release that provides those backend assets
 > - `KataGo Auto Setup` detects the NVIDIA GPU and Compute Capability, then recommends whether TensorRT is a good fit; manual install remains available if detection fails
 > - If OpenCL behaves badly on your PC, switch to `*windows64.with-katago.portable.zip`
 > - The app now supports Fox nickname input directly, so most users no longer need the account number first
-> - Full recommended bundles include KataGo `v1.17.0` and the official medium Transformer, shown as “Transformer 10B Balanced” (about 94 MB); the core update package does not contain the engine or weight
+> - Full recommended bundles include KataGo `v1.17.1` and the official medium Transformer, shown as “Transformer 10B Balanced” (about 94 MB); the core update package does not contain the engine or weight
 > - Main release packages now ship the `readboard_java` helper, so most users do not need a separate readboard repository
 
 ## Why Many Users Start Here

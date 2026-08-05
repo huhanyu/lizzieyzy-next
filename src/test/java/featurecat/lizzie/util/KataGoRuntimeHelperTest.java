@@ -571,9 +571,9 @@ public class KataGoRuntimeHelperTest {
                     KataGoRuntimeHelper.buildTensorRtInstallSpec(snapshot);
 
                 assertTrue(
-                    spec.katagoUrl.endsWith("/katago-v1.17.1-trt10.9.0-cuda12.8-windows-x64.zip"));
+                    spec.katagoUrl.endsWith("/katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip"));
                 assertEquals(
-                    "b5de0178194cf728c12994cf0ace8a105597e864e0d42d7c6b4e0a1e9ea7a943",
+                    "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6",
                     spec.katagoSha256);
                 assertEquals(5, spec.runtimePackageCount);
                 assertTrue(spec.totalDownloadBytes > 3_000_000_000L);
@@ -699,7 +699,7 @@ public class KataGoRuntimeHelperTest {
                         assertTrue(
                             Files.readString(
                                     targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
-                                .contains("KataGo release: v1.17.1"));
+                                .contains("KataGo release: v1.17.2"));
                         List<EngineData> engines = Utils.getEngineData();
                         assertTrue(
                             engines.stream()
@@ -974,7 +974,7 @@ public class KataGoRuntimeHelperTest {
                         assertTrue(
                             Files.readString(
                                     targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
-                                .contains("KataGo release: v1.17.1"));
+                                .contains("KataGo release: v1.17.2"));
                         assertTrue(
                             KataGoRuntimeHelper.inspectTensorRtInstall(result.snapshot).active);
                       }));
@@ -1771,10 +1771,10 @@ public class KataGoRuntimeHelperTest {
   private static void writeCurrentTensorRtEngineManifest(Path directory) throws IOException {
     Files.writeString(
         directory.resolve("lizzieyzy-next-katago-engine-manifest.txt"),
-        "KataGo release: v1.17.1\n"
-            + "Asset: katago-v1.17.1-trt10.9.0-cuda12.8-windows-x64.zip\n"
+        "KataGo release: v1.17.2\n"
+            + "Asset: katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip\n"
             + "Asset SHA-256: "
-            + "b5de0178194cf728c12994cf0ace8a105597e864e0d42d7c6b4e0a1e9ea7a943\n");
+            + "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6\n");
   }
 
   private static SetupSnapshot createNvidia50Snapshot(Path tempRoot) throws Exception {

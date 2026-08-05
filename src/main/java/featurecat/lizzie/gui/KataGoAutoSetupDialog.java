@@ -1817,7 +1817,9 @@ public class KataGoAutoSetupDialog extends JDialog {
     new Thread(
             () -> {
               EngineValidationResult result =
-                  KataGoAutoSetupHelper.validateLocalEngine(enginePath, 8L);
+                  KataGoAutoSetupHelper.validateDiscoveredEngine(
+                      enginePath,
+                      KataGoRuntimeHelper.isNvidiaBundledPath(enginePath) ? 20L : 8L);
               SwingUtilities.invokeLater(
                   () -> {
                     if (requestId != engineValidationRequestId
@@ -1846,6 +1848,9 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
     String value;
     switch (result.status) {
+      case ACTIVE:
+        value = text("AutoSetup.validationRunning");
+        break;
       case VALID:
         value = text("AutoSetup.validationPassed");
         break;

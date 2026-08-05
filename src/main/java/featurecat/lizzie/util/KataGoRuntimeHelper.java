@@ -137,18 +137,18 @@ public final class KataGoRuntimeHelper {
   private static final String TENSORRT_RUNTIME_SHA256_PROPERTY = "lizzie.tensorrt.runtime.sha256";
   private static final String TENSORRT_SKIP_RUNTIME_FOR_TESTS_PROPERTY =
       "lizzie.tensorrt.skipRuntimePackagesForTests";
-  private static final String TENSORRT_KATAGO_VERSION = "v1.17.1";
+  private static final String TENSORRT_KATAGO_VERSION = "v1.17.2";
   private static final String TENSORRT_INSTALL_LOCK_NAME = "tensorrt-install.lock";
   private static final String TENSORRT_KATAGO_ASSET =
-      "katago-v1.17.1-trt10.9.0-cuda12.8-windows-x64.zip";
+      "katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip";
   private static final String TENSORRT_KATAGO_URL =
       "https://github.com/lightvector/KataGo/releases/download/"
           + TENSORRT_KATAGO_VERSION
           + "/"
           + TENSORRT_KATAGO_ASSET;
   private static final String TENSORRT_KATAGO_SHA256 =
-      "b5de0178194cf728c12994cf0ace8a105597e864e0d42d7c6b4e0a1e9ea7a943";
-  private static final long TENSORRT_KATAGO_SIZE_BYTES = 7_678_128L;
+      "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6";
+  private static final long TENSORRT_KATAGO_SIZE_BYTES = 7_678_930L;
   private static final String TENSORRT_ENGINE_MANIFEST_NAME =
       "lizzieyzy-next-katago-engine-manifest.txt";
   private static final String TENSORRT_RUNTIME_URL =

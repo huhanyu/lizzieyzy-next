@@ -222,9 +222,9 @@ jobs:
           test -f "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.manifest.json"
           test -f "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.sha256.txt"
           test -f "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
-          grep -qx "KataGo release: v1.17.1" \
+          grep -qx "KataGo release: v1.17.2" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
-          grep -qx "Asset SHA-256: b5de0178194cf728c12994cf0ace8a105597e864e0d42d7c6b4e0a1e9ea7a943" \
+          grep -qx "Asset SHA-256: be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
           grep -q "Advanced optional TensorRT split package" "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.README.txt"
           grep -q '"engineBackend": "nvidia-tensorrt"' "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.manifest.json"

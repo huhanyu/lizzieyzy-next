@@ -118,6 +118,7 @@
 当前整合包默认使用：
 
 - KataGo 版本：`v1.17.1`
+- 软件内按需安装及高级分卷包使用 KataGo `v1.17.2` TensorRT；其他 CUDA、OpenCL、CPU、Metal 后端继续使用官方仍提供完整资产的 `v1.17.1`
 - macOS 发布构建固定使用官方 `v1.17.1` commit `5246793f77b480dee91a3b92902d1a9b92860bd0`。如果 Homebrew 稳定版仍滞后，打包脚本会从该 commit 构建 Metal 引擎并校验真实二进制版本，不能只靠 `VERSION.txt` 宣称升级
 - 默认权重：官方中型 Transformer `b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz`，界面显示为“Transformer 10B 均衡版”
 - 默认权重大小：`94,281,753` 字节（约 94 MB），SHA-256：`c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995`
