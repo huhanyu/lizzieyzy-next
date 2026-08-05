@@ -33,7 +33,7 @@
 </p>
 
 > [!NOTE]
-> Current stable packages use the [Cloudflare R2 download page](https://download.goagent.top/) as the primary source. Use [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) for automatic fallback, installers, Linux packages, and version history. The GitHub Downloads badge does not include R2 traffic.
+> Users in mainland China are encouraged to use the [official download page](https://download.goagent.top/) for stable builds. Installers, Linux packages, and older versions remain available from [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases).
 >
 > For users in mainland China, a public Baidu Netdisk download is available:
 > [https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w](https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w)
@@ -85,7 +85,7 @@ If you are searching for these things, this is the project to check first:
 
 ## What To Download First
 
-Common stable packages are on the [Cloudflare R2 download page](https://download.goagent.top/). Installers, Linux packages, historical releases, and fallback downloads remain on [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases).
+Users in mainland China are encouraged to choose common stable builds from the [official download page](https://download.goagent.top/). Installers, Linux packages, and older versions are available from [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases).
 
 <p align="center">
   <img src="assets/package-guide.svg" alt="LizzieYzy Next package guide" width="100%" />

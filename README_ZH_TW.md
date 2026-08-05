@@ -36,7 +36,7 @@
 > 歡迎交流使用問題、回報 bug、分享使用體驗，或者討論接下來最想加的功能。
 
 > [!NOTE]
-> 目前正式版優先使用 [Cloudflare R2 下載頁](https://download.goagent.top/)；連線異常、安裝程式、Linux 與歷史版本仍可使用 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)。GitHub Downloads 徽章不包含 R2 下載量。
+> 中國大陸使用者建議從 [官方下載頁面](https://download.goagent.top/) 下載正式版；需要安裝程式、Linux 套件或歷史版本時，可使用 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)。
 
 > [!IMPORTANT]
 > 如果你只想先下對版本，先記住這 6 句：
@@ -68,7 +68,7 @@
 
 ## 先下載哪個
 
-目前正式版常用資產在 [Cloudflare R2 下載頁](https://download.goagent.top/)；安裝程式、Linux、歷史版本與備用下載仍在 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)。
+中國大陸使用者建議從 [官方下載頁面](https://download.goagent.top/) 選擇常用正式版；安裝程式、Linux 套件和歷史版本可在 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) 下載。
 
 | 你的情況 | 到 Releases 裡找包含這個關鍵字的檔案 |
 | --- | --- |

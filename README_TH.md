@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> แพ็กเกจเวอร์ชันเสถียรใช้ [หน้าดาวน์โหลด Cloudflare R2](https://download.goagent.top/) เป็นแหล่งหลัก หากเชื่อมต่อไม่ได้ หรือต้องการ installer, Linux และเวอร์ชันเก่า ให้ใช้ [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) ตัวเลข Downloads บน GitHub ไม่รวมการดาวน์โหลดจาก R2
+> แนะนำให้ผู้ใช้ในจีนแผ่นดินใหญ่ดาวน์โหลดเวอร์ชันเสถียรจาก [หน้าดาวน์โหลดอย่างเป็นทางการ](https://download.goagent.top/) ส่วน installer, แพ็กเกจ Linux และเวอร์ชันเก่าสามารถดาวน์โหลดได้จาก [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)
 
 > [!IMPORTANT]
 > ถ้าคุณแค่อยากดาวน์โหลดเวอร์ชันที่ใช่ ให้จำ 6 ข้อนี้:
@@ -63,7 +63,7 @@
 
 ## เลือกดาวน์โหลดตัวไหน
 
-แพ็กเกจเวอร์ชันเสถียรที่ใช้บ่อยอยู่ใน [หน้าดาวน์โหลด Cloudflare R2](https://download.goagent.top/) ส่วน installer, Linux, เวอร์ชันเก่า และแหล่งสำรองยังอยู่ใน [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)
+แนะนำให้ผู้ใช้ในจีนแผ่นดินใหญ่เลือกเวอร์ชันเสถียรที่ใช้บ่อยจาก [หน้าดาวน์โหลดอย่างเป็นทางการ](https://download.goagent.top/) ส่วน installer, แพ็กเกจ Linux และเวอร์ชันเก่าสามารถดาวน์โหลดได้จาก [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)
 
 | สถานการณ์ของคุณ | คีย์เวิร์ดไฟล์ที่ควรหา |
 | --- | --- |
