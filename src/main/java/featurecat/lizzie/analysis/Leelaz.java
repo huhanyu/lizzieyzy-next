@@ -1150,6 +1150,9 @@ public class Leelaz {
       Lizzie.initializeAfterVersionCheck(false, this);
     }
   }
+  void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {
+    Lizzie.initializeAfterVersionCheck(false, this, resumePonder);
+  }
 
   void completeReadBoardGmaRecoveryAfterBoardSync() {
     synchronized (readBoardGmaLock()) {

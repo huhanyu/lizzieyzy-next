@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.EngineStartupStatus;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
@@ -1480,8 +1481,10 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.frame = frame;
       EngineManager.isEmpty = false;
       EngineManager.currentEngineNo = 0;
+      engine.Pondering();
       Leelaz.TrackingStreamLeaseAcquisition tracking = activateTracking(engine);
       engine.emitPonderCommand = true;
+      engine.Pondering();
 
       manager.reStartEngine(0);
 
@@ -2040,31 +2043,75 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void inactiveExplicitRestartPreservesImmediateLifecycleSettlement() throws Exception {
+  void inactiveExplicitRestartWaitsForBoardFenceBeforeInitializationAndRelease() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     LizzieFrame previousFrame = Lizzie.frame;
+    Board previousBoard = Lizzie.board;
+    Config previousConfig = Lizzie.config;
+    Menu previousMenu = LizzieFrame.menu;
+    BottomToolbar previousToolbar = LizzieFrame.toolbar;
     boolean previousEmpty = EngineManager.isEmpty;
-    FenceTrackingLeelaz engine = new FenceTrackingLeelaz();
+    boolean previousEngineGame = EngineManager.isEngineGame;
+    boolean previousPreEngineGame = EngineManager.isPreEngineGame;
+    TrackingRestartActionLeelaz engine = new TrackingRestartActionLeelaz();
     CountingRestartGateFrame frame = allocate(CountingRestartGateFrame.class);
+    CountingRestartMenu menu = allocate(CountingRestartMenu.class);
+    BottomToolbar toolbar = allocate(SilentSwitchToolbar.class);
+    PreparedRestoreBoard board = preparedRestoreBoard();
+    Config config = allocate(Config.class);
+    config.fastChange = true;
+    config.extraMode = ExtraMode.Normal;
     engine.started = true;
     engine.isLoaded = true;
-    RecoverySwitchEngineManager manager =
-        new RecoverySwitchEngineManager(List.of(engine), engine);
+    engine.Pondering();
+    RecoverySwitchEngineManager manager = new RecoverySwitchEngineManager(List.of(engine), engine);
     try {
+      Lizzie.config = config;
+      Lizzie.board = board;
       Lizzie.leelaz = engine;
       Lizzie.frame = frame;
+      LizzieFrame.menu = menu;
+      LizzieFrame.toolbar = toolbar;
       EngineManager.isEmpty = false;
+      EngineManager.isEngineGame = false;
+      EngineManager.isPreEngineGame = false;
+      Lizzie.engineStartupStatus.checking("engine.starting", "using existing cache");
+      engine.invokeRealInitialization = true;
 
       manager.reStartEngine(0);
       manager.afterSync.run();
 
-      assertNull(engine.confirmation);
-      assertEquals(0, frame.beginCount);
+      assertNotNull(engine.confirmation);
+      assertTrue(engine.isLoaded);
+      assertEquals(EngineStartupStatus.State.CHECKING, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(0, engine.initializationCount);
+      assertEquals(0, engine.ponderCount);
+      assertTrue(engine.hasExclusiveGtpWorkInProgress());
+
+      engine.confirmation.run();
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertTrue(engine.isLoaded);
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(1, engine.initializationCount);
+      assertTrue(engine.resumePonderIntent);
+      assertEquals(1, engine.ponderCount);
+      assertTrue(engine.ponderWhileLifecycleHeld);
+      assertTrue(engine.isResponseUpToDate());
+      assertEquals(1, frame.reSetLocCount);
+      assertEquals(1, menu.updateCount);
       assertFalse(engine.hasExclusiveGtpWorkInProgress());
     } finally {
       Lizzie.leelaz = previousEngine;
       Lizzie.frame = previousFrame;
+      Lizzie.board = previousBoard;
+      Lizzie.config = previousConfig;
+      LizzieFrame.menu = previousMenu;
+      LizzieFrame.toolbar = previousToolbar;
       EngineManager.isEmpty = previousEmpty;
+      EngineManager.isEngineGame = previousEngineGame;
+      EngineManager.isPreEngineGame = previousPreEngineGame;
+      Lizzie.engineStartupStatus.ready();
     }
   }
 
@@ -2724,6 +2771,9 @@ class EngineManagerLifecycleReservationTest {
     private Runnable confirmation;
     private Consumer<String> rejection;
     private boolean emitPonderCommand;
+    private boolean invokeRealInitialization;
+    private int initializationCount;
+    private boolean resumePonderIntent;
 
     private TrackingRestartActionLeelaz() throws Exception {
       super("");
@@ -2752,6 +2802,20 @@ class EngineManagerLifecycleReservationTest {
     void confirmBoardSynchronization(Runnable onSuccess, Consumer<String> onFailure) {
       confirmation = onSuccess;
       rejection = onFailure;
+    }
+
+    @Override
+    void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {
+      initializationCount++;
+      resumePonderIntent = resumePonder;
+      if (invokeRealInitialization) {
+        super.initializeAfterExplicitRestartBoardSynchronization(resumePonder);
+      } else {
+        if (resumePonder) {
+          ponder();
+        }
+        setResponseUpToDate();
+      }
     }
   }
 
@@ -3420,6 +3484,7 @@ class EngineManagerLifecycleReservationTest {
 
   private static final class CountingRestartGateFrame extends LizzieFrame {
     private int beginCount;
+    private int reSetLocCount;
 
     @Override
     public boolean isDisplayable() {
@@ -3430,6 +3495,28 @@ class EngineManagerLifecycleReservationTest {
     public RestartInteractionGate beginRestartInteractionGate() {
       beginCount++;
       return () -> {};
+    }
+
+    @Override
+    public void reSetLoc() {
+      reSetLocCount++;
+    }
+
+    @Override
+    public boolean resetMovelistFrameandAnalysisFrame() {
+      return false;
+    }
+  }
+
+  private static final class CountingRestartMenu extends Menu {
+    private int updateCount;
+
+    @Override
+    public void showPda(boolean show) {}
+
+    @Override
+    public void updateMenuStatusForEngine() {
+      updateCount++;
     }
   }
 
@@ -3502,6 +3589,9 @@ class EngineManagerLifecycleReservationTest {
       super("");
     }
 
+
+    @Override
+    void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {}
     @Override
     void confirmBoardSynchronization(Runnable onSuccess, Consumer<String> onFailure) {
       confirmation = onSuccess;
