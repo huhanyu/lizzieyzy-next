@@ -33,7 +33,7 @@
 </p>
 
 > [!NOTE]
-> 当前正式版优先从 [Cloudflare R2 下载页](https://download.goagent.top/) 下载，连接异常时可回到 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) 使用完整备用资产、安装器、Linux 包和历史版本。GitHub 的 Downloads 徽章不包含 R2 下载量，不能作为项目总下载量。
+> 国内用户建议从 [官网下载页面](https://download.goagent.top/) 下载正式版；需要安装器、Linux 包或历史版本时，可使用 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)。
 >
 > 国内用户也可使用公开百度网盘下载：
 > [https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w](https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w)
@@ -90,7 +90,7 @@
 
 ## 先下载哪个
 
-当前正式版常用资产在 [Cloudflare R2 下载页](https://download.goagent.top/)；安装器、Linux、历史版本和故障备用下载仍在 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)。
+国内用户建议从 [官网下载页面](https://download.goagent.top/) 选择常用正式版；安装器、Linux 包和历史版本可在 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) 下载。
 
 <p align="center">
   <img src="assets/package-guide-zh.svg" alt="LizzieYzy Next 下载选择图" width="100%" />

@@ -264,7 +264,7 @@ def build_legacy_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
 def stable_release_body(
     release: dict[str, Any], mirrored_assets: list[Asset], public_base: str
 ) -> str:
-    """Switch mirrored asset links to R2 while keeping one obvious GitHub fallback."""
+    """Keep GitHub asset links while recommending the official download page."""
     body = str(release.get("body") or "")
     marker_pattern = re.compile(
         re.escape(RELEASE_NOTE_START) + r".*?" + re.escape(RELEASE_NOTE_END) + r"\n*",
@@ -272,20 +272,16 @@ def stable_release_body(
     )
     body = marker_pattern.sub("", body).strip()
     for asset in mirrored_assets:
-        body = body.replace(asset.browser_url, r2_url(public_base, asset))
+        body = body.replace(r2_url(public_base, asset), asset.browser_url)
 
-    release_url = str(release.get("html_url") or "").strip()
-    fallback = (
-        f"[GitHub 全量资产与备用下载 / GitHub fallback]({release_url})"
-        if release_url
-        else "GitHub 全量资产与备用下载 / GitHub fallback"
-    )
     notice = (
         f"{RELEASE_NOTE_START}\n"
         "> [!IMPORTANT]\n"
-        f"> **正式版主下载 / Stable primary downloads:** "
-        f"[{public_base.rstrip('/')}/]({public_base.rstrip('/')}/)  \n"
-        f"> R2 连接异常时可使用 {fallback}；Linux、安装器与历史版本仍在 GitHub。\n"
+        f"> **国内用户建议从 [官网下载页面]({public_base.rstrip('/')}/) 下载；"
+        f"Users in mainland China may prefer the "
+        f"[official download page]({public_base.rstrip('/')}/).**  \n"
+        "> 本页所有文件链接均保留 GitHub 原始地址。All file links on this Release "
+        "remain on GitHub.\n"
         f"{RELEASE_NOTE_END}"
     )
     if not body:

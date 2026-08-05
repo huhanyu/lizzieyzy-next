@@ -177,13 +177,13 @@ class R2ReleaseTest(unittest.TestCase):
             self.assertNotIn(hidden_entry["downloadUrl"], page)
         self.assertIn("下载页面正在更新，当前下载仍可正常使用", maintenance)
 
-    def test_stable_release_body_uses_r2_and_keeps_one_github_fallback(self):
+    def test_stable_release_body_keeps_github_links_and_recommends_official_page(self):
         source = release()
         selected = r2_release.select_r2_assets(source, r2_release.DEFAULT_PUBLIC_BASE)
         linked = selected[0]
         source["body"] = (
             "# LizzieYzy Next\n\n"
-            f"[{linked.name}]({linked.browser_url})\n"
+            f"[{linked.name}]({r2_release.r2_url(r2_release.DEFAULT_PUBLIC_BASE, linked)})\n"
         )
 
         updated = r2_release.stable_release_body(
@@ -193,10 +193,14 @@ class R2ReleaseTest(unittest.TestCase):
             {**source, "body": updated}, selected, r2_release.DEFAULT_PUBLIC_BASE
         )
 
-        self.assertIn(r2_release.r2_url(r2_release.DEFAULT_PUBLIC_BASE, linked), updated)
-        self.assertNotIn(linked.browser_url, updated)
+        self.assertIn(linked.browser_url, updated)
+        self.assertNotIn(r2_release.r2_url(r2_release.DEFAULT_PUBLIC_BASE, linked), updated)
+        self.assertIn("国内用户建议从", updated)
+        self.assertIn("official download page", updated)
+        self.assertNotIn("Cloudflare", updated)
+        self.assertNotIn("R2 连接", updated)
         self.assertEqual(1, updated.count(r2_release.RELEASE_NOTE_START))
-        self.assertEqual(1, updated.count(source["html_url"]))
+        self.assertEqual(2, updated.count(r2_release.DEFAULT_PUBLIC_BASE + "/"))
         self.assertEqual(updated, repeated)
 
     def test_public_assets_are_verified_before_envelope_activation(self):

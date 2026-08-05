@@ -33,7 +33,7 @@
 </p>
 
 > [!NOTE]
-> 現在の安定版は [Cloudflare R2 ダウンロードページ](https://download.goagent.top/) を優先します。接続できない場合、インストーラ、Linux、過去版は [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) を利用できます。GitHub の Downloads バッジには R2 のダウンロード数は含まれません。
+> 中国本土のユーザーには、安定版の [公式ダウンロードページ](https://download.goagent.top/) をおすすめします。インストーラ、Linux パッケージ、過去版は [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) からダウンロードできます。
 >
 > 中国本土から利用する場合は、公開されている Baidu Netdisk ダウンロードも使えます:
 > [https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w](https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w)
@@ -82,7 +82,7 @@
 
 ## まずどれをダウンロードするか
 
-現在の安定版でよく使うパッケージは [Cloudflare R2 ダウンロードページ](https://download.goagent.top/) にあります。インストーラ、Linux、過去版、予備ダウンロードは [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) に残ります。
+中国本土のユーザーには、よく使う安定版を [公式ダウンロードページ](https://download.goagent.top/) から選ぶことをおすすめします。インストーラ、Linux パッケージ、過去版は [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases) からダウンロードできます。
 
 <p align="center">
   <img src="assets/package-guide.svg" alt="LizzieYzy Next package guide" width="100%" />

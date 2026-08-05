@@ -33,7 +33,7 @@
 </p>
 
 > [!NOTE]
-> 현재 안정판은 [Cloudflare R2 다운로드 페이지](https://download.goagent.top/)를 기본 경로로 사용합니다. 연결 실패, 설치형, Linux, 이전 버전은 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)를 사용할 수 있습니다. GitHub Downloads 배지에는 R2 다운로드 수가 포함되지 않습니다.
+> 중국 본토 사용자는 안정판을 [공식 다운로드 페이지](https://download.goagent.top/)에서 받는 것을 권장합니다. 설치형, Linux 패키지, 이전 버전은 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)에서 받을 수 있습니다.
 >
 > 중국 본토 사용자라면 공개 Baidu Netdisk 다운로드도 바로 사용할 수 있습니다:
 > [https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w](https://pan.baidu.com/s/1wthaL8YwGMxy_u0U7Mabpw?pwd=3i8w)
@@ -82,7 +82,7 @@
 
 ## 먼저 무엇을 다운로드할까
 
-현재 안정판의 일반 패키지는 [Cloudflare R2 다운로드 페이지](https://download.goagent.top/)에 있습니다. 설치형, Linux, 이전 버전과 예비 다운로드는 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)에 남아 있습니다.
+중국 본토 사용자는 일반 안정판을 [공식 다운로드 페이지](https://download.goagent.top/)에서 선택하는 것을 권장합니다. 설치형, Linux 패키지, 이전 버전은 [GitHub Releases](https://github.com/wimi321/lizzieyzy-next/releases)에서 받을 수 있습니다.
 
 <p align="center">
   <img src="assets/package-guide.svg" alt="LizzieYzy Next package guide" width="100%" />
