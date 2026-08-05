@@ -3470,9 +3470,27 @@ class AnalysisEngineRequestTest {
     Field sessionField = Leelaz.class.getDeclaredField("foregroundRestoreSession");
     sessionField.setAccessible(true);
     Object session = sessionField.get(engine);
-    Method method = Leelaz.class.getDeclaredMethod("completeForegroundRestore", session.getClass());
-    method.setAccessible(true);
-    method.invoke(engine, session);
+    assertTrue(session != null, "foreground restore session should be active");
+    Class<?> sessionType = session.getClass();
+    Field restoreThreadField = sessionType.getDeclaredField("restoreThread");
+    restoreThreadField.setAccessible(true);
+    Field restoreCompletedField = sessionType.getDeclaredField("restoreCompleted");
+    restoreCompletedField.setAccessible(true);
+    Method completeMethod =
+        Leelaz.class.getDeclaredMethod("completeForegroundRestore", sessionType);
+    completeMethod.setAccessible(true);
+    for (int attempt = 0; attempt < 5; attempt++) {
+      Thread restoreThread = (Thread) restoreThreadField.get(session);
+      if (restoreThread != null && restoreThread != Thread.currentThread()) {
+        restoreThread.join(2000);
+        assertFalse(restoreThread.isAlive(), "foreground restore attempt did not finish");
+      }
+      completeMethod.invoke(engine, session);
+      if ((boolean) restoreCompletedField.get(session)) {
+        return;
+      }
+    }
+    assertTrue(false, "foreground restore retries did not converge");
   }
 
   private static final class TestEnvironment implements AutoCloseable {

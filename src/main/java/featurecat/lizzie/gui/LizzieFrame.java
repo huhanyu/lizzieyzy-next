@@ -14744,6 +14744,7 @@ public class LizzieFrame extends JFrame {
           if (snapshot.state == EngineStartupStatus.State.READY) {
             engineStartupStatusButton.setVisible(false);
             engineStartupStatusButton.setEnabled(false);
+            basePanel.repaint();
             return;
           }
           String message = text(snapshot.messageKey, snapshot.fallback);
