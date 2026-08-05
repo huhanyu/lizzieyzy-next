@@ -19363,6 +19363,9 @@ public class LizzieFrame extends JFrame {
   private boolean savedShowKataGoEstimateOnSubbord;
 
   public void startContributeEngine() {
+    if (rejectContributeDuringBenchmark()) {
+      return;
+    }
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     Leelaz.ExclusiveGtpLifecycleReservation reservation =
         currentForegroundEngine == null
@@ -19382,6 +19385,9 @@ public class LizzieFrame extends JFrame {
   }
 
   protected void startContributeEngineReserved() {
+    if (rejectContributeDuringBenchmark()) {
+      return;
+    }
     if (Lizzie.frame.isContributing) {
       Utils.showMsg(Lizzie.resourceBundle.getString("Contribute.tips.alreadyTraining"));
       return;
@@ -19419,6 +19425,18 @@ public class LizzieFrame extends JFrame {
         Lizzie.config.showKataGoEstimateOnMainbord = true;
       }
     }
+  }
+
+  private boolean rejectContributeDuringBenchmark() {
+    if (!KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+      return false;
+    }
+    showContributeBenchmarkConflict();
+    return true;
+  }
+
+  protected void showContributeBenchmarkConflict() {
+    Utils.showMsg(Lizzie.resourceBundle.getString("Contribute.tips.blockedByKataGoTuning"));
   }
 
   public void closeContributeEngine() {

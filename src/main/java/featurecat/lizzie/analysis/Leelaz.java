@@ -324,6 +324,7 @@ public class Leelaz {
   public volatile boolean isLoaded = false;
   private volatile long bundledStartupToken = 0L;
   private volatile boolean openClFp32CompatibilityActive = false;
+  private volatile boolean launchCommandSetsKataGoThreads = false;
   private final AtomicBoolean openClCompatibilityRecoveryAttempted = new AtomicBoolean(false);
   public boolean isCheckingVersion;
   public volatile boolean isCheckingName;
@@ -656,6 +657,7 @@ public class Leelaz {
   }
 
   public void startEngine(int index) throws IOException {
+    launchCommandSetsKataGoThreads = false;
     if (engineCommand.trim().isEmpty()) {
       Utils.showMsg(Lizzie.resourceBundle.getString("EngineFaied.empty"));
       return;
@@ -667,6 +669,7 @@ public class Leelaz {
     CommandLaunchHelper.LaunchSpec launchSpec =
         CommandLaunchHelper.prepare(Utils.splitCommand(engineCommand));
     commands = launchSpec.getCommandParts();
+    rememberKataGoThreadLaunchOverride(commands);
     pda = 0;
     // Get weight name
     //	Pattern wPattern = Pattern.compile("(?s).*?(--weights |-w |-model )([^'\" ]+)(?s).*");
@@ -723,6 +726,11 @@ public class Leelaz {
         return;
       }
     } else {
+      if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+        isLoaded = false;
+        started = false;
+        return;
+      }
       Path engineExecutable = KataGoRuntimeHelper.resolveCommandExecutable(commands);
       boolean bundledCommand = Config.isBundledKataGoCommand(engineCommand);
       boolean nvidiaBundled = KataGoRuntimeHelper.isNvidiaBundledPath(engineExecutable);
@@ -777,6 +785,7 @@ public class Leelaz {
       }
       List<String> launchCommands =
           KataGoRuntimeHelper.prepareBundledLaunchCommand(commands, engineExecutable);
+      rememberKataGoThreadLaunchOverride(launchCommands);
       openClFp32CompatibilityActive =
           KataGoRuntimeHelper.isOpenClFp32CompatibilityActive(launchCommands, engineExecutable);
       if (openClFp32CompatibilityActive && bundledCommand && !preload) {
@@ -790,6 +799,8 @@ public class Leelaz {
       processBuilder.redirectErrorStream(false);
       try {
         process = processBuilder.start();
+        AnalysisResourceCoordinator.processStarted(
+            this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, engineCommand, process);
       } catch (IOException e) {
         closeBundledStartupDialog();
         String err = e.getLocalizedMessage();
@@ -11481,6 +11492,11 @@ public class Leelaz {
     return this.engineCommand;
   }
 
+  void rememberKataGoThreadLaunchOverride(List<String> effectiveLaunchCommand) {
+    launchCommandSetsKataGoThreads =
+        KataGoRuntimeHelper.hasEffectiveNumSearchThreadsOverride(effectiveLaunchCommand);
+  }
+
   //	public void toggleGtpConsole() {
   //		gtpConsole = !gtpConsole;
   //	}
@@ -11506,7 +11522,9 @@ public class Leelaz {
       setPda(Lizzie.config.autoLoadTxtKataEnginePDA);
     }
     String kataGoThreads = Utils.resolveKataGoThreadsForEngineLoad();
-    if (!kataGoThreads.isEmpty()) sendCommand("kata-set-param numSearchThreads " + kataGoThreads);
+    if (!launchCommandSetsKataGoThreads && !kataGoThreads.isEmpty()) {
+      sendCommand("kata-set-param numSearchThreads " + kataGoThreads);
+    }
     if (Lizzie.config.autoLoadKataEngineWRN) {
       try {
         this.wrn = Double.parseDouble(Lizzie.config.autoLoadTxtKataEngineWRN);
