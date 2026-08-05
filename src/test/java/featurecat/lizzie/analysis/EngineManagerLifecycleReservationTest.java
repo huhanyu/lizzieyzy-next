@@ -2043,6 +2043,102 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
+  void ordinaryForegroundActivationStartsAnalysisForInitialAndReopenedEngine() throws Exception {
+    assertForegroundActivationStartsAnalysis(false);
+    assertForegroundActivationStartsAnalysis(true);
+  }
+
+  private void assertForegroundActivationStartsAnalysis(boolean reopenCurrentEngine) throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Board previousBoard = Lizzie.board;
+    LizzieFrame previousFrame = Lizzie.frame;
+    Config previousConfig = Lizzie.config;
+    Menu previousMenu = LizzieFrame.menu;
+    JFontMenu previousEngineMenu = Menu.engineMenu;
+    BottomToolbar previousToolbar = LizzieFrame.toolbar;
+    BoardRenderer previousBoardRenderer = LizzieFrame.boardRenderer;
+    EngineManager previousManager = Lizzie.engineManager;
+    boolean previousEmpty = EngineManager.isEmpty;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    RecordingSwitchLeelaz target = new RecordingSwitchLeelaz();
+    RecordingSwitchLeelaz noEngineSentinel =
+        reopenCurrentEngine ? target : new RecordingSwitchLeelaz();
+    DeferredBoardSynchronizationEngineManager manager =
+        new DeferredBoardSynchronizationEngineManager(List.of(target));
+    SilentSwitchFrame frame = allocate(SilentSwitchFrame.class);
+    try {
+      Config config = allocate(Config.class);
+      config.fastChange = true;
+      config.extraMode = ExtraMode.Normal;
+      config.notStartPondering = false;
+      Lizzie.config = config;
+      Lizzie.frame = frame;
+      LizzieFrame.menu = allocate(CountingRestartMenu.class);
+      Menu.engineMenu = new SilentJFontMenu();
+      LizzieFrame.toolbar = allocate(SilentSwitchToolbar.class);
+      LizzieFrame.boardRenderer = new BoardRenderer(false);
+      Lizzie.board = fallbackRestoreBoard();
+      Lizzie.engineManager = manager;
+      noEngineSentinel.started = true;
+      noEngineSentinel.isLoaded = true;
+      target.started = true;
+      target.isLoaded = true;
+      target.isKatago = true;
+      target.width = 19;
+      target.height = 19;
+      target.oriWidth = 19;
+      target.oriHeight = 19;
+      target.orikomi = 7.5f;
+      Lizzie.leelaz = noEngineSentinel;
+      if (reopenCurrentEngine) {
+        EngineManager.isEmpty = false;
+        EngineManager.currentEngineNo = 0;
+        assertTrue(manager.killAllEngines());
+        assertTrue(EngineManager.isEmpty);
+        target.started = true;
+        target.isLoaded = true;
+      } else {
+        EngineManager.isEmpty = true;
+        EngineManager.currentEngineNo = -1;
+      }
+      Lizzie.engineStartupStatus.checking("engine.starting", "using existing cache");
+
+      manager.switchEngine(0, true);
+      target.isCheckingName = false;
+      assertNotNull(manager.synchronization);
+      manager.synchronization.run();
+      manager.afterSync.run();
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertSame(target, Lizzie.leelaz);
+      assertEquals(1, target.ponderCount);
+      assertTrue(target.isPondering());
+      assertTrue(target.isResponseUpToDate());
+      assertEquals(1, target.responseFreshenedAfterPonderCount);
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(1, frame.reSetLocCount);
+      assertFalse(target.hasExclusiveGtpWorkInProgress());
+    } finally {
+      if (manager.afterSync != null) {
+        manager.afterSync.run();
+      }
+      SwingUtilities.invokeAndWait(() -> {});
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      Lizzie.config = previousConfig;
+      LizzieFrame.menu = previousMenu;
+      Menu.engineMenu = previousEngineMenu;
+      LizzieFrame.toolbar = previousToolbar;
+      LizzieFrame.boardRenderer = previousBoardRenderer;
+      Lizzie.engineManager = previousManager;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+      Lizzie.engineStartupStatus.ready();
+    }
+  }
+
+  @Test
   void inactiveExplicitRestartWaitsForBoardFenceBeforeInitializationAndRelease() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     LizzieFrame previousFrame = Lizzie.frame;
@@ -2832,6 +2928,13 @@ class EngineManagerLifecycleReservationTest {
   }
 
   private static final class SilentSwitchFrame extends LizzieFrame {
+    private int reSetLocCount;
+
+    @Override
+    public void reSetLoc() {
+      reSetLocCount++;
+    }
+
     @Override
     public void invalidateTrackingAnalysis() {}
 
@@ -3345,6 +3448,8 @@ class EngineManagerLifecycleReservationTest {
     private String loadedSgf = "";
     private int boardSynchronizationConfirmations;
     private Runnable boardSynchronizationCompletion;
+    private int ponderCount;
+    private int responseFreshenedAfterPonderCount = -1;
 
     private RecordingSwitchLeelaz() throws Exception {
       super("");
@@ -3393,6 +3498,18 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     public void clearBestMoves() {}
+
+    @Override
+    public void ponder() {
+      ponderCount++;
+      Pondering();
+    }
+
+    @Override
+    public void setResponseUpToDate() {
+      super.setResponseUpToDate();
+      responseFreshenedAfterPonderCount = ponderCount;
+    }
 
     @Override
     void confirmBoardSynchronization(Runnable onSuccess, Consumer<String> onFailure) {
@@ -3510,6 +3627,12 @@ class EngineManagerLifecycleReservationTest {
 
   private static final class CountingRestartMenu extends Menu {
     private int updateCount;
+
+    @Override
+    public void changeicon(int index) {}
+
+    @Override
+    public void changeEngineIcon(int index, int mode) {}
 
     @Override
     public void showPda(boolean show) {}

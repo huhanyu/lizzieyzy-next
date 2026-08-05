@@ -2121,6 +2121,7 @@ public class EngineManager {
     }
     currentEngineNo2 = -1;
     currentEngineNo = -1;
+    isEmpty = true;
     Lizzie.leelaz.notPondering();
     Lizzie.leelaz.isLoaded = true;
     Menu.engineMenu.setText(resourceBundle.getString("Menu.noEngine"));
@@ -2593,9 +2594,10 @@ public class EngineManager {
       return false;
     }
     Leelaz currentForegroundEngine = Lizzie.leelaz;
+    boolean foregroundActivation = isMain && isEmpty && currentEngineNo < 0;
     PreparedEngineSwitch preparedSwitch;
     try {
-      preparedSwitch = prepareEngineSwitch(index, isMain);
+      preparedSwitch = prepareEngineSwitch(index, isMain, false, foregroundActivation);
     } catch (Leelaz.ExactSnapshotRestoreAdmissionException conflict) {
       if (showConflict) {
         showForegroundEngineLeaseInUse();
@@ -2619,7 +2621,7 @@ public class EngineManager {
         index,
         isMain,
         preparedSwitch,
-        targetEngine == currentForegroundEngine
+        targetEngine == currentForegroundEngine && !foregroundActivation
             ? reservations::close
             : releaseEngineLifecycleAfterBoardSync(
                 currentForegroundEngine,
@@ -2882,11 +2884,16 @@ public class EngineManager {
   }
 
   private PreparedEngineSwitch prepareEngineSwitch(int index, boolean isMain) {
-    return prepareEngineSwitch(index, isMain, false);
+    return prepareEngineSwitch(index, isMain, false, false);
   }
 
   private PreparedEngineSwitch prepareEngineSwitch(
       int index, boolean isMain, boolean explicitRestart) {
+    return prepareEngineSwitch(index, isMain, explicitRestart, false);
+  }
+
+  private PreparedEngineSwitch prepareEngineSwitch(
+      int index, boolean isMain, boolean explicitRestart, boolean foregroundActivation) {
     Board restoreBoard = Lizzie.board;
     if (restoreBoard == null) {
       return null;
@@ -2899,7 +2906,9 @@ public class EngineManager {
     Leelaz targetEngine = engineList.get(index);
     Leelaz previousEngine = isMain ? Lizzie.leelaz : Lizzie.leelaz2;
     boolean resumePonder =
-        previousEngine != null && previousEngine.isPonderingOrWasPonderingBeforeTracking();
+        foregroundActivation
+            || (previousEngine != null
+                && previousEngine.isPonderingOrWasPonderingBeforeTracking());
     double currentGameKomi = history.getGameInfo().getKomi();
     int boardWidth = Board.boardWidth;
     int boardHeight = Board.boardHeight;
@@ -3213,6 +3222,7 @@ public class EngineManager {
           && targetEngine.isLoaded()
           && !targetEngine.isCheckingName) {
         targetEngine.ponder();
+        targetEngine.setResponseUpToDate();
       }
     }
   }
