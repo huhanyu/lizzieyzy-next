@@ -356,37 +356,189 @@ def format_size(size: int) -> str:
     return f"{size} B"
 
 
+def inline_asset_data_uri(relative_path: str, mime_type: str) -> str:
+    asset_path = Path(__file__).resolve().parent.parent / relative_path
+    try:
+        encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        raise ReleaseError(f"Download page asset is unavailable: {asset_path}") from exc
+    return f"data:{mime_type};base64,{encoded}"
+
+
 def render_index(catalog: dict[str, Any], *, maintenance: bool = False) -> str:
-    release_url = html.escape(str(catalog.get("releaseUrl") or "#"), quote=True)
-    tag = html.escape(str(catalog.get("releaseTag") or ""))
     assets = list(catalog.get("assets") or [])
+    app_icon = inline_asset_data_uri("src/main/resources/assets/logo.png", "image/png")
+    page_background = inline_asset_data_uri("assets/download-page-bg.webp", "image/webp")
+    icons = {
+        name: inline_asset_data_uri(f"assets/download-page-icons/{name}.svg", "image/svg+xml")
+        for name in (
+            "windows",
+            "apple",
+            "gpu-card",
+            "cpu",
+            "speedometer",
+            "gear",
+            "arrow-repeat",
+            "book",
+            "clock-history",
+        )
+    }
+    history_url = "https://github.com/wimi321/lizzieyzy-next/releases"
+    help_url = str(catalog.get("releaseUrl") or history_url)
 
-    def cards(category: str) -> str:
-        rows = []
-        for entry in assets:
-            if entry.get("category") != category:
-                continue
-            url = entry["mirrorUrls"][0] if maintenance else entry["downloadUrl"]
-            action = "GitHub 备用下载" if maintenance else "下载"
-            rows.append(
-                '<article class="download-card">'
-                f'<div><strong>{html.escape(entry["labelZh"])}</strong>'
-                f'<small>{html.escape(entry["labelEn"])} · {format_size(int(entry["sizeBytes"]))}</small></div>'
-                f'<a href="{html.escape(url, quote=True)}">{action}</a>'
-                "</article>"
+    def decorative_icon(name: str, class_name: str = "row-icon") -> str:
+        return (
+            f'<img class="{class_name}" src="{icons[name]}" alt="" '
+            'aria-hidden="true" loading="eager">'
+        )
+
+    def entry_url(entry: dict[str, Any]) -> str:
+        if maintenance:
+            mirrors = list(entry.get("mirrorUrls") or [])
+            if not mirrors:
+                raise ReleaseError(f"Download entry has no maintenance mirror: {entry.get('name')}")
+            return str(mirrors[0])
+        return str(entry["downloadUrl"])
+
+    def find_entry(category: str, flavor: str = "", arch: str = "") -> dict[str, Any]:
+        matches = [
+            entry
+            for entry in assets
+            if entry.get("category") == category
+            and (not flavor or entry.get("flavor") == flavor)
+            and (not arch or entry.get("arch") == arch)
+        ]
+        if len(matches) != 1:
+            raise ReleaseError(
+                f"Download page expected one {category}/{flavor}/{arch} entry, found {len(matches)}"
             )
-        return "".join(rows)
+        return matches[0]
 
-    trt_parts = [entry for entry in assets if entry.get("category") == "tensorrt-advanced"]
-    trt_rows = "".join(
-        f'<li><a href="{html.escape((entry["mirrorUrls"][0] if maintenance else entry["downloadUrl"]), quote=True)}">'
-        f'{html.escape(entry["name"])}</a> <span>{format_size(int(entry["sizeBytes"]))}</span></li>'
-        for entry in trt_parts
+    def download_action(
+        entry: dict[str, Any], label: str = "下载", accessible_name: str = ""
+    ) -> str:
+        target_name = accessible_name or str(entry.get("labelZh") or "")
+        return (
+            f'<a class="download-action" href="{html.escape(entry_url(entry), quote=True)}" '
+            f'aria-label="{html.escape(label + " " + target_name, quote=True)}">'
+            f"{html.escape(label)}</a>"
+        )
+
+    def download_row(
+        entry: dict[str, Any],
+        title: str,
+        description: str,
+        icon: str,
+        *,
+        recommended: bool = False,
+    ) -> str:
+        badge = '<span class="recommendation">推荐</span>' if recommended else ""
+        return (
+            '<li class="download-row">'
+            '<div class="download-main">'
+            f'{decorative_icon(icon)}'
+            '<div class="download-copy">'
+            f'<div class="download-title">{html.escape(title)}{badge}</div>'
+            f'<div class="download-description">{html.escape(description)}</div>'
+            "</div>"
+            "</div>"
+            f'<span class="download-size">{format_size(int(entry["sizeBytes"]))}</span>'
+            f'{download_action(entry, accessible_name=title)}'
+            "</li>"
+        )
+
+    windows_entries = {
+        flavor: find_entry("windows-portable", flavor=flavor)
+        for flavor in (
+            "nvidia",
+            "nvidia50.cuda",
+            "opencl",
+            "with-katago",
+            "without.engine",
+        )
+    }
+    mac_arm = find_entry("macos-dmg", arch="arm64")
+    mac_intel = find_entry("macos-dmg", arch="x64")
+    core = find_entry("windows-core-update")
+    trt_parts = sorted(
+        (
+            entry
+            for entry in assets
+            if entry.get("category") == "tensorrt-advanced"
+            and re.search(r"\.7z\.\d{3}$", str(entry.get("name") or ""))
+        ),
+        key=lambda entry: str(entry["name"]),
     )
-    banner = (
-        '<div class="notice warning">R2 正在更新，当前按钮临时使用 GitHub 备用源。</div>'
+    if len(trt_parts) != 2:
+        raise ReleaseError(f"Download page expected two TensorRT volumes, found {len(trt_parts)}")
+
+    windows_rows = "".join(
+        [
+            download_row(
+                windows_entries["nvidia"],
+                "NVIDIA 显卡",
+                "RTX 20 / 30 / 40 系",
+                "gpu-card",
+                recommended=True,
+            ),
+            download_row(
+                windows_entries["nvidia50.cuda"],
+                "RTX 50 CUDA",
+                "RTX 5070 / 5080 / 5090",
+                "gpu-card",
+            ),
+            (
+                '<li class="download-row trt-row">'
+                '<div class="download-main">'
+                f'{decorative_icon("speedometer")}'
+                '<div class="download-copy">'
+                '<div class="download-title">TensorRT 高性能版</div>'
+                '<div class="download-description">RTX 20 至 50 · 两个分卷都要下载</div>'
+                "</div>"
+                "</div>"
+                f'<span class="download-size">{format_size(sum(int(entry["sizeBytes"]) for entry in trt_parts))}</span>'
+                '<div class="volume-actions">'
+                f'{download_action(trt_parts[0], "分卷 1", "TensorRT 高性能版")}'
+                f'{download_action(trt_parts[1], "分卷 2", "TensorRT 高性能版")}'
+                "</div>"
+                "</li>"
+            ),
+            download_row(
+                windows_entries["opencl"],
+                "OpenCL 兼容版",
+                "AMD / Intel 显卡",
+                "gpu-card",
+            ),
+            download_row(
+                windows_entries["with-katago"],
+                "CPU 通用版",
+                "没有独立显卡也能用",
+                "cpu",
+            ),
+            download_row(
+                windows_entries["without.engine"],
+                "无引擎版",
+                "已有自己的 KataGo",
+                "gear",
+            ),
+        ]
+    )
+    mac_rows = "".join(
+        [
+            download_row(
+                mac_arm,
+                "Apple 芯片",
+                "M1 / M2 / M3 / M4 / M5",
+                "apple",
+                recommended=True,
+            ),
+            download_row(mac_intel, "Intel 芯片", "旧款 Intel Mac", "cpu"),
+        ]
+    )
+    maintenance_notice = (
+        '<div class="maintenance-notice" role="status">下载页面正在更新，当前下载仍可正常使用。</div>'
         if maintenance
-        else '<div class="notice">已启用 Cloudflare R2 主下载；连接异常时软件会自动切换 GitHub。</div>'
+        else ""
     )
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -396,38 +548,107 @@ def render_index(catalog: dict[str, Any], *, maintenance: bool = False) -> str:
   <meta name="color-scheme" content="light">
   <title>LizzieYzy Next 下载</title>
   <style>
-    :root {{ --ink:#183c35; --muted:#66736f; --paper:#fbfaf6; --line:#d9d5c8; --gold:#c98e31; --green:#146b5a; }}
+    :root {{ --ink:#153f37; --muted:#68746f; --paper:#fbf8f1; --surface:#fffdf9e8; --line:#ddd5c5; --gold:#d66c1b; --green:#165c4c; --green-hover:#10493d; --focus:#d98a26; }}
     * {{ box-sizing:border-box; }}
-    body {{ margin:0; color:var(--ink); background:radial-gradient(circle at 15% 0,#f3e7c9 0,transparent 28%),var(--paper); font:16px/1.55 "Noto Sans SC","PingFang SC",sans-serif; }}
-    main {{ width:min(960px,calc(100% - 32px)); margin:0 auto; padding:56px 0 72px; }}
-    header {{ display:flex; align-items:end; justify-content:space-between; gap:24px; margin-bottom:28px; }}
-    h1 {{ margin:0; font-family:"STKaiti","Kaiti SC",serif; font-size:clamp(34px,6vw,58px); letter-spacing:.04em; }}
-    header p {{ margin:8px 0 0; color:var(--muted); }}
-    .tag {{ padding:8px 13px; border:1px solid var(--line); border-radius:999px; background:#fff9; white-space:nowrap; }}
-    .notice {{ margin:0 0 32px; padding:13px 16px; border-left:4px solid var(--green); background:#eaf5ef; border-radius:8px; }}
-    .warning {{ border-color:var(--gold); background:#fff2d7; }}
-    section {{ margin-top:34px; }}
-    h2 {{ margin:0 0 7px; font-size:22px; }}
-    .hint {{ color:var(--muted); margin:0 0 14px; }}
-    .download-card {{ display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px 18px; margin:9px 0; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 8px 30px #183c350a; }}
-    .download-card strong,.download-card small {{ display:block; }}
-    .download-card small {{ color:var(--muted); margin-top:2px; }}
-    a {{ color:var(--green); font-weight:700; text-decoration:none; }}
-    .download-card>a {{ min-width:88px; padding:9px 15px; text-align:center; color:#fff; background:var(--green); border-radius:10px; }}
-    details {{ padding:16px 18px; border:1px solid var(--line); border-radius:14px; background:#fff; }}
-    summary {{ cursor:pointer; font-weight:700; }}
-    li {{ margin:9px 0; }} li span {{ color:var(--muted); margin-left:8px; }}
-    footer {{ margin-top:42px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); }}
-    @media(max-width:620px) {{ header,.download-card {{ align-items:flex-start; flex-direction:column; }} .download-card>a {{ width:100%; }} }}
+    html {{ background:var(--paper); }}
+    body {{ min-height:100vh; margin:0; color:var(--ink); background:var(--paper) url("{page_background}") top center/cover fixed no-repeat; font:15px/1.45 "Noto Sans SC","Microsoft YaHei","PingFang SC",sans-serif; }}
+    a {{ color:inherit; }}
+    main {{ width:min(1280px,calc(100% - 40px)); margin:0 auto; padding:42px 0 30px; }}
+    .masthead {{ display:flex; align-items:center; gap:22px; margin-bottom:28px; }}
+    .app-icon {{ width:82px; height:82px; flex:0 0 auto; border-radius:22px; box-shadow:0 10px 24px #6a4b2424; }}
+    .brand {{ margin:0 0 5px; font:600 31px/1.1 "Iowan Old Style","Palatino Linotype",serif; letter-spacing:.02em; }}
+    h1 {{ margin:0; font:700 clamp(40px,4.4vw,64px)/1.08 "Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",serif; letter-spacing:.03em; }}
+    .subtitle {{ margin:10px 0 0; color:var(--muted); font-size:19px; }}
+    .maintenance-notice {{ margin:-8px 0 18px; padding:10px 14px; border:1px solid #e5bd75; border-radius:12px; background:#fff7e7; color:#6f4d13; }}
+    .platform-grid {{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; align-items:stretch; }}
+    .platform-panel {{ min-width:0; border:1px solid var(--line); border-radius:20px; background:var(--surface); box-shadow:0 14px 34px #153f3709; overflow:hidden; }}
+    .platform-heading {{ padding:22px 24px 16px; }}
+    .platform-title {{ display:flex; align-items:center; gap:11px; }}
+    .platform-icon {{ width:28px; height:28px; object-fit:contain; }}
+    .platform-heading h2 {{ margin:0; font:700 28px/1.2 "Iowan Old Style","Palatino Linotype","Noto Serif SC",serif; }}
+    .platform-heading p {{ margin:6px 0 0; color:var(--muted); }}
+    .download-list {{ margin:0 18px 18px; padding:0; list-style:none; border:1px solid #e4ddd0; border-radius:14px; background:#fffefa; overflow:hidden; }}
+    .download-row {{ min-height:67px; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:14px; padding:11px 14px; border-bottom:1px solid #e8e1d5; }}
+    .download-row:last-child {{ border-bottom:0; }}
+    .download-main {{ min-width:0; display:grid; grid-template-columns:34px minmax(0,1fr); align-items:center; gap:12px; }}
+    .row-icon {{ width:30px; height:30px; object-fit:contain; }}
+    .download-copy {{ min-width:0; }}
+    .download-title {{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:#1c2f2a; font-size:16px; font-weight:800; }}
+    .download-description {{ margin-top:3px; color:var(--muted); font-size:13px; }}
+    .recommendation {{ display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:7px; color:#a94f0d; background:#fff0df; font-size:12px; font-weight:800; }}
+    .download-size {{ color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }}
+    .download-action {{ display:inline-flex; min-width:74px; min-height:40px; align-items:center; justify-content:center; padding:8px 14px; border-radius:9px; color:#fff; background:var(--green); font-weight:800; text-decoration:none; transition:background-color .18s ease,transform .18s ease; }}
+    .download-action:hover {{ background:var(--green-hover); transform:translateY(-1px); }}
+    .download-action:focus-visible,.footer-link:focus-visible {{ outline:3px solid var(--focus); outline-offset:3px; }}
+    .volume-actions {{ display:flex; gap:7px; }}
+    .volume-actions .download-action {{ min-width:64px; padding-inline:10px; }}
+    .mac-panel {{ display:flex; flex-direction:column; }}
+    .mac-panel .download-list {{ width:calc(100% - 36px); }}
+    .install-tip {{ margin:auto 24px 26px; padding:18px 0 4px; border-top:1px solid #e3dccf; color:var(--muted); text-align:center; font-size:16px; }}
+    .update-strip {{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:18px; margin-top:18px; padding:16px 22px; border:1px solid var(--line); border-radius:16px; background:var(--surface); }}
+    .update-mark {{ width:30px; height:30px; object-fit:contain; }}
+    .update-copy strong {{ display:inline; color:#243832; font-size:17px; }}
+    .update-copy span {{ margin-left:14px; color:var(--muted); }}
+    .update-strip .download-action {{ color:#a74a0a; background:#fffaf2; border:1px solid var(--gold); }}
+    .update-strip .download-action:hover {{ color:#fff; background:var(--gold); }}
+    footer {{ display:flex; justify-content:center; gap:0; margin-top:24px; color:var(--ink); }}
+    .footer-link {{ display:inline-flex; align-items:center; gap:8px; padding:8px 20px; font-weight:700; text-decoration:none; }}
+    .footer-icon {{ width:17px; height:17px; object-fit:contain; }}
+    .footer-link+.footer-link {{ border-left:1px solid #bdb5a8; }}
+    @media(max-width:980px) {{
+      .platform-grid {{ grid-template-columns:1fr; }}
+      .install-tip {{ margin-top:20px; }}
+    }}
+    @media(max-width:660px) {{
+      main {{ width:min(100% - 24px,1280px); padding-top:24px; }}
+      .masthead {{ align-items:flex-start; gap:14px; }}
+      .app-icon {{ width:62px; height:62px; border-radius:17px; }}
+      .brand {{ font-size:23px; }}
+      h1 {{ font-size:36px; }}
+      .subtitle {{ font-size:16px; }}
+      .platform-heading {{ padding:18px 16px 13px; }}
+      .download-list {{ margin:0 10px 12px; }}
+      .download-row {{ grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; padding:13px 12px; }}
+      .download-main {{ grid-template-columns:30px minmax(0,1fr); gap:10px; }}
+      .row-icon {{ width:27px; height:27px; }}
+      .download-size {{ grid-column:1; }}
+      .download-action,.volume-actions {{ grid-column:2; grid-row:1 / span 2; }}
+      .trt-row {{ align-items:start; }}
+      .volume-actions {{ flex-direction:column; }}
+      .volume-actions .download-action {{ min-height:36px; }}
+      .update-strip {{ grid-template-columns:auto 1fr; padding:15px; }}
+      .update-copy strong,.update-copy span {{ display:block; margin:0; }}
+      .update-strip>.download-action {{ grid-column:1 / -1; grid-row:auto; width:100%; }}
+    }}
+    @media(prefers-reduced-motion:reduce) {{ .download-action {{ transition:none; }} }}
   </style>
 </head>
 <body><main>
-  <header><div><h1>LizzieYzy Next</h1><p>离线完整包与日常小更新 · Stable downloads</p></div><span class="tag">{tag}</span></header>
-  {banner}
-  <section><h2>Windows</h2><p class="hint">首次下载请选择完整免安装包；已有免安装版日常升级只需主程序小更新。</p>{cards("windows-portable")}{cards("windows-core-update")}</section>
-  <section><h2>macOS</h2><p class="hint">Apple Silicon 适用于 M1/M2/M3/M4/M5；旧款 Intel Mac 请选择 Intel。</p>{cards("macos-dmg")}</section>
-  <section><h2>高级可选：TensorRT 分卷包</h2><p class="hint">必须下载全部分卷，安装 7-Zip 后从 .7z.001 解压。普通用户建议使用软件内一键安装。</p><details><summary>显示 TensorRT 全部分卷与说明</summary><ul>{trt_rows}</ul></details></section>
-  <footer><a href="{release_url}">Linux、安装器、历史版本与 GitHub 备用下载</a><br>GitHub 下载量不包含本页 R2 下载量。</footer>
+  <header class="masthead">
+    <img class="app-icon" src="{app_icon}" width="82" height="82" alt="LizzieYzy Next 图标">
+    <div><p class="brand">LizzieYzy Next</p><h1>选择你的版本</h1><p class="subtitle">先选电脑，再下载与你硬件匹配的版本</p></div>
+  </header>
+  {maintenance_notice}
+  <div class="platform-grid">
+    <section class="platform-panel" aria-labelledby="windows-heading">
+      <div class="platform-heading"><div class="platform-title">{decorative_icon("windows", "platform-icon")}<h2 id="windows-heading">Windows</h2></div><p>根据显卡选择；不确定时优先使用 CPU 通用版</p></div>
+      <ul class="download-list">{windows_rows}</ul>
+    </section>
+    <section class="platform-panel mac-panel" aria-labelledby="mac-heading">
+      <div class="platform-heading"><div class="platform-title">{decorative_icon("apple", "platform-icon")}<h2 id="mac-heading">macOS</h2></div><p>选择与你 Mac 芯片匹配的版本</p></div>
+      <ul class="download-list">{mac_rows}</ul>
+      <p class="install-tip">下载后拖到“应用程序”即可安装</p>
+    </section>
+  </div>
+  <section class="update-strip" aria-label="Windows 主程序小更新">
+    {decorative_icon("arrow-repeat", "update-mark")}
+    <div class="update-copy"><strong>已经安装过免安装版？</strong><span>只更新主程序，约 {format_size(int(core["sizeBytes"]))}</span></div>
+    {download_action(core, "下载小更新", "Windows 主程序")}
+  </section>
+  <footer>
+    <a class="footer-link" href="{html.escape(help_url, quote=True)}">{decorative_icon("book", "footer-icon")}安装帮助</a>
+    <a class="footer-link" href="{history_url}">{decorative_icon("clock-history", "footer-icon")}历史版本</a>
+  </footer>
 </main></body></html>
 """
 
