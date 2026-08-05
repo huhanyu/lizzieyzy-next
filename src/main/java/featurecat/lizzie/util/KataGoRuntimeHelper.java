@@ -1632,7 +1632,7 @@ public final class KataGoRuntimeHelper {
       pausedEngineByShutdown = benchmarkPausedEngineByShutdown;
       if (pausedEngineByShutdown
           && benchmarkPausedEngineIdentityMatchesLocked(pausedEngine, pausedEngineIndex)) {
-        reservation = pausedEngine.beginExclusiveGtpLifecycleReservation();
+        reservation = pausedEngine.beginAutomaticEngineRestartReservation();
         if (reservation != null
             && !benchmarkPausedEngineIdentityMatchesLocked(pausedEngine, pausedEngineIndex)) {
           reservation.close();

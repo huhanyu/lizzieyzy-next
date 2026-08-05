@@ -3,15 +3,21 @@ package featurecat.lizzie.analysis;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
+import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.remote.KataGoAnalysisWebSocketTransportTest;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.rules.Board;
+import featurecat.lizzie.rules.BoardData;
+import featurecat.lizzie.rules.BoardHistoryList;
+import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.rules.Zobrist;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -23,8 +29,10 @@ import java.io.StringReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -441,6 +449,17 @@ class LeelazExclusiveRemoteGtpSessionTest {
     assertEquals(
         Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
         engine.previewExclusiveGtpLeaseAvailability());
+  }
+
+  @Test
+  void explicitLifecycleReservationDoesNotInvokeOverriddenNoArgEntryPoint() throws Exception {
+    Leelaz engine = new NoArgLifecycleReservationLeelaz();
+
+    Leelaz.ExclusiveGtpLifecycleReservation reservation =
+        engine.beginExclusiveGtpLifecycleReservation(new Object());
+
+    assertNotNull(reservation);
+    reservation.close();
   }
 
   @Test
@@ -1124,6 +1143,180 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void foregroundExactRestoreUsesFrozenGameStateAndPondersOnlyAfterNameResponse()
+      throws Exception {
+    try (ProductionForegroundRestoreHarness harness =
+        ProductionForegroundRestoreHarness.open()) {
+      harness.releaseThroughNameCommand();
+
+      assertTrue(harness.output.loadedSgf().contains("KM[6.5]"));
+      assertTrue(harness.output.loadedSgf().contains("SZ[13:9]"));
+      assertEquals(13, harness.engine.width);
+      assertEquals(9, harness.engine.height);
+      assertEquals(0, harness.engine.ponderCount);
+      assertEquals(0, harness.completions.get());
+
+      harness.completeNameResponse();
+
+      assertEquals(1, harness.engine.ponderCount);
+      assertEquals(1, harness.completions.get());
+    }
+  }
+
+  @Test
+  void staleNumberedErrorDoesNotFailCurrentForegroundRestore() throws Exception {
+    try (ProductionForegroundRestoreHarness harness = ProductionForegroundRestoreHarness.open()) {
+      harness.releaseThroughNameCommand();
+
+      processCommandResponse(harness.engine, "?999 stale restore error");
+      harness.completeNameResponse();
+
+      assertEquals(
+          1, harness.completions.get(), "stale response must not terminate foreground restore.");
+      assertEquals(1, harness.engine.ponderCount);
+    }
+  }
+
+  @Test
+  void foregroundExactRestoreDoesNotPonderAfterEnteringPlayMode() throws Exception {
+    try (ProductionForegroundRestoreHarness harness =
+        ProductionForegroundRestoreHarness.open()) {
+      harness.releaseThroughNameCommand();
+      Lizzie.frame.isPlayingAgainstLeelaz = true;
+
+      assertEquals(0, harness.engine.ponderCount);
+      harness.completeNameResponse();
+
+      assertEquals(0, harness.engine.ponderCount);
+      assertEquals(1, harness.completions.get());
+    }
+  }
+
+  @Test
+  void foregroundLeaseReleaseFreezesRestoreBeforeFinalStopResponse() throws Exception {
+    RestoreHarness harness = RestoreHarness.open(false, false);
+    try {
+      harness.board.currentMarker = 1;
+      assertTrue(
+          harness.engine.endForegroundAnalysisLease(
+              harness.owner, harness.completions::incrementAndGet));
+
+      // The final stop has been sent, but its response has not yet allowed restore to start.
+      harness.board.currentMarker = 2;
+      assertTrue(dispatch(harness.engine, "=800000001"));
+      assertTrue(dispatch(harness.engine, ""));
+      waitUntil(() -> harness.board.resendCount == 1);
+
+      assertEquals(1, harness.board.restoredMarker);
+    } finally {
+      harness.close();
+    }
+  }
+
+  @Test
+  void foregroundRestoreRejectsConflictedMirrorBeforeLoadOrTailReplay() throws Exception {
+    RestoreHarness harness = RestoreHarness.open(false, false);
+    Leelaz previousMirror = Lizzie.leelaz2;
+    Config config = Lizzie.config;
+    RecordingRestoreLeelaz mirror = recordingRestoreEngine();
+    ByteArrayOutputStream mirrorOutput = installOutput(mirror);
+    Thread boundaryThread = null;
+    Leelaz.EngineModeReservation mirrorReservation = null;
+    AtomicReference<Throwable> boundaryFailure = new AtomicReference<>();
+    try {
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.leelaz2 = mirror;
+      harness.engine.pauseReleaseBoundaryAndTimeout();
+
+      assertTrue(
+          harness.engine.endForegroundAnalysisLease(harness.owner, harness.completions::incrementAndGet));
+      assertTrue(dispatch(harness.engine, "=800000001"));
+      boundaryThread =
+          daemonThread(
+              "foreground-mirror-admission-boundary",
+              () -> {
+                try {
+                  assertTrue(dispatch(harness.engine, ""));
+                } catch (Throwable failure) {
+                  boundaryFailure.set(failure);
+                }
+              });
+      boundaryThread.start();
+      await(harness.engine.releaseBoundaryReached);
+
+      mirrorReservation = mirror.beginEngineModeReservation();
+      assertTrue(mirrorReservation != null, "mirror must be able to claim the conflict window");
+      harness.engine.continueReleaseBoundary.countDown();
+      boundaryThread.join(1000L);
+      assertNull(boundaryFailure.get());
+
+      waitUntil(() -> !harness.engine.isLoaded());
+      String mirrorCommands = mirrorOutput.toString(StandardCharsets.UTF_8);
+      assertFalse(
+          mirrorCommands.contains("loadsgf "),
+          "a conflicted mirror must receive no exact loadsgf command");
+      assertFalse(
+          mirrorCommands.contains("play "),
+          "a conflicted mirror must receive no exact trailing replay command");
+    } finally {
+      if (mirrorReservation != null) {
+        mirrorReservation.close();
+      }
+      harness.engine.resumeReleaseBoundaryAndTimeout();
+      if (boundaryThread != null) {
+        boundaryThread.join(1000L);
+      }
+      Lizzie.leelaz2 = previousMirror;
+      Lizzie.config = config;
+      harness.close();
+    }
+  }
+
+  @Test
+  void foregroundLeaseReleaseFailsClosedWhenMirrorIsAlreadyReserved() throws Exception {
+    RestoreHarness harness = RestoreHarness.open(false, false);
+    Leelaz previousMirror = Lizzie.leelaz2;
+    Config config = Lizzie.config;
+    RecordingRestoreLeelaz mirror = recordingRestoreEngine();
+    ByteArrayOutputStream mirrorOutput = installOutput(mirror);
+    Leelaz.EngineModeReservation mirrorReservation = null;
+    AtomicInteger failures = new AtomicInteger();
+    try {
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.leelaz2 = mirror;
+      mirrorReservation = mirror.beginEngineModeReservation();
+      assertTrue(mirrorReservation != null);
+      harness.output.reset();
+
+      assertTrue(
+          harness.engine.endForegroundAnalysisLease(
+              harness.owner,
+              harness.completions::incrementAndGet,
+              failures::incrementAndGet));
+      waitUntil(() -> failures.get() == 1);
+
+      assertEquals(0, harness.completions.get());
+      assertEquals(
+          java.util.Optional.of(Leelaz.ForegroundAnalysisLeaseFailure.RESTORE_FAILED),
+          harness.owner.failureReason());
+      assertFalse(harness.owner.isOwned());
+      assertFalse(harness.engine.hasExclusiveGtpWorkInProgress());
+      assertTrue(mirror.hasExclusiveGtpWorkInProgress());
+      assertFalse(harness.output.toString(StandardCharsets.UTF_8).contains("loadsgf "));
+      assertFalse(harness.output.toString(StandardCharsets.UTF_8).contains("play "));
+      assertFalse(mirrorOutput.toString(StandardCharsets.UTF_8).contains("loadsgf "));
+      assertFalse(mirrorOutput.toString(StandardCharsets.UTF_8).contains("play "));
+    } finally {
+      if (mirrorReservation != null) {
+        mirrorReservation.close();
+      }
+      Lizzie.leelaz2 = previousMirror;
+      Lizzie.config = config;
+      harness.close();
+    }
+  }
+
+  @Test
   void foregroundRestoreRepeatsWhenSuppressedBoardCommandInvalidatesFirstAttempt()
       throws Exception {
     RestoreHarness harness = RestoreHarness.open(false, false);
@@ -1146,6 +1339,49 @@ class LeelazExclusiveRemoteGtpSessionTest {
       completeForegroundRestore(harness.engine);
       waitUntil(() -> harness.completions.get() == 1);
     } finally {
+      harness.close();
+    }
+  }
+
+  @Test
+  void foregroundRestoreRetryFailsClosedWhenMirrorBecomesReserved() throws Exception {
+    RestoreHarness harness = RestoreHarness.open(false, false);
+    Leelaz previousMirror = Lizzie.leelaz2;
+    Config config = Lizzie.config;
+    RecordingRestoreLeelaz mirror = recordingRestoreEngine();
+    installOutput(mirror);
+    Leelaz.EngineModeReservation mirrorReservation = null;
+    AtomicInteger failures = new AtomicInteger();
+    try {
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.leelaz2 = mirror;
+      assertTrue(
+          harness.engine.endForegroundAnalysisLease(
+              harness.owner,
+              harness.completions::incrementAndGet,
+              failures::incrementAndGet));
+      assertTrue(dispatch(harness.engine, "=800000001"));
+      assertTrue(dispatch(harness.engine, ""));
+      waitUntil(() -> harness.board.resendCount == 1);
+
+      harness.engine.sendCommand("play B D4");
+      mirrorReservation = mirror.beginEngineModeReservation();
+      assertTrue(mirrorReservation != null);
+      completeForegroundRestore(harness.engine);
+      waitUntil(() -> failures.get() == 1);
+
+      assertEquals(0, harness.completions.get());
+      assertEquals(
+          java.util.Optional.of(Leelaz.ForegroundAnalysisLeaseFailure.RESTORE_FAILED),
+          harness.owner.failureReason());
+      assertFalse(harness.engine.hasExclusiveGtpWorkInProgress());
+      assertTrue(mirror.hasExclusiveGtpWorkInProgress());
+    } finally {
+      if (mirrorReservation != null) {
+        mirrorReservation.close();
+      }
+      Lizzie.leelaz2 = previousMirror;
+      Lizzie.config = config;
       harness.close();
     }
   }
@@ -1242,7 +1478,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
           harness
               .output
               .toString(StandardCharsets.UTF_8)
-              .contains("\nkomi 7.5\nkata-set-rules " + originalRules + "\n"));
+              .contains("\nkata-set-rules " + originalRules + "\n"));
       completeForegroundRestore(harness.engine);
     } finally {
       harness.close();
@@ -1455,11 +1691,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
       assertTrue(dispatch(harness.engine, "=800000001"));
       assertTrue(dispatch(harness.engine, ""));
-      waitUntil(() -> harness.board.resendCount == 1 || failures.get() == 1);
-      if (failures.get() == 0) {
-        completeForegroundRestore(harness.engine);
-      }
-      waitUntil(() -> failures.get() == 1 || harness.completions.get() == 1);
+      waitUntil(() -> failures.get() == 1);
 
       assertFalse(harness.engine.isLoaded());
       assertEquals(0, harness.completions.get());
@@ -1730,6 +1962,13 @@ class LeelazExclusiveRemoteGtpSessionTest {
     method.invoke(engine, line);
   }
 
+  private static void invokeResponseHandlerForLine(Leelaz engine, String line) throws Exception {
+    Method method =
+        Leelaz.class.getDeclaredMethod("runPendingResponseHandlerForLine", String.class);
+    method.setAccessible(true);
+    method.invoke(engine, line);
+  }
+
   private static void closeExclusiveSessionForTest(Leelaz engine) throws Exception {
     Field field = Leelaz.class.getDeclaredField("exclusiveGtpSession");
     field.setAccessible(true);
@@ -1784,6 +2023,9 @@ class LeelazExclusiveRemoteGtpSessionTest {
     private volatile int restoredMarker;
     private volatile int resendCount;
     private volatile boolean failResend;
+    private BoardHistoryList restoreHistory;
+    private boolean restorePlanCaptured;
+    private int frozenMarker;
 
     private RecordingRestoreBoard() {
       super();
@@ -1796,6 +2038,33 @@ class LeelazExclusiveRemoteGtpSessionTest {
       }
       restoredMarker = currentMarker;
       resendCount++;
+    }
+
+    @Override
+    public void resendMoveToEngineFromCurrentRoot(Leelaz leelaz) {
+      resendMoveToEngine(leelaz, false);
+    }
+
+    @Override
+    public void resendMoveToEngine(
+        Leelaz leelaz,
+        boolean loadEngine,
+        ExactSnapshotEngineRestore.PreparedRestore preparedRestore) {
+      if (failResend) {
+        throw new IllegalStateException("simulated restore failure");
+      }
+      restoredMarker = frozenMarker;
+      resendCount++;
+      preparedRestore.execute();
+    }
+
+    @Override
+    public BoardHistoryList getHistory() {
+      if (!restorePlanCaptured || frozenMarker != currentMarker) {
+        restorePlanCaptured = true;
+        frozenMarker = currentMarker;
+      }
+      return restoreHistory;
     }
   }
 
@@ -1821,6 +2090,87 @@ class LeelazExclusiveRemoteGtpSessionTest {
     }
   }
 
+  private static final class ProductionBoundaryRestoreLeelaz extends Leelaz {
+    private volatile int ponderCount;
+
+    private ProductionBoundaryRestoreLeelaz() throws Exception {
+      super("");
+      isLoaded = true;
+      started = true;
+      isKatago = true;
+      commandLists.addAll(
+          List.of(
+              "stop",
+              "boardsize",
+              "rectangular_boardsize",
+              "komi",
+              "kata-get-rules",
+              "kata-set-rules",
+              "clear_board",
+              "play",
+              "set_position",
+              "kata-analyze"));
+      setCapabilityDiscoveryComplete(this, true);
+    }
+
+    @Override
+    public void ponder() {
+      ponderCount++;
+      Pondering();
+    }
+  }
+
+  private static final class AutoRespondingRestoreOutput extends OutputStream {
+    private final Leelaz engine;
+    private final StringBuilder currentCommand = new StringBuilder();
+    private final CountDownLatch nameCommandWritten = new CountDownLatch(1);
+    private volatile String loadedSgf = "";
+
+    private AutoRespondingRestoreOutput(Leelaz engine) {
+      this.engine = engine;
+    }
+
+    @Override
+    public synchronized void write(int value) {
+      currentCommand.append((char) value);
+    }
+
+    @Override
+    public synchronized void flush() throws IOException {
+      String command = currentCommand.toString().trim();
+      currentCommand.setLength(0);
+      if (command.isEmpty() || command.endsWith(" stop")) {
+        return;
+      }
+      if ("name".equals(command)) {
+        nameCommandWritten.countDown();
+        return;
+      }
+      String response = "=";
+      int loadSgf = command.indexOf("loadsgf ");
+      if (loadSgf >= 0) {
+        try {
+          loadedSgf = Files.readString(Path.of(command.substring(loadSgf + 8).trim()));
+        } catch (Exception ex) {
+          throw new IOException("Failed to consume exact restore SGF", ex);
+        }
+        int firstSpace = command.indexOf(' ');
+        if (firstSpace > 0 && command.substring(0, firstSpace).chars().allMatch(Character::isDigit)) {
+          response = "=" + command.substring(0, firstSpace);
+        }
+      }
+      try {
+        invokeResponseHandlerForLine(engine, response);
+      } catch (Exception ex) {
+        throw new IOException("Failed to settle test GTP response for " + command, ex);
+      }
+    }
+
+    private String loadedSgf() {
+      return loadedSgf;
+    }
+  }
+
   private static final class RecordingRestoreLeelaz extends Leelaz {
     private volatile int ponderCount;
     private volatile boolean lifecycleBusyDuringPonder;
@@ -1834,6 +2184,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
     private RecordingRestoreLeelaz() throws Exception {
       super("");
+      ExactSnapshotRestoreProtocolFixture.install(
+          this, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
     }
 
     @Override
@@ -1962,6 +2314,105 @@ class LeelazExclusiveRemoteGtpSessionTest {
     }
   }
 
+  private static final class ProductionForegroundRestoreHarness implements AutoCloseable {
+    private final ForegroundLeaseGlobalState globalState;
+    private final ProductionBoundaryRestoreLeelaz engine;
+    private final AutoRespondingRestoreOutput output;
+    private final Leelaz.ForegroundAnalysisLease lease;
+    private final int previousBoardWidth;
+    private final int previousBoardHeight;
+    private final AtomicInteger completions = new AtomicInteger();
+
+    private ProductionForegroundRestoreHarness(
+        ForegroundLeaseGlobalState globalState,
+        ProductionBoundaryRestoreLeelaz engine,
+        AutoRespondingRestoreOutput output,
+        Leelaz.ForegroundAnalysisLease lease,
+        int previousBoardWidth,
+        int previousBoardHeight) {
+      this.globalState = globalState;
+      this.engine = engine;
+      this.output = output;
+      this.lease = lease;
+      this.previousBoardWidth = previousBoardWidth;
+      this.previousBoardHeight = previousBoardHeight;
+    }
+
+    private static ProductionForegroundRestoreHarness open() throws Exception {
+      ProductionBoundaryRestoreLeelaz engine = new ProductionBoundaryRestoreLeelaz();
+      ForegroundLeaseGlobalState globalState = ForegroundLeaseGlobalState.install(engine);
+      int previousBoardWidth = Board.boardWidth;
+      int previousBoardHeight = Board.boardHeight;
+      try {
+        Config config = allocate(Config.class);
+        config.extraMode = ExtraMode.Normal;
+        config.alwaysGtp = false;
+        Lizzie.config = config;
+        Lizzie.frame = allocate(LizzieFrame.class);
+        Lizzie.gtpConsole = allocate(SilentGtpConsole.class);
+
+        BoardData snapshot = BoardData.empty(13, 9);
+        snapshot.stones[0] = Stone.BLACK;
+        snapshot.addProperty("SZ", "13:9");
+        BoardHistoryList history = new BoardHistoryList(snapshot);
+        history.getGameInfo().setKomiNoMenu(6.5);
+        Board board = allocate(Board.class);
+        board.startStonelist = new ArrayList<>();
+        board.hasStartStone = false;
+        board.setHistory(history);
+        Lizzie.board = board;
+
+        engine.komi = 7.5f;
+        engine.width = 19;
+        engine.height = 19;
+        AutoRespondingRestoreOutput output = new AutoRespondingRestoreOutput(engine);
+        installOutput(engine, Leelaz.createCommandOutputStream(output));
+        engine.Pondering();
+        Leelaz.ForegroundAnalysisLeaseAcquisition acquisition =
+            engine.acquireForegroundAnalysisLease(line -> {}, owner -> {}, owner -> {});
+        assertEquals(
+            Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, acquisition.availability());
+        processCommandResponse(engine, "=800000000");
+        assertTrue(dispatch(engine, ""));
+        return new ProductionForegroundRestoreHarness(
+            globalState,
+            engine,
+            output,
+            acquisition.lease(),
+            previousBoardWidth,
+            previousBoardHeight);
+      } catch (Throwable failure) {
+        globalState.close();
+        throw failure;
+      }
+    }
+
+    private void releaseThroughNameCommand() throws Exception {
+      assertTrue(lease.release(completions::incrementAndGet, () -> {}));
+      assertTrue(dispatch(engine, "=800000001"));
+      assertTrue(dispatch(engine, ""));
+      assertTrue(
+          output.nameCommandWritten.await(2, TimeUnit.SECONDS),
+          "foreground restore must reach the final name command");
+    }
+
+    private void completeNameResponse() throws Exception {
+      invokeResponseHandlerForLine(engine, "=");
+      waitUntil(() -> completions.get() == 1);
+    }
+
+    @Override
+    public void close() {
+      try {
+        globalState.close();
+      } finally {
+        Board.boardWidth = previousBoardWidth;
+        Board.boardHeight = previousBoardHeight;
+        Zobrist.init();
+      }
+    }
+  }
+
   private static final class RestoreHarness implements AutoCloseable {
     private final Leelaz previousEngine;
     private final Board previousBoard;
@@ -2013,6 +2464,9 @@ class LeelazExclusiveRemoteGtpSessionTest {
       RecordingRestoreLeelaz engine = recordingRestoreEngine();
       installInput(engine, "");
       RecordingRestoreBoard board = allocate(RecordingRestoreBoard.class);
+      BoardData snapshot = BoardData.empty(19, 19);
+      snapshot.stones[0] = Stone.BLACK;
+      board.restoreHistory = new BoardHistoryList(snapshot);
       ByteArrayOutputStream output = installOutput(engine);
       Lizzie.leelaz = engine;
       Lizzie.board = board;
@@ -2081,5 +2535,16 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
     @Override
     public void addLine(String line) {}
+  }
+
+  private static final class NoArgLifecycleReservationLeelaz extends Leelaz {
+    private NoArgLifecycleReservationLeelaz() throws Exception {
+      super("");
+    }
+
+    @Override
+    public ExclusiveGtpLifecycleReservation beginExclusiveGtpLifecycleReservation() {
+      return null;
+    }
   }
 }
