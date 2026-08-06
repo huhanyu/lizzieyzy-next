@@ -2148,6 +2148,326 @@ class EngineManagerLifecycleReservationTest {
     assertExplicitRestartWaitsForBoardFence(false);
   }
 
+  @Test
+  void secondaryActiveExplicitRestartSettlesAfterOwnerBoardFence() throws Exception {
+    assertSecondaryExplicitRestartSettlesAfterOwnerBoardFence(true);
+  }
+
+  @Test
+  void secondaryPausedExplicitRestartStaysPausedAfterOwnerBoardFence() throws Exception {
+    assertSecondaryExplicitRestartSettlesAfterOwnerBoardFence(false);
+  }
+
+  private void assertSecondaryExplicitRestartSettlesAfterOwnerBoardFence(boolean resumePonder)
+      throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Board previousBoard = Lizzie.board;
+    LizzieFrame previousFrame = Lizzie.frame;
+    Config previousConfig = Lizzie.config;
+    boolean previousEmpty = EngineManager.isEmpty;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    int previousEngineNo2 = EngineManager.currentEngineNo2;
+    TrackingRestartActionLeelaz primary = new TrackingRestartActionLeelaz();
+    TrackingRestartActionLeelaz secondary = new TrackingRestartActionLeelaz();
+    DeferredSecondaryRestartEngineManager manager =
+        new DeferredSecondaryRestartEngineManager(List.of(primary, secondary), secondary);
+    List<String> terminalOrder = new ArrayList<>();
+    try {
+      Config config = allocate(Config.class);
+      config.fastChange = true;
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.config = config;
+      Lizzie.frame = allocate(LizzieFrame.class);
+      Lizzie.board = preparedRestoreBoard();
+      primary.started = true;
+      primary.isLoaded = true;
+      secondary.started = true;
+      secondary.isLoaded = true;
+      secondary.Pondering();
+      if (resumePonder) {
+        primary.Pondering();
+      } else {
+        primary.notPondering();
+      }
+      primary.onPonder = () -> terminalOrder.add("ponder");
+      secondary.onSecondaryTerminal = () -> terminalOrder.add("terminal");
+      secondary.onResponseWatermark = () -> terminalOrder.add("watermark");
+      setLeelazField(secondary, "currentCmdNum", 15);
+      setLeelazField(secondary, "cmdNumber", 17);
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = secondary;
+      EngineManager.isEmpty = false;
+      EngineManager.currentEngineNo = 0;
+      EngineManager.currentEngineNo2 = 1;
+      Lizzie.engineStartupStatus.checking("primary.still.starting", "controlled");
+
+      manager.reStartEngine2();
+      assertEquals(1, secondary.shutdownCount);
+      assertNotNull(manager.afterSync);
+      assertTrue(secondary.hasExclusiveGtpWorkInProgress());
+
+      manager.afterSync.run();
+
+      assertNotNull(
+          secondary.confirmation,
+          "secondary explicit restart must wait for its owner board synchronization fence");
+      assertTrue(secondary.hasExclusiveGtpWorkInProgress());
+      assertEquals(0, secondary.secondaryTerminalCount);
+      assertEquals(0, primary.ponderCount);
+      assertEquals(0, secondary.ponderCount);
+      assertFalse(secondary.isResponseUpToDate());
+      assertEquals(EngineStartupStatus.State.CHECKING, Lizzie.engineStartupStatus.snapshot().state);
+
+      Runnable confirmation = secondary.confirmation;
+      secondary.confirmation = null;
+      confirmation.run();
+
+      assertEquals(1, secondary.secondaryTerminalCount);
+      assertTrue(secondary.secondaryTerminalWhileLifecycleHeld);
+      assertTrue(secondary.responseWatermarkWhileLifecycleHeld);
+      assertTrue(secondary.canRestoreDymPda);
+      assertFalse(secondary.isPondering());
+      assertEquals(resumePonder ? 1 : 0, primary.ponderCount);
+      assertEquals(0, secondary.ponderCount);
+      assertEquals(
+          resumePonder
+              ? List.of("terminal", "ponder", "watermark")
+              : List.of("terminal", "watermark"),
+          terminalOrder);
+      assertTrue(secondary.isResponseUpToDate());
+      assertEquals(EngineStartupStatus.State.CHECKING, Lizzie.engineStartupStatus.snapshot().state);
+      assertFalse(secondary.hasExclusiveGtpWorkInProgress());
+    } finally {
+      if (secondary.confirmation != null) {
+        Runnable confirmation = secondary.confirmation;
+        secondary.confirmation = null;
+        confirmation.run();
+      } else if (manager.afterSync != null && secondary.secondaryTerminalCount == 0) {
+        manager.afterSync.run();
+        if (secondary.confirmation != null) {
+          Runnable confirmation = secondary.confirmation;
+          secondary.confirmation = null;
+          confirmation.run();
+        }
+      }
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      Lizzie.config = previousConfig;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+      EngineManager.currentEngineNo2 = previousEngineNo2;
+      Lizzie.engineStartupStatus.ready();
+    }
+  }
+
+  @Test
+  void secondaryExplicitRestartFenceFailureRetiresLifecycleFailClosed() throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Board previousBoard = Lizzie.board;
+    LizzieFrame previousFrame = Lizzie.frame;
+    Config previousConfig = Lizzie.config;
+    boolean previousEmpty = EngineManager.isEmpty;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    int previousEngineNo2 = EngineManager.currentEngineNo2;
+    TrackingRestartActionLeelaz primary = new TrackingRestartActionLeelaz();
+    TrackingRestartActionLeelaz secondary = new TrackingRestartActionLeelaz();
+    DeferredSecondaryRestartEngineManager manager =
+        new DeferredSecondaryRestartEngineManager(List.of(primary, secondary), secondary);
+    boolean settled = false;
+    try {
+      Config config = allocate(Config.class);
+      config.fastChange = true;
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.config = config;
+      Lizzie.frame = allocate(LizzieFrame.class);
+      Lizzie.board = preparedRestoreBoard();
+      primary.started = true;
+      primary.isLoaded = true;
+      primary.notPondering();
+      secondary.started = true;
+      secondary.isLoaded = true;
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = secondary;
+      EngineManager.isEmpty = false;
+      EngineManager.currentEngineNo = 0;
+      EngineManager.currentEngineNo2 = 1;
+      Lizzie.engineStartupStatus.ready();
+
+      manager.reStartEngine2();
+      manager.afterSync.run();
+
+      assertNotNull(secondary.rejection);
+      assertTrue(secondary.hasExclusiveGtpWorkInProgress());
+      secondary.rejection.accept("controlled secondary board fence failure");
+      settled = true;
+
+      assertFalse(secondary.isLoaded());
+      assertEquals(0, secondary.secondaryTerminalCount);
+      assertEquals(0, primary.ponderCount);
+      assertEquals(0, secondary.ponderCount);
+      assertEquals(1, manager.failureCount);
+      assertFalse(secondary.hasExclusiveGtpWorkInProgress());
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+    } finally {
+      if (!settled && manager.afterSync != null) {
+        manager.afterSync.run();
+        if (secondary.rejection != null) {
+          secondary.rejection.accept("controlled secondary board fence cleanup");
+        }
+      }
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      Lizzie.config = previousConfig;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+      EngineManager.currentEngineNo2 = previousEngineNo2;
+      Lizzie.engineStartupStatus.ready();
+    }
+  }
+
+  @Test
+  void secondaryExplicitRestartBoardFenceTimeoutRetiresLifecycleFailClosed() throws Exception {
+    assertSecondaryExplicitRestartBoardFenceFailClosed(false);
+  }
+
+  @Test
+  void secondaryExplicitRestartBoardFenceSendFailureRetiresLifecycleFailClosed() throws Exception {
+    assertSecondaryExplicitRestartBoardFenceFailClosed(true);
+  }
+
+  private void assertSecondaryExplicitRestartBoardFenceFailClosed(boolean failOnSend)
+      throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Board previousBoard = Lizzie.board;
+    LizzieFrame previousFrame = Lizzie.frame;
+    Config previousConfig = Lizzie.config;
+    boolean previousEmpty = EngineManager.isEmpty;
+    boolean previousEngineGame = EngineManager.isEngineGame;
+    boolean previousPreEngineGame = EngineManager.isPreEngineGame;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    int previousEngineNo2 = EngineManager.currentEngineNo2;
+    TrackingRestartActionLeelaz primary = new TrackingRestartActionLeelaz();
+    TrackingRestartActionLeelaz secondary = new TrackingRestartActionLeelaz();
+    DeferredSecondaryRestartEngineManager manager =
+        new DeferredSecondaryRestartEngineManager(List.of(primary, secondary), secondary);
+    GatedCommandOutputStream gatedOutput = new GatedCommandOutputStream(failOnSend);
+    Thread fenceThread = null;
+    boolean fenceSettled = false;
+    try {
+      Config config = allocate(Config.class);
+      config.fastChange = true;
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.config = config;
+      Lizzie.frame = allocate(LizzieFrame.class);
+      Lizzie.board = preparedRestoreBoard();
+      primary.started = true;
+      primary.isLoaded = true;
+      primary.notPondering();
+      secondary.started = true;
+      secondary.isLoaded = true;
+      secondary.useRealBoardSynchronizationFence = true;
+      secondary.boardSynchronizationTimeoutMillis = 100L;
+      setLeelazField(secondary, "currentCmdNum", 15);
+      setLeelazField(secondary, "cmdNumber", 17);
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = secondary;
+      EngineManager.isEmpty = false;
+      EngineManager.isEngineGame = false;
+      EngineManager.isPreEngineGame = false;
+      EngineManager.currentEngineNo = 0;
+      EngineManager.currentEngineNo2 = 1;
+      Lizzie.engineStartupStatus.ready();
+
+      manager.reStartEngine2();
+      assertEquals(1, secondary.shutdownCount);
+      assertNotNull(manager.afterSync);
+      setLeelazField(secondary, "outputStream", new BufferedOutputStream(gatedOutput));
+
+      fenceThread =
+          new Thread(() -> manager.afterSync.run(), "secondary-restart-board-fence");
+      fenceThread.start();
+      assertTrue(gatedOutput.writeEntered.await(2, TimeUnit.SECONDS));
+
+      int fenceResponseCommandId = pendingFenceResponseCommandId(secondary);
+      assertEquals(0, manager.failureCount);
+      assertFalse(
+          primary.hasExclusiveGtpWorkInProgress(),
+          "secondary restart must not reserve the primary lifecycle");
+      assertTrue(secondary.hasExclusiveGtpWorkInProgress());
+      assertTrue(secondary.isLoaded());
+      assertEquals(0, secondary.secondaryTerminalCount);
+      assertEquals(0, secondary.initializationCount);
+      assertEquals(0, primary.ponderCount);
+      assertEquals(0, secondary.ponderCount);
+      assertFalse(secondary.responseWatermarkWhileLifecycleHeld);
+      assertEquals(1, pendingResponseHandlerCount(secondary));
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+
+      gatedOutput.releaseWrite();
+      fenceThread.join(2000);
+      assertFalse(fenceThread.isAlive());
+      fenceThread = null;
+      assertTrue(manager.fenceFailureSettled.await(2, TimeUnit.SECONDS));
+      fenceSettled = true;
+
+      assertFalse(secondary.isLoaded());
+      assertEquals(0, secondary.secondaryTerminalCount);
+      assertEquals(0, secondary.initializationCount);
+      assertEquals(0, primary.ponderCount);
+      assertEquals(0, secondary.ponderCount);
+      assertFalse(secondary.responseWatermarkWhileLifecycleHeld);
+      assertFalse(secondary.isResponseUpToDate());
+      assertEquals(1, manager.failureCount);
+      assertFalse(primary.hasExclusiveGtpWorkInProgress());
+      assertFalse(secondary.hasExclusiveGtpWorkInProgress());
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(0, pendingResponseHandlerCount(secondary));
+
+      processCommandResponse(secondary, "=" + fenceResponseCommandId + " name");
+
+      assertEquals(1, manager.failureCount);
+      assertEquals(0, secondary.secondaryTerminalCount);
+      assertEquals(0, secondary.initializationCount);
+      assertEquals(0, primary.ponderCount);
+      assertEquals(0, secondary.ponderCount);
+      assertFalse(secondary.isLoaded());
+      assertFalse(primary.hasExclusiveGtpWorkInProgress());
+      assertFalse(secondary.hasExclusiveGtpWorkInProgress());
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(0, pendingResponseHandlerCount(secondary));
+    } finally {
+      gatedOutput.releaseWrite();
+      if (fenceThread != null) {
+        fenceThread.join(2000);
+      }
+      if (!fenceSettled && gatedOutput.writeEntered.getCount() == 0) {
+        try {
+          manager.fenceFailureSettled.await(2, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      Lizzie.config = previousConfig;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.isEngineGame = previousEngineGame;
+      EngineManager.isPreEngineGame = previousPreEngineGame;
+      EngineManager.currentEngineNo = previousEngineNo;
+      EngineManager.currentEngineNo2 = previousEngineNo2;
+      Lizzie.engineStartupStatus.ready();
+    }
+  }
+
   private void assertExplicitRestartWaitsForBoardFence(boolean resumePonder) throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     LizzieFrame previousFrame = Lizzie.frame;
@@ -2778,6 +3098,22 @@ class EngineManagerLifecycleReservationTest {
     field.set(engine, reservation);
   }
 
+  private static int pendingResponseHandlerCount(Leelaz engine) throws Exception {
+    Object handlers = getLeelazField(engine, "pendingResponseHandlers");
+    synchronized (handlers) {
+      return ((java.util.Collection<?>) handlers).size();
+    }
+  }
+
+  private static int pendingFenceResponseCommandId(Leelaz engine) throws Exception {
+    Object handlers = getLeelazField(engine, "pendingResponseHandlers");
+    synchronized (handlers) {
+      java.util.ArrayDeque<?> pending = (java.util.ArrayDeque<?>) handlers;
+      assertEquals(1, pending.size());
+      return (Integer) getField(pending.peekFirst(), "responseCommandId");
+    }
+  }
+
   private static void awaitEngineUnavailable(Leelaz engine) throws InterruptedException {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
     while (System.nanoTime() < deadline
@@ -2854,6 +3190,79 @@ class EngineManagerLifecycleReservationTest {
       failureCount++;
     }
   }
+  private static final class DeferredSecondaryRestartEngineManager extends EngineManager {
+    private final Leelaz target;
+    private final CountDownLatch fenceFailureSettled = new CountDownLatch(1);
+    private Runnable afterSync;
+    private int failureCount;
+
+    private DeferredSecondaryRestartEngineManager(List<Leelaz> engines, Leelaz target) {
+      super(engines);
+      this.target = target;
+    }
+
+    @Override
+    protected void switchEngineInternal(
+        int index,
+        boolean isMain,
+        PreparedEngineSwitch preparedSwitch,
+        Runnable afterSync) {
+      Lizzie.leelaz2 = target;
+      target.started = true;
+      target.isLoaded = true;
+      this.afterSync = afterSync;
+    }
+
+    @Override
+    protected void showEngineSynchronizationFailure(Leelaz engine) {
+      failureCount++;
+      fenceFailureSettled.countDown();
+    }
+  }
+
+  private static final class GatedCommandOutputStream extends java.io.OutputStream {
+    private final CountDownLatch writeEntered = new CountDownLatch(1);
+    private final CountDownLatch releaseWrite = new CountDownLatch(1);
+    private final boolean failOnRelease;
+    private final ByteArrayOutputStream sink = new ByteArrayOutputStream();
+
+    private GatedCommandOutputStream(boolean failOnRelease) {
+      this.failOnRelease = failOnRelease;
+    }
+
+    @Override
+    public void write(int value) throws java.io.IOException {
+      awaitWriteEntry();
+      if (failOnRelease) {
+        throw new java.io.IOException("controlled board fence send failure");
+      }
+      sink.write(value);
+    }
+
+    @Override
+    public void write(byte[] bytes, int offset, int length) throws java.io.IOException {
+      awaitWriteEntry();
+      if (failOnRelease) {
+        throw new java.io.IOException("controlled board fence send failure");
+      }
+      sink.write(bytes, offset, length);
+    }
+
+    private void awaitWriteEntry() {
+      writeEntered.countDown();
+      try {
+        releaseWrite.await();
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("controlled board fence stream interrupted", interrupted);
+      }
+    }
+
+    private void releaseWrite() {
+      releaseWrite.countDown();
+    }
+  }
+
 
   private static final class LifecycleConflictLeelaz extends Leelaz {
     private LifecycleConflictLeelaz() throws Exception {
@@ -2893,6 +3302,14 @@ class EngineManagerLifecycleReservationTest {
     private boolean invokeRealInitialization;
     private int initializationCount;
     private boolean resumePonderIntent;
+    private int secondaryTerminalCount;
+    private boolean secondaryTerminalWhileLifecycleHeld;
+    private boolean responseWatermarkWhileLifecycleHeld;
+    private Runnable onPonder;
+    private Runnable onSecondaryTerminal;
+    private Runnable onResponseWatermark;
+    private boolean useRealBoardSynchronizationFence;
+    private long boardSynchronizationTimeoutMillis = -1L;
 
     private TrackingRestartActionLeelaz() throws Exception {
       super("");
@@ -2912,6 +3329,9 @@ class EngineManagerLifecycleReservationTest {
     public void ponder() {
       ponderWhileLifecycleHeld = hasExclusiveGtpWorkInProgress();
       ponderCount++;
+      if (onPonder != null) {
+        onPonder.run();
+      }
       if (emitPonderCommand) {
         cmdNumber++;
       }
@@ -2919,8 +3339,38 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     void confirmBoardSynchronization(Runnable onSuccess, Consumer<String> onFailure) {
-      confirmation = onSuccess;
-      rejection = onFailure;
+      if (useRealBoardSynchronizationFence) {
+        super.confirmBoardSynchronization(onSuccess, onFailure);
+      } else {
+        confirmation = onSuccess;
+        rejection = onFailure;
+      }
+    }
+
+    @Override
+    protected long readBoardGmaRestoreResponseTimeoutMillis() {
+      return boardSynchronizationTimeoutMillis > 0
+          ? boardSynchronizationTimeoutMillis
+          : super.readBoardGmaRestoreResponseTimeoutMillis();
+    }
+
+    @Override
+    void completeSecondaryExplicitRestartBoardSynchronization() {
+      secondaryTerminalCount++;
+      secondaryTerminalWhileLifecycleHeld = hasExclusiveGtpWorkInProgress();
+      if (onSecondaryTerminal != null) {
+        onSecondaryTerminal.run();
+      }
+      super.completeSecondaryExplicitRestartBoardSynchronization();
+    }
+
+    @Override
+    public void setResponseUpToDate() {
+      responseWatermarkWhileLifecycleHeld = hasExclusiveGtpWorkInProgress();
+      if (onResponseWatermark != null) {
+        onResponseWatermark.run();
+      }
+      super.setResponseUpToDate();
     }
 
     @Override

@@ -50,14 +50,17 @@ class LeelazBoardSynchronizationConfirmationTest {
     try (TestEnvironment ignored = new TestEnvironment()) {
       ShortTimeoutLeelaz engine = new ShortTimeoutLeelaz();
       Lizzie.leelaz = engine;
-      setOutput(engine, new ByteArrayOutputStream());
+      ByteArrayOutputStream output = new ByteArrayOutputStream();
+      setOutput(engine, output);
       CountDownLatch failed = new CountDownLatch(1);
+      AtomicInteger failures = new AtomicInteger();
       AtomicReference<String> detail = new AtomicReference<>();
 
       engine.confirmBoardSynchronization(
           () -> {},
           message -> {
             detail.set(message);
+            failures.incrementAndGet();
             failed.countDown();
           });
 
@@ -68,8 +71,44 @@ class LeelazBoardSynchronizationConfirmationTest {
         Thread.sleep(1L);
       }
       assertTrue(pendingResponses(engine).isEmpty());
+      assertEquals(1, failures.get());
+      engine.processCommandResponseLineForTest("=" + commandId(output) + " late");
+      assertEquals(1, failures.get());
+      assertTrue(pendingResponses(engine).isEmpty());
     }
   }
+  @Test
+  void sendFailureRetiresPendingBoardSynchronizationResponseAndIgnoresLateReply()
+      throws Exception {
+    try (TestEnvironment ignored = new TestEnvironment()) {
+      Leelaz engine = new Leelaz("");
+      Lizzie.leelaz = engine;
+      AtomicInteger successes = new AtomicInteger();
+      AtomicInteger failures = new AtomicInteger();
+      AtomicReference<String> detail = new AtomicReference<>();
+      FailingOutput output = new FailingOutput();
+      setOutput(engine, output);
+
+      engine.confirmBoardSynchronization(
+          successes::incrementAndGet,
+          message -> {
+            detail.set(message);
+            failures.incrementAndGet();
+          });
+
+      assertEquals(0, successes.get());
+      assertEquals(1, failures.get());
+      assertTrue(detail.get().contains("controlled board fence send failure"));
+      assertTrue(pendingResponses(engine).isEmpty());
+
+      engine.processCommandResponseLineForTest("=" + output.commandId() + " late");
+
+      assertEquals(0, successes.get());
+      assertEquals(1, failures.get());
+      assertTrue(pendingResponses(engine).isEmpty());
+    }
+  }
+
 
   @Test
   void settledResponseMayCancelTimeoutBeforeItIsScheduled() {
@@ -99,6 +138,11 @@ class LeelazBoardSynchronizationConfirmationTest {
     field.setAccessible(true);
     field.set(engine, new BufferedOutputStream(output));
   }
+  private static String commandId(ByteArrayOutputStream output) {
+    String command = output.toString(StandardCharsets.UTF_8).trim();
+    return command.substring(0, command.indexOf(' '));
+  }
+
 
   @SuppressWarnings("unchecked")
   private static ArrayDeque<Object> pendingResponses(Leelaz engine) throws Exception {
@@ -150,6 +194,18 @@ class LeelazBoardSynchronizationConfirmationTest {
     @Override
     protected long readBoardGmaRestoreResponseTimeoutMillis() {
       return 5L;
+    }
+  }
+
+  private static final class FailingOutput extends ByteArrayOutputStream {
+    @Override
+    public synchronized void write(byte[] bytes, int offset, int length) {
+      super.write(bytes, offset, length);
+      throw new IllegalStateException("controlled board fence send failure");
+    }
+
+    private String commandId() {
+      return LeelazBoardSynchronizationConfirmationTest.commandId(this);
     }
   }
 

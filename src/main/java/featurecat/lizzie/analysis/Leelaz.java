@@ -789,7 +789,7 @@ public class Leelaz {
       openClFp32CompatibilityActive =
           KataGoRuntimeHelper.isOpenClFp32CompatibilityActive(launchCommands, engineExecutable);
       if (openClFp32CompatibilityActive && bundledCommand && !preload) {
-        Lizzie.engineStartupStatus.checking(
+        publishBundledStartupStatus(
             "BundledEngineStartup.status.openclCompatibility",
             "Using stable NVIDIA OpenCL compatibility mode...");
       }
@@ -1164,6 +1164,11 @@ public class Leelaz {
   void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {
     Lizzie.initializeAfterVersionCheck(false, this, resumePonder);
   }
+  void completeSecondaryExplicitRestartBoardSynchronization() {
+    notPondering();
+    canRestoreDymPda = true;
+  }
+
 
   void completeReadBoardGmaRecoveryAfterBoardSync() {
     synchronized (readBoardGmaLock()) {
@@ -11409,7 +11414,13 @@ public class Leelaz {
     final boolean nvidiaBundled = KataGoRuntimeHelper.isNvidiaBundledPath(engineExecutable);
     final int totalSteps = nvidiaBundled ? 4 : 3;
     String progressFallback = statusFallback + " (" + step + "/" + totalSteps + ")";
-    Lizzie.engineStartupStatus.checking(statusKey, progressFallback);
+    publishBundledStartupStatus(statusKey, progressFallback);
+  }
+
+  private void publishBundledStartupStatus(String statusKey, String statusFallback) {
+    if (this == Lizzie.leelaz) {
+      Lizzie.engineStartupStatus.checking(statusKey, statusFallback);
+    }
   }
 
   private void closeBundledStartupDialog() {
