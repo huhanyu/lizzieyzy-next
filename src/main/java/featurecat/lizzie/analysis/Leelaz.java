@@ -10444,17 +10444,9 @@ public class Leelaz {
     }
 
     private void start() {
-      try {
-        sendCommand("name", responseHandler, this::onSendFailure, true, false);
-      } catch (RuntimeException ex) {
-        settleFailure(ex.getMessage());
-        return;
-      }
-      if (settled.get()) {
-        return;
-      }
-      timeout = new Timer("lizzie-board-sync-confirmation-timeout", true);
-      timeout.schedule(
+      Timer confirmationTimeout = new Timer("lizzie-board-sync-confirmation-timeout", true);
+      timeout = confirmationTimeout;
+      TimerTask timeoutTask =
           new TimerTask() {
             @Override
             public void run() {
@@ -10467,8 +10459,20 @@ public class Leelaz {
                 retireTimedOutNormalCommand(responseHandler);
               }
             }
-          },
-          Math.max(1L, readBoardGmaRestoreResponseTimeoutMillis()));
+          };
+      try {
+        sendCommand("name", responseHandler, this::onSendFailure, true, false);
+      } catch (RuntimeException ex) {
+        settleFailure(ex.getMessage());
+        return;
+      }
+      if (!settled.get()) {
+        scheduleBoardSynchronizationTimeout(
+            confirmationTimeout,
+            timeoutTask,
+            Math.max(1L, readBoardGmaRestoreResponseTimeoutMillis()),
+            settled);
+      }
     }
 
     private void onResponse() {
@@ -10507,6 +10511,17 @@ public class Leelaz {
       timeout = null;
       if (currentTimeout != null) {
         currentTimeout.cancel();
+      }
+    }
+  }
+
+  static void scheduleBoardSynchronizationTimeout(
+      Timer timer, TimerTask task, long delayMillis, AtomicBoolean settled) {
+    try {
+      timer.schedule(task, delayMillis);
+    } catch (IllegalStateException ex) {
+      if (!settled.get()) {
+        throw ex;
       }
     }
   }

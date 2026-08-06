@@ -2140,6 +2140,15 @@ class EngineManagerLifecycleReservationTest {
 
   @Test
   void inactiveExplicitRestartWaitsForBoardFenceBeforeInitializationAndRelease() throws Exception {
+    assertExplicitRestartWaitsForBoardFence(true);
+  }
+
+  @Test
+  void pausedExplicitRestartWaitsForBoardFenceAndPublishesTerminalState() throws Exception {
+    assertExplicitRestartWaitsForBoardFence(false);
+  }
+
+  private void assertExplicitRestartWaitsForBoardFence(boolean resumePonder) throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     LizzieFrame previousFrame = Lizzie.frame;
     Board previousBoard = Lizzie.board;
@@ -2159,8 +2168,13 @@ class EngineManagerLifecycleReservationTest {
     config.extraMode = ExtraMode.Normal;
     engine.started = true;
     engine.isLoaded = true;
-    engine.Pondering();
+    if (resumePonder) {
+      engine.Pondering();
+    } else {
+      engine.notPondering();
+    }
     RecoverySwitchEngineManager manager = new RecoverySwitchEngineManager(List.of(engine), engine);
+    boolean synchronizationRan = false;
     try {
       Lizzie.config = config;
       Lizzie.board = board;
@@ -2176,6 +2190,7 @@ class EngineManagerLifecycleReservationTest {
 
       manager.reStartEngine(0);
       manager.afterSync.run();
+      synchronizationRan = true;
 
       assertNotNull(engine.confirmation);
       assertTrue(engine.isLoaded);
@@ -2190,14 +2205,21 @@ class EngineManagerLifecycleReservationTest {
       assertTrue(engine.isLoaded);
       assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
       assertEquals(1, engine.initializationCount);
-      assertTrue(engine.resumePonderIntent);
-      assertEquals(1, engine.ponderCount);
-      assertTrue(engine.ponderWhileLifecycleHeld);
+      assertEquals(resumePonder, engine.resumePonderIntent);
+      assertEquals(resumePonder ? 1 : 0, engine.ponderCount);
+      assertEquals(resumePonder, engine.isPondering());
+      if (resumePonder) {
+        assertTrue(engine.ponderWhileLifecycleHeld);
+      }
       assertTrue(engine.isResponseUpToDate());
       assertEquals(1, frame.reSetLocCount);
       assertEquals(1, menu.updateCount);
       assertFalse(engine.hasExclusiveGtpWorkInProgress());
     } finally {
+      if (!synchronizationRan && manager.afterSync != null) {
+        manager.afterSync.run();
+      }
+      SwingUtilities.invokeAndWait(() -> {});
       Lizzie.leelaz = previousEngine;
       Lizzie.frame = previousFrame;
       Lizzie.board = previousBoard;
@@ -2210,6 +2232,7 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.engineStartupStatus.ready();
     }
   }
+
 
   @Test
   void restartSynchronizationPropagatesReceiptIntoTheFinalBoardFence() throws Exception {
