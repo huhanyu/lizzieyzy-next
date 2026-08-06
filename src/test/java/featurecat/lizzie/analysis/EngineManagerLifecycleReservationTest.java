@@ -2385,6 +2385,54 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
+  void primaryRestartKeepsIndexZeroAfterSecondaryExplicitRestart() throws Exception {
+    RestartIndexLeelaz primary = new RestartIndexLeelaz("same-command");
+    RestartIndexLeelaz secondary = new RestartIndexLeelaz("same-command");
+    try (RestartIndexTestEnvironment environment =
+        new RestartIndexTestEnvironment(List.of(primary, secondary), 0, 1)) {
+      environment.manager.reStartEngine2();
+      assertEquals(1, secondary.shutdownCount);
+      assertEquals(0, EngineManager.currentEngineNo);
+      environment.completeDeferredSwitch();
+
+      environment.manager.reStartEngine();
+
+      assertEquals(1, primary.shutdownCount);
+      assertEquals(0, primary.startIndex);
+      assertEquals(0, EngineManager.currentEngineNo);
+    }
+  }
+
+  @Test
+  void primaryRestartRejectsTheSameEngineIndex() throws Exception {
+    RestartIndexLeelaz shared = new RestartIndexLeelaz("shared");
+    RestartIndexLeelaz unrelated = new RestartIndexLeelaz("unrelated");
+    try (RestartIndexTestEnvironment environment =
+        new RestartIndexTestEnvironment(List.of(shared, unrelated), 0, 0)) {
+      environment.manager.reStartEngine();
+
+      assertEquals(0, shared.shutdownCount);
+      assertEquals(0, unrelated.shutdownCount);
+    }
+  }
+
+  @Test
+  void primaryRestartUsesItsCurrentNonZeroIndex() throws Exception {
+    RestartIndexLeelaz unused = new RestartIndexLeelaz("unused");
+    RestartIndexLeelaz secondary = new RestartIndexLeelaz("secondary");
+    RestartIndexLeelaz primary = new RestartIndexLeelaz("primary");
+    try (RestartIndexTestEnvironment environment =
+        new RestartIndexTestEnvironment(List.of(unused, secondary, primary), 2, 1)) {
+      environment.manager.reStartEngine();
+
+      assertEquals(1, primary.shutdownCount);
+      assertEquals(2, primary.startIndex);
+      assertEquals(0, secondary.shutdownCount);
+    }
+  }
+
+
+  @Test
   void secondaryRestartAfterCloseDoesNotUseInvalidEngineIndex() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Leelaz previousSecondEngine = Lizzie.leelaz2;
@@ -3556,6 +3604,96 @@ class EngineManagerLifecycleReservationTest {
             throw new IllegalStateException(failure);
           }
       afterConsumed.run();
+    }
+  }
+
+  private static final class RestartIndexTestEnvironment implements AutoCloseable {
+    private final Leelaz previousPrimary = Lizzie.leelaz;
+    private final Leelaz previousSecondary = Lizzie.leelaz2;
+    private final Board previousBoard = Lizzie.board;
+    private final LizzieFrame previousFrame = Lizzie.frame;
+    private final BottomToolbar previousToolbar = LizzieFrame.toolbar;
+    private final Config previousConfig = Lizzie.config;
+    private final boolean previousEmpty = EngineManager.isEmpty;
+    private final int previousEngineNo = EngineManager.currentEngineNo;
+    private final int previousEngineNo2 = EngineManager.currentEngineNo2;
+    private final DeferredBoardSynchronizationEngineManager manager;
+
+    private RestartIndexTestEnvironment(
+        List<RestartIndexLeelaz> engines, int primaryIndex, int secondaryIndex) throws Exception {
+      List<Leelaz> catalog = new ArrayList<>(engines);
+      manager = new DeferredBoardSynchronizationEngineManager(catalog);
+      Config config = allocate(Config.class);
+      config.fastChange = true;
+      config.extraMode = ExtraMode.Double_Engine;
+      Lizzie.config = config;
+      Lizzie.frame = allocate(CountingRestartGateFrame.class);
+      LizzieFrame.toolbar = allocate(SilentSwitchToolbar.class);
+      Lizzie.board = preparedRestoreBoard();
+      engines.forEach(
+          engine -> {
+            engine.started = true;
+            engine.isLoaded = true;
+          });
+      Lizzie.leelaz = catalog.get(primaryIndex);
+      Lizzie.leelaz2 = catalog.get(secondaryIndex);
+      EngineManager.isEmpty = false;
+      EngineManager.currentEngineNo = primaryIndex;
+      EngineManager.currentEngineNo2 = secondaryIndex;
+    }
+
+    private void completeDeferredSwitch() {
+      Runnable completion = manager.afterSync;
+      manager.afterSync = null;
+      if (completion != null) {
+        completion.run();
+      }
+    }
+
+    @Override
+    public void close() throws Exception {
+      completeDeferredSwitch();
+      SwingUtilities.invokeAndWait(() -> {});
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      LizzieFrame.toolbar = previousToolbar;
+      Lizzie.config = previousConfig;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+      EngineManager.currentEngineNo2 = previousEngineNo2;
+    }
+  }
+
+  private static final class RestartIndexLeelaz extends Leelaz {
+    private int shutdownCount;
+    private int startIndex = -1;
+
+    private RestartIndexLeelaz(String command) throws Exception {
+      super(command);
+    }
+
+    @Override
+    public void shutdown() {
+      shutdownCount++;
+      started = false;
+    }
+
+    @Override
+    public void startEngine(int index) {
+      startIndex = index;
+      started = true;
+      isLoaded = true;
+      isCheckingName = false;
+    }
+
+    @Override
+    void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {}
+
+    @Override
+    void confirmBoardSynchronization(Runnable onSuccess, Consumer<String> onFailure) {
+      onSuccess.run();
     }
   }
 
