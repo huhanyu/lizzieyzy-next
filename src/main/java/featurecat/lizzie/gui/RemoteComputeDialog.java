@@ -600,18 +600,14 @@ public class RemoteComputeDialog extends JDialog {
   private JPanel buildZhiziWebsiteCard() {
     return createZhiziWebsiteCard(
         zhiziWebsiteButton,
-        text("RemoteCompute.websiteAndTopup", "Zhizi website and top-up"),
-        text(
-            "RemoteCompute.topupDescription",
-            "Download the Zhizi app from its website to top up your account."),
+        text("RemoteCompute.websiteTitle", "Zhizi official website"),
         "www.zhizigo.cn");
   }
 
-  static JPanel createZhiziWebsiteCard(
-      JButton websiteButton, String titleText, String descriptionText, String urlText) {
+  static JPanel createZhiziWebsiteCard(JButton websiteButton, String titleText, String urlText) {
     JPanel panel = new RoundPanel(24, new Color(246, 252, 247), new Color(188, 222, 200));
     panel.setLayout(new BorderLayout(12, 0));
-    panel.setBorder(new EmptyBorder(12, 14, 12, 14));
+    panel.setBorder(new EmptyBorder(13, 14, 13, 14));
     panel.setAlignmentX(Component.LEFT_ALIGNMENT);
     panel.add(new WebsiteGlyph(), BorderLayout.WEST);
 
@@ -619,25 +615,12 @@ public class RemoteComputeDialog extends JDialog {
     copy.setLayout(new BoxLayout(copy, BoxLayout.Y_AXIS));
     copy.setAlignmentX(Component.LEFT_ALIGNMENT);
     JLabel title = new JLabel(titleText);
+    title.setName("zhiziWebsiteTitle");
     title.setForeground(TEXT);
     title.setFont(title.getFont().deriveFont(Font.BOLD, 16F));
     title.setAlignmentX(Component.LEFT_ALIGNMENT);
     copy.add(title);
-    copy.add(Box.createVerticalStrut(3));
-    JTextArea body = new JTextArea(descriptionText, 2, 20);
-    body.setEditable(false);
-    body.setFocusable(false);
-    body.setOpaque(false);
-    body.setName("zhiziWebsiteDescription");
-    body.setLineWrap(true);
-    body.setWrapStyleWord(true);
-    body.setForeground(MUTED);
-    body.setFont(body.getFont().deriveFont(Font.BOLD, 12.5F));
-    body.setBorder(null);
-    body.setAlignmentX(Component.LEFT_ALIGNMENT);
-    body.setMaximumSize(new Dimension(Integer.MAX_VALUE, body.getPreferredSize().height));
-    copy.add(body);
-    copy.add(Box.createVerticalStrut(2));
+    copy.add(Box.createVerticalStrut(5));
     JLabel url = new JLabel(urlText);
     url.setName("zhiziWebsiteUrl");
     url.setForeground(GREEN);
@@ -646,17 +629,24 @@ public class RemoteComputeDialog extends JDialog {
     copy.add(url);
     panel.add(copy, BorderLayout.CENTER);
 
-    Dimension buttonSize = new Dimension(localizedButtonWidth(websiteButton, 118), 42);
+    Dimension preferredButtonSize = websiteButton.getPreferredSize();
+    Dimension buttonSize =
+        new Dimension(
+            localizedButtonWidth(websiteButton, 108), Math.max(42, preferredButtonSize.height));
+    websiteButton.setName("zhiziWebsiteAction");
     websiteButton.setPreferredSize(buttonSize);
     websiteButton.setMinimumSize(buttonSize);
-    websiteButton.setMaximumSize(buttonSize);
     JPanel action = transparent(new GridBagLayout());
     action.setPreferredSize(buttonSize);
+    action.setMinimumSize(buttonSize);
     action.add(websiteButton);
     panel.add(action, BorderLayout.EAST);
 
     Dimension preferred = panel.getPreferredSize();
-    panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferred.height));
+    int cardHeight = Math.max(72, preferred.height);
+    panel.setPreferredSize(new Dimension(preferred.width, cardHeight));
+    panel.setMinimumSize(new Dimension(0, cardHeight));
+    panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, cardHeight));
     return panel;
   }
 
@@ -1355,10 +1345,7 @@ public class RemoteComputeDialog extends JDialog {
       }
       Desktop.getDesktop().browse(URI.create(ZHIZI_OFFICIAL_URL));
       updateStatus(
-          text(
-              "RemoteCompute.status.websiteOpened",
-              "Zhizi website opened. Download the app there to top up."),
-          true);
+          text("RemoteCompute.status.websiteOpened", "Zhizi official website opened."), true);
     } catch (Exception e) {
       Toolkit.getDefaultToolkit()
           .getSystemClipboard()
@@ -1372,7 +1359,7 @@ public class RemoteComputeDialog extends JDialog {
           this,
           format(
               "RemoteCompute.websiteCopiedMessage",
-              "Could not open a browser. The link was copied:\n{0}\n\nDownload the Zhizi app from the website to top up.",
+              "Could not open a browser. The official website link was copied:\n{0}",
               ZHIZI_OFFICIAL_URL),
           text("RemoteCompute.websiteCopiedTitle", "Zhizi link copied"),
           JOptionPane.INFORMATION_MESSAGE);
