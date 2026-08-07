@@ -3778,11 +3778,13 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
   /**
    * The session-owned ports the GMA session module dispatches its ordered effects to. The exact
    * participant start runs the frozen {@code ExactSnapshotEngineRestore.PreparedRestore} on a
-   * worker thread and reports the aggregate result through the session capability; the terminal
+   * worker thread and reports the aggregate result through the session capability; the runtime
+   * participant start delegates the captured runtime parameter restore to Leelaz's barrier/ACK
+   * machinery and reports its aggregate result through the session capability; the terminal
    * effects publish the session terminal, apply the legacy fail-closed handling, grant normal
-   * continuation (next hand or the legacy runtime restore), and request the captured reservation
-   * release exactly once. Created lazily on the first admission so reflection-allocated helpers
-   * (tests) do not depend on field initializers.
+   * continuation (the next autoplay hand — the runtime participant already restored the runtime
+   * parameters), and request the captured reservation release exactly once. Created lazily on the
+   * first admission so reflection-allocated helpers (tests) do not depend on field initializers.
    */
   private ReadBoardGmaSession.Ports gmaSessionPorts;
 
@@ -3817,7 +3819,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
           session.admitGma(
               session.helperCapability(),
               restoreIntent,
-              ReadBoardGmaSession.RuntimeSnapshot.empty());
+              engine.captureReadBoardGmaRuntimeSnapshot());
       readBoardGmaSession = session;
       readBoardGmaTerminalCapability = terminalCapability;
     }
@@ -3914,10 +3916,15 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     public void startRuntime(
         ReadBoardGmaSession.RuntimeParticipantCapability capability,
         ReadBoardGmaSession.RuntimeSnapshot runtimeSnapshot) {
-      // The runtime parameter participant is wired by the next ticket; ticket 02 never admits
-      // a non-empty snapshot, so this effect is unreachable and fails closed if it ever fires.
-      throw new IllegalStateException(
-          "ReadBoard GMA runtime participant is not wired for this session");
+      ReadBoardGmaSession session = readBoardGmaSession;
+      Leelaz engine = Lizzie.leelaz;
+      if (session == null || engine == null) {
+        // The session module converts the synchronous rejection into a typed START_REJECTED
+        // failure and fail-closes; a stale session must not restore a replacement engine.
+        throw new IllegalStateException(
+            "ReadBoard GMA runtime participant has no session or engine to restore");
+      }
+      engine.startReadBoardGmaRuntimeParticipant(session, capability, runtimeSnapshot);
     }
 
     @Override
@@ -3942,9 +3949,9 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     public void continueNormal() {
       if (readBoardGmaAutoPlayActive) {
         scheduleReadBoardGmaIfNeeded("gma-session-success");
-      } else if (Lizzie.leelaz != null) {
-        Lizzie.leelaz.restoreReadBoardGmaRuntimeSettingsIfNeeded();
       }
+      // The runtime participant already restored the captured runtime parameters before this
+      // continuation was granted; the legacy post-terminal runtime restore is no longer needed.
     }
 
     @Override

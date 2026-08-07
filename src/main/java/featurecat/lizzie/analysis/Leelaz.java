@@ -10138,7 +10138,6 @@ public class Leelaz {
       Runnable onSuccess, Consumer<String> onFailure) {
     ReadBoardGmaRestoreBarrier barrier;
     List<ReadBoardGmaRuntimeParam> paramsToRestore = new ArrayList<>();
-    boolean noParamsToRestore;
     synchronized (readBoardGmaLock()) {
       if (readBoardGmaPreparation != null) {
         readBoardGmaPreparation.requestCancellation(onSuccess, onFailure);
@@ -10155,9 +10154,20 @@ public class Leelaz {
           barrier, readBoardGmaPondering, paramsToRestore);
       registerReadBoardGmaRuntimeParamRestore(barrier, readBoardGmaMaxTime, paramsToRestore);
       registerReadBoardGmaRuntimeParamRestore(barrier, readBoardGmaMaxVisits, paramsToRestore);
-      noParamsToRestore = barrier.isEmpty();
     }
-    if (noParamsToRestore) {
+    startReadBoardGmaRestoreBarrierDispatch(barrier, paramsToRestore);
+  }
+
+  /**
+   * Runs a restore barrier to its convergence: completes immediately when no parameters were
+   * registered, otherwise arms the barrier timeout and dispatches each registered parameter's
+   * restore command, guarding against a barrier that already completed. Shared by the legacy
+   * runtime restore and the session-owned runtime participant so the convergence shapes cannot
+   * diverge.
+   */
+  private void startReadBoardGmaRestoreBarrierDispatch(
+      ReadBoardGmaRestoreBarrier barrier, List<ReadBoardGmaRuntimeParam> paramsToRestore) {
+    if (barrier.isEmpty()) {
       completeReadBoardGmaRuntimeRestore(barrier);
       return;
     }
@@ -10203,6 +10213,65 @@ public class Leelaz {
    */
   Object currentEngineIncarnation() {
     return currentReaderStreamBinding();
+  }
+
+  /**
+   * Captures the runtime parameter restore snapshot for the next GMA session: the parameters this
+   * session's preparation overrode, in the canonical restore order. The GMA session module treats
+   * the contents as opaque; this adapter reads them back when the runtime participant starts. A
+   * parameter whose original value is not yet captured stays pending in the participant instead of
+   * being treated as restored.
+   */
+  ReadBoardGmaSession.RuntimeSnapshot captureReadBoardGmaRuntimeSnapshot() {
+    synchronized (readBoardGmaLock()) {
+      List<ReadBoardGmaRuntimeParam> overridden = new ArrayList<>();
+      if (readBoardGmaPondering.overridden) {
+        overridden.add(readBoardGmaPondering);
+      }
+      if (readBoardGmaMaxTime.overridden) {
+        overridden.add(readBoardGmaMaxTime);
+      }
+      if (readBoardGmaMaxVisits.overridden) {
+        overridden.add(readBoardGmaMaxVisits);
+      }
+      return ReadBoardGmaSession.RuntimeSnapshot.of(overridden);
+    }
+  }
+
+  /**
+   * Starts the runtime parameter restore participant for the captured snapshot: aggregates the
+   * matching per-parameter restore ACKs for this session and engine incarnation and reports the
+   * aggregate result through the session capability exactly once. The participant reuses the
+   * legacy restore barrier/ACK machinery; a parameter whose original value was not yet captured
+   * stays pending (its capture callback dispatches the restore command) instead of being treated
+   * as restored. A synchronous start rejection throws, which the session module converts into a
+   * typed {@link ReadBoardGmaSession.FailureCategory#START_REJECTED} failure and fail-closes.
+   */
+  void startReadBoardGmaRuntimeParticipant(
+      ReadBoardGmaSession session,
+      ReadBoardGmaSession.RuntimeParticipantCapability capability,
+      ReadBoardGmaSession.RuntimeSnapshot runtimeSnapshot) {
+    new ReadBoardGmaRuntimeParticipant(session, capability, runtimeSnapshot).start();
+  }
+
+  /**
+   * Maps the runtime restore seam failure detail to the stable failure category. The categories
+   * follow the restore-command lifecycle contract: stale admission rejection, response timeout,
+   * GTP error, and send failure. Unclassified failures default to {@link
+   * ReadBoardGmaSession.FailureCategory#SEND_FAILED}.
+   */
+  static ReadBoardGmaSession.FailureCategory classifyReadBoardGmaRuntimeFailure(String detail) {
+    String message = detail == null ? "" : detail;
+    if (message.contains("admission is no longer valid") || message.contains("was not admitted")) {
+      return ReadBoardGmaSession.FailureCategory.ADMISSION_STALE;
+    }
+    if (message.contains("timeout")) {
+      return ReadBoardGmaSession.FailureCategory.TIMEOUT;
+    }
+    if (message.contains("command failed")) {
+      return ReadBoardGmaSession.FailureCategory.GTP_ERROR;
+    }
+    return ReadBoardGmaSession.FailureCategory.SEND_FAILED;
   }
 
   /**
@@ -10759,6 +10828,92 @@ public class Leelaz {
       if (currentTimeout != null) {
         currentTimeout.cancel();
       }
+    }
+  }
+
+  /**
+   * Runtime parameter restore participant adapter — the session-typed seam between the narrow
+   * {@link ReadBoardGmaSession} module and the Leelaz runtime restore barrier/ACK machinery.
+   *
+   * <p>The participant aggregates one {@link ReadBoardGmaRestoreBarrier} over the parameters
+   * captured in the session's runtime snapshot: every parameter's {@code kata-set-param} restore
+   * command must receive its matching successful ACK before the participant reports success. With
+   * no parameters to restore the participant completes immediately. An uncaptured original value
+   * leaves the parameter pending until its {@code kata-get-param} capture arrives; a sent command
+   * is never treated as success. Any restore failure (GTP error, send failure, timeout, process
+   * death) fails the participant closed with a stable {@link ReadBoardGmaSession.FailureCategory}.
+   *
+   * <p>The shared barrier completion and failure paths keep their legacy cleanup semantics: on
+   * success the parameter snapshots are cleared and the captured reservation is closed; on failure
+   * the engine is marked unrestored, the reservation is closed, and tracking eligibility is
+   * invalidated. The reservation close coincides with the participant reaching its confirmation
+   * boundary (the last matching ACK, or the failure), so no session-owned resource is released
+   * before both participants reached their terminal; the session's terminal release request is
+   * still emitted exactly once and then validates against the (already closed) captured
+   * reservation. This keeps the established deferral pattern from the legacy convergence paths —
+   * closing at the terminal instead would leave the reservation open while the success
+   * continuation starts the next hand, which would then inherit and lose it to the release
+   * request. The session terminal effects publish, handle, continue, and request the release
+   * exactly once; duplicates and late events are absorbed by the module's capability guards and
+   * the barrier identity check.
+   */
+  private final class ReadBoardGmaRuntimeParticipant {
+    private final ReadBoardGmaSession session;
+    private final ReadBoardGmaSession.RuntimeParticipantCapability capability;
+    private final ReadBoardGmaSession.RuntimeSnapshot runtimeSnapshot;
+
+    private ReadBoardGmaRuntimeParticipant(
+        ReadBoardGmaSession session,
+        ReadBoardGmaSession.RuntimeParticipantCapability capability,
+        ReadBoardGmaSession.RuntimeSnapshot runtimeSnapshot) {
+      this.session = session;
+      this.capability = capability;
+      this.runtimeSnapshot = runtimeSnapshot;
+    }
+
+    /**
+     * Builds the restore barrier for the captured parameters and dispatches their restore
+     * commands. A synchronous rejection (stale engine incarnation, no captured reservation,
+     * unrestored engine state, or an already converging restore) throws so the session
+     * fail-closes through the typed start rejection contract with zero physical side effects; a
+     * stale session must never dispatch restore commands on a replacement engine.
+     */
+    private void start() {
+      ReadBoardGmaRestoreBarrier barrier;
+      List<ReadBoardGmaRuntimeParam> paramsToRestore = new ArrayList<>();
+      synchronized (readBoardGmaLock()) {
+        if (currentEngineIncarnation() != session.engineIncarnation()) {
+          throw new IllegalStateException(
+              "ReadBoard GMA runtime participant belongs to a stale engine incarnation");
+        }
+        if (readBoardGmaReservation == null) {
+          throw new IllegalStateException(
+              "ReadBoard GMA runtime participant has no captured reservation");
+        }
+        if (engineStateUnrestored || readBoardGmaRestoreBarrier != null) {
+          throw new IllegalStateException(
+              "ReadBoard GMA engine state does not admit the runtime participant");
+        }
+        barrier = new ReadBoardGmaRestoreBarrier(this::completeSucceeded, this::completeFailed);
+        readBoardGmaRestoreBarrier = barrier;
+        for (Object parameter : runtimeSnapshot.parameters()) {
+          registerReadBoardGmaRuntimeParamRestore(
+              barrier, (ReadBoardGmaRuntimeParam) parameter, paramsToRestore);
+        }
+      }
+      startReadBoardGmaRestoreBarrierDispatch(barrier, paramsToRestore);
+    }
+
+    private void completeSucceeded() {
+      session.completeRuntime(capability, new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    }
+
+    private void completeFailed(String detail) {
+      session.completeRuntime(
+          capability,
+          new ReadBoardGmaSession.ParticipantResult.Failed(
+              new ReadBoardGmaSession.ParticipantFailure(
+                  classifyReadBoardGmaRuntimeFailure(detail), session.engineIncarnation(), detail)));
     }
   }
 
