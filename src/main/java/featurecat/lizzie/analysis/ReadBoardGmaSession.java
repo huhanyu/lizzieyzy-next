@@ -430,6 +430,15 @@ public final class ReadBoardGmaSession {
   }
 
   /**
+   * The captured engine incarnation all capabilities of this session bind to. Adapters use it when
+   * building {@link ParticipantFailure} payloads so that foreign-incarnation failures are absorbed
+   * by the admission guard instead of locking this session.
+   */
+  public Object engineIncarnation() {
+    return engineIncarnation;
+  }
+
+  /**
    * Admits the physical GMA request: transitions {@link Preparing} to {@link GmaInFlight} and
    * issues the one-shot {@link GmaTerminalCapability} for Leelaz response binding. The caller must
    * already hold the authoritative restore intent (a null intent fails fast — the intent exists

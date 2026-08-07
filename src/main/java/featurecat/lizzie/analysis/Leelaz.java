@@ -9581,14 +9581,20 @@ public class Leelaz {
     private final String color;
     private final int maxTimeSeconds;
     private final int maxVisits;
+    private final ReadBoardGmaSessionAdmission sessionAdmission;
     private boolean cancellationRequested;
     private Runnable cancellationSuccess;
     private Consumer<String> cancellationFailure;
 
-    private ReadBoardGmaPreparation(String color, int maxTimeSeconds, int maxVisits) {
+    private ReadBoardGmaPreparation(
+        String color,
+        int maxTimeSeconds,
+        int maxVisits,
+        ReadBoardGmaSessionAdmission sessionAdmission) {
       this.color = color;
       this.maxTimeSeconds = maxTimeSeconds;
       this.maxVisits = maxVisits;
+      this.sessionAdmission = sessionAdmission;
     }
 
     private void start() {
@@ -9716,7 +9722,9 @@ public class Leelaz {
             cancellationSuccessCallback, cancellationFailureCallback);
         return;
       }
-      sendReadBoardGmaCommand(color);
+      if (!sendReadBoardGmaCommand(color, sessionAdmission)) {
+        fail("ReadBoard GMA session admission failed");
+      }
     }
 
     private void sendPreparationCommand(String command, Consumer<String> success) {
@@ -9897,8 +9905,42 @@ public class Leelaz {
     return true;
   }
 
+  /**
+   * The session admission registered by the ReadBoard helper for the next GMA hand. Consumed (and
+   * cleared) by {@link #genmoveAnalyzeForReadBoard(String, int, int, boolean)} so that the
+   * admission is delivered between reservation establishment and the physical command write.
+   * Volatile because the registering and consuming threads are not guaranteed to be the same.
+   */
+  private volatile ReadBoardGmaSessionAdmission pendingReadBoardGmaSessionAdmission;
+
+  /** Registers the session admission for the next {@code genmoveAnalyzeForReadBoard} call. */
+  void setReadBoardGmaSessionAdmission(ReadBoardGmaSessionAdmission sessionAdmission) {
+    pendingReadBoardGmaSessionAdmission = sessionAdmission;
+  }
+
+  private ReadBoardGmaSessionAdmission takeReadBoardGmaSessionAdmission() {
+    ReadBoardGmaSessionAdmission sessionAdmission = pendingReadBoardGmaSessionAdmission;
+    pendingReadBoardGmaSessionAdmission = null;
+    return sessionAdmission;
+  }
+
   public synchronized boolean genmoveAnalyzeForReadBoard(
       String color, int maxTimeSeconds, int maxVisits, boolean ponder) {
+    return genmoveAnalyzeForReadBoard(
+        color, maxTimeSeconds, maxVisits, ponder, takeReadBoardGmaSessionAdmission());
+  }
+
+  /**
+   * Starts one ReadBoard GMA hand with an explicit session admission callback. Package-private:
+   * the admission seam is consumed by the ReadBoard helper in the same package; external callers
+   * use the four-argument form, which consumes the registered admission.
+   */
+  synchronized boolean genmoveAnalyzeForReadBoard(
+      String color,
+      int maxTimeSeconds,
+      int maxVisits,
+      boolean ponder,
+      ReadBoardGmaSessionAdmission sessionAdmission) {
     if (isThinking) return false;
     if (ponder && RemoteComputeConfig.isCustomWebSocketEngineCommand(engineCommand)) return false;
     if (!beginReadBoardGmaSession()) return false;
@@ -9908,7 +9950,7 @@ public class Leelaz {
           return false;
         }
         readBoardGmaPreparation =
-            new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits);
+            new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits, sessionAdmission);
       }
       readBoardGmaPreparation.start();
       return true;
@@ -9916,8 +9958,7 @@ public class Leelaz {
     setReadBoardGmaPondering(ponder);
     prepareReadBoardGmaMaxTime(maxTimeSeconds);
     prepareReadBoardGmaMaxVisits(maxVisits);
-    sendReadBoardGmaCommand(color);
-    return true;
+    return sendReadBoardGmaCommand(color, sessionAdmission);
   }
 
   private static final class ReadBoardGmaResponseBinding {
@@ -9930,6 +9971,16 @@ public class Leelaz {
       this.identity = identity;
       this.generation = generation;
     }
+  }
+
+  /**
+   * GMA session admission callback. Leelaz invokes it after the GMA reservation exists and before
+   * the physical {@code kata-genmove_analyze} command is written, so the session is admitted and
+   * its terminal capability exists before any terminal line can be consumed. A throwing callback
+   * rejects the hand fail-closed (the reservation is released and the engine is quarantined).
+   */
+  interface ReadBoardGmaSessionAdmission {
+    void admit();
   }
 
   void bindReadBoardGmaResponseOwner(ReadBoard owner, Object identity, long generation) {
@@ -9979,6 +10030,18 @@ public class Leelaz {
       int maxVisits,
       boolean ponder,
       TrackingHandoffActivation activation) {
+    activateReadBoardGmaAfterTracking(
+        target, color, maxTimeSeconds, maxVisits, ponder, activation, null);
+  }
+
+  void activateReadBoardGmaAfterTracking(
+      TrackingHandoffTarget target,
+      String color,
+      int maxTimeSeconds,
+      int maxVisits,
+      boolean ponder,
+      TrackingHandoffActivation activation,
+      ReadBoardGmaSessionAdmission sessionAdmission) {
     if (target == null
         || activation == null
         || isThinking
@@ -9993,14 +10056,19 @@ public class Leelaz {
           if (readBoardGmaPreparation != null) {
             return;
           }
-          readBoardGmaPreparation = new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits);
+          readBoardGmaPreparation =
+              new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits, sessionAdmission);
         }
         readBoardGmaPreparation.start();
       } else {
         setReadBoardGmaPondering(ponder);
         prepareReadBoardGmaMaxTime(maxTimeSeconds);
         prepareReadBoardGmaMaxVisits(maxVisits);
-        sendReadBoardGmaCommand(color);
+        if (!sendReadBoardGmaCommand(color, sessionAdmission)) {
+          // The session admission failed fail-closed (reservation released, engine quarantined);
+          // never complete the retained-engine-mode handoff as if the GMA started.
+          return;
+        }
       }
       activated = activation.completeRetainedEngineMode();
     } finally {
@@ -10010,7 +10078,11 @@ public class Leelaz {
     }
   }
 
-  private void sendReadBoardGmaCommand(String color) {
+  private boolean sendReadBoardGmaCommand(
+      String color, ReadBoardGmaSessionAdmission sessionAdmission) {
+    if (sessionAdmission != null && !admitReadBoardGmaSession(sessionAdmission)) {
+      return false;
+    }
     StringBuilder command =
         new StringBuilder("kata-genmove_analyze ")
             .append(color)
@@ -10020,6 +10092,19 @@ public class Leelaz {
     sendCommandNoLeelaz2(command.toString());
     isThinking = true;
     LizzieFrame.menu.toggleEngineMenuStatus(false, true);
+    return true;
+  }
+
+  private boolean admitReadBoardGmaSession(ReadBoardGmaSessionAdmission sessionAdmission) {
+    try {
+      sessionAdmission.admit();
+      return true;
+    } catch (RuntimeException ex) {
+      ex.printStackTrace();
+      failReadBoardGmaEngineRestore(
+          "ReadBoard GMA session admission failed: " + ex.getMessage());
+      return false;
+    }
   }
 
   public void setReadBoardGmaPondering(boolean ponder) {
@@ -10100,6 +10185,54 @@ public class Leelaz {
     }
   }
 
+  /**
+   * The current GMA reservation instance, or {@code null}. The session adapter captures this object
+   * as the reservation owner at session admission; the release capability validates against it
+   * instead of looking up the current global engine.
+   */
+  Object currentReadBoardGmaReservation() {
+    synchronized (readBoardGmaLock()) {
+      return readBoardGmaReservation;
+    }
+  }
+
+  /**
+   * The current engine process incarnation: the reader stream binding, replaced whenever the
+   * process restarts or the stream rebinds. GMA session capabilities bind this identity so that
+   * stale events from a replaced engine process cannot advance the session.
+   */
+  Object currentEngineIncarnation() {
+    return currentReaderStreamBinding();
+  }
+
+  /**
+   * Requests the exactly-once release of the captured GMA reservation. The capability's captured
+   * owner is validated against the current reservation — a stale or foreign capability cannot
+   * release a replacement reservation. When the legacy runtime restore barrier or a parameter
+   * preparation is still converging, the release is deferred to that convergence path, which
+   * closes the same captured reservation on completion or failure.
+   */
+  void requestReadBoardGmaReservationRelease(
+      ReadBoardGmaSession.ReservationReleaseCapability capability) {
+    if (capability == null || capability.reservationOwner() == null) {
+      return;
+    }
+    EngineModeReservation reservation;
+    synchronized (readBoardGmaLock()) {
+      if (readBoardGmaReservation != capability.reservationOwner()) {
+        return;
+      }
+      if (readBoardGmaPreparation != null || readBoardGmaRestoreBarrier != null) {
+        return;
+      }
+      reservation = readBoardGmaReservation;
+      readBoardGmaReservation = null;
+    }
+    if (reservation != null) {
+      reservation.close();
+    }
+  }
+
   private boolean beginReadBoardGmaSession() {
     synchronized (engineArbitrationLock()) {
       synchronized (readBoardGmaLock()) {
@@ -10147,6 +10280,10 @@ public class Leelaz {
   }
 
   void retireReadBoardGmaSession() {
+    ReadBoard readBoard = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
+    if (readBoard != null) {
+      readBoard.abandonReadBoardGmaSession("session-retired");
+    }
     EngineModeReservation reservation;
     Timer barrierTimeout = null;
     boolean quarantined;
@@ -10365,6 +10502,13 @@ public class Leelaz {
   }
 
   public void failReadBoardGmaEngineRestore(String detail) {
+    ReadBoard readBoard = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
+    if (readBoard != null) {
+      // The physical GMA hand can no longer converge through a terminal (transport death,
+      // preparation failure, restore failure); drop the session-bound adapter state so the
+      // helper does not treat the abandoned session as busy.
+      readBoard.abandonReadBoardGmaSession("engine-restore-failed");
+    }
     ReadBoardGmaRestoreBarrier barrier;
     EngineModeReservation reservation;
     synchronized (readBoardGmaLock()) {

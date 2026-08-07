@@ -12,9 +12,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Deterministic contract tests for the narrow ReadBoard GMA session module. They observe state
@@ -851,6 +855,172 @@ class ReadBoardGmaSessionContractTest {
     public void publishTerminal(ReadBoardGmaSession.Terminal terminal) {
       super.publishTerminal(terminal);
       throw new IllegalStateException("publish failed");
+    }
+  }
+
+  @Test
+  void exactParticipantReportsSuccessOnlyAfterRestoreOperationCompletes() throws Exception {
+    ParticipantPorts ports = new ParticipantPorts();
+    ReadBoardGmaSession session = createSession(ports);
+    ports.session = session;
+    ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
+        session.admitGma(
+            session.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
+    CountDownLatch operationStarted = new CountDownLatch(1);
+    CountDownLatch releaseOperation = new CountDownLatch(1);
+    ports.restoreOperation =
+        () -> {
+          operationStarted.countDown();
+          awaitLatch(releaseOperation);
+        };
+
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+
+    // The participant is blocked inside the restore operation: the completion boundary (loadsgf
+    // consumed and captured tail accepted into the ordinary queue) has not been reached, so no
+    // terminal may be published and the session must stay RestoringExact.
+    assertTrue(operationStarted.await(1, TimeUnit.SECONDS));
+    assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
+    assertTrue(ports.publications.isEmpty());
+    assertTrue(ports.releases.isEmpty());
+
+    releaseOperation.countDown();
+    awaitPublication(ports);
+
+    assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+    assertEquals(1, ports.publications.size());
+    assertEquals(1, ports.releases.size());
+    assertEquals(1, ports.continuations);
+  }
+
+  @ParameterizedTest
+  @MethodSource("restoreFailureSeam")
+  void exactParticipantMapsRestoreFailuresToTypedCategories(
+      String detail, ReadBoardGmaSession.FailureCategory expectedCategory) throws Exception {
+    ParticipantPorts ports = new ParticipantPorts();
+    ReadBoardGmaSession session = createSession(ports);
+    ports.session = session;
+    ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
+        session.admitGma(
+            session.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
+    ports.restoreOperation =
+        () -> {
+          throw new IllegalStateException(detail);
+        };
+
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    awaitPublication(ports);
+
+    ReadBoardGmaSession.Terminal terminal = ports.publications.get(0);
+    assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+    assertEquals(expectedCategory, terminal.firstFailure().category());
+    assertEquals(INCARNATION, terminal.firstFailure().engineIncarnation());
+    assertTrue(
+        ports.runtimeStarts.isEmpty(),
+        "an exact failure must never start the runtime participant");
+    assertEquals(0, ports.continuations, "an exact failure must never continue normal GMA");
+  }
+
+  static Stream<Object[]> restoreFailureSeam() {
+    return Stream.of(
+        new Object[] {
+          "GTP loadsgf failed for '/tmp/lizzie-snapshot-1.sgf' with response: ? invalid setup",
+          ReadBoardGmaSession.FailureCategory.GTP_ERROR
+        },
+        new Object[] {
+          "Timed out while waiting for loadsgf response after 8000 ms",
+          ReadBoardGmaSession.FailureCategory.TIMEOUT
+        },
+        new Object[] {
+          "Interrupted while waiting for loadsgf response",
+          ReadBoardGmaSession.FailureCategory.TIMEOUT
+        },
+        new Object[] {
+          "Exact snapshot restore admission is no longer valid",
+          ReadBoardGmaSession.FailureCategory.ADMISSION_STALE
+        },
+        new Object[] {
+          "Exact snapshot restore loadsgf was not admitted.",
+          ReadBoardGmaSession.FailureCategory.ADMISSION_STALE
+        },
+        new Object[] {
+          "Exact snapshot restore loadsgf command was rejected: loadsgf /tmp/lizzie-snapshot-1.sgf",
+          ReadBoardGmaSession.FailureCategory.SEND_FAILED
+        },
+        new Object[] {
+          "Exact snapshot restore tail command was rejected: play W D4",
+          ReadBoardGmaSession.FailureCategory.TAIL_REJECTED
+        },
+        new Object[] {
+          "Exact snapshot restore preclear command was rejected: clear_board",
+          ReadBoardGmaSession.FailureCategory.TAIL_REJECTED
+        },
+        new Object[] {
+          "Failed to build snapshot SGF for engine restore",
+          ReadBoardGmaSession.FailureCategory.SEND_FAILED
+        },
+        new Object[] {
+          "unexpected restore failure",
+          ReadBoardGmaSession.FailureCategory.SEND_FAILED
+        });
+  }
+
+  @Test
+  void participantFailureCategoryMappingCoversTheRestoreSeam() {
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.GTP_ERROR,
+        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
+            "GTP loadsgf failed for '/tmp/x.sgf' with response: ? boom"));
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.TIMEOUT,
+        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
+            "Timed out while waiting for loadsgf response after 8000 ms"));
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
+        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
+            "Exact snapshot restore admission is no longer valid"));
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.TAIL_REJECTED,
+        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
+            "Exact snapshot restore tail command was rejected: play W D4"));
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.SEND_FAILED,
+        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory("unknown failure"));
+  }
+
+  /**
+   * Ports whose {@code startExact} runs a {@link ReadBoard.ReadBoardGmaExactParticipant} with a
+   * controllable restore operation, and which latch terminal publication for deterministic
+   * assertions.
+   */
+  private static final class ParticipantPorts extends RecordingPorts {
+    ReadBoardGmaSession session;
+    ReadBoard.ReadBoardGmaExactParticipant.RestoreOperation restoreOperation = () -> {};
+    private final CountDownLatch published = new CountDownLatch(1);
+
+    @Override
+    public void startExact(
+        ReadBoardGmaSession.ExactParticipantCapability capability, Object restoreIntent) {
+      super.startExact(capability, restoreIntent);
+      ReadBoard.ReadBoardGmaExactParticipant.start(session, capability, restoreOperation);
+    }
+
+    @Override
+    public void publishTerminal(ReadBoardGmaSession.Terminal terminal) {
+      super.publishTerminal(terminal);
+      published.countDown();
+    }
+  }
+
+  private static void awaitPublication(ParticipantPorts ports) throws InterruptedException {
+    assertTrue(ports.published.await(1, TimeUnit.SECONDS));
+  }
+
+  private static void awaitLatch(CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
     }
   }
 }
