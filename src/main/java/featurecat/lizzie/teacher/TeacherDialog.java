@@ -68,6 +68,8 @@ public final class TeacherDialog extends JDialog {
 
   private BoardHistoryNode requestTarget;
   private List<TeacherLlmClient.Message> lastEvidenceContext = List.of();
+  private List<TeacherEvidence.Position> lastEvidencePositions = List.of();
+  private List<TeacherEvidence.Position> requestPositions = List.of();
   private String requestModel = "";
   private boolean requestRunning;
   private boolean settingsLoaded;
@@ -244,6 +246,7 @@ public final class TeacherDialog extends JDialog {
     Optional<String> saved = TeacherCommentCodec.extract(current.getData().comment);
     if (!requests.isRunning() && saved.isPresent()) {
       lastEvidenceContext = List.of();
+      lastEvidencePositions = List.of();
       output.setText(saved.get());
       output.setCaretPosition(0);
       setStatus(
@@ -251,6 +254,7 @@ public final class TeacherDialog extends JDialog {
               "Teacher.status.savedLoaded", "Loaded saved commentary from this SGF node."));
     } else if (!requests.isRunning()) {
       lastEvidenceContext = List.of();
+      lastEvidencePositions = List.of();
       setStatus(evidenceStatus(current));
     }
   }
@@ -303,6 +307,7 @@ public final class TeacherDialog extends JDialog {
     lastEvidenceContext =
         TeacherPromptBuilder.forPosition(
             position.get(), TeacherStrings.locale(), settings.snapshot());
+    lastEvidencePositions = List.of(position.get());
     startRequest(lastEvidenceContext, current);
   }
 
@@ -332,6 +337,7 @@ public final class TeacherDialog extends JDialog {
             TeacherPromptBuilder.Mode.RANGE,
             TeacherStrings.locale(),
             settings.snapshot());
+    lastEvidencePositions = evidence.positions;
     startRequest(lastEvidenceContext, currentNode());
   }
 
@@ -354,6 +360,7 @@ public final class TeacherDialog extends JDialog {
             TeacherPromptBuilder.Mode.WHOLE_GAME,
             TeacherStrings.locale(),
             settings.snapshot());
+    lastEvidencePositions = evidence.positions;
     startRequest(lastEvidenceContext, root);
   }
 
@@ -378,6 +385,7 @@ public final class TeacherDialog extends JDialog {
       lastEvidenceContext =
           TeacherPromptBuilder.forPosition(
               position.get(), TeacherStrings.locale(), settings.snapshot());
+      lastEvidencePositions = List.of(position.get());
     }
     startRequest(
         TeacherPromptBuilder.forFollowUp(
@@ -399,6 +407,7 @@ public final class TeacherDialog extends JDialog {
     TeacherSettings.Snapshot snapshot = settings.snapshot();
     requestModel = snapshot.model;
     requestTarget = targetNode;
+    requestPositions = List.copyOf(lastEvidencePositions);
     pendingText.clear();
     output.setText("");
     setRunning(true);
@@ -439,16 +448,14 @@ public final class TeacherDialog extends JDialog {
     if (knowledge.isEmpty()) {
       return messages;
     }
-    java.util.ArrayList<TeacherLlmClient.Message> out =
-        new java.util.ArrayList<>(messages);
+    java.util.ArrayList<TeacherLlmClient.Message> out = new java.util.ArrayList<>(messages);
     int last = out.size() - 1;
     TeacherLlmClient.Message message = out.get(last);
     if ("user".equals(message.role)) {
       out.set(
           last,
           new TeacherLlmClient.Message(
-              message.role,
-              message.content + "\n\n【Knowledge】\n" + knowledge));
+              message.role, message.content + "\n\n【Knowledge】\n" + knowledge));
     }
     return out;
   }
@@ -503,14 +510,8 @@ public final class TeacherDialog extends JDialog {
   /** 防编造校验：轻量 TeacherVerifier + 重型 QualityGate（claim 级核对），附到输出末尾（不阻断显示）。 */
   private void appendVerifierNotes(String result) {
     try {
-      java.util.Optional<TeacherEvidence.Position> position =
-          requestTarget == null
-              ? java.util.Optional.empty()
-              : TeacherEvidence.current(requestTarget);
-      TeacherVerifier.Result verification =
-          TeacherVerifier.verify(result, position.orElse(null));
-      java.util.ArrayList<String> notes =
-          new java.util.ArrayList<>(verification.violations);
+      TeacherVerifier.Result verification = TeacherVerifier.verify(result, requestPositions);
+      java.util.ArrayList<String> notes = new java.util.ArrayList<>(verification.violations);
       notes.addAll(verification.warnings);
       appendQualityGateNotes(result, notes);
       if (notes.isEmpty()) {
@@ -525,9 +526,7 @@ public final class TeacherDialog extends JDialog {
       }
       StringBuilder builder =
           new StringBuilder("\n\n> ")
-              .append(
-                  TeacherStrings.get(
-                      "Teacher.verify.note", "Verifier notes"))
+              .append(TeacherStrings.get("Teacher.verify.note", "Verifier notes"))
               .append(": ")
               .append(String.join("; ", shown));
       output.append(builder.toString());
@@ -538,7 +537,10 @@ public final class TeacherDialog extends JDialog {
 
   /** 重型校验链：构建 MoveAnalysis → TeachingEvidence → QualityGate（结构化/claim 级核对）。 */
   private void appendQualityGateNotes(String result, java.util.ArrayList<String> notes) {
-    if (requestTarget == null) {
+    if (requestTarget == null
+        || requestTarget.getData() == null
+        || requestPositions.size() != 1
+        || requestPositions.get(0).moveNumber != requestTarget.getData().moveNumber) {
       return;
     }
     try {
@@ -551,9 +553,6 @@ public final class TeacherDialog extends JDialog {
               result, evidence, false);
       notes.addAll(gate.violations);
       notes.addAll(gate.warnings);
-      if (gate.note != null && !gate.note.isBlank()) {
-        notes.add(gate.note);
-      }
     } catch (Exception ignored) {
       // 重型校验失败不阻断解说显示
     }

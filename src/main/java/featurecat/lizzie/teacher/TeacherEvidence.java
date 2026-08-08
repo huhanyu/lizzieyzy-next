@@ -7,7 +7,6 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.teacher.analysis.AnalysisBrain;
 import featurecat.lizzie.teacher.analysis.ScorePerspective;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -202,14 +201,11 @@ public final class TeacherEvidence {
     return position.candidates.isEmpty() ? 0.0 : position.candidates.get(0).visits / 1_000_000.0;
   }
 
-  /**
-   * 知识库匹配（定式/棋形）：对当前局面查询 joseki-sgf 定式库与棋形知识库，
-   * 返回可直接拼入 prompt 的匹配说明；无匹配或失败返回空串（不阻断讲解）。
-   */
+  /** 知识库匹配（定式/棋形）：对当前局面查询 joseki-sgf 定式库与棋形知识库， 返回可直接拼入 prompt 的匹配说明；无匹配或失败返回空串（不阻断讲解）。 */
 
   /**
-   * 构建单手分析载体 MoveAnalysis（供重型防编造校验链 QualityGate 使用）：
-   * 分析目标 = 实战下一手（parent.next()），视角基准 = parent 节点（KataGo 已分析）。
+   * 构建单手分析载体 MoveAnalysis（供重型防编造校验链 QualityGate 使用）： 分析目标 = 实战下一手（parent.next()），视角基准 = parent
+   * 节点（KataGo 已分析）。
    */
   static MoveAnalysis moveAnalysis(BoardHistoryNode parent) {
     MoveAnalysis ma = new MoveAnalysis();
@@ -224,9 +220,7 @@ public final class TeacherEvidence {
     boolean playedByBlack =
         childData != null && childData.lastMoveColor == featurecat.lizzie.rules.Stone.BLACK;
     ma.actualWinrate =
-        childData != null
-            ? ScorePerspective.winrateFromAfterMove(childData.winrate)
-            : Double.NaN;
+        childData != null ? ScorePerspective.winrateFromAfterMove(childData.winrate) : Double.NaN;
     ma.actualScoreLead =
         childData != null
             ? ScorePerspective.scoreLeadFromAfterMove(childData.scoreMean, playedByBlack)
@@ -272,7 +266,7 @@ public final class TeacherEvidence {
     return ma;
   }
 
-    static String knowledgeMatchText(BoardHistoryNode node) {
+  static String knowledgeMatchText(BoardHistoryNode node) {
     try {
       if (node == null || node.getData() == null) {
         return "";
@@ -282,9 +276,14 @@ public final class TeacherEvidence {
       query.boardSize = featurecat.lizzie.rules.Board.boardWidth;
       query.moveNumber = node.getData().moveNumber;
       query.playedMove = actualMove(node.next().orElse(null));
-      query.text = "讲解当前手";
-      query.lossScore = 0.0;
-      java.util.List<featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch> matches =
+      query.text = "";
+      populateKnowledgeContext(query, node);
+      Optional<Position> position = position(node);
+      query.lossScore =
+          position.isPresent() && position.get().actualWinrateLoss.isPresent()
+              ? position.get().actualWinrateLoss.getAsDouble()
+              : null;
+      List<featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch> matches =
           featurecat.lizzie.teacher.knowledge.MatchEngine.searchKnowledgeMatchEngine(query);
       if (matches == null || matches.isEmpty()) {
         return "";
@@ -292,23 +291,16 @@ public final class TeacherEvidence {
       StringBuilder builder = new StringBuilder();
       int shown = 0;
       for (featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch match : matches) {
-        if (match.title == null || match.title.isEmpty()) {
+        if (match.title == null || match.title.isEmpty() || !hasGroundedKnowledgeEvidence(match)) {
           continue;
         }
-        builder
-            .append("- ")
-            .append(match.title)
-            .append(" (")
-            .append(match.matchType == null ? "knowledge" : match.matchType)
-            .append(", confidence ")
-            .append(match.confidence)
-            .append(")");
-        if (match.reason != null && !match.reason.isEmpty()) {
-          builder.append(": ").append(String.join("; ", match.reason.subList(0, Math.min(3, match.reason.size()))));
+        if (shown > 0) {
+          builder.append("\n\n");
         }
-        builder.append('\n');
+        builder.append(
+            featurecat.lizzie.teacher.knowledge.MatchEngine.formatKnowledgeMatchForPrompt(match));
         shown++;
-        if (shown >= 6) {
+        if (shown >= 2) {
           break;
         }
       }
@@ -316,6 +308,107 @@ public final class TeacherEvidence {
     } catch (Exception ignored) {
       return "";
     }
+  }
+
+  private static void populateKnowledgeContext(
+      featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatchQuery query,
+      BoardHistoryNode node) {
+    List<BoardHistoryNode> path = new ArrayList<>();
+    BoardHistoryNode cursor = node;
+    while (cursor != null && path.size() < 40) {
+      path.add(cursor);
+      cursor = cursor.previous().orElse(null);
+    }
+    Collections.reverse(path);
+    for (BoardHistoryNode historyNode : path) {
+      BoardData data = historyNode.getData();
+      if (data == null || data.lastMove.isEmpty()) {
+        continue;
+      }
+      int[] coordinates = data.lastMove.get();
+      featurecat.lizzie.teacher.knowledge.MatchEngine.GameMove move =
+          new featurecat.lizzie.teacher.knowledge.MatchEngine.GameMove();
+      move.col = coordinates[0];
+      move.row = coordinates[1];
+      move.gtp =
+          normalizeCoordinate(Board.convertCoordinatesToName(coordinates[0], coordinates[1]));
+      query.recentMoves.add(move);
+    }
+
+    List<MoveData> bestMoves = stableCopy(node.getData().bestMoves);
+    for (MoveData move : bestMoves) {
+      String coordinate = normalizeCoordinate(move == null ? null : move.coordinate);
+      if (!coordinate.isEmpty()) {
+        query.candidateMoves.add(coordinate);
+      }
+      if (query.candidateMoves.size() >= 5) {
+        break;
+      }
+    }
+    if (!bestMoves.isEmpty() && bestMoves.get(0) != null && bestMoves.get(0).variation != null) {
+      for (String move : bestMoves.get(0).variation) {
+        String coordinate = normalizeCoordinate(move);
+        if (!coordinate.isEmpty()) {
+          query.principalVariation.add(coordinate);
+        }
+        if (query.principalVariation.size() >= MAX_PV_MOVES) {
+          break;
+        }
+      }
+    }
+
+    Stone[] stones = node.getData().stones;
+    int boardWidth = Math.max(1, Board.boardWidth);
+    if (stones != null) {
+      for (int index = 0; index < stones.length; index++) {
+        Stone stone = stones[index];
+        if (stone == null || stone.isEmpty()) {
+          continue;
+        }
+        featurecat.lizzie.teacher.knowledge.LocalPatternMatcher.BoardSnapshotStone snapshot =
+            new featurecat.lizzie.teacher.knowledge.LocalPatternMatcher.BoardSnapshotStone();
+        snapshot.point =
+            normalizeCoordinate(
+                Board.convertCoordinatesToName(index % boardWidth, index / boardWidth));
+        snapshot.color = stone.isBlack() ? "B" : "W";
+        query.boardSnapshot.add(snapshot);
+      }
+    }
+  }
+
+  static boolean hasGroundedKnowledgeEvidence(
+      featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch match) {
+    if (match == null || match.reason == null) {
+      return false;
+    }
+    if ("exact".equals(match.confidence)) {
+      return true;
+    }
+    int independentSignals = 0;
+    for (String reason : match.reason) {
+      if (reason == null) {
+        continue;
+      }
+      if ("geometry-strong-local-shape".equals(reason)) {
+        return true;
+      }
+      if (reason.startsWith("sequence-overlap:")) {
+        try {
+          if (Double.parseDouble(reason.substring("sequence-overlap:".length())) >= 3.0) {
+            return true;
+          }
+        } catch (NumberFormatException ignored) {
+          // Ignore malformed internal evidence rather than treating it as grounded.
+        }
+      }
+      if (reason.startsWith("specific-text:")
+          || reason.startsWith("answer-")
+          || reason.startsWith("candidate:")
+          || reason.startsWith("pv:")) {
+        independentSignals++;
+      }
+    }
+    return "strong".equals(match.confidence) && independentSignals >= 2;
   }
 
   private static String normalizeCoordinate(String coordinate) {
@@ -333,6 +426,7 @@ public final class TeacherEvidence {
     public final String actualMove;
     public final OptionalDouble actualWinrateLoss;
     public final List<Candidate> candidates;
+
     /** 实战手之后的棋谱实际续走序列（最多 5 手），无则空列表。 */
     public final List<String> playedContinuation;
 

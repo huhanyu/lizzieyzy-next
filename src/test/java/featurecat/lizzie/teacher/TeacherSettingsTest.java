@@ -134,6 +134,23 @@ class TeacherSettingsTest {
     assertThrows(IllegalArgumentException.class, () -> TeacherSettings.validateModel("  "));
   }
 
+  @Test
+  void clampsDanRanksToNineForStoredAndNewPreferences() throws Exception {
+    Path settingsFile = temporaryDirectory.resolve("teacher.properties");
+    Properties stored = new Properties();
+    stored.setProperty("teacher.rankMode", "d");
+    stored.setProperty("teacher.rankNum", "18");
+    try (java.io.OutputStream output = Files.newOutputStream(settingsFile)) {
+      stored.store(output, "invalid legacy rank");
+    }
+
+    TeacherSettings settings = new TeacherSettings(settingsFile, new MemoryCredentialStore(true));
+    assertEquals(9, settings.load().rankNum);
+
+    settings.saveTeachingPreferences("d", 15, 0, 1, 1, 1);
+    assertEquals(9, settings.snapshot().rankNum);
+  }
+
   private static final class MemoryCredentialStore implements CredentialStore {
     private final boolean available;
     private final Map<String, String> values = new HashMap<>();

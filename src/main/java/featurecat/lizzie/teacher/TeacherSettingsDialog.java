@@ -21,7 +21,6 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
-import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -195,6 +194,7 @@ final class TeacherSettingsDialog extends JDialog {
 
     showApiKey.addActionListener(
         event -> apiKeyField.setEchoChar(showApiKey.isSelected() ? (char) 0 : passwordEchoChar));
+    rankModeBox.addActionListener(event -> updateRankBounds());
     refreshModels.addActionListener(event -> refreshModels());
     cancelButton.addActionListener(event -> dispose());
     saveButton.addActionListener(event -> save());
@@ -255,6 +255,7 @@ final class TeacherSettingsDialog extends JDialog {
           modelBox.setSelectedItem(snapshot.model);
           rememberApiKey.setSelected(snapshot.rememberApiKey);
           rankModeBox.setSelectedIndex("d".equals(snapshot.rankMode) ? 1 : 0);
+          updateRankBounds();
           rankNumSpinner.setValue(snapshot.rankNum);
           styleBox.setSelectedIndex(clampIndex(snapshot.styleIndex, 4));
           densityBox.setSelectedIndex(clampIndex(snapshot.densityIndex, 2));
@@ -322,6 +323,15 @@ final class TeacherSettingsDialog extends JDialog {
         }
       }
     }.execute();
+  }
+
+  private void updateRankBounds() {
+    SpinnerNumberModel model = (SpinnerNumberModel) rankNumSpinner.getModel();
+    int maximum = rankModeBox.getSelectedIndex() == 1 ? 9 : 18;
+    model.setMaximum(maximum);
+    if (((Number) model.getValue()).intValue() > maximum) {
+      model.setValue(maximum);
+    }
   }
 
   private void save() {

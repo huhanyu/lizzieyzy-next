@@ -31,5 +31,16 @@
     "license": "copyright notice requires permission before distribution",
     "sourceUrl": "https://waterfire.us/joseki.htm",
     "usePolicy": "Not bundled. The public SGF contains an explicit distribution warning and asks distributors to request permission."
+  },
+  {
+    "id": "ai-joseki-daquan",
+    "title": "AI围棋定式大全（江维杰）",
+    "bundled": true,
+    "license": "distribution authorized for this project",
+    "attribution": "江维杰；棋友墨白录入",
+    "includedFiles": [
+      "ai_joseki_daquan.sgf"
+    ],
+    "usePolicy": "Bundled with repository-maintainer-confirmed authorization for PR #226; preserve the embedded SGF attribution."
   }
 ]

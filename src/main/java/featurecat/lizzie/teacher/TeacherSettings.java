@@ -39,14 +39,19 @@ public final class TeacherSettings {
   // ---- Teaching preferences (讲解设置：等级/风格/术语密度/节奏/变化细节) ----
   /** "k"=级位（18k~1k），"d"=段位（1d~9d）。 */
   private String rankMode = "k";
+
   /** 数字部分：级位 1-18，段位 1-9。 */
   private int rankNum = 5;
+
   /** 0=平衡自然 1=严谨细致 2=亲切耐心 3=严格专业 4=风趣幽默。 */
   private int styleIndex = 0;
+
   /** 0=少 1=中 2=多。 */
   private int densityIndex = 1;
+
   /** 0=简洁 1=标准 2=细讲。 */
   private int paceIndex = 1;
+
   /** 0=少讲 1=适中 2=详细。 */
   private int variationIndex = 1;
 
@@ -77,7 +82,7 @@ public final class TeacherSettings {
     model = validateModel(properties.getProperty("model", DEFAULT_MODEL));
     rememberApiKey = Boolean.parseBoolean(properties.getProperty("rememberApiKey", "false"));
     rankMode = "d".equals(properties.getProperty("teacher.rankMode", "k")) ? "d" : "k";
-    rankNum = clampInt(properties.getProperty("teacher.rankNum", "5"), 1, 18, 5);
+    rankNum = clampInt(properties.getProperty("teacher.rankNum", "5"), 1, maximumRank(rankMode), 5);
     styleIndex = clampInt(properties.getProperty("teacher.styleIndex", "0"), 0, 4, 0);
     densityIndex = clampInt(properties.getProperty("teacher.densityIndex", "1"), 0, 2, 1);
     paceIndex = clampInt(properties.getProperty("teacher.paceIndex", "1"), 0, 2, 1);
@@ -174,7 +179,7 @@ public final class TeacherSettings {
       int requestedVariationIndex)
       throws IOException {
     rankMode = "d".equals(requestedRankMode) ? "d" : "k";
-    rankNum = clampInt(String.valueOf(requestedRankNum), 1, 18, 5);
+    rankNum = clampInt(String.valueOf(requestedRankNum), 1, maximumRank(rankMode), 5);
     styleIndex = clampInt(String.valueOf(requestedStyleIndex), 0, 4, 0);
     densityIndex = clampInt(String.valueOf(requestedDensityIndex), 0, 2, 1);
     paceIndex = clampInt(String.valueOf(requestedPaceIndex), 0, 2, 1);
@@ -190,6 +195,10 @@ public final class TeacherSettings {
     } catch (NumberFormatException ignored) {
       return fallback;
     }
+  }
+
+  private static int maximumRank(String mode) {
+    return "d".equals(mode) ? 9 : 18;
   }
 
   public synchronized Optional<String> apiKey() {

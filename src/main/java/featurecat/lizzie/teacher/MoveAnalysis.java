@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * 单手分析载体：KataGo 证据（候选/PV/分类）+ 实战手 + 知识匹配结果。
  *
- * <p>教学校验链（TeachingEvidenceBuilder / QualityGate，供主程序棋力估计模块使用）以此为输入；
- * AI 讲解（TeacherDialog）本身使用不可变快照 {@link TeacherEvidence}，不依赖本类。
+ * <p>教学校验链（TeachingEvidenceBuilder / QualityGate，供主程序棋力估计模块使用）以此为输入； AI 讲解（TeacherDialog）本身使用不可变快照
+ * {@link TeacherEvidence}，不依赖本类。
  */
 public class MoveAnalysis {
   public int moveNumber;

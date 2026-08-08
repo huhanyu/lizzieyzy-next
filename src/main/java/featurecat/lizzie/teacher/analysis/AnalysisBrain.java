@@ -1,4 +1,5 @@
 package featurecat.lizzie.teacher.analysis;
+
 import java.util.*;
 
 /**
@@ -39,7 +40,7 @@ public final class AnalysisBrain {
   }
 
   public static class MoveClassification {
-    public int moveNumber;   // 真实手数（analyze 时设置，供关键手列表对齐）
+    public int moveNumber; // 真实手数（analyze 时设置，供关键手列表对齐）
     public Severity severity;
     public Confidence confidence;
     public Phase phase;
@@ -59,11 +60,11 @@ public final class AnalysisBrain {
     public int pvLength;
     public Integer pvVisitsTotal;
     public String reason;
-    public Double winrate;        // 落子方胜率(%)
-    public Double scoreLead;      // 落子方目差(black-positive)
-    public Double prior;          // KataGo prior 概率(%)，无则 null
-    public Double humanPrior;     // 人类策略 prior
-    public Double humanPolicy;    // 人类策略 policy
+    public Double winrate; // 落子方胜率(%)
+    public Double scoreLead; // 落子方目差(black-positive)
+    public Double prior; // KataGo prior 概率(%)，无则 null
+    public Double humanPrior; // 人类策略 prior
+    public Double humanPolicy; // 人类策略 policy
     public int edgeVisits;
     public double[] ownership;
     public Double scoreStdev;
@@ -296,7 +297,8 @@ public final class AnalysisBrain {
     boolean unstableRoot = deepenRecommended && qualityConfidence == Confidence.LOW;
     for (int i = 0; i < Math.min(5, topMoves.size()); i++) {
       KataGoCandidate c = topMoves.get(i);
-      PvCandidate pc = candidateLevel(
+      PvCandidate pc =
+          candidateLevel(
               c.move,
               i + 1,
               bestVisits,
@@ -312,7 +314,10 @@ public final class AnalysisBrain {
       pc.edgeVisits = c.edgeVisits;
       pc.ownership = c.ownership;
       if (c.pv != null) pc.pv = new ArrayList<>(java.util.Arrays.asList(c.pv));
-      if (c.pvVisits != null) { for (int v : c.pvVisits) pc.pvVisits.add((double) v); pc.pvVisitsTotal = pc.pvVisits.stream().mapToInt(Double::intValue).sum(); }
+      if (c.pvVisits != null) {
+        for (int v : c.pvVisits) pc.pvVisits.add((double) v);
+        pc.pvVisitsTotal = pc.pvVisits.stream().mapToInt(Double::intValue).sum();
+      }
       report.candidates.add(pc);
     }
     if (report.candidates.isEmpty()) {
@@ -355,10 +360,10 @@ public final class AnalysisBrain {
     public int[] pvVisits;
     public double winrate;
     public double scoreLead;
-    public Double prior;        // KataGo prior（来自 MoveData.policy）
-    public Double humanPrior;     // 人类策略 prior（来自 MoveData.humanPrior）
-    public Double humanPolicy;    // 人类策略 policy（来自 MoveData.humanPolicy）
-    public double[] ownership;  // KataGo ownership 数组（lizzieyzy 已解析）
+    public Double prior; // KataGo prior（来自 MoveData.policy）
+    public Double humanPrior; // 人类策略 prior（来自 MoveData.humanPrior）
+    public Double humanPolicy; // 人类策略 policy（来自 MoveData.humanPolicy）
+    public double[] ownership; // KataGo ownership 数组（lizzieyzy 已解析）
     public int edgeVisits;
 
     public double winrateOrZero() {

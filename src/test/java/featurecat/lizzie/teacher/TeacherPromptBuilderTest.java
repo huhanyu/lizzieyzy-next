@@ -32,8 +32,28 @@ class TeacherPromptBuilderTest {
     assertTrue(system.contains("Never invent"));
     assertTrue(evidence.contains("Actual next move: D4"));
     assertTrue(evidence.contains("Candidate #1: move=Q16"));
+    assertTrue(evidence.contains("pv=Q16(B) D4(W)"));
+    assertFalse(evidence.contains("pv=Q16(B) Q16(W)"));
     assertTrue(evidence.contains("2.5 percentage points"));
     assertFalse(evidence.contains("user comment"));
+  }
+
+  @Test
+  void playedMoveWarningUsesARealLineBreak() {
+    TeacherEvidence.Position position =
+        new TeacherEvidence.Position(
+            9,
+            "W",
+            800,
+            "C3",
+            OptionalDouble.empty(),
+            List.of(new TeacherEvidence.Candidate(1, "Q16", 60, 2, 800, List.of("Q16"))));
+
+    String evidence =
+        TeacherPromptBuilder.forPosition(position, Locale.ENGLISH, null).get(1).content;
+
+    assertTrue(evidence.contains("compare it against the list.\n"));
+    assertFalse(evidence.contains("list.\\\\n"));
   }
 
   @Test

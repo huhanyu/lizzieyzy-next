@@ -112,10 +112,13 @@ final class TeacherPromptBuilder {
       if (!candidate.variation.isEmpty()) {
         text.append(", pv=");
         boolean black = "B".equals(position.toPlay);
-        text.append(candidate.coordinate).append(black ? "(B)" : "(W)");
-        for (String variationMove : candidate.variation) {
+        for (int index = 0; index < candidate.variation.size(); index++) {
+          String variationMove = candidate.variation.get(index);
+          if (index > 0) {
+            text.append(' ');
+          }
+          text.append(variationMove).append(black ? "(B)" : "(W)");
           black = !black;
-          text.append(" ").append(variationMove).append(black ? "(B)" : "(W)");
         }
       }
       text.append('\n');
@@ -128,7 +131,7 @@ final class TeacherPromptBuilder {
                         && candidate.coordinate.equalsIgnoreCase(position.actualMove))) {
       text.append("Note: the played move ")
           .append(position.actualMove)
-          .append(" is NOT among the top candidates above; compare it against the list.\\n");
+          .append(" is NOT among the top candidates above; compare it against the list.\n");
     }
     return text.toString();
   }
@@ -137,10 +140,13 @@ final class TeacherPromptBuilder {
     StringBuilder prompt =
         new StringBuilder("You are a careful Go review assistant. Reply in ")
             .append(outputLanguage(locale))
-            .append(". Use only the supplied KataGo evidence. Never invent coordinates, variations, ")
-            .append("winrates, score leads, move intentions, or game results. If evidence is missing, ")
+            .append(
+                ". Use only the supplied KataGo evidence. Never invent coordinates, variations, ")
+            .append(
+                "winrates, score leads, move intentions, or game results. If evidence is missing, ")
             .append("say so plainly. Separate facts from teaching interpretation. Do not make ")
-            .append("cheating accusations or claim an official rank. Keep the explanation practical ")
+            .append(
+                "cheating accusations or claim an official rank. Keep the explanation practical ")
             .append("and understandable.\n\n");
     if (snapshot != null) {
       prompt.append(teachingPersona(snapshot)).append("\n");
@@ -150,10 +156,8 @@ final class TeacherPromptBuilder {
             "Refer to the person naturally in the answer without role labels such as \"student\", ")
         .append("\"teacher\" or \"coach\".\n");
     prompt
-        .append(
-            "Perspective note: winrate and scoreLead are already given from the side-to-play ")
-        .append(
-            "point of view as final values; use them as-is, do not convert or flip them. ")
+        .append("Perspective note: winrate and scoreLead are already given from the side-to-play ")
+        .append("point of view as final values; use them as-is, do not convert or flip them. ")
         .append("Score lead uses the black-positive convention.\n");
     return prompt.toString();
   }
@@ -166,16 +170,12 @@ final class TeacherPromptBuilder {
       rank =
           s.rankNum >= 4
               ? "strong dan player"
-              : s.rankNum >= 1
-                  ? "advanced amateur (dan level)"
-                  : "advanced amateur";
+              : s.rankNum >= 1 ? "advanced amateur (dan level)" : "advanced amateur";
     } else {
       rank =
           s.rankNum >= 10
               ? "beginner"
-              : s.rankNum >= 5
-                  ? "intermediate amateur"
-                  : "advanced amateur (single-digit kyu)";
+              : s.rankNum >= 5 ? "intermediate amateur" : "advanced amateur (single-digit kyu)";
     }
     persona
         .append("The student is a ")
@@ -187,7 +187,8 @@ final class TeacherPromptBuilder {
         .append("in the answer. ");
     switch (Math.max(0, Math.min(4, s.styleIndex))) {
       case 1:
-        persona.append("Be rigorous and structured; present complete evidence before conclusions. ");
+        persona.append(
+            "Be rigorous and structured; present complete evidence before conclusions. ");
         break;
       case 2:
         persona.append("Be patient and encouraging, guiding like a friendly coach. ");
