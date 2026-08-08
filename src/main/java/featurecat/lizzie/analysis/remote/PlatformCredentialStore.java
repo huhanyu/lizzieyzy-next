@@ -18,15 +18,17 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /** Creates the native credential backend for the current operating system. */
-final class PlatformCredentialStore {
+public final class PlatformCredentialStore {
   private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(5);
   private static final int MAX_OUTPUT_BYTES = 1024 * 1024;
   private static final String APPLICATION_ID = "lizzieyzy-next";
-  private static final String KEYCHAIN_SERVICE_PREFIX = "cn.lizzieyzy.next.zhizi.";
+  private static final String ZHIZI_KEYCHAIN_SERVICE_PREFIX = "cn.lizzieyzy.next.zhizi.";
+  private static final String AI_COMMENTARY_KEYCHAIN_SERVICE =
+      "cn.lizzieyzy.next.ai-commentary.api-key";
 
   private PlatformCredentialStore() {}
 
-  static CredentialStore create(Path credentialDirectory) {
+  public static CredentialStore create(Path credentialDirectory) {
     return create(
         System.getProperty("os.name", ""), credentialDirectory, new ProcessCommandRunner());
   }
@@ -165,7 +167,9 @@ final class PlatformCredentialStore {
     }
 
     private static String service(Kind kind) {
-      return KEYCHAIN_SERVICE_PREFIX + kind.id();
+      return kind == Kind.API_KEY
+          ? AI_COMMENTARY_KEYCHAIN_SERVICE
+          : ZHIZI_KEYCHAIN_SERVICE_PREFIX + kind.id();
     }
   }
 
@@ -220,7 +224,10 @@ final class PlatformCredentialStore {
       ArrayList<String> command = new ArrayList<>();
       command.add("secret-tool");
       command.add("store");
-      command.add("--label=LizzieYzy Next Zhizi " + kind.id());
+      command.add(
+          kind == Kind.API_KEY
+              ? "--label=LizzieYzy Next AI Commentary API Key"
+              : "--label=LizzieYzy Next Zhizi " + kind.id());
       command.addAll(secretAttributes(kind, account));
       CommandResult result = run(command, secret + System.lineSeparator());
       if (result.exitCode != 0) {

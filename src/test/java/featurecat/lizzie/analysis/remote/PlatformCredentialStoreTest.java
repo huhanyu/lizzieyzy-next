@@ -33,6 +33,19 @@ class PlatformCredentialStoreTest {
   }
 
   @Test
+  void aiCommentaryUsesAnIndependentMacKeychainService() throws Exception {
+    RecordingRunner runner = new RecordingRunner();
+    CredentialStore store = PlatformCredentialStore.create("Mac OS X", Path.of("unused"), runner);
+
+    store.write(CredentialStore.Kind.API_KEY, "provider-account", "never-in-argv");
+
+    String commands = runner.flattenedCommands();
+    assertTrue(commands.contains("cn.lizzieyzy.next.ai-commentary.api-key"));
+    assertFalse(commands.contains("cn.lizzieyzy.next.zhizi.api-key"));
+    assertFalse(commands.contains("never-in-argv"));
+  }
+
+  @Test
   void linuxSecretServiceReceivesSecretsOnlyThroughStandardInput() throws Exception {
     RecordingRunner runner = new RecordingRunner();
     runner.readOutput = "linux-secret\n";
