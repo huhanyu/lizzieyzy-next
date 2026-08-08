@@ -51,6 +51,7 @@
 > - RTX 5070/5080/5090：优先下载 `*windows64.nvidia50.cuda.portable.zip`，需要 TensorRT 时再到软件内“一键设置”按需安装
 > - 已经有 Windows 免安装版：日常升级优先下载 `*windows64.core-update.zip`，关闭软件后解压到旧目录覆盖，只更新主程序和启动器配置
 > - TensorRT 不只给 RTX 50：RTX 20/30/40/50 NVIDIA 显卡都可以在软件内按需安装；GTX 10 系不建议 TensorRT，使用普通 NVIDIA 包前请将驱动升级到 `527.41` 或更高，仍无法启动时改用 OpenCL 包
+> - 软件内按需安装和高级分卷包已跟进 KataGo `v1.17.2` 的 TensorRT 修复；普通 CUDA、OpenCL、CPU、Metal 完整包仍使用官方提供这些后端资产的 `v1.17.1`
 > - `KataGo 一键设置` 会检测 NVIDIA GPU 和 Compute Capability，自动提示是否推荐 TensorRT；检测失败也可以手动继续
 > - TensorRT 一键安装成功后会自动清理下载包缓存；运行缓存尽量写入软件自己的 `user-data/runtime`，减少 C 盘额外占用
 > - Release 里的 `*windows64.nvidia.tensorrt.portable.7z.001` 是高级可选分卷包，必须下载全部 `.7z.00N` 并用 7-Zip 解压；普通用户不要优先选它

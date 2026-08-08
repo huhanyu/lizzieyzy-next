@@ -569,6 +569,61 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @Test
+  void trustsTheMatchingCurrentEngineInsteadOfLaunchingASecondCudaProbe() throws Exception {
+    Path root = Files.createTempDirectory("katago-active-engine");
+    Path katagoRoot = Files.createDirectories(root.resolve("engines").resolve("katago"));
+    Path engineDir = Files.createDirectories(katagoRoot.resolve("windows-x64"));
+    Path engine = touch(engineDir.resolve("katago.exe"));
+    Files.writeString(katagoRoot.resolve("VERSION.txt"), "KataGo release: v1.17.1\n");
+
+    KataGoAutoSetupHelper.EngineValidationResult result =
+        KataGoAutoSetupHelper.validateEngineWithActiveSession(
+            engine, 1L, quoteLiteral(engine) + " gtp -model model.bin.gz", true);
+
+    assertEquals(KataGoAutoSetupHelper.EngineValidationStatus.ACTIVE, result.status);
+    assertTrue(result.isValid());
+    assertEquals("1.17.1", result.kataGoVersion);
+  }
+
+  @Test
+  void retriesOneTransientVersionProbeFailure() throws Exception {
+    assumeFalse(System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"));
+    Path root = Files.createTempDirectory("katago-version-retry");
+    Path marker = root.resolve("first-attempt");
+    Path engine = root.resolve("katago");
+    Files.writeString(
+        engine,
+        "#!/bin/sh\n"
+            + "if [ ! -f '"
+            + marker
+            + "' ]; then touch '"
+            + marker
+            + "'; exit 1; fi\n"
+            + "printf 'KataGo v1.17.1\\nUsing CUDA backend\\n'\n");
+    assertTrue(engine.toFile().setExecutable(true));
+
+    KataGoAutoSetupHelper.EngineValidationResult result =
+        KataGoAutoSetupHelper.validateEngineWithActiveSession(engine, 3L, "", false);
+
+    assertEquals(KataGoAutoSetupHelper.EngineValidationStatus.VALID, result.status);
+    assertEquals("1.17.1", result.kataGoVersion);
+  }
+
+  @Test
+  void doesNotTrustAnActiveSessionUsingADifferentExecutable() throws Exception {
+    Path root = Files.createTempDirectory("katago-active-other-engine");
+    Path runningEngine = touch(root.resolve("running-katago"));
+    Path brokenEngine = touch(root.resolve("broken-katago"));
+
+    KataGoAutoSetupHelper.EngineValidationResult result =
+        KataGoAutoSetupHelper.validateEngineWithActiveSession(
+            brokenEngine, 1L, quoteLiteral(runningEngine) + " gtp", true);
+
+    assertFalse(result.status == KataGoAutoSetupHelper.EngineValidationStatus.ACTIVE);
+    assertFalse(result.isValid());
+  }
+
+  @Test
   void weightDisplayNameKeepsUserModelNameAndHidesTrainingHashes() {
     assertEquals(
         "zhizi 28B muonfd2",

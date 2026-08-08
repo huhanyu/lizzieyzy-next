@@ -98,6 +98,7 @@ Installers still exist, but they are now secondary to the portable flow.
 Current bundled defaults:
 
 - KataGo version: `v1.17.1`
+- The in-app on-demand installer and advanced split package use KataGo `v1.17.2` TensorRT; CUDA, OpenCL, CPU, and Metal remain on `v1.17.1`, the latest release that provides those backend assets
 - macOS release builds pin the official `v1.17.1` commit `5246793f77b480dee91a3b92902d1a9b92860bd0`. If the stable Homebrew formula still lags behind, packaging builds the Metal engine from that commit and verifies the real binary version instead of trusting `VERSION.txt` alone
 - Default weight: official medium Transformer `b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz`, shown as “Transformer 10B Balanced”
 - Default weight size: `94,281,753` bytes (about 94 MB), SHA-256: `c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995`

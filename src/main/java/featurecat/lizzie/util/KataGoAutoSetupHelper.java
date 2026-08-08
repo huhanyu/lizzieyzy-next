@@ -117,6 +117,9 @@ public final class KataGoAutoSetupHelper {
   private static volatile boolean quickAnalysisValidationResult;
   private static final Pattern KATAGO_VERSION_PATTERN =
       Pattern.compile("\\bKataGo\\s+v(\\d+)\\.(\\d+)(?:\\.(\\d+))?\\b", Pattern.CASE_INSENSITIVE);
+  private static final Pattern KATAGO_MANIFEST_VERSION_PATTERN =
+      Pattern.compile(
+          "(?im)^KataGo release:\\s*v?(\\d+)\\.(\\d+)(?:\\.(\\d+))?\\s*$");
   private static final String BUNDLED_2026_06_28B_MODEL =
       "kata1-b28c512nbt-s13255194368-d5935380940";
   private static final String BUNDLED_2026_06_28B_DISPLAY_NAME = "28B 2026-06";
@@ -215,6 +218,7 @@ public final class KataGoAutoSetupHelper {
 
   public enum EngineValidationStatus {
     NOT_RUN,
+    ACTIVE,
     VALID,
     MISSING_DEPENDENCY,
     WRONG_ARCHITECTURE,
@@ -234,7 +238,7 @@ public final class KataGoAutoSetupHelper {
     }
 
     public boolean isValid() {
-      return status == EngineValidationStatus.VALID;
+      return status == EngineValidationStatus.ACTIVE || status == EngineValidationStatus.VALID;
     }
 
     public boolean hasKnownVersion() {
@@ -756,6 +760,98 @@ public final class KataGoAutoSetupHelper {
         process.destroyForcibly();
       }
     }
+  }
+
+  public static EngineValidationResult validateDiscoveredEngine(
+      Path enginePath, long timeoutSeconds) {
+    boolean currentEngineReady =
+        Lizzie.leelaz != null
+            && Lizzie.leelaz.isStarted()
+            && Lizzie.leelaz.isLoaded()
+            && !Lizzie.leelaz.isProcessDead();
+    String currentEngineCommand =
+        Lizzie.leelaz == null ? "" : Lizzie.leelaz.getEngineCommand();
+    return validateEngineWithActiveSession(
+        enginePath, timeoutSeconds, currentEngineCommand, currentEngineReady);
+  }
+
+  static EngineValidationResult validateEngineWithActiveSession(
+      Path enginePath,
+      long timeoutSeconds,
+      String currentEngineCommand,
+      boolean currentEngineReady) {
+    if (currentEngineReady && commandUsesExecutable(currentEngineCommand, enginePath)) {
+      return new EngineValidationResult(
+          EngineValidationStatus.ACTIVE, runningEngineValidationDetail(enginePath));
+    }
+    EngineValidationResult firstAttempt = validateLocalEngine(enginePath, timeoutSeconds);
+    if (firstAttempt.status != EngineValidationStatus.START_FAILED) {
+      return firstAttempt;
+    }
+    try {
+      Thread.sleep(250L);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return firstAttempt;
+    }
+    return validateLocalEngine(enginePath, timeoutSeconds);
+  }
+
+  static boolean commandUsesExecutable(String command, Path expectedEnginePath) {
+    if (Utils.isBlank(command) || expectedEnginePath == null) {
+      return false;
+    }
+    Path commandEngine =
+        KataGoRuntimeHelper.resolveCommandExecutable(Utils.splitCommand(command));
+    if (commandEngine == null) {
+      return false;
+    }
+    Path expected = expectedEnginePath.toAbsolutePath().normalize();
+    Path actual = commandEngine.toAbsolutePath().normalize();
+    try {
+      return Files.isSameFile(expected, actual);
+    } catch (IOException e) {
+      return expected.equals(actual);
+    }
+  }
+
+  private static String runningEngineValidationDetail(Path enginePath) {
+    String version = readEngineManifestVersion(enginePath);
+    String running = "Current KataGo engine completed startup and is running.";
+    return version.isEmpty() ? running : "KataGo v" + version + "\n" + running;
+  }
+
+  private static String readEngineManifestVersion(Path enginePath) {
+    if (enginePath == null) {
+      return "";
+    }
+    Path engineDir = enginePath.toAbsolutePath().normalize().getParent();
+    if (engineDir == null) {
+      return "";
+    }
+    LinkedHashSet<Path> manifests = new LinkedHashSet<Path>();
+    manifests.add(engineDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"));
+    manifests.add(engineDir.resolve("VERSION.txt"));
+    Path katagoRoot = engineDir.getParent();
+    if (katagoRoot != null) {
+      manifests.add(katagoRoot.resolve("VERSION.txt"));
+    }
+    for (Path manifest : manifests) {
+      if (!Files.isRegularFile(manifest)) {
+        continue;
+      }
+      try {
+        Matcher matcher =
+            KATAGO_MANIFEST_VERSION_PATTERN.matcher(
+                Files.readString(manifest, StandardCharsets.UTF_8));
+        if (matcher.find()) {
+          String patch = matcher.group(3);
+          return matcher.group(1) + "." + matcher.group(2) + (patch == null ? "" : "." + patch);
+        }
+      } catch (IOException ignored) {
+      }
+    }
+    return "";
   }
 
   private static EngineValidationResult classifyValidationFailure(String output, Exception error) {
