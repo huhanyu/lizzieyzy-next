@@ -323,6 +323,7 @@ public class Leelaz {
   public volatile boolean isDownWithError = false;
   public volatile boolean isLoaded = false;
   private volatile boolean initialBoardSynchronizationActive = false;
+  private volatile Object initialBoardSynchronizationLock = new Object();
   private volatile long bundledStartupToken = 0L;
   private volatile boolean openClFp32CompatibilityActive = false;
   private volatile boolean launchCommandSetsKataGoThreads = false;
@@ -4679,6 +4680,7 @@ public class Leelaz {
         && readBoardGmaResponseBinding == null) {
       if (shouldDropStaleForegroundRestoreCommand()
           || shouldSuppressNormalCommandForForegroundAnalysis()
+          || shouldDropCommandDuringInitialBoardSynchronizationAtAdmission(command)
           || (restartBootstrapReceipt != null
               && exclusiveGtpLifecycleQueueGate
               && !isCurrentRestartBootstrapReceiptLocked(bootstrapReceipt))) {
@@ -4718,6 +4720,7 @@ public class Leelaz {
       synchronized (commandQueue()) {
         if (shouldDropStaleForegroundRestoreCommand()
             || shouldSuppressNormalCommandForForegroundAnalysis()
+            || shouldDropCommandDuringInitialBoardSynchronizationAtAdmission(command)
             || (restartBootstrapReceipt != null
                 && exclusiveGtpLifecycleQueueGate
                 && !isCurrentRestartBootstrapReceiptLocked(bootstrapReceipt))
@@ -5496,6 +5499,19 @@ public class Leelaz {
     }
   }
 
+  private Object initialBoardSynchronizationLock() {
+    Object lock = initialBoardSynchronizationLock;
+    if (lock != null) {
+      return lock;
+    }
+    synchronized (this) {
+      if (initialBoardSynchronizationLock == null) {
+        initialBoardSynchronizationLock = new Object();
+      }
+      return initialBoardSynchronizationLock;
+    }
+  }
+
   private ArrayDeque<QueuedCommand> foregroundRestoreCommandQueue() {
     if (foregroundRestoreQueue == null) {
       foregroundRestoreQueue = new ArrayDeque<QueuedCommand>();
@@ -5529,6 +5545,15 @@ public class Leelaz {
     return initialBoardSynchronizationActive
         && !isExactSnapshotRestoreAdmissionContextActive()
         && isInitialBoardSynchronizationLiveUpdateCommand(command);
+  }
+
+  private boolean shouldDropCommandDuringInitialBoardSynchronizationAtAdmission(String command) {
+    if (!isInitialBoardSynchronizationLiveUpdateCommand(command)) {
+      return false;
+    }
+    synchronized (initialBoardSynchronizationLock()) {
+      return shouldDropCommandDuringInitialBoardSynchronization(command);
+    }
   }
 
   private static boolean isInitialBoardSynchronizationLiveUpdateCommand(String command) {
@@ -12024,12 +12049,16 @@ public class Leelaz {
    * until the captured board frame is stable, then ends this barrier.
    */
   public void beginInitialBoardSynchronization() {
-    initialBoardSynchronizationActive = true;
+    synchronized (initialBoardSynchronizationLock()) {
+      initialBoardSynchronizationActive = true;
+    }
   }
 
   /** Ends the initial startup restore barrier (idempotent; safe to call repeatedly). */
   public void endInitialBoardSynchronization() {
-    initialBoardSynchronizationActive = false;
+    synchronized (initialBoardSynchronizationLock()) {
+      initialBoardSynchronizationActive = false;
+    }
   }
 
   public boolean isInitialBoardSynchronizationActive() {
