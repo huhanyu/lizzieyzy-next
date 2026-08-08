@@ -1,6 +1,7 @@
 package featurecat.lizzie.teacher;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.analysis.MoveData;
@@ -61,6 +62,37 @@ class TeacherEvidenceTest {
     for (int index = 1; index < range.positions.size(); index++) {
       assertTrue(range.positions.get(index - 1).moveNumber < range.positions.get(index).moveNumber);
     }
+  }
+
+  @Test
+  void genericCornerMoveIsNotInjectedAsAHighConfidenceNamedOpening() {
+    BoardHistoryNode parent = new BoardHistoryNode(BoardData.empty(19, 19));
+    append(parent, moveData(1, 3, 15, false));
+
+    assertEquals("", TeacherEvidence.knowledgeMatchText(parent));
+  }
+
+  @Test
+  void knowledgeRequiresMultipleIndependentSignalsOrStrongGeometry() {
+    featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch weaklyGrounded =
+        knowledgeMatch("strong", List.of("phase:opening", "sequence-overlap:1"));
+    featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch sequenceGrounded =
+        knowledgeMatch("strong", List.of("sequence-overlap:3"));
+    featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch signalGrounded =
+        knowledgeMatch("strong", List.of("candidate:corner", "pv:approach"));
+
+    assertFalse(TeacherEvidence.hasGroundedKnowledgeEvidence(weaklyGrounded));
+    assertTrue(TeacherEvidence.hasGroundedKnowledgeEvidence(sequenceGrounded));
+    assertTrue(TeacherEvidence.hasGroundedKnowledgeEvidence(signalGrounded));
+  }
+
+  private static featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch knowledgeMatch(
+      String confidence, List<String> reasons) {
+    featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch match =
+        new featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch();
+    match.confidence = confidence;
+    match.reason = new ArrayList<>(reasons);
+    return match;
   }
 
   private static MoveData move(
