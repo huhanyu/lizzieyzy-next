@@ -1122,7 +1122,7 @@ class ReadBoardGmaSessionContractTest {
     assertTrue(ports.releases.isEmpty());
 
     releaseOperation.countDown();
-    awaitPublication(ports);
+    awaitTerminalEffects(ports);
 
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(1, ports.publications.size());
@@ -1147,7 +1147,7 @@ class ReadBoardGmaSessionContractTest {
         };
 
     session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
-    awaitPublication(ports);
+    awaitTerminalEffects(ports);
 
     ReadBoardGmaSession.Terminal terminal = ports.publications.get(0);
     assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
@@ -1206,7 +1206,7 @@ class ReadBoardGmaSessionContractTest {
   private static final class ParticipantPorts extends RecordingPorts {
     ReadBoardGmaSession session;
     ReadBoard.ReadBoardGmaExactParticipant.RestoreOperation restoreOperation = () -> {};
-    private final CountDownLatch published = new CountDownLatch(1);
+    private final CountDownLatch terminalEffectsApplied = new CountDownLatch(1);
 
     @Override
     public void startExact(
@@ -1218,12 +1218,20 @@ class ReadBoardGmaSessionContractTest {
     @Override
     public void publishTerminal(ReadBoardGmaSession.Terminal terminal) {
       super.publishTerminal(terminal);
-      published.countDown();
+    }
+
+    @Override
+    public void requestReservationRelease(
+        ReadBoardGmaSession.ReservationReleaseCapability capability) {
+      super.requestReservationRelease(capability);
+      // Reservation release is the final ordered terminal effect. Waiting here also publishes all
+      // preceding continuation and terminal writes to the assertion thread.
+      terminalEffectsApplied.countDown();
     }
   }
 
-  private static void awaitPublication(ParticipantPorts ports) throws InterruptedException {
-    assertTrue(ports.published.await(1, TimeUnit.SECONDS));
+  private static void awaitTerminalEffects(ParticipantPorts ports) throws InterruptedException {
+    assertTrue(ports.terminalEffectsApplied.await(1, TimeUnit.SECONDS));
   }
 
   private static void awaitLatch(CountDownLatch latch) {
