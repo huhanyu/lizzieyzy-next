@@ -12,10 +12,11 @@ import java.util.Objects;
  * <p>Each session owns a non-reusable opaque identity and exactly one discriminated state:
  *
  * <pre>
- * Preparing
  * GmaInFlight(authorization, authoritativeRestoreIntent)
- * RestoringExact(capturedExactOperation)
- * RestoringRuntime(capturedRuntimeSnapshot)
+ *   -> Terminal(Succeeded)                                  // accepted PLAYED
+ *   -> RestoringExact(capturedExactOperation)               // isolation terminal
+ *      -> RestoringRuntime(capturedRuntimeSnapshot)         // retired runtime restore only
+ *      -> RestoringExact(latestDeferredExactOperation)      // delayed authority, latest wins
  * Terminal(Succeeded | Failed(firstFailure) | CancelledNoEffect)
  * </pre>
  *
@@ -165,8 +166,8 @@ public final class ReadBoardGmaSession {
    * Session-owned immutable runtime restore snapshot: the parameters captured at GMA admission. The
    * session treats the contents as opaque; the Leelaz adapter that captured them reads them back
    * through {@link #parameters()} and maps them to its runtime restore commands and ACK
-   * aggregation. An empty snapshot means the runtime participant has no work, so exact success
-   * alone completes the session in the same transition.
+   * aggregation. A continuing active session retains its runtime settings between hands; after
+   * retirement, an empty snapshot means exact success alone completes the session.
    */
   public static final class RuntimeSnapshot {
     private static final RuntimeSnapshot EMPTY = new RuntimeSnapshot(List.of());
@@ -262,8 +263,8 @@ public final class ReadBoardGmaSession {
 
   /**
    * One-shot capability bound to the exact snapshot restore participant; only valid while the state
-   * is {@link RestoringExact}. Issued by the module on GMA terminal; never revoked by helper
-   * retirement.
+   * is {@link RestoringExact}. Issued for an isolation terminal or a deferred authoritative restore;
+   * never revoked by helper retirement.
    */
   public static final class ExactParticipantCapability {
     private final ReadBoardGmaSession session;
@@ -387,6 +388,8 @@ public final class ReadBoardGmaSession {
   private int exactAttempt = -1;
   private int runtimeAttempt = -1;
   private RuntimeSnapshot runtimeSnapshot = RuntimeSnapshot.empty();
+  private Object deferredExactRestoreIntent;
+  private boolean runtimeRestoreCompleted;
 
   private ReadBoardGmaSession(Object engineIncarnation, Object reservationOwner, Ports ports) {
     this.engineIncarnation = engineIncarnation;
@@ -436,6 +439,11 @@ public final class ReadBoardGmaSession {
    */
   public Object engineIncarnation() {
     return engineIncarnation;
+  }
+
+  /** The captured reservation release authority used by the terminal effect. */
+  public ReservationReleaseCapability reservationReleaseCapability() {
+    return reservationReleaseCapability;
   }
 
   /**
@@ -534,33 +542,71 @@ public final class ReadBoardGmaSession {
   }
 
   /**
-   * Reports the consumed GMA terminal through its one-shot capability. Every semantic variant
-   * enters the same exact-then-runtime recovery contract; the session transitions to {@link
-   * RestoringExact} and emits the exact start effect.
+   * Reports the consumed GMA terminal through its one-shot capability. An accepted {@link
+   * GmaTerminal#PLAYED} completes directly; isolation terminals transition to {@link
+   * RestoringExact} and emit the exact start effect.
    */
   public void consumeGmaTerminal(GmaTerminalCapability capability, GmaTerminal terminal) {
+    consumeGmaTerminal(capability, terminal, null);
+  }
+
+  /**
+   * Reports a terminal together with the final authoritative restore intent captured by the
+   * physical terminal owner. The terminal capability remains valid after helper retirement, so a
+   * late physical PLAYED result can restore the post-play position without re-authorizing helper
+   * activity.
+   */
+  public void consumeGmaTerminal(
+      GmaTerminalCapability capability, GmaTerminal terminal, Object finalRestoreIntent) {
     Objects.requireNonNull(capability, "capability");
     Objects.requireNonNull(terminal, "terminal");
     List<Effect> effects;
     synchronized (lock) {
-      effects = onGmaTerminal(capability, terminal);
+      effects = onGmaTerminal(capability, terminal, finalRestoreIntent);
     }
     dispatch(effects);
   }
 
-  private List<Effect> onGmaTerminal(GmaTerminalCapability capability, GmaTerminal terminal) {
+  private List<Effect> onGmaTerminal(
+      GmaTerminalCapability capability, GmaTerminal terminal, Object finalRestoreIntent) {
     if (!isCapabilityCurrent(capability)
         || capability.attempt != gmaTerminalAttempt
         || !(state instanceof GmaInFlight gma)) {
       return List.of();
     }
     gma.authorization().invalidate();
-    Object restoreIntent = gma.authoritativeRestoreIntent();
+    if (terminal == GmaTerminal.PLAYED) {
+      return retired && !runtimeSnapshot.isEmpty()
+          ? startRuntimeRestore()
+          : terminalEffects(new Terminal(SessionOutcome.SUCCEEDED, null));
+    }
+    Object restoreIntent =
+        finalRestoreIntent == null ? gma.authoritativeRestoreIntent() : finalRestoreIntent;
     ExactParticipantCapability exactCapability =
         new ExactParticipantCapability(this, engineIncarnation, nextAttempt++);
     exactAttempt = exactCapability.attempt();
     state = new RestoringExact(new CapturedExactOperation(exactCapability, restoreIntent));
     return List.of(new StartExact(exactCapability, restoreIntent));
+  }
+
+  /**
+   * Records the latest authoritative exact restore requested while participant convergence is in
+   * progress. The physical terminal capability binds the request to this session's admitted engine
+   * incarnation; stale or post-terminal requests are rejected.
+   */
+  public boolean deferExactRestore(
+      GmaTerminalCapability capability, Object restoreIntent) {
+    Objects.requireNonNull(capability, "capability");
+    Objects.requireNonNull(restoreIntent, "restoreIntent");
+    synchronized (lock) {
+      if (!isCapabilityCurrent(capability)
+          || capability.attempt != gmaTerminalAttempt
+          || (!(state instanceof RestoringExact) && !(state instanceof RestoringRuntime))) {
+        return false;
+      }
+      deferredExactRestoreIntent = restoreIntent;
+      return true;
+    }
   }
 
   /** Reports the exact participant aggregate result through its one-shot capability. */
@@ -588,9 +634,16 @@ public final class ReadBoardGmaSession {
     if (result instanceof ParticipantResult.Failed failed) {
       return terminalEffects(new Terminal(SessionOutcome.FAILED, failed.failure()));
     }
-    if (runtimeSnapshot.isEmpty()) {
+    if (deferredExactRestoreIntent != null) {
+      return startDeferredExactRestore();
+    }
+    if (runtimeRestoreCompleted || !retired || runtimeSnapshot.isEmpty()) {
       return terminalEffects(new Terminal(SessionOutcome.SUCCEEDED, null));
     }
+    return startRuntimeRestore();
+  }
+
+  private List<Effect> startRuntimeRestore() {
     RuntimeParticipantCapability runtimeCapability =
         new RuntimeParticipantCapability(this, engineIncarnation, nextAttempt++);
     runtimeAttempt = runtimeCapability.attempt();
@@ -623,7 +676,21 @@ public final class ReadBoardGmaSession {
     if (result instanceof ParticipantResult.Failed failed) {
       return terminalEffects(new Terminal(SessionOutcome.FAILED, failed.failure()));
     }
+    runtimeRestoreCompleted = true;
+    if (deferredExactRestoreIntent != null) {
+      return startDeferredExactRestore();
+    }
     return terminalEffects(new Terminal(SessionOutcome.SUCCEEDED, null));
+  }
+
+  private List<Effect> startDeferredExactRestore() {
+    Object restoreIntent = deferredExactRestoreIntent;
+    deferredExactRestoreIntent = null;
+    ExactParticipantCapability exactCapability =
+        new ExactParticipantCapability(this, engineIncarnation, nextAttempt++);
+    exactAttempt = exactCapability.attempt();
+    state = new RestoringExact(new CapturedExactOperation(exactCapability, restoreIntent));
+    return List.of(new StartExact(exactCapability, restoreIntent));
   }
 
   private boolean isHelperCurrent(HelperCapability helper) {
@@ -650,10 +717,13 @@ public final class ReadBoardGmaSession {
   private List<Effect> terminalEffects(Terminal terminal) {
     state = terminal;
     List<Effect> effects = new ArrayList<>();
-    effects.add(new PublishTerminal(terminal));
     if (terminal.outcome() == SessionOutcome.FAILED) {
+      // Quarantine before publication so a concurrent authority update cannot start legacy restore
+      // work against a failed session.
       effects.add(new HandleFailure(terminal.firstFailure()));
-    } else if (terminal.outcome() == SessionOutcome.SUCCEEDED && !retired) {
+    }
+    effects.add(new PublishTerminal(terminal));
+    if (terminal.outcome() == SessionOutcome.SUCCEEDED && !retired) {
       effects.add(new ContinueNormal());
     }
     effects.add(new RequestRelease(reservationReleaseCapability));

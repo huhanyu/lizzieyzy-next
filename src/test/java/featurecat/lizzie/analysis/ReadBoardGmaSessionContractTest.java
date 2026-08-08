@@ -105,7 +105,8 @@ class ReadBoardGmaSessionContractTest {
     assertSame(latestIntent, gma.authoritativeRestoreIntent());
     assertTrue(ports.calls.isEmpty());
 
-    // After retirement the intent freezes; the session-owned terminal capability is not revoked.
+    // Retirement freezes helper updates, but the still-valid physical terminal capability can
+    // provide the final authoritative post-terminal intent without re-authorizing the helper.
     session.retire(helper);
     session.updateRestoreIntent(helper, new Object());
     assertSame(
@@ -113,10 +114,11 @@ class ReadBoardGmaSessionContractTest {
         assertInstanceOf(ReadBoardGmaSession.GmaInFlight.class, session.state())
             .authoritativeRestoreIntent());
 
-    // The frozen latest intent is what the exact participant captures at terminal.
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    Object finalTerminalIntent = new Object();
+    session.consumeGmaTerminal(
+        terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR, finalTerminalIntent);
     assertSame(
-        latestIntent,
+        finalTerminalIntent,
         assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state())
             .capturedExactOperation()
             .restoreIntent());
@@ -139,12 +141,14 @@ class ReadBoardGmaSessionContractTest {
     assertTrue(gma.authorization().invalidated());
     assertTrue(ports.calls.isEmpty());
 
-    // The physical request keeps converging; success still publishes, continues, and releases.
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    // The physical request keeps converging; an active session's exact success reaches the
+    // terminal directly — the runtime phase is never entered — while success still publishes,
+    // continues, and releases.
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
-    session.completeRuntime(
-        ports.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertTrue(
+        ports.runtimeStarts.isEmpty(), "an active exact success must not start runtime restore");
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(1, ports.continuations);
     assertEquals(1, ports.publications.size());
@@ -153,7 +157,7 @@ class ReadBoardGmaSessionContractTest {
 
   @ParameterizedTest
   @EnumSource(ReadBoardGmaSession.GmaTerminal.class)
-  void everyGmaTerminalVariantRunsTheFullExactThenRuntimeRecoveryContract(
+  void everyGmaTerminalVariantFollowsItsFixedTerminalContract(
       ReadBoardGmaSession.GmaTerminal terminal) {
     RecordingPorts ports = new RecordingPorts();
     ReadBoardGmaSession session = createSession(ports);
@@ -167,12 +171,32 @@ class ReadBoardGmaSessionContractTest {
 
     // The logical placement authorization expires when the GMA terminal line is consumed.
     assertTrue(authorization.invalidated());
+
+    if (terminal == ReadBoardGmaSession.GmaTerminal.PLAYED) {
+      // PLAYED is an authorized accepted move: the session succeeds directly — no exact or
+      // runtime restore — and the terminal publishes, continues, and releases immediately.
+      assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+      assertTrue(ports.exactStarts.isEmpty(), "PLAYED must not start exact restore");
+      assertTrue(ports.runtimeStarts.isEmpty(), "PLAYED must not start runtime restore");
+      assertEquals(
+          List.of("publishTerminal", "continueNormal", "requestReservationRelease"),
+          ports.calls);
+      assertEquals(1, ports.publications.size());
+      assertEquals(1, ports.releases.size());
+      assertEquals(1, ports.continuations);
+      return;
+    }
+
+    // Every other variant (PASS, RESIGN, REQUEST_ERROR, REQUEST_TIMEOUT) enters the exact
+    // restore contract with the authoritative intent.
     ReadBoardGmaSession.RestoringExact exact =
         assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
     assertSame(intent, exact.capturedExactOperation().restoreIntent());
     assertEquals(1, ports.exactStarts.size());
     assertEquals(1, ports.exactStarts.get(0).attempt());
 
+    // The runtime phase runs only for a retired session; retire while RestoringExact.
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, session.state());
@@ -184,14 +208,146 @@ class ReadBoardGmaSessionContractTest {
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(
         List.of(
-            "startExact",
-            "startRuntime",
-            "publishTerminal",
-            "continueNormal",
+            "startExact", "startRuntime", "publishTerminal", "requestReservationRelease"),
+        ports.calls);
+    assertEquals(1, ports.publications.size());
+    assertEquals(1, ports.releases.size());
+  }
+
+  @Test
+  void deferExactRestoreIsLatestWinsAndHoldsTerminalWhileRestoringExact() {
+    RecordingPorts ports = new RecordingPorts();
+    ReadBoardGmaSession session = createSession(ports);
+    Object intent = new Object();
+    Object latestIntent = new Object();
+    ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
+        session.admitGma(session.helperCapability(), intent, nonEmptySnapshot());
+
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    ReadBoardGmaSession.ExactParticipantCapability firstExact = ports.exactStarts.get(0);
+
+    // Deferred requests are accepted while RestoringExact and are latest-wins.
+    assertTrue(session.deferExactRestore(terminalCapability, new Object()));
+    assertTrue(session.deferExactRestore(terminalCapability, latestIntent));
+
+    // Exact success with a deferred request pending neither publishes nor releases: it starts a
+    // new exact attempt with the latest deferred intent.
+    session.completeExact(firstExact, new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
+    assertEquals(2, ports.exactStarts.size());
+    assertEquals(2, ports.exactStarts.get(1).attempt());
+    assertSame(latestIntent, ports.exactIntents.get(1));
+    assertTrue(ports.publications.isEmpty());
+    assertTrue(ports.releases.isEmpty());
+
+    // The deferred exact runs to completion and only then reaches the terminal.
+    session.completeExact(
+        ports.exactStarts.get(1), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+    assertEquals(
+        List.of(
+            "startExact", "startExact", "publishTerminal", "continueNormal",
             "requestReservationRelease"),
         ports.calls);
     assertEquals(1, ports.publications.size());
     assertEquals(1, ports.releases.size());
+    assertEquals(1, ports.continuations);
+  }
+
+  @Test
+  void deferExactRestoreHoldsTerminalWhileRestoringRuntimeAndRunsNewExactFirst() {
+    RecordingPorts ports = new RecordingPorts();
+    ReadBoardGmaSession session = createSession(ports);
+    Object intent = new Object();
+    ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
+        session.admitGma(session.helperCapability(), intent, nonEmptySnapshot());
+
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.RESIGN);
+    session.retire(session.helperCapability());
+    ReadBoardGmaSession.ExactParticipantCapability firstExact = ports.exactStarts.get(0);
+    session.completeExact(firstExact, new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, session.state());
+    assertEquals(1, ports.runtimeStarts.size());
+
+    // Deferred requests are also accepted while RestoringRuntime and are latest-wins.
+    assertTrue(session.deferExactRestore(terminalCapability, new Object()));
+    assertTrue(session.deferExactRestore(terminalCapability, intent));
+
+    // Runtime success with a deferred request pending neither publishes nor releases: the latest
+    // deferred intent starts a new exact attempt first.
+    session.completeRuntime(
+        ports.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
+    assertEquals(2, ports.exactStarts.size());
+    assertEquals(3, ports.exactStarts.get(1).attempt());
+    assertSame(intent, ports.exactIntents.get(1));
+    assertTrue(ports.publications.isEmpty());
+    assertTrue(ports.releases.isEmpty());
+
+    // The deferred exact runs to completion and only then publishes and releases; a retired
+    // session never continues.
+    session.completeExact(
+        ports.exactStarts.get(1), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+    assertEquals(
+        List.of(
+            "startExact", "startRuntime", "startExact", "publishTerminal",
+            "requestReservationRelease"),
+        ports.calls);
+    assertEquals(1, ports.publications.size());
+    assertEquals(1, ports.releases.size());
+    assertEquals(0, ports.continuations);
+  }
+
+  @Test
+  void deferExactRestoreAbsorbsStaleAndPostTerminalCapabilityCalls() {
+    RecordingPorts ports = new RecordingPorts();
+    ReadBoardGmaSession session = createSession(ports);
+    Object staleIntent = new Object();
+    Object latestIntent = new Object();
+    ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
+        session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
+
+    // While the GMA request is in flight the terminal line has not been consumed: no deferral.
+    assertFalse(session.deferExactRestore(terminalCapability, new Object()));
+
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PASS);
+    assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
+
+    // A terminal capability from another session or from a twin of this incarnation is absorbed.
+    RecordingPorts foreignPorts = new RecordingPorts();
+    ReadBoardGmaSession foreign = createSession(new Object(), foreignPorts);
+    ReadBoardGmaSession.GmaTerminalCapability foreignTerminal =
+        foreign.admitGma(
+            foreign.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
+    assertFalse(session.deferExactRestore(foreignTerminal, new Object()));
+
+    ReadBoardGmaSession twin = createSession(INCARNATION, new RecordingPorts());
+    ReadBoardGmaSession.GmaTerminalCapability twinTerminal =
+        twin.admitGma(
+            twin.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
+    assertFalse(session.deferExactRestore(twinTerminal, new Object()));
+
+    // The session's own terminal capability is accepted and latest-wins.
+    assertTrue(session.deferExactRestore(terminalCapability, staleIntent));
+    assertTrue(session.deferExactRestore(terminalCapability, latestIntent));
+    session.completeExact(
+        ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(2, ports.exactStarts.size());
+    assertSame(latestIntent, ports.exactIntents.get(1));
+    assertNotSame(staleIntent, ports.exactIntents.get(1));
+
+    session.completeExact(
+        ports.exactStarts.get(1), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+    assertEquals(1, ports.publications.size());
+    assertEquals(1, ports.releases.size());
+
+    // After the terminal, deferrals through the same capability are absorbed.
+    assertFalse(session.deferExactRestore(terminalCapability, new Object()));
+    assertEquals(1, ports.publications.size());
+    assertEquals(1, ports.releases.size());
+    assertEquals(2, ports.exactStarts.size());
   }
 
   @Test
@@ -202,8 +358,8 @@ class ReadBoardGmaSessionContractTest {
         session.admitGma(
             session.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     assertEquals(1, ports.exactStarts.size());
     assertEquals(List.of("startExact"), ports.calls);
@@ -216,7 +372,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(
             session.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     assertEquals(1, ports.exactStarts.size());
 
     // Another session with the same engine incarnation: identity guard fires.
@@ -225,7 +381,8 @@ class ReadBoardGmaSessionContractTest {
         twin.admitGma(
             twin.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
     twin.consumeGmaTerminal(twinTerminalCapability, ReadBoardGmaSession.GmaTerminal.PASS);
-    session.consumeGmaTerminal(twinTerminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(
+        twinTerminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     // Another session with a different engine incarnation: incarnation guard fires too.
     ReadBoardGmaSession foreign = createSession(new Object(), new RecordingPorts());
@@ -233,7 +390,8 @@ class ReadBoardGmaSessionContractTest {
         foreign.admitGma(
             foreign.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
     foreign.consumeGmaTerminal(foreignTerminalCapability, ReadBoardGmaSession.GmaTerminal.RESIGN);
-    session.consumeGmaTerminal(foreignTerminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(
+        foreignTerminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
     assertEquals(1, ports.exactStarts.size());
@@ -266,7 +424,7 @@ class ReadBoardGmaSessionContractTest {
         assertInstanceOf(ReadBoardGmaSession.GmaInFlight.class, session.state())
             .authoritativeRestoreIntent());
     // The session-owned terminal capability is not revoked: exact restore still starts.
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
     assertEquals(1, ports.exactStarts.size());
   }
@@ -285,7 +443,9 @@ class ReadBoardGmaSessionContractTest {
         session.admitGma(session.helperCapability(), intent, snapshot);
     session.updateRestoreIntent(session.helperCapability(), latestIntent);
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    // The runtime phase runs only for a retired session; retire while RestoringExact.
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
 
@@ -299,37 +459,48 @@ class ReadBoardGmaSessionContractTest {
     assertSame(snapshot, ports.runtimeSnapshots.get(0));
     assertSame(capturedParams.get(0), snapshot.parameters().get(0));
     assertTrue(ports.publications.isEmpty());
+
+    // The captured snapshot is restored before the retired session reaches its terminal.
+    session.completeRuntime(
+        ports.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+    assertEquals(1, ports.publications.size());
+    assertEquals(0, ports.continuations);
+    assertEquals(1, ports.releases.size());
   }
 
   @Test
-  void exactSuccessWithEmptyRuntimeSnapshotTerminatesSucceededImmediately() {
+  void retiredExactSuccessWithEmptyRuntimeSnapshotTerminatesSucceededImmediately() {
     RecordingPorts ports = new RecordingPorts();
     ReadBoardGmaSession session = createSession(ports);
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(
             session.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    // Even a retired session skips the runtime phase when there is no captured runtime work.
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
 
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(
-        List.of("startExact", "publishTerminal", "continueNormal", "requestReservationRelease"),
-        ports.calls);
+        List.of("startExact", "publishTerminal", "requestReservationRelease"), ports.calls);
     assertEquals(0, ports.runtimeStarts.size());
     assertEquals(1, ports.publications.size());
+    assertEquals(0, ports.continuations);
     assertEquals(1, ports.releases.size());
   }
 
   @Test
-  void runtimeSuccessPublishesContinuesAndReleasesExactlyOnceInOrder() {
+  void retiredRuntimeSuccessPublishesAndReleasesExactlyOnceInOrder() {
     RecordingPorts ports = new RecordingPorts();
     ReadBoardGmaSession session = createSession(ports);
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     session.completeRuntime(
@@ -337,15 +508,10 @@ class ReadBoardGmaSessionContractTest {
 
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(
-        List.of(
-            "startExact",
-            "startRuntime",
-            "publishTerminal",
-            "continueNormal",
-            "requestReservationRelease"),
+        List.of("startExact", "startRuntime", "publishTerminal", "requestReservationRelease"),
         ports.calls);
     assertEquals(1, ports.publications.size());
-    assertEquals(1, ports.continuations);
+    assertEquals(0, ports.continuations);
     assertEquals(1, ports.releases.size());
   }
 
@@ -359,7 +525,7 @@ class ReadBoardGmaSessionContractTest {
         new ReadBoardGmaSession.ParticipantFailure(
             ReadBoardGmaSession.FailureCategory.GTP_ERROR, INCARNATION, "loadsgf rejected");
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Failed(failure));
     // Late success through the same capability is absorbed; the first failure stays locked.
@@ -370,9 +536,8 @@ class ReadBoardGmaSessionContractTest {
     assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
     assertSame(failure, terminal.firstFailure());
     assertEquals(
-        List.of("startExact", "publishTerminal", "handleFailure", "requestReservationRelease"),
+        List.of("startExact", "handleFailure", "publishTerminal", "requestReservationRelease"),
         ports.calls);
-    assertEquals(0, ports.runtimeStarts.size());
     assertEquals(0, ports.continuations);
     assertEquals(1, ports.releases.size());
     assertSame(failure, ports.failures.get(0));
@@ -388,7 +553,8 @@ class ReadBoardGmaSessionContractTest {
         new ReadBoardGmaSession.ParticipantFailure(
             ReadBoardGmaSession.FailureCategory.TIMEOUT, INCARNATION, "restore response timeout");
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     session.completeRuntime(
@@ -432,7 +598,8 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession exactPhase = createSession(exactPhasePorts);
     ReadBoardGmaSession.GmaTerminalCapability exactPhaseTerminal =
         exactPhase.admitGma(exactPhase.helperCapability(), new Object(), nonEmptySnapshot());
-    exactPhase.consumeGmaTerminal(exactPhaseTerminal, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    exactPhase.consumeGmaTerminal(
+        exactPhaseTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     exactPhase.retire(exactPhase.helperCapability());
     assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, exactPhase.state());
     assertEquals(List.of("startExact"), exactPhasePorts.calls);
@@ -453,12 +620,15 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession runtimePhase = createSession(runtimePhasePorts);
     ReadBoardGmaSession.GmaTerminalCapability runtimePhaseTerminal =
         runtimePhase.admitGma(runtimePhase.helperCapability(), new Object(), nonEmptySnapshot());
-    runtimePhase.consumeGmaTerminal(runtimePhaseTerminal, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    runtimePhase.consumeGmaTerminal(
+        runtimePhaseTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    runtimePhase.retire(runtimePhase.helperCapability());
     runtimePhase.completeExact(
         runtimePhasePorts.exactStarts.get(0),
         new ReadBoardGmaSession.ParticipantResult.Succeeded());
-    runtimePhase.retire(runtimePhase.helperCapability());
     assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, runtimePhase.state());
+    // A retire that lands while RestoringRuntime is absorbed; the phase keeps converging.
+    runtimePhase.retire(runtimePhase.helperCapability());
 
     runtimePhase.completeRuntime(
         runtimePhasePorts.runtimeStarts.get(0),
@@ -478,7 +648,7 @@ class ReadBoardGmaSessionContractTest {
         new ReadBoardGmaSession.ParticipantFailure(
             ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED, INCARNATION, "engine exited");
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Failed(failure));
@@ -487,7 +657,7 @@ class ReadBoardGmaSessionContractTest {
     assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
     assertSame(failure, terminal.firstFailure());
     assertEquals(
-        List.of("startExact", "publishTerminal", "handleFailure", "requestReservationRelease"),
+        List.of("startExact", "handleFailure", "publishTerminal", "requestReservationRelease"),
         ports.calls);
     assertEquals(0, ports.continuations);
   }
@@ -499,7 +669,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     ReadBoardGmaSession.Terminal terminal = terminalOf(session);
     assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
@@ -507,7 +677,7 @@ class ReadBoardGmaSessionContractTest {
         ReadBoardGmaSession.FailureCategory.START_REJECTED, terminal.firstFailure().category());
     assertSame(INCARNATION, terminal.firstFailure().engineIncarnation());
     assertEquals(
-        List.of("startExact", "publishTerminal", "handleFailure", "requestReservationRelease"),
+        List.of("startExact", "handleFailure", "publishTerminal", "requestReservationRelease"),
         ports.calls);
     assertEquals(0, ports.runtimeStarts.size());
     assertEquals(0, ports.continuations);
@@ -522,7 +692,8 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
 
@@ -534,8 +705,8 @@ class ReadBoardGmaSessionContractTest {
         List.of(
             "startExact",
             "startRuntime",
-            "publishTerminal",
             "handleFailure",
+            "publishTerminal",
             "requestReservationRelease"),
         ports.calls);
     assertEquals(1, ports.runtimeStarts.size());
@@ -550,19 +721,14 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
-    ReadBoardGmaSession.RuntimeParticipantCapability runtimeCapability = ports.runtimeStarts.get(0);
-    session.completeRuntime(
-        runtimeCapability, new ReadBoardGmaSession.ParticipantResult.Succeeded());
     int callsAfterSuccess = ports.calls.size();
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
-    session.completeRuntime(
-        runtimeCapability, new ReadBoardGmaSession.ParticipantResult.Succeeded());
     session.retire(session.helperCapability());
     session.updateRestoreIntent(session.helperCapability(), new Object());
     session.invalidateAuthorization(session.helperCapability());
@@ -585,8 +751,9 @@ class ReadBoardGmaSessionContractTest {
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
     assertEquals(0, terminalCapability.attempt());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     assertEquals(1, ports.exactStarts.get(0).attempt());
+    session.retire(session.helperCapability());
     session.completeExact(
         ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     assertEquals(2, ports.runtimeStarts.get(0).attempt());
@@ -606,7 +773,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession other = createSession(otherPorts);
     ReadBoardGmaSession.GmaTerminalCapability otherTerminal =
         other.admitGma(other.helperCapability(), new Object(), nonEmptySnapshot());
-    other.consumeGmaTerminal(otherTerminal, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    other.consumeGmaTerminal(otherTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     other.completeRuntime(
         ports.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, other.state());
@@ -619,25 +786,24 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession older = createSession(olderPorts);
     ReadBoardGmaSession.GmaTerminalCapability olderTerminal =
         older.admitGma(older.helperCapability(), new Object(), nonEmptySnapshot());
-    older.consumeGmaTerminal(olderTerminal, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    older.consumeGmaTerminal(olderTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     RecordingPorts newerPorts = new RecordingPorts();
     ReadBoardGmaSession newer = createSession(newerPorts);
     ReadBoardGmaSession.GmaTerminalCapability newerTerminal =
         newer.admitGma(
             newer.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
-    newer.consumeGmaTerminal(newerTerminal, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    newer.consumeGmaTerminal(newerTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     newer.completeExact(
         newerPorts.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
 
     assertEquals(1, newerPorts.publications.size());
     assertEquals(0, olderPorts.publications.size());
 
-    // The old session's in-flight participant still converges to its own terminal.
+    // The old session's in-flight participant still converges to its own terminal: its active
+    // exact success reaches the terminal directly without the runtime phase.
     older.completeExact(
         olderPorts.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
-    older.completeRuntime(
-        olderPorts.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
 
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(older).outcome());
     assertEquals(1, olderPorts.publications.size());
@@ -655,7 +821,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability terminalA =
         sessionA.admitGma(
             sessionA.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
-    sessionA.consumeGmaTerminal(terminalA, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    sessionA.consumeGmaTerminal(terminalA, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     sessionA.completeExact(
         portsA.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
 
@@ -683,7 +849,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession session = createSession(exactPorts);
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     // A failure payload bound to a foreign engine incarnation cannot lock this session.
     session.completeExact(
@@ -694,12 +860,12 @@ class ReadBoardGmaSessionContractTest {
     assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
     assertEquals(List.of("startExact"), exactPorts.calls);
 
-    // The same session and incarnation still converge normally afterwards.
+    // The same session and incarnation still converge normally afterwards: an active session's
+    // exact success reaches the terminal directly without starting the runtime phase.
     session.completeExact(
         exactPorts.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
-    session.completeRuntime(
-        exactPorts.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
+    assertTrue(exactPorts.runtimeStarts.isEmpty());
     assertEquals(1, exactPorts.publications.size());
     assertEquals(1, exactPorts.releases.size());
 
@@ -708,7 +874,9 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability runtimeTerminal =
         runtimeSession.admitGma(
             runtimeSession.helperCapability(), new Object(), nonEmptySnapshot());
-    runtimeSession.consumeGmaTerminal(runtimeTerminal, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    runtimeSession.consumeGmaTerminal(
+        runtimeTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    runtimeSession.retire(runtimeSession.helperCapability());
     runtimeSession.completeExact(
         runtimePorts.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     runtimeSession.completeRuntime(
@@ -727,23 +895,19 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
-    session.completeExact(
-        ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    // The active session's exact success publishes the terminal; the publish failure must not
+    // suppress the continuation and release effects and is rethrown after the batch applied.
     assertThrows(
         IllegalStateException.class,
         () ->
-            session.completeRuntime(
-                ports.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded()));
+            session.completeExact(
+                ports.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded()));
 
     // The publish failure did not suppress the continuation and release effects.
     assertEquals(
         List.of(
-            "startExact",
-            "startRuntime",
-            "publishTerminal",
-            "continueNormal",
-            "requestReservationRelease"),
+            "startExact", "publishTerminal", "continueNormal", "requestReservationRelease"),
         ports.calls);
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(1, ports.continuations);
@@ -874,7 +1038,7 @@ class ReadBoardGmaSessionContractTest {
           awaitLatch(releaseOperation);
         };
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
 
     // The participant is blocked inside the restore operation: the completion boundary (loadsgf
     // consumed and captured tail accepted into the ordinary queue) has not been reached, so no
@@ -896,7 +1060,8 @@ class ReadBoardGmaSessionContractTest {
   @ParameterizedTest
   @MethodSource("restoreFailureSeam")
   void exactParticipantMapsRestoreFailuresToTypedCategories(
-      String detail, ReadBoardGmaSession.FailureCategory expectedCategory) throws Exception {
+      RuntimeException failure, ReadBoardGmaSession.FailureCategory expectedCategory)
+      throws Exception {
     ParticipantPorts ports = new ParticipantPorts();
     ReadBoardGmaSession session = createSession(ports);
     ports.session = session;
@@ -905,10 +1070,10 @@ class ReadBoardGmaSessionContractTest {
             session.helperCapability(), new Object(), ReadBoardGmaSession.RuntimeSnapshot.empty());
     ports.restoreOperation =
         () -> {
-          throw new IllegalStateException(detail);
+          throw failure;
         };
 
-    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PLAYED);
+    session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
     awaitPublication(ports);
 
     ReadBoardGmaSession.Terminal terminal = ports.publications.get(0);
@@ -924,68 +1089,40 @@ class ReadBoardGmaSessionContractTest {
   static Stream<Object[]> restoreFailureSeam() {
     return Stream.of(
         new Object[] {
-          "GTP loadsgf failed for '/tmp/lizzie-snapshot-1.sgf' with response: ? invalid setup",
+          new ExactSnapshotEngineRestore.Failure(
+              ExactSnapshotEngineRestore.FailureCategory.GTP_ERROR,
+              "GTP loadsgf failed for '/tmp/lizzie-snapshot-1.sgf' with response: ? invalid setup"),
           ReadBoardGmaSession.FailureCategory.GTP_ERROR
         },
         new Object[] {
-          "Timed out while waiting for loadsgf response after 8000 ms",
+          new ExactSnapshotEngineRestore.Failure(
+              ExactSnapshotEngineRestore.FailureCategory.TIMEOUT,
+              "Timed out while waiting for loadsgf response after 8000 ms"),
           ReadBoardGmaSession.FailureCategory.TIMEOUT
         },
         new Object[] {
-          "Interrupted while waiting for loadsgf response",
-          ReadBoardGmaSession.FailureCategory.TIMEOUT
-        },
-        new Object[] {
-          "Exact snapshot restore admission is no longer valid",
+          new ExactSnapshotEngineRestore.Failure(
+              ExactSnapshotEngineRestore.FailureCategory.ADMISSION_STALE,
+              "Exact snapshot restore admission is no longer valid"),
           ReadBoardGmaSession.FailureCategory.ADMISSION_STALE
         },
         new Object[] {
-          "Exact snapshot restore loadsgf was not admitted.",
-          ReadBoardGmaSession.FailureCategory.ADMISSION_STALE
-        },
-        new Object[] {
-          "Exact snapshot restore loadsgf command was rejected: loadsgf /tmp/lizzie-snapshot-1.sgf",
+          new ExactSnapshotEngineRestore.Failure(
+              ExactSnapshotEngineRestore.FailureCategory.SEND_FAILED,
+              "Exact snapshot restore loadsgf command was rejected: loadsgf /tmp/lizzie-snapshot-1.sgf"),
           ReadBoardGmaSession.FailureCategory.SEND_FAILED
         },
         new Object[] {
-          "Exact snapshot restore tail command was rejected: play W D4",
+          new ExactSnapshotEngineRestore.Failure(
+              ExactSnapshotEngineRestore.FailureCategory.TAIL_REJECTED,
+              "Exact snapshot restore tail command was rejected: play W D4"),
           ReadBoardGmaSession.FailureCategory.TAIL_REJECTED
         },
+        // Untyped restore failures still map to the stable SEND_FAILED fallback.
         new Object[] {
-          "Exact snapshot restore preclear command was rejected: clear_board",
-          ReadBoardGmaSession.FailureCategory.TAIL_REJECTED
-        },
-        new Object[] {
-          "Failed to build snapshot SGF for engine restore",
-          ReadBoardGmaSession.FailureCategory.SEND_FAILED
-        },
-        new Object[] {
-          "unexpected restore failure",
+          new IllegalStateException("unexpected restore failure"),
           ReadBoardGmaSession.FailureCategory.SEND_FAILED
         });
-  }
-
-  @Test
-  void participantFailureCategoryMappingCoversTheRestoreSeam() {
-    assertEquals(
-        ReadBoardGmaSession.FailureCategory.GTP_ERROR,
-        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
-            "GTP loadsgf failed for '/tmp/x.sgf' with response: ? boom"));
-    assertEquals(
-        ReadBoardGmaSession.FailureCategory.TIMEOUT,
-        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
-            "Timed out while waiting for loadsgf response after 8000 ms"));
-    assertEquals(
-        ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
-        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
-            "Exact snapshot restore admission is no longer valid"));
-    assertEquals(
-        ReadBoardGmaSession.FailureCategory.TAIL_REJECTED,
-        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory(
-            "Exact snapshot restore tail command was rejected: play W D4"));
-    assertEquals(
-        ReadBoardGmaSession.FailureCategory.SEND_FAILED,
-        ReadBoard.ReadBoardGmaExactParticipant.classifyCategory("unknown failure"));
   }
 
   /**

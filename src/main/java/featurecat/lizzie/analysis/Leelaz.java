@@ -2688,12 +2688,14 @@ public class Leelaz {
             && readBoardGmaOwner != null
             && readBoardGmaOwner.handleReadBoardGmaEnginePlay(
                 readBoardGmaBinding.identity, readBoardGmaBinding.generation, params[1])) {
+          boolean retainReadBoardNativePonder =
+              readBoardGmaOwner.consumeReadBoardGmaNativePonderRetention();
           processCommandResponseLine(line);
           readBoardGmaOwner.afterReadBoardGmaTerminalResponseConsumed("play-terminal");
           clearReadBoardGmaResponseOwner(
               readBoardGmaOwner, readBoardGmaBinding.identity, readBoardGmaBinding.generation);
           isCommandLine = false;
-          if (shouldStopPonder) {
+          if (shouldStopPonder && !retainReadBoardNativePonder) {
             isPondering = false;
             YikeSyncDebugLog.log("Leelaz marked isPondering=false after ReadBoard GMA play line");
           }
@@ -4775,7 +4777,9 @@ public class Leelaz {
     if (!isExactSnapshotRestoreAdmissionValid(admission)
         || (mirroredEngine != null
             && !mirroredEngine.isExactSnapshotRestoreAdmissionValid(admission))) {
-      throw new IllegalStateException("Exact snapshot restore loadsgf was not admitted.");
+      throw new ExactSnapshotEngineRestore.Failure(
+          ExactSnapshotEngineRestore.FailureCategory.ADMISSION_STALE,
+          "Exact snapshot restore loadsgf was not admitted.");
     }
     withExactSnapshotRestoreAdmission(
         admission,
@@ -4854,7 +4858,8 @@ public class Leelaz {
     if (admission != null) {
       String command = "loadsgf " + sgfFile.toAbsolutePath();
       if (!targetEngine.sendExactSnapshotRestoreCommand(command, onResponse, onSendFailure)) {
-        throw new IllegalStateException(
+        throw new ExactSnapshotEngineRestore.Failure(
+            ExactSnapshotEngineRestore.FailureCategory.SEND_FAILED,
             "Exact snapshot restore loadsgf command was rejected: " + command);
       }
       return;
@@ -4901,7 +4906,8 @@ public class Leelaz {
     String detail = line.isEmpty() ? "? loadsgf failed" : line;
     String message =
         "GTP loadsgf failed for '" + sgfFile.toAbsolutePath() + "' with response: " + detail;
-    return new IllegalStateException(message);
+    return new ExactSnapshotEngineRestore.Failure(
+        ExactSnapshotEngineRestore.FailureCategory.GTP_ERROR, message);
   }
 
   private static Thread newLoadSgfCleanupThread(Runnable runnable) {
@@ -4932,7 +4938,9 @@ public class Leelaz {
   public final void sendCapturedRestoreCommand(String command) {
     ExactSnapshotRestoreAdmission admission = exactSnapshotRestoreAdmissionContext.get();
     if (!sendExactSnapshotRestoreCommand(command, admission)) {
-      throw new IllegalStateException("Captured snapshot restore command was rejected: " + command);
+      throw new ExactSnapshotEngineRestore.Failure(
+          ExactSnapshotEngineRestore.FailureCategory.TAIL_REJECTED,
+          "Captured snapshot restore command was rejected: " + command);
     }
   }
 
@@ -6430,6 +6438,7 @@ public class Leelaz {
     synchronized (engineArbitrationLock()) {
       return !isWebTrialEngineBusy()
           && !engineStateUnrestored
+          && (Lizzie.config == null || !Lizzie.config.isDoubleEngineMode())
           && readBoardGmaReservation == null
           && trackingHandoffGate == null
           && !foregroundRestoreInProgress
@@ -6613,12 +6622,19 @@ public class Leelaz {
             "Exact snapshot restore is not admitted for owner " + owner);
       }
     }
+    Object authorityIncarnation = null;
+    Object mirrorIncarnation = null;
+    if (owner == ExactSnapshotRestoreOwner.READ_BOARD_GMA) {
+      authorityIncarnation = currentEngineIncarnation();
+      mirrorIncarnation = mirror == null ? null : mirror.currentEngineIncarnation();
+    }
     if (mirror != null
         && !mirror.canAcceptExactSnapshotRestoreAdmission(this, owner, capturedOwnerIdentity)) {
       throw new ExactSnapshotRestoreAdmissionException(
           "Exact snapshot restore mirror is not admitted for owner " + owner);
     }
-    return new ExactSnapshotRestoreAdmission(this, mirror, owner, capturedOwnerIdentity);
+    return new ExactSnapshotRestoreAdmission(
+        this, mirror, owner, capturedOwnerIdentity, authorityIncarnation, mirrorIncarnation);
   }
 
   private boolean canCaptureExactSnapshotRestoreAdmission(
@@ -6731,7 +6747,10 @@ public class Leelaz {
         case READ_BOARD_GMA:
           if (admission.ownerIdentity == null
               || authority.engineStateUnrestored
-              || authority.readBoardGmaReservation != admission.ownerIdentity) {
+              || authority.readBoardGmaReservation != admission.ownerIdentity
+              || authority.currentEngineIncarnation() != admission.authorityIncarnation
+              || (admission.mirror != null
+                  && admission.mirror.currentEngineIncarnation() != admission.mirrorIncarnation)) {
             return false;
           }
           break;
@@ -6769,7 +6788,9 @@ public class Leelaz {
 
   void requireExactSnapshotRestoreAdmission(ExactSnapshotRestoreAdmission admission) {
     if (!isExactSnapshotRestoreAdmissionValid(admission)) {
-      throw new IllegalStateException("Exact snapshot restore admission is no longer valid");
+      throw new ExactSnapshotEngineRestore.Failure(
+          ExactSnapshotEngineRestore.FailureCategory.ADMISSION_STALE,
+          "Exact snapshot restore admission is no longer valid");
     }
   }
 
@@ -8711,13 +8732,22 @@ public class Leelaz {
     private final Leelaz mirror;
     private final ExactSnapshotRestoreOwner owner;
     private final Object ownerIdentity;
+    private final Object authorityIncarnation;
+    private final Object mirrorIncarnation;
 
     private ExactSnapshotRestoreAdmission(
-        Leelaz authority, Leelaz mirror, ExactSnapshotRestoreOwner owner, Object ownerIdentity) {
+        Leelaz authority,
+        Leelaz mirror,
+        ExactSnapshotRestoreOwner owner,
+        Object ownerIdentity,
+        Object authorityIncarnation,
+        Object mirrorIncarnation) {
       this.authority = authority;
       this.mirror = mirror;
       this.owner = owner;
       this.ownerIdentity = ownerIdentity;
+      this.authorityIncarnation = authorityIncarnation;
+      this.mirrorIncarnation = mirrorIncarnation;
     }
 
     Leelaz authority() {
@@ -9045,7 +9075,8 @@ public class Leelaz {
           return;
         }
         recordFailureAndCancelPendingConsumers(
-            new IllegalStateException(
+            new ExactSnapshotEngineRestore.Failure(
+                ExactSnapshotEngineRestore.FailureCategory.TIMEOUT,
                 "Timed out while waiting for loadsgf response after "
                     + LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS
                     + " ms"));
@@ -9053,7 +9084,10 @@ public class Leelaz {
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
         recordFailureAndCancelPendingConsumers(
-            new IllegalStateException("Interrupted while waiting for loadsgf response", ex));
+            new ExactSnapshotEngineRestore.Failure(
+                ExactSnapshotEngineRestore.FailureCategory.TIMEOUT,
+                "Interrupted while waiting for loadsgf response",
+                ex));
       }
     }
 
@@ -9581,6 +9615,7 @@ public class Leelaz {
     private final String color;
     private final int maxTimeSeconds;
     private final int maxVisits;
+    private final boolean ponder;
     private final ReadBoardGmaSessionAdmission sessionAdmission;
     private boolean cancellationRequested;
     private Runnable cancellationSuccess;
@@ -9590,14 +9625,29 @@ public class Leelaz {
         String color,
         int maxTimeSeconds,
         int maxVisits,
+        boolean ponder,
         ReadBoardGmaSessionAdmission sessionAdmission) {
       this.color = color;
       this.maxTimeSeconds = maxTimeSeconds;
       this.maxVisits = maxVisits;
+      this.ponder = ponder;
       this.sessionAdmission = sessionAdmission;
     }
 
     private void start() {
+      if (RemoteComputeConfig.isCustomWebSocketEngineCommand(engineCommand)) {
+        prepareMaxTime();
+      } else {
+        preparePondering();
+      }
+    }
+
+    private void preparePondering() {
+      prepareValue(
+          readBoardGmaPondering, ponder ? "true" : "false", this::prepareMaxTime);
+    }
+
+    private void prepareMaxTime() {
       prepareParam(readBoardGmaMaxTime, maxTimeSeconds, this::prepareMaxVisits);
     }
 
@@ -9652,8 +9702,46 @@ public class Leelaz {
       setParam(param, String.valueOf(value), true, completion);
     }
 
-    private void restoreParamForMoveIfNeeded(
-        ReadBoardGmaRuntimeParam param, Runnable completion) {
+    private void prepareValue(
+        ReadBoardGmaRuntimeParam param, String value, Runnable completion) {
+      if (finishCancellationIfRequested()) {
+        return;
+      }
+      boolean requestSnapshot;
+      synchronized (readBoardGmaLock()) {
+        if (readBoardGmaPreparation != this || engineStateUnrestored) {
+          return;
+        }
+        requestSnapshot = !param.snapshotRequested;
+        if (requestSnapshot) {
+          param.snapshotRequested = true;
+        }
+      }
+      if (!requestSnapshot) {
+        setParam(param, value, true, completion);
+        return;
+      }
+      sendPreparationCommand(
+          "kata-get-param " + param.name,
+          response -> {
+            String originalValue = parseKataGetParamValue(response);
+            if (originalValue.isEmpty()) {
+              fail("invalid parameter snapshot response: " + param.name);
+              return;
+            }
+            synchronized (readBoardGmaLock()) {
+              if (readBoardGmaPreparation != this || engineStateUnrestored) {
+                return;
+              }
+              param.originalValue = originalValue;
+            }
+            if (!finishCancellationIfRequested()) {
+              setParam(param, value, true, completion);
+            }
+          });
+    }
+
+    private void restoreParamForMoveIfNeeded(ReadBoardGmaRuntimeParam param, Runnable completion) {
       String originalValue;
       synchronized (readBoardGmaLock()) {
         if (readBoardGmaPreparation != this || engineStateUnrestored) {
@@ -9849,16 +9937,24 @@ public class Leelaz {
     }
   }
 
+  private record ReadBoardGmaRuntimeFailure(
+      ReadBoardGmaSession.FailureCategory category, String detail) {}
+
   private static final class ReadBoardGmaRestoreBarrier {
     private final Runnable onSuccess;
-    private final Consumer<String> onFailure;
+    private final Consumer<ReadBoardGmaRuntimeFailure> onFailure;
+    private final boolean sessionOwned;
     private int remaining;
     private boolean completed;
     private Timer timeout;
 
-    private ReadBoardGmaRestoreBarrier(Runnable onSuccess, Consumer<String> onFailure) {
+    private ReadBoardGmaRestoreBarrier(
+        Runnable onSuccess,
+        Consumer<ReadBoardGmaRuntimeFailure> onFailure,
+        boolean sessionOwned) {
       this.onSuccess = onSuccess;
       this.onFailure = onFailure;
+      this.sessionOwned = sessionOwned;
     }
 
     private void register() {
@@ -9931,9 +10027,9 @@ public class Leelaz {
   }
 
   /**
-   * Starts one ReadBoard GMA hand with an explicit session admission callback. Package-private:
-   * the admission seam is consumed by the ReadBoard helper in the same package; external callers
-   * use the four-argument form, which consumes the registered admission.
+   * Starts one ReadBoard GMA hand with an explicit session admission callback. Package-private: the
+   * admission seam is consumed by the ReadBoard helper in the same package; external callers use
+   * the four-argument form, which consumes the registered admission.
    */
   synchronized boolean genmoveAnalyzeForReadBoard(
       String color,
@@ -9944,21 +10040,16 @@ public class Leelaz {
     if (isThinking) return false;
     if (ponder && RemoteComputeConfig.isCustomWebSocketEngineCommand(engineCommand)) return false;
     if (!beginReadBoardGmaSession()) return false;
-    if (RemoteComputeConfig.isCustomWebSocketEngineCommand(engineCommand)) {
-      synchronized (readBoardGmaLock()) {
-        if (readBoardGmaPreparation != null) {
-          return false;
-        }
-        readBoardGmaPreparation =
-            new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits, sessionAdmission);
+    synchronized (readBoardGmaLock()) {
+      if (readBoardGmaPreparation != null) {
+        return false;
       }
-      readBoardGmaPreparation.start();
-      return true;
+      readBoardGmaPreparation =
+          new ReadBoardGmaPreparation(
+              color, maxTimeSeconds, maxVisits, ponder, sessionAdmission);
     }
-    setReadBoardGmaPondering(ponder);
-    prepareReadBoardGmaMaxTime(maxTimeSeconds);
-    prepareReadBoardGmaMaxVisits(maxVisits);
-    return sendReadBoardGmaCommand(color, sessionAdmission);
+    readBoardGmaPreparation.start();
+    return true;
   }
 
   private static final class ReadBoardGmaResponseBinding {
@@ -10051,25 +10142,15 @@ public class Leelaz {
     }
     boolean activated = false;
     try {
-      if (RemoteComputeConfig.isCustomWebSocketEngineCommand(engineCommand)) {
-        synchronized (readBoardGmaLock()) {
-          if (readBoardGmaPreparation != null) {
-            return;
-          }
-          readBoardGmaPreparation =
-              new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits, sessionAdmission);
-        }
-        readBoardGmaPreparation.start();
-      } else {
-        setReadBoardGmaPondering(ponder);
-        prepareReadBoardGmaMaxTime(maxTimeSeconds);
-        prepareReadBoardGmaMaxVisits(maxVisits);
-        if (!sendReadBoardGmaCommand(color, sessionAdmission)) {
-          // The session admission failed fail-closed (reservation released, engine quarantined);
-          // never complete the retained-engine-mode handoff as if the GMA started.
+      synchronized (readBoardGmaLock()) {
+        if (readBoardGmaPreparation != null) {
           return;
         }
+        readBoardGmaPreparation =
+            new ReadBoardGmaPreparation(
+                color, maxTimeSeconds, maxVisits, ponder, sessionAdmission);
       }
+      readBoardGmaPreparation.start();
       activated = activation.completeRetainedEngineMode();
     } finally {
       if (!activated) {
@@ -10101,8 +10182,7 @@ public class Leelaz {
       return true;
     } catch (RuntimeException ex) {
       ex.printStackTrace();
-      failReadBoardGmaEngineRestore(
-          "ReadBoard GMA session admission failed: " + ex.getMessage());
+      failReadBoardGmaEngineRestore("ReadBoard GMA session admission failed: " + ex.getMessage());
       return false;
     }
   }
@@ -10148,7 +10228,15 @@ public class Leelaz {
           || readBoardGmaRestoreBarrier != null) {
         return;
       }
-      barrier = new ReadBoardGmaRestoreBarrier(onSuccess, onFailure);
+      barrier =
+          new ReadBoardGmaRestoreBarrier(
+              onSuccess,
+              failure -> {
+                if (onFailure != null) {
+                  onFailure.accept(failure.detail());
+                }
+              },
+              false);
       readBoardGmaRestoreBarrier = barrier;
       registerReadBoardGmaRuntimeParamRestore(
           barrier, readBoardGmaPondering, paramsToRestore);
@@ -10241,11 +10329,11 @@ public class Leelaz {
   /**
    * Starts the runtime parameter restore participant for the captured snapshot: aggregates the
    * matching per-parameter restore ACKs for this session and engine incarnation and reports the
-   * aggregate result through the session capability exactly once. The participant reuses the
-   * legacy restore barrier/ACK machinery; a parameter whose original value was not yet captured
-   * stays pending (its capture callback dispatches the restore command) instead of being treated
-   * as restored. A synchronous start rejection throws, which the session module converts into a
-   * typed {@link ReadBoardGmaSession.FailureCategory#START_REJECTED} failure and fail-closes.
+   * aggregate result through the session capability exactly once. The participant reuses the legacy
+   * restore barrier/ACK machinery; a parameter whose original value was not yet captured stays
+   * pending (its capture callback dispatches the restore command) instead of being treated as
+   * restored. A synchronous start rejection throws, which the session module converts into a typed
+   * {@link ReadBoardGmaSession.FailureCategory#START_REJECTED} failure and fail-closes.
    */
   void startReadBoardGmaRuntimeParticipant(
       ReadBoardGmaSession session,
@@ -10255,31 +10343,11 @@ public class Leelaz {
   }
 
   /**
-   * Maps the runtime restore seam failure detail to the stable failure category. The categories
-   * follow the restore-command lifecycle contract: stale admission rejection, response timeout,
-   * GTP error, and send failure. Unclassified failures default to {@link
-   * ReadBoardGmaSession.FailureCategory#SEND_FAILED}.
-   */
-  static ReadBoardGmaSession.FailureCategory classifyReadBoardGmaRuntimeFailure(String detail) {
-    String message = detail == null ? "" : detail;
-    if (message.contains("admission is no longer valid") || message.contains("was not admitted")) {
-      return ReadBoardGmaSession.FailureCategory.ADMISSION_STALE;
-    }
-    if (message.contains("timeout")) {
-      return ReadBoardGmaSession.FailureCategory.TIMEOUT;
-    }
-    if (message.contains("command failed")) {
-      return ReadBoardGmaSession.FailureCategory.GTP_ERROR;
-    }
-    return ReadBoardGmaSession.FailureCategory.SEND_FAILED;
-  }
-
-  /**
    * Requests the exactly-once release of the captured GMA reservation. The capability's captured
    * owner is validated against the current reservation — a stale or foreign capability cannot
    * release a replacement reservation. When the legacy runtime restore barrier or a parameter
-   * preparation is still converging, the release is deferred to that convergence path, which
-   * closes the same captured reservation on completion or failure.
+   * preparation is still converging, the release is deferred to that convergence path, which closes
+   * the same captured reservation on completion or failure.
    */
   void requestReadBoardGmaReservationRelease(
       ReadBoardGmaSession.ReservationReleaseCapability capability) {
@@ -10350,8 +10418,11 @@ public class Leelaz {
 
   void retireReadBoardGmaSession() {
     ReadBoard readBoard = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
+    if (readBoard != null && readBoard.retireReadBoardGmaSession()) {
+      return;
+    }
     if (readBoard != null) {
-      readBoard.abandonReadBoardGmaSession("session-retired");
+      readBoard.abandonReadBoardGmaSession(this, "session-retired");
     }
     EngineModeReservation reservation;
     Timer barrierTimeout = null;
@@ -10471,7 +10542,10 @@ public class Leelaz {
         new TimerTask() {
           @Override
           public void run() {
-            failReadBoardGmaRuntimeRestore(barrier, "restore response timeout");
+            failReadBoardGmaRuntimeRestore(
+                barrier,
+                ReadBoardGmaSession.FailureCategory.TIMEOUT,
+                "restore response timeout");
           }
         },
         Math.max(1L, readBoardGmaRestoreResponseTimeoutMillis()));
@@ -10538,9 +10612,11 @@ public class Leelaz {
   }
 
   private void failReadBoardGmaRuntimeRestore(
-      ReadBoardGmaRestoreBarrier barrier, String detail) {
+      ReadBoardGmaRestoreBarrier barrier,
+      ReadBoardGmaSession.FailureCategory category,
+      String detail) {
     EngineModeReservation reservation;
-    Consumer<String> failure;
+    Consumer<ReadBoardGmaRuntimeFailure> failure;
     Timer timeout;
     synchronized (readBoardGmaLock()) {
       if (readBoardGmaRestoreBarrier != barrier || barrier.completed) {
@@ -10549,8 +10625,10 @@ public class Leelaz {
       barrier.completed = true;
       readBoardGmaRestoreBarrier = null;
       engineStateUnrestored = true;
-      reservation = readBoardGmaReservation;
-      readBoardGmaReservation = null;
+      reservation = barrier.sessionOwned ? null : readBoardGmaReservation;
+      if (!barrier.sessionOwned) {
+        readBoardGmaReservation = null;
+      }
       failure = barrier.onFailure;
       timeout = barrier.timeout;
       barrier.timeout = null;
@@ -10566,35 +10644,39 @@ public class Leelaz {
       reservation.close();
     }
     if (failure != null) {
-      failure.accept(detail);
+      failure.accept(new ReadBoardGmaRuntimeFailure(category, detail));
     }
   }
 
   public void failReadBoardGmaEngineRestore(String detail) {
     ReadBoard readBoard = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
-    if (readBoard != null) {
-      // The physical GMA hand can no longer converge through a terminal (transport death,
-      // preparation failure, restore failure); drop the session-bound adapter state so the
-      // helper does not treat the abandoned session as busy.
-      readBoard.abandonReadBoardGmaSession("engine-restore-failed");
-    }
     ReadBoardGmaRestoreBarrier barrier;
     EngineModeReservation reservation;
     synchronized (readBoardGmaLock()) {
       barrier = readBoardGmaRestoreBarrier;
       if (barrier != null) {
+        engineStateUnrestored = true;
         reservation = null;
       } else {
         reservation = readBoardGmaReservation;
         if (reservation == null) {
+          if (readBoard != null) {
+            readBoard.abandonReadBoardGmaSession(this, "engine-restore-failed");
+          }
           return;
         }
         engineStateUnrestored = true;
         readBoardGmaReservation = null;
       }
     }
+    if (readBoard != null) {
+      // Quarantine is visible before the binding is cleared, so a concurrent restore request
+      // cannot capture the still-owned reservation during this transition.
+      readBoard.abandonReadBoardGmaSession(this, "engine-restore-failed");
+    }
     if (barrier != null) {
-      failReadBoardGmaRuntimeRestore(barrier, detail);
+      failReadBoardGmaRuntimeRestore(
+          barrier, ReadBoardGmaSession.FailureCategory.SEND_FAILED, detail);
       return;
     }
     rememberRecentLine(recentStderrLines, "ReadBoard GMA engine restore failed: " + detail);
@@ -10617,8 +10699,10 @@ public class Leelaz {
       barrier.completed = true;
       readBoardGmaRestoreBarrier = null;
       clearReadBoardGmaSearchLimitSnapshots();
-      reservation = readBoardGmaReservation;
-      readBoardGmaReservation = null;
+      reservation = barrier.sessionOwned ? null : readBoardGmaReservation;
+      if (!barrier.sessionOwned) {
+        readBoardGmaReservation = null;
+      }
       completion = barrier.onSuccess;
       timeout = barrier.timeout;
       barrier.timeout = null;
@@ -10772,7 +10856,9 @@ public class Leelaz {
                 return;
               }
               try {
-                failRestore("restore response timeout: " + param.name);
+                failRestore(
+                    "restore response timeout: " + param.name,
+                    ReadBoardGmaSession.FailureCategory.TIMEOUT);
               } finally {
                 retireTimedOutNormalCommand(responseHandler);
               }
@@ -10787,7 +10873,9 @@ public class Leelaz {
       }
       cancelTimeout();
       if (isCurrentCommandResponseError()) {
-        failRestore("restore command failed: " + currentCommandResponseLine());
+        failRestore(
+            "restore command failed: " + currentCommandResponseLine(),
+            ReadBoardGmaSession.FailureCategory.GTP_ERROR);
         return;
       }
       if (barrier != null) {
@@ -10811,12 +10899,13 @@ public class Leelaz {
         return;
       }
       cancelTimeout();
-      failRestore(detail);
+      failRestore(detail, ReadBoardGmaSession.FailureCategory.SEND_FAILED);
     }
 
-    private void failRestore(String detail) {
+    private void failRestore(
+        String detail, ReadBoardGmaSession.FailureCategory category) {
       if (barrier != null) {
-        failReadBoardGmaRuntimeRestore(barrier, detail);
+        failReadBoardGmaRuntimeRestore(barrier, category, detail);
       } else {
         failReadBoardGmaEngineRestore(detail);
       }
@@ -10843,19 +10932,14 @@ public class Leelaz {
    * is never treated as success. Any restore failure (GTP error, send failure, timeout, process
    * death) fails the participant closed with a stable {@link ReadBoardGmaSession.FailureCategory}.
    *
-   * <p>The shared barrier completion and failure paths keep their legacy cleanup semantics: on
-   * success the parameter snapshots are cleared and the captured reservation is closed; on failure
-   * the engine is marked unrestored, the reservation is closed, and tracking eligibility is
-   * invalidated. The reservation close coincides with the participant reaching its confirmation
-   * boundary (the last matching ACK, or the failure), so no session-owned resource is released
-   * before both participants reached their terminal; the session's terminal release request is
-   * still emitted exactly once and then validates against the (already closed) captured
-   * reservation. This keeps the established deferral pattern from the legacy convergence paths —
-   * closing at the terminal instead would leave the reservation open while the success
-   * continuation starts the next hand, which would then inherit and lose it to the release
-   * request. The session terminal effects publish, handle, continue, and request the release
-   * exactly once; duplicates and late events are absorbed by the module's capability guards and
-   * the barrier identity check.
+   * <p>The legacy restore barrier closes its reservation at its own completion boundary. A
+   * session-owned barrier clears parameter snapshots but retains the captured reservation until the
+   * session terminal effects finish the deferred exact restore and issue the capability-bound
+   * release. On failure the engine is marked unrestored and the session failure path closes the
+   * retained reservation. The session terminal effects publish, handle, continue, and request the
+   * release exactly once; continuation is scheduled after release so a fresh hand cannot race the
+   * old reservation. Duplicates and late events are absorbed by capability guards and barrier
+   * identity checks.
    */
   private final class ReadBoardGmaRuntimeParticipant {
     private final ReadBoardGmaSession session;
@@ -10872,11 +10956,11 @@ public class Leelaz {
     }
 
     /**
-     * Builds the restore barrier for the captured parameters and dispatches their restore
-     * commands. A synchronous rejection (stale engine incarnation, no captured reservation,
-     * unrestored engine state, or an already converging restore) throws so the session
-     * fail-closes through the typed start rejection contract with zero physical side effects; a
-     * stale session must never dispatch restore commands on a replacement engine.
+     * Builds the restore barrier for the captured parameters and dispatches their restore commands.
+     * A synchronous rejection (stale engine incarnation, no captured reservation, unrestored engine
+     * state, or an already converging restore) throws so the session fail-closes through the typed
+     * start rejection contract with zero physical side effects; a stale session must never dispatch
+     * restore commands on a replacement engine.
      */
     private void start() {
       ReadBoardGmaRestoreBarrier barrier;
@@ -10894,7 +10978,8 @@ public class Leelaz {
           throw new IllegalStateException(
               "ReadBoard GMA engine state does not admit the runtime participant");
         }
-        barrier = new ReadBoardGmaRestoreBarrier(this::completeSucceeded, this::completeFailed);
+        barrier =
+            new ReadBoardGmaRestoreBarrier(this::completeSucceeded, this::completeFailed, true);
         readBoardGmaRestoreBarrier = barrier;
         for (Object parameter : runtimeSnapshot.parameters()) {
           registerReadBoardGmaRuntimeParamRestore(
@@ -10908,12 +10993,12 @@ public class Leelaz {
       session.completeRuntime(capability, new ReadBoardGmaSession.ParticipantResult.Succeeded());
     }
 
-    private void completeFailed(String detail) {
+    private void completeFailed(ReadBoardGmaRuntimeFailure failure) {
       session.completeRuntime(
           capability,
           new ReadBoardGmaSession.ParticipantResult.Failed(
               new ReadBoardGmaSession.ParticipantFailure(
-                  classifyReadBoardGmaRuntimeFailure(detail), session.engineIncarnation(), detail)));
+                  failure.category(), session.engineIncarnation(), failure.detail())));
     }
   }
 
