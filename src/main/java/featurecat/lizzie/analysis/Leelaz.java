@@ -4494,13 +4494,13 @@ public class Leelaz {
     sendCommand(command, onResponse, null, failOnSendError, mirrorToSecondEngine);
   }
 
-  private void sendCommand(
+  private boolean sendCommand(
       String command,
       Runnable onResponse,
       CommandSendFailureHandler onSendFailure,
       boolean failOnSendError,
       boolean mirrorToSecondEngine) {
-    sendCommand(
+    return sendCommand(
         command,
         onResponse,
         onSendFailure,
@@ -4508,7 +4508,8 @@ public class Leelaz {
         mirrorToSecondEngine,
         TrackingReleaseReason.ORDINARY_OPERATION,
         null,
-        false);
+        false,
+        null);
   }
 
   private boolean sendCommand(
@@ -4520,6 +4521,28 @@ public class Leelaz {
       TrackingReleaseReason releaseReason,
       QueuedCommandSettlement settlement,
       boolean rejectForExclusiveWinner) {
+    return sendCommand(
+        command,
+        onResponse,
+        onSendFailure,
+        failOnSendError,
+        mirrorToSecondEngine,
+        releaseReason,
+        settlement,
+        rejectForExclusiveWinner,
+        null);
+  }
+
+  private boolean sendCommand(
+      String command,
+      Runnable onResponse,
+      CommandSendFailureHandler onSendFailure,
+      boolean failOnSendError,
+      boolean mirrorToSecondEngine,
+      TrackingReleaseReason releaseReason,
+      QueuedCommandSettlement settlement,
+      boolean rejectForExclusiveWinner,
+      ReaderStreamBinding readBoardGmaResponseBinding) {
     if (shouldDropStaleForegroundRestoreCommand()
         || shouldSuppressNormalCommandForForegroundAnalysis()) {
       return false;
@@ -4569,7 +4592,8 @@ public class Leelaz {
         releaseReason,
         rejectForExclusiveWinner,
         true,
-        false)) {
+        false,
+        readBoardGmaResponseBinding)) {
       return false;
     }
     trySendCommandFromQueue();
@@ -4592,13 +4616,15 @@ public class Leelaz {
       TrackingReleaseReason releaseReason,
       boolean rejectForExclusiveWinner,
       boolean countCommand,
-      boolean noLeelaz2Coalescing) {
+      boolean noLeelaz2Coalescing,
+      ReaderStreamBinding readBoardGmaResponseBinding) {
     ArrayDeque<QueuedCommand> currentQueue = commandQueue();
     RestartBootstrapReceipt bootstrapReceipt = restartBootstrapReceiptContext.get();
     if (Thread.holdsLock(currentQueue)
         && exclusiveGtpSession == null
         && trackingHandoffGate == null
-        && settlement == null) {
+        && settlement == null
+        && readBoardGmaResponseBinding == null) {
       if (shouldDropStaleForegroundRestoreCommand()
           || shouldSuppressNormalCommandForForegroundAnalysis()
           || (restartBootstrapReceipt != null
@@ -4622,7 +4648,13 @@ public class Leelaz {
       targetQueue.addLast(
           foregroundRestoreCommand(
           new QueuedCommand(
-                  command, onResponse, onSendFailure, failOnSendError, null, bootstrapReceipt),
+                  command,
+                  onResponse,
+                  onSendFailure,
+                  failOnSendError,
+                  null,
+                  bootstrapReceipt,
+                  readBoardGmaResponseBinding),
               targetQueue));
       return true;
     }
@@ -4637,6 +4669,9 @@ public class Leelaz {
             || (restartBootstrapReceipt != null
                 && exclusiveGtpLifecycleQueueGate
                 && !isCurrentRestartBootstrapReceiptLocked(bootstrapReceipt))
+            || (readBoardGmaResponseBinding != null
+                && (readerStreamBinding != readBoardGmaResponseBinding
+                    || readBoardGmaResponseBinding.terminated))
             || (rejectForExclusiveWinner
                 && !isExactSnapshotRestoreAdmissionContextActive()
                 && (engineStateUnrestored
@@ -4675,7 +4710,8 @@ public class Leelaz {
                 onSendFailure,
                 failOnSendError,
                 settlement,
-                    bootstrapReceipt),
+                bootstrapReceipt,
+                readBoardGmaResponseBinding),
                 targetQueue));
         if (isTrackingStreamSession(trackingSession) && trackingHandoffGate == null) {
           TrackingReleaseDisposition disposition =
@@ -4862,7 +4898,8 @@ public class Leelaz {
       ExactSnapshotRestoreAdmission admission) {
     if (admission != null) {
       String command = "loadsgf " + sgfFile.toAbsolutePath();
-      if (!targetEngine.sendExactSnapshotRestoreCommand(command, onResponse, onSendFailure)) {
+      if (!targetEngine.sendExactSnapshotRestoreCommand(
+          command, onResponse, onSendFailure, admission)) {
         throw new ExactSnapshotEngineRestore.Failure(
             ExactSnapshotEngineRestore.FailureCategory.SEND_FAILED,
             "Exact snapshot restore loadsgf command was rejected: " + command);
@@ -4951,6 +4988,14 @@ public class Leelaz {
 
   final boolean sendExactSnapshotRestoreCommand(
       String command, Runnable onResponse, CommandSendFailureHandler onSendFailure) {
+    return sendExactSnapshotRestoreCommand(command, onResponse, onSendFailure, null);
+  }
+
+  private boolean sendExactSnapshotRestoreCommand(
+      String command,
+      Runnable onResponse,
+      CommandSendFailureHandler onSendFailure,
+      ExactSnapshotRestoreAdmission admission) {
     return sendCommand(
         command,
         onResponse,
@@ -4959,7 +5004,20 @@ public class Leelaz {
         false,
         TrackingReleaseReason.ORDINARY_OPERATION,
         null,
-        true);
+        true,
+        expectedReadBoardGmaResponseBinding(admission));
+  }
+
+  private ReaderStreamBinding expectedReadBoardGmaResponseBinding(
+      ExactSnapshotRestoreAdmission admission) {
+    if (admission == null || admission.owner != ExactSnapshotRestoreOwner.READ_BOARD_GMA) {
+      return null;
+    }
+    Object incarnation =
+        this == admission.authority
+            ? admission.authorityIncarnation
+            : this == admission.mirror ? admission.mirrorIncarnation : null;
+    return incarnation instanceof ReaderStreamBinding binding ? binding : null;
   }
 
   boolean sendExactSnapshotRestoreCommand(
@@ -4967,8 +5025,9 @@ public class Leelaz {
     if (!isExactSnapshotRestoreAdmissionValid(admission)) {
       return false;
     }
-    return sendExactSnapshotRestoreCommand(command, null, null);
+    return sendExactSnapshotRestoreCommand(command, null, null, admission);
   }
+
 
   private void enqueueSavedGtpConfiguration() {
     configurationProfileCommand(gtpConfigurationProtocol, gtpConfigurationProfile)
@@ -5098,7 +5157,8 @@ public class Leelaz {
         TrackingReleaseReason.ORDINARY_OPERATION,
         false,
         false,
-        true)) {
+        true,
+        null)) {
       return;
     }
     trySendCommandFromQueue();
@@ -5412,18 +5472,20 @@ public class Leelaz {
     }
     return suppress;
   }
-
   private PendingResponseHandler buildPendingResponseHandler(
       String command, Runnable handler, QueuedCommand queuedCommand) {
     boolean exactLoadSgf = isExactSnapshotLoadSgf(command, handler);
+    ReaderStreamBinding responseBinding = queuedCommand.readBoardGmaResponseBinding;
     return new PendingResponseHandler(
         command,
         handler,
         queuedCommand,
         nextResponseCommandId(command, handler),
         requiresMatchingResponseCommandId(command, handler, exactLoadSgf),
-        exactLoadSgf);
+        exactLoadSgf,
+        responseBinding);
   }
+
 
   private boolean isExactSnapshotLoadSgf(String command, Runnable handler) {
     return command != null
@@ -5651,6 +5713,14 @@ public class Leelaz {
   }
 
   private PendingResponseHandler pollPendingResponseHandler(String line) {
+    return findPendingResponseHandler(line, true);
+  }
+
+  private PendingResponseHandler peekPendingResponseHandler(String line) {
+    return findPendingResponseHandler(line, false);
+  }
+
+  private PendingResponseHandler findPendingResponseHandler(String line, boolean remove) {
     int responseCommandId = parseResponseCommandId(line);
     ArrayDeque<PendingResponseHandler> handlers = pendingResponseHandlers();
     synchronized (handlers) {
@@ -5658,21 +5728,29 @@ public class Leelaz {
         return null;
       }
       if (responseCommandId == NO_RESPONSE_COMMAND_ID) {
-        return handlers.peekFirst().requiresMatchingResponseCommandId
-            ? null
-            : handlers.removeFirst();
+        PendingResponseHandler first = handlers.peekFirst();
+        if (first.requiresMatchingResponseCommandId) {
+          return null;
+        }
+        if (remove) {
+          handlers.removeFirst();
+        }
+        return first;
       }
       Iterator<PendingResponseHandler> iterator = handlers.iterator();
       while (iterator.hasNext()) {
         PendingResponseHandler handler = iterator.next();
         if (handler.responseCommandId == responseCommandId) {
-          iterator.remove();
+          if (remove) {
+            iterator.remove();
+          }
           return handler;
         }
       }
       return null;
     }
   }
+
 
   // Response-binding tests invoke this directly to isolate handler routing from queue counters.
   private boolean runPendingResponseHandlerForLine(String line) {
@@ -5720,8 +5798,16 @@ public class Leelaz {
           if (quarantinedUnnumberedResponse) {
             loadSgfResponseQuarantined = false;
           }
+          PendingResponseHandler pendingResponseCandidate =
+              quarantinedUnnumberedResponse ? null : peekPendingResponseHandler(line);
+          boolean staleReadBoardGmaResponse =
+              pendingResponseCandidate != null
+                  && pendingResponseCandidate.isStaleResponseBinding(
+                      responseBinding, currentReaderStreamBinding());
           matchedPendingHandler =
-              quarantinedUnnumberedResponse ? null : pollPendingResponseHandler(line);
+              quarantinedUnnumberedResponse || staleReadBoardGmaResponse
+                  ? null
+                  : pollPendingResponseHandler(line);
           RestartBootstrapReceipt receipt =
               matchedPendingHandler == null
                   ? null
@@ -5731,7 +5817,8 @@ public class Leelaz {
                   && (responseBinding != receipt.binding
                       || !isCurrentRestartBootstrapReceiptLocked(receipt));
           ignoreResponse =
-              staleBootstrapResponse
+              staleReadBoardGmaResponse
+                  || staleBootstrapResponse
                   || quarantinedUnnumberedResponse
                   || (matchedPendingHandler == null
                       && (parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID
@@ -8321,6 +8408,7 @@ public class Leelaz {
     private final QueuedCommand queuedCommand;
     private final int responseCommandId;
     private final boolean exactSnapshotLoadSgf;
+    private final ReaderStreamBinding responseBinding;
     private boolean requiresMatchingResponseCommandId;
 
     private PendingResponseHandler(
@@ -8329,13 +8417,27 @@ public class Leelaz {
         QueuedCommand queuedCommand,
         int responseCommandId,
         boolean requiresMatchingResponseCommandId,
-        boolean exactSnapshotLoadSgf) {
+        boolean exactSnapshotLoadSgf,
+        ReaderStreamBinding responseBinding) {
       this.command = command;
       this.handler = handler;
       this.queuedCommand = queuedCommand;
       this.responseCommandId = responseCommandId;
       this.requiresMatchingResponseCommandId = requiresMatchingResponseCommandId;
       this.exactSnapshotLoadSgf = exactSnapshotLoadSgf;
+      this.responseBinding = responseBinding;
+    }
+
+    private boolean isStaleResponseBinding(
+        ReaderStreamBinding binding, ReaderStreamBinding currentBinding) {
+      return responseBinding != null
+          && (responseBinding != binding
+              || responseBinding != currentBinding
+              || responseBinding.terminated
+              || binding == null
+              || binding.terminated
+              || currentBinding == null
+              || currentBinding.terminated);
     }
 
     private boolean isExactSnapshotLoadSgf() {
@@ -9123,6 +9225,7 @@ public class Leelaz {
     private final boolean failOnSendError;
     private final QueuedCommandSettlement settlement;
     private final RestartBootstrapReceipt restartBootstrapReceipt;
+    private final ReaderStreamBinding readBoardGmaResponseBinding;
     private boolean foregroundRestoreCommand;
     private RuntimeException cancellationFailure;
     private boolean outputWriteStarted;
@@ -9136,7 +9239,7 @@ public class Leelaz {
         Runnable onResponse,
         CommandSendFailureHandler onSendFailure,
         boolean failOnSendError) {
-      this(command, onResponse, onSendFailure, failOnSendError, null, null);
+      this(command, onResponse, onSendFailure, failOnSendError, null, null, null);
     }
 
     private QueuedCommand(
@@ -9145,7 +9248,7 @@ public class Leelaz {
         CommandSendFailureHandler onSendFailure,
         boolean failOnSendError,
         QueuedCommandSettlement settlement) {
-      this(command, onResponse, onSendFailure, failOnSendError, settlement, null);
+      this(command, onResponse, onSendFailure, failOnSendError, settlement, null, null);
     }
 
     private QueuedCommand(
@@ -9154,13 +9257,15 @@ public class Leelaz {
         CommandSendFailureHandler onSendFailure,
         boolean failOnSendError,
         QueuedCommandSettlement settlement,
-        RestartBootstrapReceipt restartBootstrapReceipt) {
+        RestartBootstrapReceipt restartBootstrapReceipt,
+        ReaderStreamBinding readBoardGmaResponseBinding) {
       this.command = command;
       this.onResponse = onResponse;
       this.onSendFailure = onSendFailure;
       this.failOnSendError = failOnSendError;
       this.settlement = settlement;
       this.restartBootstrapReceipt = restartBootstrapReceipt;
+      this.readBoardGmaResponseBinding = readBoardGmaResponseBinding;
     }
 
     private boolean isTrackedLoadSgf() {
@@ -9949,6 +10054,7 @@ public class Leelaz {
     private final Runnable onSuccess;
     private final Consumer<ReadBoardGmaRuntimeFailure> onFailure;
     private final boolean sessionOwned;
+    private final ReaderStreamBinding readBoardGmaResponseBinding;
     private int remaining;
     private boolean completed;
     private Timer timeout;
@@ -9957,9 +10063,18 @@ public class Leelaz {
         Runnable onSuccess,
         Consumer<ReadBoardGmaRuntimeFailure> onFailure,
         boolean sessionOwned) {
+      this(onSuccess, onFailure, sessionOwned, null);
+    }
+
+    private ReadBoardGmaRestoreBarrier(
+        Runnable onSuccess,
+        Consumer<ReadBoardGmaRuntimeFailure> onFailure,
+        boolean sessionOwned,
+        ReaderStreamBinding readBoardGmaResponseBinding) {
       this.onSuccess = onSuccess;
       this.onFailure = onFailure;
       this.sessionOwned = sessionOwned;
+      this.readBoardGmaResponseBinding = readBoardGmaResponseBinding;
     }
 
     private void register() {
@@ -10260,6 +10375,15 @@ public class Leelaz {
    */
   private void startReadBoardGmaRestoreBarrierDispatch(
       ReadBoardGmaRestoreBarrier barrier, List<ReadBoardGmaRuntimeParam> paramsToRestore) {
+    ReadBoardGmaSession.FailureCategory bindingFailureCategory =
+        readBoardGmaResponseBindingFailureCategory(barrier);
+    if (bindingFailureCategory != null) {
+      failReadBoardGmaRuntimeRestore(
+          barrier,
+          bindingFailureCategory,
+          readBoardGmaBindingFailureDetail(bindingFailureCategory));
+      return;
+    }
     if (barrier.isEmpty()) {
       completeReadBoardGmaRuntimeRestore(barrier);
       return;
@@ -10271,9 +10395,45 @@ public class Leelaz {
           return;
         }
       }
+      bindingFailureCategory = readBoardGmaResponseBindingFailureCategory(barrier);
+      if (bindingFailureCategory != null) {
+        failReadBoardGmaRuntimeRestore(
+            barrier,
+            bindingFailureCategory,
+            readBoardGmaBindingFailureDetail(bindingFailureCategory));
+        return;
+      }
       restoreReadBoardGmaRuntimeParamIfNeeded(param);
     }
   }
+
+  private ReadBoardGmaSession.FailureCategory readBoardGmaResponseBindingFailureCategory(
+      ReadBoardGmaRestoreBarrier barrier) {
+    ReaderStreamBinding expected = barrier.readBoardGmaResponseBinding;
+    if (expected == null) {
+      return null;
+    }
+    synchronized (engineArbitrationLock()) {
+      ReaderStreamBinding current = readerStreamBinding;
+      if (expected.terminated) {
+        return ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED;
+      }
+      if (current == expected) {
+        return null;
+      }
+      return current == null || current.terminated
+          ? ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED
+          : ReadBoardGmaSession.FailureCategory.ADMISSION_STALE;
+    }
+  }
+
+  private String readBoardGmaBindingFailureDetail(
+      ReadBoardGmaSession.FailureCategory category) {
+    return category == ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED
+        ? "ReadBoard GMA runtime participant engine process terminated"
+        : "ReadBoard GMA runtime participant belongs to a stale engine incarnation";
+  }
+
 
   private Object readBoardGmaLock() {
     Object lock = readBoardGmaLock;
@@ -10491,21 +10651,6 @@ public class Leelaz {
     paramsToRestore.add(param);
   }
 
-  private void prepareReadBoardGmaMaxTime(int maxTimeSeconds) {
-    if (maxTimeSeconds > 0) {
-      prepareReadBoardGmaRuntimeParam(readBoardGmaMaxTime, String.valueOf(maxTimeSeconds));
-      return;
-    }
-    restoreReadBoardGmaRuntimeParamIfNeeded(readBoardGmaMaxTime);
-  }
-
-  private void prepareReadBoardGmaMaxVisits(int maxVisits) {
-    if (maxVisits > 0) {
-      prepareReadBoardGmaRuntimeParam(readBoardGmaMaxVisits, String.valueOf(maxVisits));
-      return;
-    }
-    restoreReadBoardGmaRuntimeParamIfNeeded(readBoardGmaMaxVisits);
-  }
 
   private void prepareReadBoardGmaRuntimeParam(ReadBoardGmaRuntimeParam param, String value) {
     boolean requestSnapshot;
@@ -10620,6 +10765,10 @@ public class Leelaz {
       ReadBoardGmaRestoreBarrier barrier,
       ReadBoardGmaSession.FailureCategory category,
       String detail) {
+    if (category == ReadBoardGmaSession.FailureCategory.ADMISSION_STALE) {
+      rejectStaleReadBoardGmaRuntimeRestore(barrier, detail);
+      return;
+    }
     EngineModeReservation reservation;
     Consumer<ReadBoardGmaRuntimeFailure> failure;
     Timer timeout;
@@ -10650,6 +10799,31 @@ public class Leelaz {
     }
     if (failure != null) {
       failure.accept(new ReadBoardGmaRuntimeFailure(category, detail));
+    }
+  }
+
+  private void rejectStaleReadBoardGmaRuntimeRestore(
+      ReadBoardGmaRestoreBarrier barrier, String detail) {
+    Consumer<ReadBoardGmaRuntimeFailure> failure;
+    Timer timeout;
+    synchronized (readBoardGmaLock()) {
+      if (readBoardGmaRestoreBarrier != barrier || barrier.completed) {
+        return;
+      }
+      barrier.completed = true;
+      readBoardGmaRestoreBarrier = null;
+      clearReadBoardGmaSearchLimitSnapshots();
+      failure = barrier.onFailure;
+      timeout = barrier.timeout;
+      barrier.timeout = null;
+    }
+    if (timeout != null) {
+      timeout.cancel();
+    }
+    if (failure != null) {
+      failure.accept(
+          new ReadBoardGmaRuntimeFailure(
+              ReadBoardGmaSession.FailureCategory.ADMISSION_STALE, detail));
     }
   }
 
@@ -10718,31 +10892,59 @@ public class Leelaz {
   }
 
   private void completeReadBoardGmaRuntimeRestore(ReadBoardGmaRestoreBarrier barrier) {
-    EngineModeReservation reservation;
-    Runnable completion;
-    Timer timeout;
-    synchronized (readBoardGmaLock()) {
-      if (readBoardGmaRestoreBarrier != barrier
-          || barrier.completed
-          || barrier.remaining != 0) {
-        return;
+    EngineModeReservation reservation = null;
+    Runnable completion = null;
+    Timer timeout = null;
+    Consumer<ReadBoardGmaRuntimeFailure> staleFailure = null;
+    ReadBoardGmaSession.FailureCategory bindingFailureCategory;
+    synchronized (engineArbitrationLock()) {
+      synchronized (readBoardGmaLock()) {
+        if (readBoardGmaRestoreBarrier != barrier
+            || barrier.completed
+            || barrier.remaining != 0) {
+          return;
+        }
+        bindingFailureCategory = readBoardGmaResponseBindingFailureCategory(barrier);
+        if (bindingFailureCategory == ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED) {
+          // Leave the live barrier for the fail-closed termination path below.
+        } else {
+          barrier.completed = true;
+          readBoardGmaRestoreBarrier = null;
+          clearReadBoardGmaSearchLimitSnapshots();
+          if (bindingFailureCategory == ReadBoardGmaSession.FailureCategory.ADMISSION_STALE) {
+            staleFailure = barrier.onFailure;
+          } else {
+            reservation = barrier.sessionOwned ? null : readBoardGmaReservation;
+            if (!barrier.sessionOwned) {
+              readBoardGmaReservation = null;
+            }
+            completion = barrier.onSuccess;
+          }
+          timeout = barrier.timeout;
+          barrier.timeout = null;
+        }
       }
-      barrier.completed = true;
-      readBoardGmaRestoreBarrier = null;
-      clearReadBoardGmaSearchLimitSnapshots();
-      reservation = barrier.sessionOwned ? null : readBoardGmaReservation;
-      if (!barrier.sessionOwned) {
-        readBoardGmaReservation = null;
-      }
-      completion = barrier.onSuccess;
-      timeout = barrier.timeout;
-      barrier.timeout = null;
+    }
+    if (bindingFailureCategory == ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED) {
+      failReadBoardGmaRuntimeRestore(
+          barrier,
+          bindingFailureCategory,
+          readBoardGmaBindingFailureDetail(bindingFailureCategory));
+      return;
     }
     if (timeout != null) {
       timeout.cancel();
     }
     if (reservation != null) {
       reservation.close();
+    }
+    if (staleFailure != null) {
+      staleFailure.accept(
+          new ReadBoardGmaRuntimeFailure(
+              ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
+              readBoardGmaBindingFailureDetail(
+                  ReadBoardGmaSession.FailureCategory.ADMISSION_STALE)));
+      return;
     }
     if (completion != null) {
       completion.run();
@@ -10864,15 +11066,32 @@ public class Leelaz {
     }
 
     private void start() {
+      boolean accepted;
       try {
-        sendCommand(
-            "kata-set-param " + param.name + " " + originalValue,
-            responseHandler,
-            this::onSendFailure,
-            true,
-            false);
+        accepted =
+            sendCommand(
+                "kata-set-param " + param.name + " " + originalValue,
+                responseHandler,
+                this::onSendFailure,
+                true,
+                false,
+                TrackingReleaseReason.ORDINARY_OPERATION,
+                null,
+                false,
+                barrier == null ? null : barrier.readBoardGmaResponseBinding);
       } catch (RuntimeException ex) {
         settleFailure(ex.getMessage());
+        return;
+      }
+      if (!accepted) {
+        ReadBoardGmaSession.FailureCategory bindingFailureCategory =
+            barrier == null ? null : readBoardGmaResponseBindingFailureCategory(barrier);
+        if (bindingFailureCategory != null) {
+          settleFailure(
+              readBoardGmaBindingFailureDetail(bindingFailureCategory), bindingFailureCategory);
+        } else {
+          settleFailure("ReadBoard GMA runtime restore command was rejected");
+        }
         return;
       }
       if (settled.get()) {
@@ -10922,15 +11141,30 @@ public class Leelaz {
     }
 
     private void onSendFailure(RuntimeException failure) {
-      settleFailure(failure == null ? "restore send failed: " + param.name : failure.getMessage());
+      String detail =
+          failure == null ? "restore send failed: " + param.name : failure.getMessage();
+      ReadBoardGmaSession.FailureCategory bindingFailureCategory =
+          barrier == null ? null : readBoardGmaResponseBindingFailureCategory(barrier);
+      ReadBoardGmaSession.FailureCategory category =
+          bindingFailureCategory == null
+              ? ReadBoardGmaSession.FailureCategory.SEND_FAILED
+              : bindingFailureCategory;
+      if (bindingFailureCategory != null) {
+        detail = readBoardGmaBindingFailureDetail(bindingFailureCategory);
+      }
+      settleFailure(detail, category);
     }
 
     private void settleFailure(String detail) {
+      settleFailure(detail, ReadBoardGmaSession.FailureCategory.SEND_FAILED);
+    }
+
+    private void settleFailure(String detail, ReadBoardGmaSession.FailureCategory category) {
       if (!settled.compareAndSet(false, true)) {
         return;
       }
       cancelTimeout();
-      failRestore(detail, ReadBoardGmaSession.FailureCategory.SEND_FAILED);
+      failRestore(detail, category);
     }
 
     private void failRestore(
@@ -10994,11 +11228,19 @@ public class Leelaz {
      * restore commands on a replacement engine.
      */
     private void start() {
+      ReaderStreamBinding readBoardGmaResponseBinding =
+          session.engineIncarnation() instanceof ReaderStreamBinding binding ? binding : null;
+      if (readBoardGmaResponseBinding == null) {
+        throw new ReadBoardGmaSession.ParticipantStartFailure(
+            ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
+            "ReadBoard GMA runtime participant has no engine incarnation binding");
+      }
       ReadBoardGmaRestoreBarrier barrier;
       List<ReadBoardGmaRuntimeParam> paramsToRestore = new ArrayList<>();
       synchronized (readBoardGmaLock()) {
-        if (currentEngineIncarnation() != session.engineIncarnation()) {
-          throw new IllegalStateException(
+        if (currentEngineIncarnation() != readBoardGmaResponseBinding) {
+          throw new ReadBoardGmaSession.ParticipantStartFailure(
+              ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
               "ReadBoard GMA runtime participant belongs to a stale engine incarnation");
         }
         if (readBoardGmaReservation == null) {
@@ -11010,7 +11252,8 @@ public class Leelaz {
               "ReadBoard GMA engine state does not admit the runtime participant");
         }
         barrier =
-            new ReadBoardGmaRestoreBarrier(this::completeSucceeded, this::completeFailed, true);
+            new ReadBoardGmaRestoreBarrier(
+                this::completeSucceeded, this::completeFailed, true, readBoardGmaResponseBinding);
         readBoardGmaRestoreBarrier = barrier;
         for (Object parameter : runtimeSnapshot.parameters()) {
           registerReadBoardGmaRuntimeParamRestore(

@@ -141,6 +141,24 @@ public final class ReadBoardGmaSession {
     }
   }
 
+  /**
+   * Typed synchronous participant admission failure. Adapters use this only when no physical
+   * command has been issued, so stale admission can fail closed without quarantining a replacement
+   * engine incarnation.
+   */
+  static final class ParticipantStartFailure extends IllegalStateException {
+    private final FailureCategory category;
+
+    ParticipantStartFailure(FailureCategory category, String detail) {
+      super(detail);
+      this.category = Objects.requireNonNull(category, "category");
+    }
+
+    FailureCategory category() {
+      return category;
+    }
+  }
+
   /** Closed aggregate participant result delivered by the protocol adapter. */
   public sealed interface ParticipantResult
       permits ParticipantResult.Succeeded, ParticipantResult.Failed {
@@ -757,8 +775,11 @@ public final class ReadBoardGmaSession {
   }
 
   private ParticipantFailure startRejected(RuntimeException cause) {
-    return new ParticipantFailure(
-        FailureCategory.START_REJECTED, engineIncarnation, cause.getMessage());
+    FailureCategory category =
+        cause instanceof ParticipantStartFailure failure
+            ? failure.category()
+            : FailureCategory.START_REJECTED;
+    return new ParticipantFailure(category, engineIncarnation, cause.getMessage());
   }
 
   /**

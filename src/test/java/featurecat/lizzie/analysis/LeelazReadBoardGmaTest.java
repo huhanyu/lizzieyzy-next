@@ -2402,13 +2402,11 @@ class LeelazReadBoardGmaTest {
   void engineTerminationDuringGmaInFlightFailsSessionAndReleasesCapturedReservation()
       throws Exception {
     try (Harness harness = Harness.open()) {
-      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
-      configureReadyReadBoardGmaEngine(engine);
-      RecordingOutputStream output = new RecordingOutputStream();
-      setOutputStream(engine, output);
-      ReadBoard readBoard = allocate(ReadBoard.class);
-      ReadBoardGmaSession session =
-          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      EngineTerminationGmaFixture fixture = openEngineTerminationGmaFixture();
+      CountingReleaseLeelaz engine = fixture.engine();
+      RecordingOutputStream output = fixture.output();
+      ReadBoard readBoard = fixture.readBoard();
+      ReadBoardGmaSession session = fixture.session();
 
       assertTrue(
           readBoard.failReadBoardGmaSessionForEngineTermination(engine, "engine transport closed"));
@@ -2433,13 +2431,11 @@ class LeelazReadBoardGmaTest {
   @Test
   void engineTerminationDuringExactRestoreFailsSessionAndCancelsLateCompletion() throws Exception {
     try (Harness harness = Harness.open()) {
-      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
-      configureReadyReadBoardGmaEngine(engine);
-      RecordingOutputStream output = new RecordingOutputStream();
-      setOutputStream(engine, output);
-      ReadBoard readBoard = allocate(ReadBoard.class);
-      ReadBoardGmaSession session =
-          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      EngineTerminationGmaFixture fixture = openEngineTerminationGmaFixture();
+      CountingReleaseLeelaz engine = fixture.engine();
+      RecordingOutputStream output = fixture.output();
+      ReadBoard readBoard = fixture.readBoard();
+      ReadBoardGmaSession session = fixture.session();
       ExactSnapshotRestoreProtocolFixture.Transport transport =
           ExactSnapshotRestoreProtocolFixture.install(engine, command -> null);
 
@@ -2472,13 +2468,11 @@ class LeelazReadBoardGmaTest {
   @Test
   void engineTerminationDuringRuntimeRestoreFailsSessionAndAbsorbsLateAck() throws Exception {
     try (Harness harness = Harness.open()) {
-      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
-      configureReadyReadBoardGmaEngine(engine);
-      RecordingOutputStream output = new RecordingOutputStream();
-      setOutputStream(engine, output);
-      ReadBoard readBoard = allocate(ReadBoard.class);
-      ReadBoardGmaSession session =
-          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      EngineTerminationGmaFixture fixture = openEngineTerminationGmaFixture();
+      CountingReleaseLeelaz engine = fixture.engine();
+      RecordingOutputStream output = fixture.output();
+      ReadBoard readBoard = fixture.readBoard();
+      ReadBoardGmaSession session = fixture.session();
       engine.retireReadBoardGmaSession();
       ExactSnapshotRestoreProtocolFixture.install(
           engine,
@@ -3333,6 +3327,247 @@ class LeelazReadBoardGmaTest {
   }
 
   @Test
+  void readBoardGmaSessionRuntimeAckFromStaleReaderBindingCannotAdvanceBarrier()
+      throws Exception {
+    try (Harness harness = Harness.open()) {
+      Leelaz engine = readyReadBoardGmaEngine();
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      engine.retireReadBoardGmaSession();
+      AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.startsWith("loadsgf ")
+                      ? ExactSnapshotRestoreProtocolFixture.Response.success()
+                      : null);
+
+      invokeParseLine(engine, "play pass");
+
+      assertTrue(
+          waitForFixtureCommandPrefix(transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS));
+      assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, sessionRef.get().state());
+      String staleAck = successResponseFor(transport.rawCommands(), "maxTime");
+      Object staleBinding = replaceReaderStreamBinding(engine);
+      assertSame(
+          staleBinding,
+          pendingResponseBindingFor(engine, staleAck),
+          "runtime ACK handlers must capture the stream that emitted the command");
+
+      invokeProcessCommandResponseLine(engine, staleAck, staleBinding);
+
+      assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, sessionRef.get().state());
+      assertSame(
+          staleBinding,
+          pendingResponseBindingFor(engine, staleAck),
+          "a stale response must leave the current GMA ACK handler pending");
+      assertTrue(
+          readBoard.failReadBoardGmaSessionForEngineTermination(
+              engine, "engine replaced before runtime restore ACK"));
+      ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
+      assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+          terminal.firstFailure().category());
+      assertNull(engine.currentReadBoardGmaReservation());
+    }
+  }
+
+  @Test
+  void readBoardGmaSessionStaleExactResponseCannotAdvanceSession() throws Exception {
+    try (Harness harness = Harness.open()) {
+      Leelaz engine = readyReadBoardGmaEngine();
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      engine.retireReadBoardGmaSession();
+      AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(engine, command -> null);
+
+      invokeParseLine(engine, "play pass");
+
+      assertTrue(
+          waitForFixtureCommandPrefix(transport, "loadsgf ", 1, TimeUnit.SECONDS),
+          "the exact restore command must be written before the stream is replaced");
+      String staleResponse = successResponseForPrefix(transport.rawCommands(), "loadsgf ");
+      Object staleBinding = pendingResponseBindingFor(engine, staleResponse);
+      assertNotNull(staleBinding, "the exact restore response must be bound to its stream");
+
+      replaceReaderStreamBinding(engine);
+      invokeProcessCommandResponseLine(engine, staleResponse, staleBinding);
+
+      assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, sessionRef.get().state());
+      assertSame(
+          staleBinding,
+          pendingResponseBindingFor(engine, staleResponse),
+          "a stale exact response must leave the current restore handler pending");
+      assertTrue(
+          readBoard.failReadBoardGmaSessionForEngineTermination(
+              engine, "engine replaced before exact restore response"));
+      ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
+      assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+          terminal.firstFailure().category());
+      assertTrue(
+          transport.commands().stream().noneMatch(command -> command.startsWith("kata-set-param ")),
+          "a stale exact response must not advance to runtime restore");
+      assertNull(engine.currentReadBoardGmaReservation());
+    }
+  }
+
+  @Test
+  void readBoardGmaSessionStaleRuntimeDispatchDoesNotSendOnReplacement() throws Exception {
+    try (Harness harness = Harness.open()) {
+      Leelaz engine = readyReadBoardGmaEngine();
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      engine.retireReadBoardGmaSession();
+      AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(engine, command -> null);
+
+      invokeParseLine(engine, "play pass");
+      assertTrue(
+          waitForFixtureCommandPrefix(transport, "loadsgf ", 1, TimeUnit.SECONDS),
+          "the exact restore command must be written before dispatch is interposed");
+      String exactResponse = successResponseForPrefix(transport.rawCommands(), "loadsgf ");
+
+      Field barrierField = Leelaz.class.getDeclaredField("readBoardGmaRestoreBarrier");
+      barrierField.setAccessible(true);
+      java.lang.reflect.Method lockMethod =
+          Leelaz.class.getDeclaredMethod("engineArbitrationLock");
+      lockMethod.setAccessible(true);
+      Object arbitrationLock = lockMethod.invoke(engine);
+      AtomicReference<Throwable> responseFailure = new AtomicReference<>();
+      AtomicReference<Boolean> responseConsumed = new AtomicReference<>(false);
+      Thread responseThread =
+          new Thread(
+              () -> {
+                try {
+                  responseConsumed.set(engine.runPendingResponseHandlerForTest(exactResponse));
+                } catch (Throwable failure) {
+                  responseFailure.set(failure);
+                }
+              },
+              "readboard-gma-stale-runtime-dispatch-test");
+
+      boolean barrierObserved = false;
+      synchronized (arbitrationLock) {
+        responseThread.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (System.nanoTime() < deadline) {
+          if (barrierField.get(engine) != null) {
+            barrierObserved = true;
+            replaceReaderStreamBinding(engine);
+            break;
+          }
+          Thread.onSpinWait();
+        }
+      }
+      responseThread.join(1000L);
+      assertTrue(barrierObserved, "the runtime barrier must be created while dispatch is blocked");
+      assertFalse(responseThread.isAlive(), "the exact response worker must converge");
+      assertTrue(Boolean.TRUE.equals(responseConsumed.get()));
+      assertNull(responseFailure.get());
+
+      ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
+      assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
+          terminal.firstFailure().category());
+      assertTrue(
+          transport.commands().stream().noneMatch(command -> command.startsWith("kata-set-param ")),
+          "runtime dispatch must not send a restore command on the replacement incarnation");
+      assertFalse(
+          engine.hasUnrestoredReadBoardGmaState(),
+          "stale runtime dispatch must not quarantine the replacement incarnation");
+      assertNull(engine.currentReadBoardGmaReservation());
+    }
+  }
+
+  @Test
+  void readBoardGmaSessionTerminatedRuntimeBindingFailsClosed() throws Exception {
+    try (Harness harness = Harness.open()) {
+      Leelaz engine = readyReadBoardGmaEngine();
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      engine.retireReadBoardGmaSession();
+      AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(engine, command -> null);
+
+      invokeParseLine(engine, "play pass");
+      assertTrue(
+          waitForFixtureCommandPrefix(transport, "loadsgf ", 1, TimeUnit.SECONDS),
+          "the exact restore command must be written before dispatch is interposed");
+      String exactResponse = successResponseForPrefix(transport.rawCommands(), "loadsgf ");
+
+      Field barrierField = Leelaz.class.getDeclaredField("readBoardGmaRestoreBarrier");
+      barrierField.setAccessible(true);
+      java.lang.reflect.Method lockMethod =
+          Leelaz.class.getDeclaredMethod("engineArbitrationLock");
+      lockMethod.setAccessible(true);
+      Object arbitrationLock = lockMethod.invoke(engine);
+      AtomicReference<Throwable> responseFailure = new AtomicReference<>();
+      Thread responseThread =
+          new Thread(
+              () -> {
+                try {
+                  engine.runPendingResponseHandlerForTest(exactResponse);
+                } catch (Throwable failure) {
+                  responseFailure.set(failure);
+                }
+              },
+              "readboard-gma-terminated-runtime-test");
+
+      boolean barrierObserved = false;
+      synchronized (arbitrationLock) {
+        responseThread.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (System.nanoTime() < deadline) {
+          if (barrierField.get(engine) != null) {
+            barrierObserved = true;
+            Object binding =
+                getObjectField(engine, "readerStreamBinding");
+            setBooleanField(binding, "terminated", true);
+            break;
+          }
+          Thread.onSpinWait();
+        }
+      }
+      responseThread.join(1000L);
+      assertTrue(barrierObserved, "the runtime barrier must be created while dispatch is blocked");
+      assertFalse(responseThread.isAlive(), "the exact response worker must converge");
+      assertNull(responseFailure.get());
+
+      ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
+      assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+          terminal.firstFailure().category());
+      assertTrue(
+          transport.commands().stream().noneMatch(command -> command.startsWith("kata-set-param ")),
+          "a terminated runtime binding must not send another restore command");
+      assertTrue(engine.hasUnrestoredReadBoardGmaState());
+      assertNull(engine.currentReadBoardGmaReservation());
+    }
+  }
+
+  @Test
   void readBoardGmaSessionRuntimeRestoreErrorFailsClosed() throws Exception {
     try (Harness harness = Harness.open()) {
       Leelaz engine = readyReadBoardGmaEngine();
@@ -3706,7 +3941,7 @@ class LeelazReadBoardGmaTest {
    * Replaces the engine's reader stream binding with a fresh one, simulating an engine process
    * replacement that produces a new engine incarnation for the same Leelaz instance.
    */
-  private static void replaceReaderStreamBinding(Leelaz engine) throws Exception {
+  private static Object replaceReaderStreamBinding(Leelaz engine) throws Exception {
     Field bindingField = Leelaz.class.getDeclaredField("readerStreamBinding");
     bindingField.setAccessible(true);
     Object current = bindingField.get(engine);
@@ -3738,6 +3973,7 @@ class LeelazReadBoardGmaTest {
             javaSSH.get(current),
             incarnation.getLong(current) + 1L);
     bindingField.set(engine, replacement);
+    return current;
   }
 
   private static boolean waitForRawCommand(
@@ -4081,6 +4317,40 @@ class LeelazReadBoardGmaTest {
     method.setAccessible(true);
     method.invoke(engine, line);
   }
+  private static void invokeProcessCommandResponseLine(
+      Leelaz engine, String line, Object responseBinding) throws Exception {
+    java.lang.reflect.Method method =
+        Leelaz.class.getDeclaredMethod(
+            "processCommandResponseLine", String.class, responseBinding.getClass());
+    method.setAccessible(true);
+    method.invoke(engine, line, responseBinding);
+  }
+
+  private static Object pendingResponseBindingFor(Leelaz engine, String responseLine)
+      throws Exception {
+    String trimmed = responseLine.trim();
+    int responseCommandId = 1;
+    while (responseCommandId < trimmed.length()
+        && Character.isDigit(trimmed.charAt(responseCommandId))) {
+      responseCommandId++;
+    }
+    responseCommandId = Integer.parseInt(trimmed.substring(1, responseCommandId));
+    Field handlersField = Leelaz.class.getDeclaredField("pendingResponseHandlers");
+    handlersField.setAccessible(true);
+    Iterable<?> handlers = (Iterable<?>) handlersField.get(engine);
+    Field idField = Class.forName("featurecat.lizzie.analysis.Leelaz$PendingResponseHandler")
+        .getDeclaredField("responseCommandId");
+    Field bindingField = Class.forName("featurecat.lizzie.analysis.Leelaz$PendingResponseHandler")
+        .getDeclaredField("responseBinding");
+    idField.setAccessible(true);
+    bindingField.setAccessible(true);
+    for (Object handler : handlers) {
+      if (idField.getInt(handler) == responseCommandId) {
+        return bindingField.get(handler);
+      }
+    }
+    throw new IllegalArgumentException("Missing pending response handler " + responseCommandId);
+  }
 
   private static void invokeParseLine(Leelaz engine, String line) throws Exception {
     java.lang.reflect.Method method = Leelaz.class.getDeclaredMethod("parseLine", String.class);
@@ -4258,6 +4528,24 @@ class LeelazReadBoardGmaTest {
     config.analyzeUpdateIntervalCentisecSSH = 10;
     return config;
   }
+  private record EngineTerminationGmaFixture(
+      CountingReleaseLeelaz engine,
+      RecordingOutputStream output,
+      ReadBoard readBoard,
+      ReadBoardGmaSession session) {}
+
+  private static EngineTerminationGmaFixture openEngineTerminationGmaFixture()
+      throws Exception {
+    CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
+    configureReadyReadBoardGmaEngine(engine);
+    RecordingOutputStream output = new RecordingOutputStream();
+    setOutputStream(engine, output);
+    ReadBoard readBoard = allocate(ReadBoard.class);
+    ReadBoardGmaSession session =
+        beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+    return new EngineTerminationGmaFixture(engine, output, readBoard, session);
+  }
+
 
   private static final class Harness implements AutoCloseable {
     private final Config previousConfig;
