@@ -187,6 +187,56 @@ public final class TeacherEvidence {
     return position.candidates.isEmpty() ? 0.0 : position.candidates.get(0).visits / 1_000_000.0;
   }
 
+  /**
+   * 知识库匹配（定式/棋形）：对当前局面查询 joseki-sgf 定式库与棋形知识库，
+   * 返回可直接拼入 prompt 的匹配说明；无匹配或失败返回空串（不阻断讲解）。
+   */
+  static String knowledgeMatchText(BoardHistoryNode node) {
+    try {
+      if (node == null || node.getData() == null) {
+        return "";
+      }
+      featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatchQuery query =
+          new featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatchQuery();
+      query.boardSize = featurecat.lizzie.rules.Board.boardWidth;
+      query.moveNumber = node.getData().moveNumber;
+      query.playedMove = actualMove(node.next().orElse(null));
+      query.text = "讲解当前手";
+      query.lossScore = 0.0;
+      java.util.List<featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch> matches =
+          featurecat.lizzie.teacher.knowledge.MatchEngine.searchKnowledgeMatchEngine(query);
+      if (matches == null || matches.isEmpty()) {
+        return "";
+      }
+      StringBuilder builder = new StringBuilder();
+      int shown = 0;
+      for (featurecat.lizzie.teacher.knowledge.MatchEngine.KnowledgeMatch match : matches) {
+        if (match.title == null || match.title.isEmpty()) {
+          continue;
+        }
+        builder
+            .append("- ")
+            .append(match.title)
+            .append(" (")
+            .append(match.matchType == null ? "knowledge" : match.matchType)
+            .append(", confidence ")
+            .append(match.confidence)
+            .append(")");
+        if (match.reason != null && !match.reason.isEmpty()) {
+          builder.append(": ").append(String.join("; ", match.reason.subList(0, Math.min(3, match.reason.size()))));
+        }
+        builder.append('\n');
+        shown++;
+        if (shown >= 6) {
+          break;
+        }
+      }
+      return shown == 0 ? "" : builder.toString();
+    } catch (Exception ignored) {
+      return "";
+    }
+  }
+
   private static String normalizeCoordinate(String coordinate) {
     return coordinate == null ? "" : coordinate.trim().toUpperCase(Locale.ROOT);
   }
