@@ -10,6 +10,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,8 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   @Test
-  void windowsPortableUpgradeMigratesRichestConfigCredentialsAndExistingSaves() throws Exception {
+  void windowsPortableUpgradeMigratesConfigAndSavesButLeavesCredentialsForSecureMigration()
+      throws Exception {
     Path parent = Files.createTempDirectory("lizzie-portable-upgrade");
     Path previousRoot = Files.createDirectories(parent.resolve("2026-08-01-windows64.nvidia"));
     Path previousData = Files.createDirectories(previousRoot.resolve("user-data"));
@@ -73,13 +75,10 @@ public class ConfigBundledKataGoDefaultsTest {
             .getJSONObject("leelaz")
             .getJSONObject(RemoteComputeConfig.CONFIG_KEY)
             .getString("provider"));
-    assertEquals(
-        "encrypted-token",
-        Files.readString(
-            workDir.resolve("secure-credentials").resolve("account-token-user.dpapi")));
-    assertEquals(
-        "encrypted-password",
-        Files.readString(workDir.resolve("secure-credentials").resolve("password-user.dpapi")));
+    assertFalse(Files.exists(workDir.resolve("secure-credentials")));
+    assertTrue(
+        Config.windowsPortableCredentialDirectoriesForTests(currentRoot)
+            .contains(previousCredentials.toAbsolutePath().normalize()));
     assertEquals("(;GM[1])", Files.readString(currentSave.resolve("unfinished-game.sgf")));
   }
 
@@ -99,10 +98,11 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   @Test
-  void windowsPortableUpgradeKeepsConfigAndCredentialsFromNewestMeaningfulProfile()
-      throws Exception {
+  void windowsPortableUpgradeKeepsConfigFromNewestMeaningfulProfile() throws Exception {
     Path parent = Files.createTempDirectory("lizzie-portable-newest-profile");
-    Path olderData = Files.createDirectories(parent.resolve("older").resolve("user-data"));
+    Path olderRoot = Files.createDirectories(parent.resolve("older"));
+    Files.writeString(olderRoot.resolve(".lizzie-portable"), "portable");
+    Path olderData = Files.createDirectories(olderRoot.resolve("user-data"));
     JSONObject olderConfig = richPortableConfig();
     olderConfig
         .getJSONObject("leelaz")
@@ -121,7 +121,9 @@ public class ConfigBundledKataGoDefaultsTest {
     Files.writeString(olderCredentials.resolve("account-token-user.dpapi"), "older-token");
     Files.setLastModifiedTime(olderConfigFile, FileTime.fromMillis(1_000));
 
-    Path newerData = Files.createDirectories(parent.resolve("newer").resolve("user-data"));
+    Path newerRoot = Files.createDirectories(parent.resolve("newer"));
+    Files.writeString(newerRoot.resolve(".lizzie-portable"), "portable");
+    Path newerData = Files.createDirectories(newerRoot.resolve("user-data"));
     JSONObject newerConfig = richPortableConfig();
     newerConfig
         .getJSONObject("leelaz")
@@ -146,10 +148,11 @@ public class ConfigBundledKataGoDefaultsTest {
             .getJSONObject("leelaz")
             .getJSONObject(RemoteComputeConfig.CONFIG_KEY)
             .getString("zhizi-identifier"));
-    assertEquals(
-        "newer-token",
-        Files.readString(
-            workDir.resolve("secure-credentials").resolve("account-token-user.dpapi")));
+    assertFalse(Files.exists(workDir.resolve("secure-credentials")));
+    List<Path> legacyCredentials =
+        Config.windowsPortableCredentialDirectoriesForTests(currentRoot);
+    assertTrue(legacyCredentials.contains(olderCredentials.toAbsolutePath().normalize()));
+    assertTrue(legacyCredentials.contains(newerCredentials.toAbsolutePath().normalize()));
   }
 
   @Test

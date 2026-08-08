@@ -459,6 +459,23 @@ public class Config {
     return windowsPortableMigrationSources(portableRoot);
   }
 
+  static List<Path> windowsPortableCredentialDirectoriesForTests(Path portableRoot) {
+    return windowsPortableCredentialDirectories(portableRoot);
+  }
+
+  /** Returns existing portable credential directories that may need one-time DPAPI migration. */
+  public static List<Path> legacyWindowsCredentialDirectories() {
+    Optional<Path> portableRoot = findWindowsPortablePackageRoot();
+    if (portableRoot.isPresent()) {
+      return windowsPortableCredentialDirectories(portableRoot.get());
+    }
+    Path credentials =
+        resolvedWorkDirPath().resolve("secure-credentials").toAbsolutePath().normalize();
+    return Files.isDirectory(credentials)
+        ? Collections.singletonList(credentials)
+        : Collections.emptyList();
+  }
+
   public static Path resolvedWorkDirPath() {
     return Path.of(WORK_DIR).toAbsolutePath().normalize();
   }
@@ -563,6 +580,30 @@ public class Config {
     return new ArrayList<>(sources);
   }
 
+  private static List<Path> windowsPortableCredentialDirectories(Path portableRoot) {
+    LinkedHashSet<Path> directories = new LinkedHashSet<>();
+    addExistingCredentialDirectory(
+        directories, portableRoot.resolve(WINDOWS_PORTABLE_WORK_DIR_NAME));
+    for (Path source : windowsPortableMigrationSources(portableRoot)) {
+      addExistingCredentialDirectory(directories, source);
+    }
+    return new ArrayList<>(directories);
+  }
+
+  private static void addExistingCredentialDirectory(Collection<Path> directories, Path source) {
+    if (directories == null || source == null) {
+      return;
+    }
+    try {
+      Path credentialDirectory =
+          source.resolve("secure-credentials").toAbsolutePath().normalize();
+      if (Files.isDirectory(credentialDirectory)) {
+        directories.add(credentialDirectory);
+      }
+    } catch (Exception ignored) {
+    }
+  }
+
   private static void addMigrationSource(Collection<Path> sources, Path source) {
     if (sources == null || source == null) {
       return;
@@ -635,21 +676,6 @@ public class Config {
       }
     }
 
-    // DPAPI files are already encrypted for the current Windows user. Copy only missing blobs from
-    // every known prior location so changing portable folders does not silently sign the user out.
-    LinkedHashSet<Path> credentialSources = new LinkedHashSet<>();
-    if (configSource != null) {
-      credentialSources.add(configSource);
-    }
-    credentialSources.addAll(candidates);
-    for (Path candidate : credentialSources) {
-      Path sourceCredentials = candidate.resolve("secure-credentials");
-      if (Files.isDirectory(sourceCredentials)) {
-        copyDirectoryContents(
-            sourceCredentials, normalizedTarget.resolve("secure-credentials"), false);
-      }
-    }
-
     if (configSource != null && (!targetHadConfig || recovered)) {
       System.out.println("Migrated config dir to " + normalizedTarget + " from " + configSource);
     }
@@ -676,8 +702,7 @@ public class Config {
   }
 
   private static boolean hasMigratableWorkDirData(Path directory) {
-    return hasExistingWorkDirData(directory)
-        || Files.isDirectory(directory.resolve("secure-credentials"));
+    return hasExistingWorkDirData(directory);
   }
 
   private static Path selectBestConfigSource(List<Path> candidates) {
