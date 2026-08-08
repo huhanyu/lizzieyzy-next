@@ -2148,7 +2148,7 @@ public class EngineManager {
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     boolean restartPonderIntent =
         currentForegroundEngine.isPonderingOrWasPonderingBeforeTracking();
-    int restartEngineIndex = currentEngineNo > 0 ? currentEngineNo : engineNo;
+    int restartEngineIndex = currentEngineNo;
     if (rejectSameEngineSelection(restartEngineIndex, true)) return;
     Leelaz restartTarget = engineList.get(restartEngineIndex);
     PreparedEngineSwitch preparedSwitch;
