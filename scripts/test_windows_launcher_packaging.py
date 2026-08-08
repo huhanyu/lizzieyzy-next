@@ -92,7 +92,10 @@ def main() -> None:
         "build-windows-release.yml",
     )
     require(workflow, 'runnable_engines=(', "build-windows-release.yml")
-    require(workflow, 'packaged_engines=(', "build-windows-release.yml")
+    require(workflow, 'standard_packaged_engines=(', "build-windows-release.yml")
+    require(workflow, 'tensorrt_engine=', "build-windows-release.yml")
+    require(workflow, "--expected-version 1.17.1", "build-windows-release.yml")
+    require(workflow, "--expected-version 1.17.2", "build-windows-release.yml")
     require(workflow, "GitHub-hosted Windows runners do not have an NVIDIA display driver", "build-windows-release.yml")
     require(
         workflow,

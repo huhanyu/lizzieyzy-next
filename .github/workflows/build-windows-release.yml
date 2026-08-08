@@ -315,12 +315,12 @@ jobs:
             "dist/windows/app-image-with-katago/LizzieYzy Next/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/engines/katago/windows-x64/katago.exe"
           )
-          packaged_engines=(
+          standard_packaged_engines=(
             "${runnable_engines[@]}"
             "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/katago.exe"
-            "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago.exe"
           )
+          tensorrt_engine="dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago.exe"
           for engine in "${runnable_engines[@]}"; do
             test -f "$engine"
             version_output="$("$engine" version 2>&1)"
@@ -334,7 +334,13 @@ jobs:
           python3 scripts/audit_katago_binary_version.py \
             --expected-version 1.17.1 \
             --reject-version 1.17.0 \
-            "${packaged_engines[@]}"
+            --reject-version 1.17.2 \
+            "${standard_packaged_engines[@]}"
+          python3 scripts/audit_katago_binary_version.py \
+            --expected-version 1.17.2 \
+            --reject-version 1.17.0 \
+            --reject-version 1.17.1 \
+            "$tensorrt_engine"
 
       - name: Smoke test bundled Windows app images
         shell: powershell

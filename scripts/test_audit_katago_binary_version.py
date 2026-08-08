@@ -19,6 +19,10 @@ class AuditKataGoBinaryVersionTest(unittest.TestCase):
         binary = self.write_fixture(b"PE fixture\0KataGo v1.17.1\0")
         audit_binary(binary, "1.17.1", ["1.17.0"])
 
+    def test_accepts_tensorrt_release_marker(self) -> None:
+        binary = self.write_fixture(b"PE fixture\0KataGo v1.17.2\0")
+        audit_binary(binary, "1.17.2", ["1.17.0", "1.17.1"])
+
     def test_rejects_missing_expected_marker(self) -> None:
         binary = self.write_fixture(b"PE fixture without a version")
         with self.assertRaises(BinaryVersionAuditError):
