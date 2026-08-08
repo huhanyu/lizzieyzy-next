@@ -3919,6 +3919,18 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
   }
 
   /**
+   * Routes captured-engine termination through the admitted session so failure publication and
+   * reservation release remain exactly once and session-owned.
+   */
+  boolean failReadBoardGmaSessionForEngineTermination(Leelaz expectedEngine, String detail) {
+    ReadBoardGmaSessionBinding binding = readBoardGmaSessionBinding;
+    if (binding == null || binding.engine != expectedEngine) {
+      return false;
+    }
+    return binding.session.failEngineProcess(binding.terminalCapability, detail);
+  }
+
+  /**
    * Drops the session-bound adapter state when the physical GMA hand can no longer converge through
    * a terminal (transport death, preparation/restore failure, helper retirement). The legacy
    * fail-closed paths already own the quarantine and reservation release for those cases; the
@@ -3975,6 +3987,16 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     @Override
     public void startExact(
         ReadBoardGmaSession.ExactParticipantCapability capability, Object restoreIntent) {
+      if (engine.currentEngineIncarnation() != boundSession.engineIncarnation()) {
+        boundSession.completeExact(
+            capability,
+            new ReadBoardGmaSession.ParticipantResult.Failed(
+                new ReadBoardGmaSession.ParticipantFailure(
+                    ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
+                    boundSession.engineIncarnation(),
+                    "ReadBoard GMA exact participant belongs to a stale engine incarnation")));
+        return;
+      }
       ReadBoardGmaExactParticipant.start(
           boundSession,
           capability,
@@ -4030,8 +4052,9 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     @Override
     public void handleFailure(ReadBoardGmaSession.ParticipantFailure firstFailure) {
       discardReadBoardGmaLegacyRestoreIntent();
-      if (engine != null) {
-        engine.failReadBoardGmaEngineRestore(firstFailure.detail());
+      if (engine != null
+          && firstFailure.category() != ReadBoardGmaSession.FailureCategory.ADMISSION_STALE) {
+        engine.quarantineSessionOwnedReadBoardGmaFailure(firstFailure.detail());
       }
     }
 

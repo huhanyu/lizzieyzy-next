@@ -4248,7 +4248,12 @@ public class Leelaz {
             == ExclusiveGtpReleasePolicy.FOREGROUND_RESTORE) {
       completeForegroundRestore(interruptedForegroundWork);
     }
-    failReadBoardGmaEngineRestore("engine transport closed");
+    ReadBoard readBoard = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
+    if (readBoard == null
+        || !readBoard.failReadBoardGmaSessionForEngineTermination(
+            this, "engine transport closed")) {
+      failReadBoardGmaEngineRestore("engine transport closed");
+    }
     if (binding.remoteTransport != null && binding.remoteTransport.isRecoveryRequested()) {
       isDownWithError = true;
       rememberRecentLine(
@@ -10646,6 +10651,32 @@ public class Leelaz {
     if (failure != null) {
       failure.accept(new ReadBoardGmaRuntimeFailure(category, detail));
     }
+  }
+
+  /**
+   * Quarantines a participant failure owned by {@link ReadBoardGmaSession}. This retires any
+   * session runtime barrier but deliberately leaves the captured reservation for the session's
+   * ordered release effect.
+   */
+  void quarantineSessionOwnedReadBoardGmaFailure(String detail) {
+    Timer timeout = null;
+    synchronized (readBoardGmaLock()) {
+      engineStateUnrestored = true;
+      ReadBoardGmaRestoreBarrier barrier = readBoardGmaRestoreBarrier;
+      if (barrier != null && barrier.sessionOwned && !barrier.completed) {
+        barrier.completed = true;
+        readBoardGmaRestoreBarrier = null;
+        timeout = barrier.timeout;
+        barrier.timeout = null;
+      }
+    }
+    if (timeout != null) {
+      timeout.cancel();
+    }
+    rememberRecentLine(recentStderrLines, "ReadBoard GMA engine restore failed: " + detail);
+    resetGtpCommandStateAfterRestoreFailure(detail);
+    invalidateReadBoardTrackingEligibility(
+        ReadBoardTrackingEligibilityAdapter.Reason.ENGINE_UNRESTORED);
   }
 
   public void failReadBoardGmaEngineRestore(String detail) {

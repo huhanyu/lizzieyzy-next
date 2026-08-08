@@ -2399,6 +2399,125 @@ class LeelazReadBoardGmaTest {
   }
 
   @Test
+  void engineTerminationDuringGmaInFlightFailsSessionAndReleasesCapturedReservation()
+      throws Exception {
+    try (Harness harness = Harness.open()) {
+      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
+      configureReadyReadBoardGmaEngine(engine);
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+
+      assertTrue(
+          readBoard.failReadBoardGmaSessionForEngineTermination(engine, "engine transport closed"));
+      assertFalse(
+          readBoard.failReadBoardGmaSessionForEngineTermination(engine, "duplicate transport close"));
+
+      ReadBoardGmaSession.Terminal terminal =
+          assertInstanceOf(ReadBoardGmaSession.Terminal.class, session.state());
+      assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+          terminal.firstFailure().category());
+      assertTrue(engine.hasUnrestoredReadBoardGmaState());
+      assertTrue(
+          waitForReleaseRequests(engine.releaseRequests, 1, 1, TimeUnit.SECONDS),
+          "transport termination must release through the session capability");
+      assertNull(engine.currentReadBoardGmaReservation());
+      assertNull(boundReadBoardGmaSession(readBoard));
+    }
+  }
+
+  @Test
+  void engineTerminationDuringExactRestoreFailsSessionAndCancelsLateCompletion() throws Exception {
+    try (Harness harness = Harness.open()) {
+      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
+      configureReadyReadBoardGmaEngine(engine);
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(engine, command -> null);
+
+      invokeParseLine(engine, "play pass");
+      assertTrue(
+          waitForSessionState(
+              session, ReadBoardGmaSession.RestoringExact.class, 1, TimeUnit.SECONDS));
+      assertTrue(
+          waitForCommandCount(transport, "loadsgf ", 1, 1, TimeUnit.SECONDS),
+          "the exact participant must have a physical loadsgf in flight");
+
+      assertTrue(
+          readBoard.failReadBoardGmaSessionForEngineTermination(
+              engine, "engine exited during exact"));
+
+      ReadBoardGmaSession.Terminal terminal =
+          assertInstanceOf(ReadBoardGmaSession.Terminal.class, session.state());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+          terminal.firstFailure().category());
+      assertTrue(engine.hasUnrestoredReadBoardGmaState());
+      assertTrue(
+          waitForReleaseRequests(engine.releaseRequests, 1, 1, TimeUnit.SECONDS),
+          "exact termination must release through the session capability");
+      assertNull(engine.currentReadBoardGmaReservation());
+      assertNull(boundReadBoardGmaSession(readBoard));
+    }
+  }
+
+  @Test
+  void engineTerminationDuringRuntimeRestoreFailsSessionAndAbsorbsLateAck() throws Exception {
+    try (Harness harness = Harness.open()) {
+      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
+      configureReadyReadBoardGmaEngine(engine);
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      ReadBoard readBoard = allocate(ReadBoard.class);
+      ReadBoardGmaSession session =
+          beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
+      engine.retireReadBoardGmaSession();
+      ExactSnapshotRestoreProtocolFixture.install(
+          engine,
+          command ->
+              command.startsWith("loadsgf ")
+                  ? ExactSnapshotRestoreProtocolFixture.Response.success()
+                  : null);
+
+      invokeParseLine(engine, "play pass");
+      assertTrue(
+          waitForSessionState(
+              session, ReadBoardGmaSession.RestoringRuntime.class, 1, TimeUnit.SECONDS));
+      assertTrue(
+          waitForRawCommandPrefix(
+              output, "kata-set-param ponderingEnabled", 1, TimeUnit.SECONDS),
+          "the runtime participant must have a physical ACK pending");
+
+      assertTrue(
+          readBoard.failReadBoardGmaSessionForEngineTermination(
+              engine, "engine exited during runtime"));
+      invokeProcessCommandResponseLine(
+          engine, successResponseFor(output.rawCommands(), "ponderingEnabled"));
+
+      ReadBoardGmaSession.Terminal terminal =
+          assertInstanceOf(ReadBoardGmaSession.Terminal.class, session.state());
+      assertEquals(
+          ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+          terminal.firstFailure().category());
+      assertTrue(engine.hasUnrestoredReadBoardGmaState());
+      assertTrue(
+          waitForReleaseRequests(engine.releaseRequests, 1, 1, TimeUnit.SECONDS),
+          "runtime termination must release through the session capability");
+      assertEquals(1, engine.releaseRequests.get());
+      assertNull(engine.currentReadBoardGmaReservation());
+      assertNull(boundReadBoardGmaSession(readBoard));
+    }
+  }
+
+  @Test
   void readBoardGmaSessionExactParticipantRestoresBoardAndReleasesReservation() throws Exception {
     try (Harness harness = Harness.open()) {
       Leelaz engine = readyReadBoardGmaEngine();
@@ -2672,7 +2791,7 @@ class LeelazReadBoardGmaTest {
         engine.releaseFailure.countDown();
 
         assertTrue(
-            waitForReleaseRequests(engine, 1, 1, TimeUnit.SECONDS),
+            waitForReleaseRequests(engine.releaseRequests, 1, 1, TimeUnit.SECONDS),
             "the failed session must request its reservation release");
         assertNull(
             engine.currentReadBoardGmaReservation(),
@@ -2781,7 +2900,7 @@ class LeelazReadBoardGmaTest {
             "the deferred restore request must converge without failing the engine again");
 
         assertTrue(
-            waitForReleaseRequests(engine, 1, 1, TimeUnit.SECONDS),
+            waitForReleaseRequests(engine.releaseRequests, 1, 1, TimeUnit.SECONDS),
             "the failed session must request its reservation release");
         assertNull(
             engine.currentReadBoardGmaReservation(),
@@ -2930,7 +3049,7 @@ class LeelazReadBoardGmaTest {
         assertNull(failThreadFailure.get());
 
         assertTrue(
-            waitForReleaseRequests(engine, 1, 1, TimeUnit.SECONDS),
+            waitForReleaseRequests(engine.releaseRequests, 1, 1, TimeUnit.SECONDS),
             "the failed session must request its reservation release");
         assertNull(
             engine.currentReadBoardGmaReservation(),
@@ -2996,115 +3115,6 @@ class LeelazReadBoardGmaTest {
     }
   }
 
-  @Test
-  void readBoardGmaSessionFailurePostAbandonWindowSkipsLegacyRetry() throws Exception {
-    try (Harness harness = Harness.open()) {
-      CountingReleaseLeelaz engine = new CountingReleaseLeelaz();
-      configureReadyReadBoardGmaEngine(engine);
-      RecordingOutputStream output = new RecordingOutputStream();
-      setOutputStream(engine, output);
-      PostAbandonWindowReadBoard readBoard = allocate(PostAbandonWindowReadBoard.class);
-      readBoard.initializeLatches();
-      ReadBoardGmaSession session = beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, null);
-      AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
-      ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(
-              engine,
-              command ->
-                  command.startsWith("loadsgf ")
-                      ? ExactSnapshotRestoreProtocolFixture.Response.error(
-                          "controlled board restore failure")
-                      : null);
-
-      invokeParseLine(engine, "play pass");
-      try {
-        // The production failure path clears the binding after it publishes the engine quarantine.
-        // This board fixture blocks at that exact boundary while the actual engine method runs.
-        assertTrue(
-            readBoard.bindingCleared.await(1, TimeUnit.SECONDS),
-            "the failure handling must clear the session binding after quarantine");
-        assertTrue(
-            waitForCommandCount(transport, "loadsgf ", 1, 1, TimeUnit.SECONDS),
-            "the exact participant must send its own loadsgf");
-        setBooleanField(readBoard, "readBoardGmaPending", false);
-
-        // A real authoritative restore request lands in the post-abandon/pre-quarantine window:
-        // the legacy flush must not send a second loadsgf while the engine is not yet
-        // quarantined.
-        BoardHistoryNode restoreNode = Lizzie.board.getHistory().getCurrentHistoryNode();
-        AtomicReference<Throwable> restoreFailure = new AtomicReference<>();
-        Thread restoreThread =
-            new Thread(
-                () -> {
-                  try {
-                    invokeRequestReadBoardGmaEngineRestore(
-                        readBoard, "test-abandon-window", restoreNode);
-                  } catch (Throwable failure) {
-                    restoreFailure.set(failure);
-                  }
-                },
-                "readboard-gma-abandon-window-restore-test");
-        restoreThread.setDaemon(true);
-        restoreThread.start();
-        assertFalse(
-            waitForCommandCount(transport, "loadsgf ", 2, 500, TimeUnit.MILLISECONDS),
-            "a restore request in the post-abandon window must not send a second loadsgf; "
-                + "commands="
-                + transport.commands());
-
-        readBoard.releaseAfterAbandon.countDown();
-        restoreThread.join(1000L);
-        assertNotNull(
-            restoreFailure.get(),
-            "the post-quarantine restore request must fail closed instead of sending a retry");
-
-        assertTrue(
-            waitForReleaseRequests(engine, 1, 1, TimeUnit.SECONDS),
-            "the failed session must request its reservation release");
-        assertNull(
-            engine.currentReadBoardGmaReservation(),
-            "the failed session must release its captured reservation");
-        assertTrue(
-            engine.hasUnrestoredReadBoardGmaState(),
-            "an exact participant failure must quarantine the engine fail-closed");
-
-        ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
-        assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
-        assertEquals(
-            ReadBoardGmaSession.FailureCategory.GTP_ERROR, terminal.firstFailure().category());
-        assertEquals(
-            1,
-            transport.commands().stream()
-                .filter(command -> command.startsWith("loadsgf "))
-                .count(),
-            "the failed session must consume exactly one loadsgf and never retry it; commands="
-                + transport.commands());
-        assertTrue(
-            transport.commands().stream()
-                .noneMatch(command -> command.startsWith("kata-set-param")),
-            "no runtime restore may start after an exact participant failure");
-        assertTrue(
-            transport.commands().stream()
-                .noneMatch(command -> command.startsWith("kata-genmove_analyze")),
-            "no continuation hand may start after a failed session");
-        assertEquals(
-            1,
-            output.commands().stream()
-                .filter(command -> command.startsWith("kata-genmove_analyze "))
-                .count(),
-            "the failed session must not schedule another genmove");
-        assertEquals(
-            1,
-            engine.releaseRequests.get(),
-            "the failed session must release its reservation exactly once");
-        assertNull(
-            boundReadBoardGmaSession(readBoard),
-            "the failure handling must clear the published binding");
-      } finally {
-        readBoard.releaseAfterAbandon.countDown();
-      }
-    }
-  }
 
   @Test
   void readBoardGmaSessionTailEnqueuedBeforeSuccessAndAckNotWaited() throws Exception {
@@ -3401,13 +3411,16 @@ class LeelazReadBoardGmaTest {
       ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
       assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
       assertEquals(
-          ReadBoardGmaSession.FailureCategory.TAIL_REJECTED, terminal.firstFailure().category());
+          ReadBoardGmaSession.FailureCategory.ADMISSION_STALE, terminal.firstFailure().category());
       assertTrue(
           transport.commands().stream().noneMatch(command -> command.startsWith("loadsgf ")),
           "no exact restore command may run on a replacement engine incarnation");
       assertTrue(
           transport.commands().stream().noneMatch(command -> command.startsWith("kata-set-param")),
           "no runtime restore command may run on a replacement engine incarnation");
+      assertFalse(
+          engine.hasUnrestoredReadBoardGmaState(),
+          "zero-side-effect stale admission must not quarantine the replacement incarnation");
       assertNull(engine.currentReadBoardGmaReservation());
       assertNull(boundReadBoardGmaSession(readBoard));
     }
@@ -3806,29 +3819,33 @@ class LeelazReadBoardGmaTest {
   }
 
   private static boolean waitForReleaseRequests(
-      BlockedFailureQuarantineLeelaz engine, int minimumCount, long timeout, TimeUnit unit)
+      AtomicInteger releaseRequests, int minimumCount, long timeout, TimeUnit unit)
       throws InterruptedException {
     long deadline = System.nanoTime() + unit.toNanos(timeout);
     while (System.nanoTime() < deadline) {
-      if (engine.releaseRequests.get() >= minimumCount) {
+      if (releaseRequests.get() >= minimumCount) {
         return true;
       }
       Thread.sleep(10L);
     }
     return false;
   }
-  private static boolean waitForReleaseRequests(
-      CountingReleaseLeelaz engine, int minimumCount, long timeout, TimeUnit unit)
+  private static boolean waitForSessionState(
+      ReadBoardGmaSession session,
+      Class<? extends ReadBoardGmaSession.State> stateType,
+      long timeout,
+      TimeUnit unit)
       throws InterruptedException {
     long deadline = System.nanoTime() + unit.toNanos(timeout);
     while (System.nanoTime() < deadline) {
-      if (engine.releaseRequests.get() >= minimumCount) {
+      if (stateType.isInstance(session.state())) {
         return true;
       }
       Thread.sleep(10L);
     }
     return false;
   }
+
 
 
   private static boolean waitForRawCommandPrefix(
@@ -4539,10 +4556,10 @@ class LeelazReadBoardGmaTest {
     }
 
     @Override
-    public void failReadBoardGmaEngineRestore(String detail) {
+    void quarantineSessionOwnedReadBoardGmaFailure(String detail) {
       failureArrived.countDown();
       awaitLatch(releaseFailure);
-      super.failReadBoardGmaEngineRestore(detail);
+      super.quarantineSessionOwnedReadBoardGmaFailure(detail);
     }
 
     @Override
@@ -4577,31 +4594,6 @@ class LeelazReadBoardGmaTest {
         awaitLatch(releaseCapture);
       }
       return super.captureExactSnapshotRestoreAdmission(owner, ownerIdentity, mirror);
-    }
-  }
-  /**
-   * Board adapter that parks the actual production failure method after it has published engine
-   * quarantine and cleared the GMA binding. Unsafe allocation skips field initializers, so the
-   * test explicitly initializes the latches.
-   */
-  private static final class PostAbandonWindowReadBoard extends ReadBoard {
-    private CountDownLatch bindingCleared;
-    private CountDownLatch releaseAfterAbandon;
-
-    private PostAbandonWindowReadBoard() throws Exception {
-      super(false, true);
-    }
-
-    private void initializeLatches() {
-      bindingCleared = new CountDownLatch(1);
-      releaseAfterAbandon = new CountDownLatch(1);
-    }
-
-    @Override
-    void abandonReadBoardGmaSession(Leelaz expectedEngine, String reason) {
-      super.abandonReadBoardGmaSession(expectedEngine, reason);
-      bindingCleared.countDown();
-      awaitLatch(releaseAfterAbandon);
     }
   }
 

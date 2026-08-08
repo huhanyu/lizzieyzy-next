@@ -639,6 +639,79 @@ class ReadBoardGmaSessionContractTest {
   }
 
   @Test
+  void engineTerminationWhileGmaIsInFlightFailsThroughSessionExactlyOnce() {
+    RecordingPorts ports = new RecordingPorts();
+    ReadBoardGmaSession session = createSession(ports);
+    ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
+        session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
+
+    assertTrue(session.failEngineProcess(terminalCapability, "engine exited"));
+    assertFalse(session.failEngineProcess(terminalCapability, "duplicate engine exit"));
+
+    ReadBoardGmaSession.Terminal terminal = terminalOf(session);
+    assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+        terminal.firstFailure().category());
+    assertSame(INCARNATION, terminal.firstFailure().engineIncarnation());
+    assertEquals(
+        List.of("handleFailure", "publishTerminal", "requestReservationRelease"), ports.calls);
+    assertEquals(1, ports.publications.size());
+    assertEquals(1, ports.releases.size());
+    assertEquals(0, ports.continuations);
+  }
+
+  @Test
+  void engineTerminationDuringExactAndRuntimeAbsorbsLateParticipantCallbacks() {
+    RecordingPorts exactPorts = new RecordingPorts();
+    ReadBoardGmaSession exactSession = createSession(exactPorts);
+    ReadBoardGmaSession.GmaTerminalCapability exactTerminal =
+        exactSession.admitGma(exactSession.helperCapability(), new Object(), nonEmptySnapshot());
+    exactSession.consumeGmaTerminal(exactTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    ReadBoardGmaSession.ExactParticipantCapability exactCapability =
+        exactPorts.exactStarts.get(0);
+
+    assertTrue(exactSession.failEngineProcess(exactTerminal, "engine exited during exact"));
+    exactSession.completeExact(
+        exactCapability, new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+        terminalOf(exactSession).firstFailure().category());
+    assertEquals(
+        List.of(
+            "startExact", "handleFailure", "publishTerminal", "requestReservationRelease"),
+        exactPorts.calls);
+
+    RecordingPorts runtimePorts = new RecordingPorts();
+    ReadBoardGmaSession runtimeSession = createSession(runtimePorts);
+    ReadBoardGmaSession.GmaTerminalCapability runtimeTerminal =
+        runtimeSession.admitGma(
+            runtimeSession.helperCapability(), new Object(), nonEmptySnapshot());
+    runtimeSession.consumeGmaTerminal(
+        runtimeTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
+    runtimeSession.retire(runtimeSession.helperCapability());
+    runtimeSession.completeExact(
+        runtimePorts.exactStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    ReadBoardGmaSession.RuntimeParticipantCapability runtimeCapability =
+        runtimePorts.runtimeStarts.get(0);
+
+    assertTrue(runtimeSession.failEngineProcess(runtimeTerminal, "engine exited during runtime"));
+    runtimeSession.completeRuntime(
+        runtimeCapability, new ReadBoardGmaSession.ParticipantResult.Succeeded());
+    assertEquals(
+        ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
+        terminalOf(runtimeSession).firstFailure().category());
+    assertEquals(
+        List.of(
+            "startExact",
+            "startRuntime",
+            "handleFailure",
+            "publishTerminal",
+            "requestReservationRelease"),
+        runtimePorts.calls);
+  }
+
+  @Test
   void retiredSessionFailureStillHandlesFailureAndReleasesExactlyOnce() {
     RecordingPorts ports = new RecordingPorts();
     ReadBoardGmaSession session = createSession(ports);

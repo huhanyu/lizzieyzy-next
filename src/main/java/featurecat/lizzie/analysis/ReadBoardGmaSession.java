@@ -567,6 +567,32 @@ public final class ReadBoardGmaSession {
     dispatch(effects);
   }
 
+  /**
+   * Fails admitted physical work when the captured engine process terminates. The terminal
+   * capability keeps transport death bound to the original session and incarnation; duplicate,
+   * stale, and post-terminal notifications are absorbed.
+   */
+  public boolean failEngineProcess(GmaTerminalCapability capability, String detail) {
+    Objects.requireNonNull(capability, "capability");
+    List<Effect> effects;
+    synchronized (lock) {
+      if (!isCapabilityCurrent(capability)
+          || capability.attempt != gmaTerminalAttempt
+          || state instanceof Preparing
+          || state instanceof Terminal) {
+        return false;
+      }
+      if (state instanceof GmaInFlight gma) {
+        gma.authorization().invalidate();
+      }
+      ParticipantFailure failure =
+          new ParticipantFailure(FailureCategory.PROCESS_TERMINATED, engineIncarnation, detail);
+      effects = terminalEffects(new Terminal(SessionOutcome.FAILED, failure));
+    }
+    dispatch(effects);
+    return true;
+  }
+
   private List<Effect> onGmaTerminal(
       GmaTerminalCapability capability, GmaTerminal terminal, Object finalRestoreIntent) {
     if (!isCapabilityCurrent(capability)
