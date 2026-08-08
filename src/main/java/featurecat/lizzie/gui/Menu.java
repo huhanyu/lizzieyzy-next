@@ -8,6 +8,7 @@ import featurecat.lizzie.analysis.FastLink;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveRankEvaluationMode;
+import featurecat.lizzie.teacher.TeacherDialog;
 import featurecat.lizzie.theme.MorandiPalette;
 import featurecat.lizzie.theme.Theme;
 import featurecat.lizzie.update.WindowsUpdateController;
@@ -3177,6 +3178,12 @@ public class Menu extends JMenuBar {
           }
         });
     analyzeMenu.add(togglePonder);
+
+    final JFontMenuItem aiCommentary =
+        new JFontMenuItem(resourceBundle.getString("Menu.aiCommentary"));
+    aiCommentary.addActionListener(event -> TeacherDialog.show(Lizzie.frame));
+    analyzeMenu.add(aiCommentary);
+    analyzeMenu.addSeparator();
 
     final JFontMenuItem hawkEye2 =
         new JFontMenuItem(resourceBundle.getString("Menu.hawkEye")); // ("超级鹰眼(T)");

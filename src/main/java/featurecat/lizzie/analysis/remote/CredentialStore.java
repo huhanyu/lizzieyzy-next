@@ -3,11 +3,12 @@ package featurecat.lizzie.analysis.remote;
 import java.io.IOException;
 import java.util.Optional;
 
-/** Stores remote-compute secrets outside the ordinary application configuration. */
+/** Stores application secrets outside the ordinary application configuration. */
 public interface CredentialStore {
   enum Kind {
     ACCOUNT_TOKEN("account-token"),
-    PASSWORD("password");
+    PASSWORD("password"),
+    API_KEY("api-key");
 
     private final String id;
 

@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import org.json.JSONObject;
 
@@ -1083,7 +1084,8 @@ public final class RemoteComputeConfig {
       return true;
     }
     boolean deleted = true;
-    for (CredentialStore.Kind kind : CredentialStore.Kind.values()) {
+    for (CredentialStore.Kind kind :
+        List.of(CredentialStore.Kind.ACCOUNT_TOKEN, CredentialStore.Kind.PASSWORD)) {
       try {
         store.delete(kind, identifier);
       } catch (IOException e) {
