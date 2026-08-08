@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class RemoteComputeDialogLayoutTest {
   @Test
   void localizedButtonIncludesFractionalDpiSafetyPadding() {
-    JButton button = new JButton("Open the Zhizi website for account top-up");
+    JButton button = new JButton("Open official website");
 
     assertTrue(
         RemoteComputeDialog.localizedButtonWidth(button, 40)
@@ -49,28 +49,46 @@ class RemoteComputeDialogLayoutTest {
 
   @Test
   void zhiziWebsiteCardKeepsItsActionCompactAndContentVisible() {
-    JButton button = new JButton("Open the Zhizi website for account top-up");
+    JButton button = new JButton("Open official website");
     JPanel card =
         RemoteComputeDialog.createZhiziWebsiteCard(
-            button,
-            "Zhizi website and top-up",
-            "Download the Zhizi app from its website to top up your account.",
-            "www.zhizigo.cn");
+            button, "Zhizi official website", "www.zhizigo.cn");
 
-    assertTrue(card.getPreferredSize().height <= 120);
+    assertTrue(card.getPreferredSize().height <= 96);
     assertEquals(card.getPreferredSize().height, card.getMaximumSize().height);
 
-    card.setSize(560, 180);
+    card.setSize(520, card.getPreferredSize().height);
     layoutTree(card);
 
-    assertEquals(42, button.getHeight());
-    Component description = findByName(card, "zhiziWebsiteDescription");
+    Component title = findByName(card, "zhiziWebsiteTitle");
     Component url = findByName(card, "zhiziWebsiteUrl");
-    assertNotNull(description);
+    Component action = findByName(card, "zhiziWebsiteAction");
+    assertNotNull(title);
     assertNotNull(url);
+    assertNotNull(action);
+    assertTrue(button.getHeight() >= 42);
+    assertTrue(title.isVisible());
     assertTrue(url.isVisible());
-    assertTrue(url.getY() - (description.getY() + description.getHeight()) <= 4);
-    assertTrue(url.getY() + url.getHeight() <= url.getParent().getHeight());
+    assertWithinParent(title);
+    assertWithinParent(url);
+    assertWithinParent(action);
+  }
+
+  @Test
+  void zhiziWebsiteCardAdaptsToLargeWindowsFontsWithoutClipping() {
+    JButton button = new JButton("Open official website");
+    button.setFont(button.getFont().deriveFont(22F));
+    JPanel card =
+        RemoteComputeDialog.createZhiziWebsiteCard(
+            button, "Zhizi official website", "www.zhizigo.cn");
+
+    card.setSize(560, card.getPreferredSize().height);
+    layoutTree(card);
+
+    assertTrue(card.getPreferredSize().height >= button.getPreferredSize().height + 26);
+    assertWithinParent(findByName(card, "zhiziWebsiteTitle"));
+    assertWithinParent(findByName(card, "zhiziWebsiteUrl"));
+    assertWithinParent(findByName(card, "zhiziWebsiteAction"));
   }
 
   @Test
@@ -125,5 +143,13 @@ class RemoteComputeDialogLayoutTest {
       }
     }
     return null;
+  }
+
+  private static void assertWithinParent(Component component) {
+    assertNotNull(component);
+    assertTrue(component.getX() >= 0);
+    assertTrue(component.getY() >= 0);
+    assertTrue(component.getX() + component.getWidth() <= component.getParent().getWidth());
+    assertTrue(component.getY() + component.getHeight() <= component.getParent().getHeight());
   }
 }

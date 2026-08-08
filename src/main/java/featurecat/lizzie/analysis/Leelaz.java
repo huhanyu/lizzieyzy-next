@@ -789,7 +789,7 @@ public class Leelaz {
       openClFp32CompatibilityActive =
           KataGoRuntimeHelper.isOpenClFp32CompatibilityActive(launchCommands, engineExecutable);
       if (openClFp32CompatibilityActive && bundledCommand && !preload) {
-        Lizzie.engineStartupStatus.checking(
+        publishBundledStartupStatus(
             "BundledEngineStartup.status.openclCompatibility",
             "Using stable NVIDIA OpenCL compatibility mode...");
       }
@@ -1164,6 +1164,11 @@ public class Leelaz {
   void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {
     Lizzie.initializeAfterVersionCheck(false, this, resumePonder);
   }
+  void completeSecondaryExplicitRestartBoardSynchronization() {
+    notPondering();
+    canRestoreDymPda = true;
+  }
+
 
   void completeReadBoardGmaRecoveryAfterBoardSync() {
     synchronized (readBoardGmaLock()) {
@@ -10444,17 +10449,9 @@ public class Leelaz {
     }
 
     private void start() {
-      try {
-        sendCommand("name", responseHandler, this::onSendFailure, true, false);
-      } catch (RuntimeException ex) {
-        settleFailure(ex.getMessage());
-        return;
-      }
-      if (settled.get()) {
-        return;
-      }
-      timeout = new Timer("lizzie-board-sync-confirmation-timeout", true);
-      timeout.schedule(
+      Timer confirmationTimeout = new Timer("lizzie-board-sync-confirmation-timeout", true);
+      timeout = confirmationTimeout;
+      TimerTask timeoutTask =
           new TimerTask() {
             @Override
             public void run() {
@@ -10467,8 +10464,20 @@ public class Leelaz {
                 retireTimedOutNormalCommand(responseHandler);
               }
             }
-          },
-          Math.max(1L, readBoardGmaRestoreResponseTimeoutMillis()));
+          };
+      try {
+        sendCommand("name", responseHandler, this::onSendFailure, true, false);
+      } catch (RuntimeException ex) {
+        settleFailure(ex.getMessage());
+        return;
+      }
+      if (!settled.get()) {
+        scheduleBoardSynchronizationTimeout(
+            confirmationTimeout,
+            timeoutTask,
+            Math.max(1L, readBoardGmaRestoreResponseTimeoutMillis()),
+            settled);
+      }
     }
 
     private void onResponse() {
@@ -10507,6 +10516,17 @@ public class Leelaz {
       timeout = null;
       if (currentTimeout != null) {
         currentTimeout.cancel();
+      }
+    }
+  }
+
+  static void scheduleBoardSynchronizationTimeout(
+      Timer timer, TimerTask task, long delayMillis, AtomicBoolean settled) {
+    try {
+      timer.schedule(task, delayMillis);
+    } catch (IllegalStateException ex) {
+      if (!settled.get()) {
+        throw ex;
       }
     }
   }
@@ -11394,7 +11414,13 @@ public class Leelaz {
     final boolean nvidiaBundled = KataGoRuntimeHelper.isNvidiaBundledPath(engineExecutable);
     final int totalSteps = nvidiaBundled ? 4 : 3;
     String progressFallback = statusFallback + " (" + step + "/" + totalSteps + ")";
-    Lizzie.engineStartupStatus.checking(statusKey, progressFallback);
+    publishBundledStartupStatus(statusKey, progressFallback);
+  }
+
+  private void publishBundledStartupStatus(String statusKey, String statusFallback) {
+    if (this == Lizzie.leelaz) {
+      Lizzie.engineStartupStatus.checking(statusKey, statusFallback);
+    }
   }
 
   private void closeBundledStartupDialog() {

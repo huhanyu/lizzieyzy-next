@@ -575,6 +575,7 @@ public class KataGoRuntimeHelperTest {
                 assertEquals(
                     "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6",
                     spec.katagoSha256);
+                assertEquals(7_678_930L, spec.katagoSizeBytes);
                 assertEquals(5, spec.runtimePackageCount);
                 assertTrue(spec.totalDownloadBytes > 3_000_000_000L);
                 assertEquals(
@@ -934,6 +935,11 @@ public class KataGoRuntimeHelperTest {
                   .resolve("windows-x64-nvidia-tensorrt");
           Path runtimeDir = Files.createDirectories(runtimeWorkDirectory.resolve("nvidia-runtime"));
           touch(targetDir.resolve("katago.exe"));
+          Files.writeString(
+              targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"),
+              "KataGo release: v1.17.1\n"
+                  + "Asset SHA-256: "
+                  + "b5de0178194cf728c12994cf0ace8a105597e864e0d42d7c6b4e0a1e9ea7a943\n");
           Files.writeString(
               targetDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia-tensorrt\n");
           touchRequiredCuda12_8Dlls(runtimeDir);

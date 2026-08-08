@@ -36,31 +36,69 @@ class EngineStartupStatusTest {
   }
 
   @Test
-  void readyStatusRepaintsTheBasePanelAfterHidingTheNotice() throws Exception {
-    LizzieFrame frame = allocate(LizzieFrame.class);
+  void readyStatusPublishesTerminalUiAndCommentOnEdt() throws Exception {
+    CountingLizzieFrame frame = allocate(CountingLizzieFrame.class);
     CountingLayeredPane basePanel = new CountingLayeredPane();
+    CountingPanel mainPanel = new CountingPanel();
     JFontButton statusButton = new JFontButton();
+    basePanel.add(statusButton, Integer.valueOf(12));
+    statusButton.setBounds(10, 10, 240, 32);
+    statusButton.setText("using existing cache");
     statusButton.setVisible(true);
-    setField(frame, "basePanel", basePanel);
-    setField(frame, "engineStartupStatusButton", statusButton);
+    setField(LizzieFrame.class, frame, "basePanel", basePanel);
+    setField(LizzieFrame.class, frame, "mainPanel", mainPanel);
+    setField(LizzieFrame.class, frame, "engineStartupStatusButton", statusButton);
+    setField(LizzieFrame.class, frame, "redrawWinratePaneOnly", true);
+    basePanel.resetCounts();
+    frame.repaintCount = 0;
 
-    Method update =
-        LizzieFrame.class.getDeclaredMethod(
-            "updateEngineStartupStatus", EngineStartupStatus.Snapshot.class);
-    update.setAccessible(true);
-    update.invoke(frame, new EngineStartupStatus().snapshot());
+    EngineStartupStatus status = new EngineStartupStatus();
+    status.checking("engine.starting", "using existing cache");
+    status.addListener(snapshot -> invokeStatusUpdate(frame, snapshot));
+    status.ready();
     SwingUtilities.invokeAndWait(() -> {});
 
     assertFalse(statusButton.isVisible());
-    assertEquals(1, basePanel.repaintCount);
+    assertFalse(
+        (Boolean) getField(LizzieFrame.class, frame, "redrawWinratePaneOnly"),
+        "READY must invalidate a pending winrate-only repaint");
+    assertTrue(mainPanel.repaintCount > 0, "READY must repaint the cached main panel");
+    assertTrue(frame.repaintCount > 0, "READY must repaint the containing frame");
+    assertTrue(frame.refreshCount > 0, "READY must refresh after engine startup");
+    assertTrue(
+        frame.commentRefreshCount > 0,
+        "READY refresh must republish the comment panel after engine startup");
+    assertTrue(basePanel.revalidateCount > 0, "READY must publish the hidden notice layout");
+    assertTrue(basePanel.repaintCount > 0, "READY must repaint the cleared notice region");
+    assertTrue(basePanel.revalidatedOnEdt, "READY layout publication must run on EDT");
+    assertTrue(basePanel.repaintedOnEdt, "READY repaint publication must run on EDT");
   }
 
-  private static void setField(Object target, String name, Object value) throws Exception {
-    Field field = target.getClass().getDeclaredField(name);
+  private static void invokeStatusUpdate(
+      LizzieFrame frame, EngineStartupStatus.Snapshot snapshot) {
+    try {
+      Method update =
+          LizzieFrame.class.getDeclaredMethod(
+              "updateEngineStartupStatus", EngineStartupStatus.Snapshot.class);
+      update.setAccessible(true);
+      update.invoke(frame, snapshot);
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError(failure);
+    }
+  }
+
+  private static void setField(Class<?> declaringType, Object target, String name, Object value)
+      throws Exception {
+    Field field = declaringType.getDeclaredField(name);
     field.setAccessible(true);
     field.set(target, value);
   }
-
+  private static Object getField(Class<?> declaringType, Object target, String name)
+      throws Exception {
+    Field field = declaringType.getDeclaredField(name);
+    field.setAccessible(true);
+    return field.get(target);
+  }
   @SuppressWarnings("unchecked")
   private static <T> T allocate(Class<T> type) throws Exception {
     Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
@@ -70,6 +108,54 @@ class EngineStartupStatusTest {
 
   private static final class CountingLayeredPane extends JLayeredPane {
     private int repaintCount;
+    private int revalidateCount;
+    private boolean revalidatedOnEdt;
+    private boolean repaintedOnEdt;
+
+    private void resetCounts() {
+      repaintCount = 0;
+      revalidateCount = 0;
+      revalidatedOnEdt = false;
+      repaintedOnEdt = false;
+    }
+
+    @Override
+    public void revalidate() {
+      revalidateCount++;
+      revalidatedOnEdt |= SwingUtilities.isEventDispatchThread();
+      super.revalidate();
+    }
+
+    @Override
+    public void repaint() {
+      repaintCount++;
+      repaintedOnEdt |= SwingUtilities.isEventDispatchThread();
+    }
+  }
+  private static final class CountingPanel extends javax.swing.JPanel {
+    private int repaintCount;
+
+    @Override
+    public void repaint() {
+      repaintCount++;
+    }
+  }
+
+  private static final class CountingLizzieFrame extends LizzieFrame {
+    private int refreshCount;
+    private int commentRefreshCount;
+    private int repaintCount;
+
+    @Override
+    public void refresh() {
+      refreshCount++;
+      appendComment();
+    }
+
+    @Override
+    public void appendComment() {
+      commentRefreshCount++;
+    }
 
     @Override
     public void repaint() {

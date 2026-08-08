@@ -2148,7 +2148,7 @@ public class EngineManager {
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     boolean restartPonderIntent =
         currentForegroundEngine.isPonderingOrWasPonderingBeforeTracking();
-    int restartEngineIndex = currentEngineNo > 0 ? currentEngineNo : engineNo;
+    int restartEngineIndex = currentEngineNo;
     if (rejectSameEngineSelection(restartEngineIndex, true)) return;
     Leelaz restartTarget = engineList.get(restartEngineIndex);
     PreparedEngineSwitch preparedSwitch;
@@ -2252,10 +2252,12 @@ public class EngineManager {
       return;
     int restartEngineIndex = currentEngineNo2;
     if (rejectSameEngineSelection(restartEngineIndex, false)) return;
+    boolean restartPonderIntent =
+        Lizzie.leelaz != null && Lizzie.leelaz.isPonderingOrWasPonderingBeforeTracking();
     Leelaz secondaryTarget = engineList.get(restartEngineIndex);
     PreparedEngineSwitch preparedSwitch;
     try {
-      preparedSwitch = prepareEngineSwitch(restartEngineIndex, false);
+      preparedSwitch = prepareEngineSwitch(restartEngineIndex, false, true);
     } catch (Leelaz.ExactSnapshotRestoreAdmissionException conflict) {
       showForegroundEngineLeaseInUse();
       return;
@@ -2287,7 +2289,7 @@ public class EngineManager {
             secondaryTarget,
             false,
             true,
-            false,
+            restartPonderIntent,
             reservations,
             preparedSwitch == null ? null : preparedSwitch.lifecycleRestore));
   }
@@ -2661,6 +2663,41 @@ public class EngineManager {
             || (!explicitRestart
                 && current != null
                 && current.hasUnrestoredReadBoardGmaState());
+    if (explicitRestart && !isMain && target != null) {
+      return () -> {
+        if (Lizzie.leelaz2 != target || !target.isStarted() || !target.isLoaded()) {
+          target.isLoaded = false;
+          target.markLifecycleBoardSynchronizationFailed(
+              "restart engine was unavailable before board synchronization", targetWasUnrestored);
+          showEngineSynchronizationFailure(target);
+          reservations.close();
+          return;
+        }
+        target.confirmBoardSynchronization(
+            () -> {
+              try {
+                target.completeSecondaryExplicitRestartBoardSynchronization();
+                if (restartPonderIntent
+                    && current != null
+                    && current == Lizzie.leelaz
+                    && current.isStarted()
+                    && current.isLoaded()
+                    && !current.isCheckingName) {
+                  current.ponder();
+                }
+                target.setResponseUpToDate();
+              } finally {
+                reservations.close();
+              }
+            },
+            detail -> {
+              target.isLoaded = false;
+              target.markLifecycleBoardSynchronizationFailed(detail, targetWasUnrestored);
+              showEngineSynchronizationFailure(target);
+              reservations.close();
+            });
+      };
+    }
     if (!isMain
         || current == null
         || target == null
@@ -2865,12 +2902,16 @@ public class EngineManager {
                 } else {
                   preparedSwitch.lifecycleRestore.executeRootReplay(Lizzie.board, false, false);
                 }
-                preparedSwitch.lifecycleRestore.initializeAfterRestore(false);
+                if (!preparedSwitch.explicitRestart) {
+                  preparedSwitch.lifecycleRestore.initializeAfterRestore(false);
+                }
                 Menu.engineMenu2.setText(
                     "[" + (currentEngineNo2 + 1) + "]: " + newEng.currentEnginename);
                 changeEngIco(2);
                 LizzieFrame.boardRenderer2.removeKataEstimateImage();
-                newEng.setResponseUpToDate();
+                if (!preparedSwitch.explicitRestart) {
+                  newEng.setResponseUpToDate();
+                }
               }
             };
         synchronizeEngineWhenReady(newEng, syncBoard, afterSync);
