@@ -109,6 +109,16 @@ final class TeacherPromptBuilder {
       }
       text.append('\n');
     }
+    if (!position.actualMove.isEmpty()
+        && position.candidates.stream()
+            .noneMatch(
+                candidate ->
+                    candidate.coordinate != null
+                        && candidate.coordinate.equalsIgnoreCase(position.actualMove))) {
+      text.append("Note: the played move ")
+          .append(position.actualMove)
+          .append(" is NOT among the top candidates above; compare it against the list.\\n");
+    }
     return text.toString();
   }
 
@@ -124,6 +134,10 @@ final class TeacherPromptBuilder {
     if (snapshot != null) {
       prompt.append(teachingPersona(snapshot)).append("\n");
     }
+    prompt
+        .append(
+            "Refer to the person naturally in the answer without role labels such as \"student\", ")
+        .append("\"teacher\" or \"coach\".\n");
     prompt
         .append(
             "Perspective note: winrate and scoreLead are already given from the side-to-play ")
