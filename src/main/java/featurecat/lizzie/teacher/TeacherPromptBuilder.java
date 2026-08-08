@@ -91,6 +91,11 @@ final class TeacherPromptBuilder {
           .append(format(position.actualWinrateLoss.getAsDouble()))
           .append(" percentage points\n");
     }
+    if (!position.playedContinuation.isEmpty()) {
+      text.append("Played continuation: ")
+          .append(String.join(" ", position.playedContinuation))
+          .append('\n');
+    }
     for (TeacherEvidence.Candidate candidate : position.candidates) {
       text.append("Candidate #")
           .append(candidate.rank)
@@ -105,7 +110,13 @@ final class TeacherPromptBuilder {
         text.append(", scoreLead=").append(format(candidate.scoreLead));
       }
       if (!candidate.variation.isEmpty()) {
-        text.append(", pv=").append(String.join(" ", candidate.variation));
+        text.append(", pv=");
+        boolean black = "B".equals(position.toPlay);
+        text.append(candidate.coordinate).append(black ? "(B)" : "(W)");
+        for (String variationMove : candidate.variation) {
+          black = !black;
+          text.append(" ").append(variationMove).append(black ? "(B)" : "(W)");
+        }
       }
       text.append('\n');
     }

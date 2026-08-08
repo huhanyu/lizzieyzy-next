@@ -500,7 +500,7 @@ public final class TeacherDialog extends JDialog {
     setRunning(false);
   }
 
-  /** 本地防编造校验：把违规/提示附到输出末尾（不阻断显示，仅提示）。 */
+  /** 防编造校验：轻量 TeacherVerifier + 重型 QualityGate（claim 级核对），附到输出末尾（不阻断显示）。 */
   private void appendVerifierNotes(String result) {
     try {
       java.util.Optional<TeacherEvidence.Position> position =
@@ -509,23 +509,53 @@ public final class TeacherDialog extends JDialog {
               : TeacherEvidence.current(requestTarget);
       TeacherVerifier.Result verification =
           TeacherVerifier.verify(result, position.orElse(null));
-      if (!verification.hasNotes()) {
-        return;
-      }
       java.util.ArrayList<String> notes =
           new java.util.ArrayList<>(verification.violations);
       notes.addAll(verification.warnings);
+      appendQualityGateNotes(result, notes);
+      if (notes.isEmpty()) {
+        return;
+      }
+      java.util.ArrayList<String> shown = new java.util.ArrayList<>();
+      for (String note : notes) {
+        shown.add(note);
+        if (shown.size() >= 4) {
+          break;
+        }
+      }
       StringBuilder builder =
           new StringBuilder("\n\n> ")
               .append(
                   TeacherStrings.get(
-                      "Teacher.verify.note",
-                      "Verifier notes"))
+                      "Teacher.verify.note", "Verifier notes"))
               .append(": ")
-              .append(String.join("; ", notes.subList(0, Math.min(3, notes.size()))));
+              .append(String.join("; ", shown));
       output.append(builder.toString());
     } catch (Exception ignored) {
       // 校验失败不阻断解说显示
+    }
+  }
+
+  /** 重型校验链：构建 MoveAnalysis → TeachingEvidence → QualityGate（结构化/claim 级核对）。 */
+  private void appendQualityGateNotes(String result, java.util.ArrayList<String> notes) {
+    if (requestTarget == null) {
+      return;
+    }
+    try {
+      MoveAnalysis analysis = TeacherEvidence.moveAnalysis(requestTarget);
+      TeachingEvidenceBuilder.TeachingEvidence evidence =
+          TeachingEvidenceBuilder.buildTeachingEvidence(
+              analysis, "", java.util.List.of(), java.util.List.of(), java.util.List.of());
+      featurecat.lizzie.teacher.analysis.QualityGate.TeacherQualityGateResult gate =
+          featurecat.lizzie.teacher.analysis.QualityGate.runTeacherQualityGate(
+              result, evidence, false);
+      notes.addAll(gate.violations);
+      notes.addAll(gate.warnings);
+      if (gate.note != null && !gate.note.isBlank()) {
+        notes.add(gate.note);
+      }
+    } catch (Exception ignored) {
+      // 重型校验失败不阻断解说显示
     }
   }
 
