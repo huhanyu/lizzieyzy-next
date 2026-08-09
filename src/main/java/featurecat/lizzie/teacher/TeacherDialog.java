@@ -27,9 +27,12 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
-import javax.swing.JTextArea;
+import javax.swing.JEditorPane;
+import javax.swing.text.html.HTMLEditorKit;
+import javax.swing.text.html.StyleSheet;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
+import javax.swing.JProgressBar;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -46,7 +49,8 @@ public final class TeacherDialog extends JDialog {
   private final ConcurrentLinkedQueue<String> pendingText = new ConcurrentLinkedQueue<>();
   private final Timer textFlushTimer;
 
-  private final JTextArea output = new JTextArea();
+  private final JEditorPane output = new JEditorPane();
+  private final StringBuilder rawOutput = new StringBuilder();
   private final JLabel status = new JLabel(" ");
   private final JLabel modelStatus = new JLabel(" ", SwingConstants.RIGHT);
   private final JButton explainNext =
@@ -65,6 +69,7 @@ public final class TeacherDialog extends JDialog {
   private final JTextField followUp = new JTextField();
   private final JSpinner rangeStart = new JSpinner();
   private final JSpinner rangeEnd = new JSpinner();
+  private final JProgressBar progressBar = new JProgressBar();
 
   private BoardHistoryNode requestTarget;
   private List<TeacherLlmClient.Message> lastEvidenceContext = List.of();
@@ -172,10 +177,20 @@ public final class TeacherDialog extends JDialog {
     header.add(actions, BorderLayout.SOUTH);
     content.add(header, BorderLayout.NORTH);
 
+    output.setContentType("text/html");
     output.setEditable(false);
-    output.setLineWrap(true);
-    output.setWrapStyleWord(true);
-    output.setMargin(new Insets(14, 14, 14, 14));
+    output.putClientProperty(javax.swing.JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+    HTMLEditorKit kit = new HTMLEditorKit();
+    StyleSheet style = kit.getStyleSheet();
+    style.addRule("body { font-family: 'Yu Gothic UI', 'Segoe UI', sans-serif; font-size: 14px; margin: 14px; line-height: 1.6; color: #222; }");
+    style.addRule("h3 { color: #1a1a1a; margin: 12px 0 4px 0; }");
+    style.addRule("b { color: #0055aa; }");
+    style.addRule("code { background: #f0f0f0; padding: 1px 4px; font-family: Consolas, monospace; }");
+    style.addRule("pre { background: #f5f5f5; padding: 8px; border: 1px solid #ddd; font-family: Consolas, monospace; }");
+    style.addRule("ul { margin: 4px 0; padding-left: 20px; }");
+    style.addRule(".verifier { color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 8px; margin-top: 12px; }");
+    output.setEditorKit(kit);
+    output.setText("<html><body></body></html>");
     output
         .getAccessibleContext()
         .setAccessibleName(TeacherStrings.get("Teacher.output", "AI commentary result"));
@@ -203,9 +218,14 @@ public final class TeacherDialog extends JDialog {
     followUpRow.add(ask, BorderLayout.EAST);
 
     JPanel footer = new JPanel(new BorderLayout(0, 8));
-    footer.add(statusRow, BorderLayout.NORTH);
-    footer.add(followUpRow, BorderLayout.CENTER);
-    footer.add(writeToSgf, BorderLayout.SOUTH);
+    progressBar.setIndeterminate(true);
+    progressBar.setVisible(false);
+    JPanel bottomPanel = new JPanel(new java.awt.BorderLayout(0, 4));
+    bottomPanel.add(followUpRow, java.awt.BorderLayout.NORTH);
+    bottomPanel.add(writeToSgf, java.awt.BorderLayout.SOUTH);
+    footer.add(statusRow, java.awt.BorderLayout.NORTH);
+    footer.add(progressBar, java.awt.BorderLayout.CENTER);
+    footer.add(bottomPanel, java.awt.BorderLayout.SOUTH);
     content.add(footer, BorderLayout.SOUTH);
 
     explainNext.addActionListener(event -> explainNextMove());
@@ -247,7 +267,9 @@ public final class TeacherDialog extends JDialog {
     if (!requests.isRunning() && saved.isPresent()) {
       lastEvidenceContext = List.of();
       lastEvidencePositions = List.of();
-      output.setText(saved.get());
+      rawOutput.setLength(0);
+      rawOutput.append(saved.get());
+      output.setText(markdownToHtml(rawOutput.toString()));
       output.setCaretPosition(0);
       setStatus(
           TeacherStrings.get(
@@ -338,6 +360,14 @@ public final class TeacherDialog extends JDialog {
             TeacherStrings.locale(),
             settings.snapshot());
     lastEvidencePositions = evidence.positions;
+    setStatus(
+        TeacherStrings.format(
+            "Teacher.status.evidenceReady",
+            "{0} key positions selected ({1} analyzed, {2} omitted).",
+            evidence.positions.size(),
+            evidence.analyzedPositions,
+            evidence.omittedPositions));
+    progressBar.setVisible(true);
     startRequest(lastEvidenceContext, currentNode());
   }
 
@@ -361,6 +391,14 @@ public final class TeacherDialog extends JDialog {
             TeacherStrings.locale(),
             settings.snapshot());
     lastEvidencePositions = evidence.positions;
+    setStatus(
+        TeacherStrings.format(
+            "Teacher.status.evidenceReady",
+            "{0} key positions selected ({1} analyzed, {2} omitted).",
+            evidence.positions.size(),
+            evidence.analyzedPositions,
+            evidence.omittedPositions));
+    progressBar.setVisible(true);
     startRequest(lastEvidenceContext, root);
   }
 
@@ -390,7 +428,7 @@ public final class TeacherDialog extends JDialog {
     startRequest(
         TeacherPromptBuilder.forFollowUp(
             lastEvidenceContext,
-            output.getText(),
+            rawOutput.toString(),
             question,
             TeacherStrings.locale(),
             settings.snapshot()),
@@ -409,7 +447,8 @@ public final class TeacherDialog extends JDialog {
     requestTarget = targetNode;
     requestPositions = List.copyOf(lastEvidencePositions);
     pendingText.clear();
-    output.setText("");
+    rawOutput.setLength(0);
+    output.setText("<html><body></body></html>");
     setRunning(true);
     setStatus(TeacherStrings.get("Teacher.status.requesting", "Generating commentary..."));
     requests.start(
@@ -488,7 +527,9 @@ public final class TeacherDialog extends JDialog {
       failRequest(new IllegalStateException("AI service returned an empty response."));
       return;
     }
-    output.setText(result);
+    rawOutput.setLength(0);
+    rawOutput.append(result);
+    output.setText(markdownToHtml(result));
     output.setCaretPosition(0);
     appendVerifierNotes(result);
     if (writeToSgf.isSelected() && requestTarget != null && requestTarget.getData() != null) {
@@ -505,6 +546,7 @@ public final class TeacherDialog extends JDialog {
       setStatus(TeacherStrings.get("Teacher.status.completed", "Commentary completed."));
     }
     setRunning(false);
+    progressBar.setVisible(false);
   }
 
   /** 防编造校验：轻量 TeacherVerifier + 重型 QualityGate（claim 级核对），附到输出末尾（不阻断显示）。 */
@@ -529,7 +571,8 @@ public final class TeacherDialog extends JDialog {
               .append(TeacherStrings.get("Teacher.verify.note", "Verifier notes"))
               .append(": ")
               .append(String.join("; ", shown));
-      output.append(builder.toString());
+      rawOutput.append(builder);
+      output.setText(markdownToHtml(rawOutput.toString()));
     } catch (Exception ignored) {
       // 校验失败不阻断解说显示
     }
@@ -564,12 +607,14 @@ public final class TeacherDialog extends JDialog {
         TeacherStrings.format(
             "Teacher.status.failed", "Commentary failed: {0}", localError(error)));
     setRunning(false);
+    progressBar.setVisible(false);
   }
 
   private void cancelledRequest() {
     flushPendingText();
     setStatus(TeacherStrings.get("Teacher.status.cancelled", "Commentary stopped."));
     setRunning(false);
+    progressBar.setVisible(false);
   }
 
   private void stopRequest() {
@@ -587,7 +632,8 @@ public final class TeacherDialog extends JDialog {
       addition.append(text);
     }
     if (addition.length() > 0) {
-      output.append(addition.toString());
+      rawOutput.append(addition);
+      output.setText(markdownToHtml(rawOutput.toString()));
       output.setCaretPosition(output.getDocument().getLength());
     }
   }
@@ -669,5 +715,44 @@ public final class TeacherDialog extends JDialog {
   private static Color borderColor() {
     Color color = UIManager.getColor("Separator.foreground");
     return color == null ? new Color(190, 190, 190) : color;
+  }
+
+  private static String markdownToHtml(String md) {
+    if (md == null || md.isEmpty()) return "<html><body></body></html>";
+    StringBuilder html = new StringBuilder("<html><body>");
+    for (String line : md.split("\n")) {
+      if (line.startsWith("### ")) {
+        html.append("<h3>").append(escapeHtml(line.substring(4))).append("</h3>");
+      } else if (line.startsWith("## ")) {
+        html.append("<h3>").append(escapeHtml(line.substring(3))).append("</h3>");
+      } else if (line.startsWith("# ")) {
+        html.append("<h3>").append(escapeHtml(line.substring(2))).append("</h3>");
+      } else if (line.startsWith("> ")) {
+        html.append("<div class=\"verifier\">").append(escapeHtml(line.substring(2))).append("</div>");
+      } else if (line.startsWith("- ") || line.startsWith("* ")) {
+        html.append("<li>").append(inlineMarkdown(line.substring(2))).append("</li>");
+      } else if (line.matches("\\d+\\. .*")) {
+        int dot = line.indexOf('.');
+        html.append("<li>").append(inlineMarkdown(line.substring(dot + 2))).append("</li>");
+      } else if (line.trim().isEmpty()) {
+        html.append("<br>");
+      } else {
+        html.append(inlineMarkdown(line)).append("<br>");
+      }
+    }
+    html.append("</body></html>");
+    return html.toString();
+  }
+
+  private static String inlineMarkdown(String text) {
+    String result = escapeHtml(text);
+    result = result.replaceAll("\\*\\*(.+?)\\*\\*", "<b>$1</b>");
+    result = result.replaceAll("\\*(.+?)\\*", "<i>$1</i>");
+    result = result.replaceAll("`(.+?)`", "<code>$1</code>");
+    return result;
+  }
+
+  private static String escapeHtml(String text) {
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 }

@@ -80,25 +80,32 @@ final class TeacherPromptBuilder {
 
   static String formatPosition(TeacherEvidence.Position position) {
     StringBuilder text = new StringBuilder();
-    text.append("Position after move ").append(position.moveNumber).append('\n');
-    text.append("Side to play: ").append(position.toPlay).append('\n');
-    text.append("Root visits: ").append(position.playouts).append('\n');
-    text.append("Actual next move: ")
-        .append(position.actualMove.isEmpty() ? "not available" : position.actualMove)
+    text.append(TeacherStrings.format("Teacher.prompt.positionAfter", "Position after move {0}", position.moveNumber)).append('\n');
+    text.append(TeacherStrings.format("Teacher.prompt.sideToPlay", "Side to play: {0}", position.toPlay)).append('\n');
+    text.append(TeacherStrings.format("Teacher.prompt.rootVisits", "Root visits: {0}", position.playouts)).append('\n');
+    text.append(TeacherStrings.format(
+            "Teacher.prompt.actualMove",
+            "Actual next move: {0}",
+            position.actualMove.isEmpty()
+                ? TeacherStrings.get("Teacher.prompt.notAvailable", "not available")
+                : position.actualMove))
         .append('\n');
     if (position.actualWinrateLoss.isPresent()) {
-      text.append("Actual move winrate loss versus top candidate: ")
-          .append(format(position.actualWinrateLoss.getAsDouble()))
-          .append(" percentage points\n");
+      text.append(TeacherStrings.format(
+              "Teacher.prompt.winrateLoss",
+              "Actual move winrate loss versus top candidate: {0} percentage points",
+              format(position.actualWinrateLoss.getAsDouble())))
+          .append("\n");
     }
     if (!position.playedContinuation.isEmpty()) {
-      text.append("Played continuation: ")
-          .append(String.join(" ", position.playedContinuation))
+      text.append(TeacherStrings.format(
+              "Teacher.prompt.playedContinuation",
+              "Played continuation: {0}",
+              String.join(" ", position.playedContinuation)))
           .append('\n');
     }
     for (TeacherEvidence.Candidate candidate : position.candidates) {
-      text.append("Candidate #")
-          .append(candidate.rank)
+      text.append(TeacherStrings.format("Teacher.prompt.candidateRank", "Candidate #{0}", candidate.rank))
           .append(": move=")
           .append(candidate.coordinate)
           .append(", visits=")
@@ -112,12 +119,14 @@ final class TeacherPromptBuilder {
       if (!candidate.variation.isEmpty()) {
         text.append(", pv=");
         boolean black = "B".equals(position.toPlay);
+        String blackLabel = TeacherStrings.get("Teacher.prompt.black", "(B)");
+        String whiteLabel = TeacherStrings.get("Teacher.prompt.white", "(W)");
         for (int index = 0; index < candidate.variation.size(); index++) {
           String variationMove = candidate.variation.get(index);
           if (index > 0) {
             text.append(' ');
           }
-          text.append(variationMove).append(black ? "(B)" : "(W)");
+          text.append(variationMove).append(black ? blackLabel : whiteLabel);
           black = !black;
         }
       }
@@ -129,9 +138,11 @@ final class TeacherPromptBuilder {
                 candidate ->
                     candidate.coordinate != null
                         && candidate.coordinate.equalsIgnoreCase(position.actualMove))) {
-      text.append("Note: the played move ")
-          .append(position.actualMove)
-          .append(" is NOT among the top candidates above; compare it against the list.\n");
+      text.append(TeacherStrings.format(
+              "Teacher.prompt.notInCandidates",
+              "Note: the played move {0} is NOT among the top candidates above; compare it against the list.",
+              position.actualMove))
+          .append("\n");
     }
     return text.toString();
   }
@@ -246,21 +257,25 @@ final class TeacherPromptBuilder {
   private static String modeInstruction(Mode mode) {
     switch (mode) {
       case RANGE:
-        return "Review the selected move range. Focus on the most important turning points, "
+        return TeacherStrings.get("Teacher.prompt.modeRange",
+            "Review the selected move range. Focus on the most important turning points, "
             + "compare the actual move with KataGo's candidates, follow only the supplied PVs, "
-            + "and finish with three actionable lessons.";
+            + "and finish with three actionable lessons.");
       case WHOLE_GAME:
-        return "Review the whole game from the selected key positions. Give a short overview, "
+        return TeacherStrings.get("Teacher.prompt.modeWhole",
+            "Review the whole game from the selected key positions. Give a short overview, "
             + "the decisive turning points in chronological order, and three actionable lessons. "
-            + "Do not pretend that omitted positions were analyzed.";
+            + "Do not pretend that omitted positions were analyzed.");
       case FOLLOW_UP:
-        return "Answer the follow-up using the same evidence. If the question needs information "
-            + "that is not present, explain what additional KataGo analysis is required.";
+        return TeacherStrings.get("Teacher.prompt.modeFollowUp",
+            "Answer the follow-up using the same evidence. If the question needs information "
+            + "that is not present, explain what additional KataGo analysis is required.");
       case NEXT_MOVE:
       default:
-        return "Explain the actual next move when available and compare it with KataGo's top "
+        return TeacherStrings.get("Teacher.prompt.modeNextMove",
+            "Explain the actual next move when available and compare it with KataGo's top "
             + "three candidates. Follow each supplied PV move by move, then give one practical "
-            + "principle. If there is no actual next move, explain only the candidates.";
+            + "principle. If there is no actual next move, explain only the candidates.");
     }
   }
 

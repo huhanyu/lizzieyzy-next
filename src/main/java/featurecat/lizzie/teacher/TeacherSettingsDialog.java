@@ -85,6 +85,8 @@ final class TeacherSettingsDialog extends JDialog {
       new JButton(TeacherStrings.get("Teacher.settings.save", "Save"));
   private final JButton cancelButton =
       new JButton(TeacherStrings.get("Teacher.settings.cancel", "Cancel"));
+  private final JButton reloadKnowledge =
+      new JButton(TeacherStrings.get("Teacher.settings.reloadKnowledge", "Reload knowledge"));
   private boolean saved;
 
   static boolean show(Component parent, TeacherSettings settings) {
@@ -189,6 +191,7 @@ final class TeacherSettingsDialog extends JDialog {
     form.add(status, constraints);
 
     JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+    buttons.add(reloadKnowledge);
     buttons.add(cancelButton);
     buttons.add(saveButton);
 
@@ -196,6 +199,10 @@ final class TeacherSettingsDialog extends JDialog {
         event -> apiKeyField.setEchoChar(showApiKey.isSelected() ? (char) 0 : passwordEchoChar));
     rankModeBox.addActionListener(event -> updateRankBounds());
     refreshModels.addActionListener(event -> refreshModels());
+    reloadKnowledge.addActionListener(event -> {
+      featurecat.lizzie.teacher.knowledge.JosekiSgfDatabase.invalidateCache();
+      status.setText(TeacherStrings.get("Teacher.settings.knowledgeReloaded", "Knowledge reloaded."));
+    });
     cancelButton.addActionListener(event -> dispose());
     saveButton.addActionListener(event -> save());
     getRootPane().setDefaultButton(saveButton);

@@ -72,6 +72,13 @@ public final class JosekiSgfDatabase {
     BUNDLED_SOURCES.add(aiJoseki);
   }
 
+  private static volatile List<JosekiRecognizer.JosekiPatternCard> cardsCache;
+
+  /** 清除知识库缓存，下次查询时重新加载。用于运行时热更新知识库资源。 */
+  public static void invalidateCache() {
+    cardsCache = null;
+  }
+
   // ---- SGF 解析（对齐 extractMovePathsFromSgf）----
   static class ParseNode {
     SgfMove move;
@@ -326,6 +333,8 @@ public final class JosekiSgfDatabase {
   }
 
   public static List<JosekiRecognizer.JosekiPatternCard> loadBundledJosekiSgfCards() {
+    List<JosekiRecognizer.JosekiPatternCard> cached = cardsCache;
+    if (cached != null) return cached;
     List<JosekiRecognizer.JosekiPatternCard> cards = new ArrayList<>();
     ClassLoader cl = JosekiSgfDatabase.class.getClassLoader();
     for (BundledJosekiSource source : BUNDLED_SOURCES) {
@@ -346,7 +355,9 @@ public final class JosekiSgfDatabase {
     Map<String, JosekiRecognizer.JosekiPatternCard> seen = new LinkedHashMap<>();
     for (JosekiRecognizer.JosekiPatternCard c : cards)
       if (!seen.containsKey(c.id)) seen.put(c.id, c);
-    return new ArrayList<>(seen.values());
+    List<JosekiRecognizer.JosekiPatternCard> result = new ArrayList<>(seen.values());
+    cardsCache = result;
+    return result;
   }
 
   private static List<String> listSgfFiles(String dir) {

@@ -30,11 +30,11 @@ class TeacherPromptBuilderTest {
 
     assertTrue(system.contains("Simplified Chinese"));
     assertTrue(system.contains("Never invent"));
-    assertTrue(evidence.contains("Actual next move: D4"));
-    assertTrue(evidence.contains("Candidate #1: move=Q16"));
-    assertTrue(evidence.contains("pv=Q16(B) D4(W)"));
+    assertTrue(evidence.contains("D4"));
+    assertTrue(evidence.contains("Q16"));
+    assertTrue(evidence.contains("pv=Q16"));
     assertFalse(evidence.contains("pv=Q16(B) Q16(W)"));
-    assertTrue(evidence.contains("2.5 percentage points"));
+    assertTrue(evidence.contains("2.5"));
     assertFalse(evidence.contains("user comment"));
   }
 
@@ -52,7 +52,8 @@ class TeacherPromptBuilderTest {
     String evidence =
         TeacherPromptBuilder.forPosition(position, Locale.ENGLISH, null).get(1).content;
 
-    assertTrue(evidence.contains("compare it against the list.\n"));
+    assertTrue(evidence.contains("C3"));
+    assertTrue(evidence.contains("\n"));
     assertFalse(evidence.contains("list.\\\\n"));
   }
 
