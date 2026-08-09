@@ -75,7 +75,7 @@ public final class JosekiSgfDatabase {
   private static volatile List<JosekiRecognizer.JosekiPatternCard> cardsCache;
 
   /** 清除知识库缓存，下次查询时重新加载。用于运行时热更新知识库资源。 */
-  public static void invalidateCache() {
+  public static synchronized void invalidateCache() {
     cardsCache = null;
   }
 
@@ -332,7 +332,7 @@ public final class JosekiSgfDatabase {
     return sb.toString();
   }
 
-  public static List<JosekiRecognizer.JosekiPatternCard> loadBundledJosekiSgfCards() {
+  public static synchronized List<JosekiRecognizer.JosekiPatternCard> loadBundledJosekiSgfCards() {
     List<JosekiRecognizer.JosekiPatternCard> cached = cardsCache;
     if (cached != null) return cached;
     List<JosekiRecognizer.JosekiPatternCard> cards = new ArrayList<>();
@@ -355,7 +355,7 @@ public final class JosekiSgfDatabase {
     Map<String, JosekiRecognizer.JosekiPatternCard> seen = new LinkedHashMap<>();
     for (JosekiRecognizer.JosekiPatternCard c : cards)
       if (!seen.containsKey(c.id)) seen.put(c.id, c);
-    List<JosekiRecognizer.JosekiPatternCard> result = new ArrayList<>(seen.values());
+    List<JosekiRecognizer.JosekiPatternCard> result = List.copyOf(seen.values());
     cardsCache = result;
     return result;
   }

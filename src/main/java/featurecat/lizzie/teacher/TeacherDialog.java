@@ -23,22 +23,22 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
+import javax.swing.JEditorPane;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
-import javax.swing.JEditorPane;
-import javax.swing.text.html.HTMLEditorKit;
-import javax.swing.text.html.StyleSheet;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
-import javax.swing.JProgressBar;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.UIManager;
+import javax.swing.text.html.HTMLEditorKit;
+import javax.swing.text.html.StyleSheet;
 
 /** Non-modal AI commentary window backed only by existing KataGo analysis evidence. */
 public final class TeacherDialog extends JDialog {
@@ -105,9 +105,8 @@ public final class TeacherDialog extends JDialog {
             KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
             JComponent.WHEN_IN_FOCUSED_WINDOW);
 
-    textFlushTimer = new Timer(60, event -> flushPendingText());
-    textFlushTimer.setRepeats(true);
-    textFlushTimer.start();
+    textFlushTimer = new Timer(140, event -> flushPendingText());
+    textFlushTimer.setRepeats(false);
 
     addWindowListener(
         new WindowAdapter() {
@@ -179,16 +178,45 @@ public final class TeacherDialog extends JDialog {
 
     output.setContentType("text/html");
     output.setEditable(false);
-    output.putClientProperty(javax.swing.JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+    output.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+    Color outputForeground = uiColor("TextPane.foreground", output.getForeground());
+    Color outputBackground = uiColor("TextPane.background", output.getBackground());
+    Color secondaryBackground = uiColor("TextField.background", outputBackground);
+    output.setForeground(outputForeground);
+    output.setBackground(outputBackground);
     HTMLEditorKit kit = new HTMLEditorKit();
     StyleSheet style = kit.getStyleSheet();
-    style.addRule("body { font-family: 'Yu Gothic UI', 'Segoe UI', sans-serif; font-size: 14px; margin: 14px; line-height: 1.6; color: #222; }");
-    style.addRule("h3 { color: #1a1a1a; margin: 12px 0 4px 0; }");
-    style.addRule("b { color: #0055aa; }");
-    style.addRule("code { background: #f0f0f0; padding: 1px 4px; font-family: Consolas, monospace; }");
-    style.addRule("pre { background: #f5f5f5; padding: 8px; border: 1px solid #ddd; font-family: Consolas, monospace; }");
+    String fontFamily = output.getFont().getFamily().replace("'", "\\'");
+    style.addRule(
+        "body { font-family: '"
+            + fontFamily
+            + "', sans-serif; font-size: 14px; margin: 14px; color: "
+            + cssColor(outputForeground)
+            + "; background-color: "
+            + cssColor(outputBackground)
+            + "; }");
+    style.addRule("h1 { font-size: 22px; margin: 14px 0 6px 0; }");
+    style.addRule("h2 { font-size: 19px; margin: 13px 0 5px 0; }");
+    style.addRule("h3 { font-size: 16px; margin: 12px 0 4px 0; }");
+    style.addRule("b, strong { font-weight: bold; }");
+    style.addRule(
+        "code { background-color: "
+            + cssColor(secondaryBackground)
+            + "; padding: 1px 4px; font-family: monospace; }");
+    style.addRule(
+        "pre { background-color: "
+            + cssColor(secondaryBackground)
+            + "; padding: 8px; border: 1px solid "
+            + cssColor(borderColor())
+            + "; font-family: monospace; }");
     style.addRule("ul { margin: 4px 0; padding-left: 20px; }");
-    style.addRule(".verifier { color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 8px; margin-top: 12px; }");
+    style.addRule("ol { margin: 4px 0; padding-left: 24px; }");
+    style.addRule(
+        "blockquote { color: "
+            + cssColor(mutedText())
+            + "; border-left: 3px solid "
+            + cssColor(borderColor())
+            + "; margin: 8px 0; padding-left: 10px; }");
     output.setEditorKit(kit);
     output.setText("<html><body></body></html>");
     output
@@ -220,6 +248,10 @@ public final class TeacherDialog extends JDialog {
     JPanel footer = new JPanel(new BorderLayout(0, 8));
     progressBar.setIndeterminate(true);
     progressBar.setVisible(false);
+    progressBar
+        .getAccessibleContext()
+        .setAccessibleName(
+            TeacherStrings.get("Teacher.progress.accessible", "Commentary generation progress"));
     JPanel bottomPanel = new JPanel(new java.awt.BorderLayout(0, 4));
     bottomPanel.add(followUpRow, java.awt.BorderLayout.NORTH);
     bottomPanel.add(writeToSgf, java.awt.BorderLayout.SOUTH);
@@ -360,15 +392,15 @@ public final class TeacherDialog extends JDialog {
             TeacherStrings.locale(),
             settings.snapshot());
     lastEvidencePositions = evidence.positions;
-    setStatus(
+    startRequest(
+        lastEvidenceContext,
+        currentNode(),
         TeacherStrings.format(
             "Teacher.status.evidenceReady",
-            "{0} key positions selected ({1} analyzed, {2} omitted).",
+            "{0} key positions selected ({1} analyzed, {2} omitted). Generating commentary...",
             evidence.positions.size(),
             evidence.analyzedPositions,
             evidence.omittedPositions));
-    progressBar.setVisible(true);
-    startRequest(lastEvidenceContext, currentNode());
   }
 
   private void explainWholeGame() {
@@ -391,15 +423,15 @@ public final class TeacherDialog extends JDialog {
             TeacherStrings.locale(),
             settings.snapshot());
     lastEvidencePositions = evidence.positions;
-    setStatus(
+    startRequest(
+        lastEvidenceContext,
+        root,
         TeacherStrings.format(
             "Teacher.status.evidenceReady",
-            "{0} key positions selected ({1} analyzed, {2} omitted).",
+            "{0} key positions selected ({1} analyzed, {2} omitted). Generating commentary...",
             evidence.positions.size(),
             evidence.analyzedPositions,
             evidence.omittedPositions));
-    progressBar.setVisible(true);
-    startRequest(lastEvidenceContext, root);
   }
 
   private void askFollowUp() {
@@ -437,6 +469,14 @@ public final class TeacherDialog extends JDialog {
   }
 
   private void startRequest(List<TeacherLlmClient.Message> messages, BoardHistoryNode targetNode) {
+    startRequest(
+        messages,
+        targetNode,
+        TeacherStrings.get("Teacher.status.requesting", "Generating commentary..."));
+  }
+
+  private void startRequest(
+      List<TeacherLlmClient.Message> messages, BoardHistoryNode targetNode, String runningStatus) {
     messages = appendKnowledge(messages, targetNode);
     TeacherLlmClient client = configuredClient();
     if (client == null) {
@@ -450,14 +490,14 @@ public final class TeacherDialog extends JDialog {
     rawOutput.setLength(0);
     output.setText("<html><body></body></html>");
     setRunning(true);
-    setStatus(TeacherStrings.get("Teacher.status.requesting", "Generating commentary..."));
+    setStatus(runningStatus);
     requests.start(
         client,
         messages,
         new TeacherRequestController.Listener() {
           @Override
           public void onText(String text) {
-            pendingText.add(text);
+            queuePendingText(text);
           }
 
           @Override
@@ -546,7 +586,6 @@ public final class TeacherDialog extends JDialog {
       setStatus(TeacherStrings.get("Teacher.status.completed", "Commentary completed."));
     }
     setRunning(false);
-    progressBar.setVisible(false);
   }
 
   /** 防编造校验：轻量 TeacherVerifier + 重型 QualityGate（claim 级核对），附到输出末尾（不阻断显示）。 */
@@ -607,14 +646,12 @@ public final class TeacherDialog extends JDialog {
         TeacherStrings.format(
             "Teacher.status.failed", "Commentary failed: {0}", localError(error)));
     setRunning(false);
-    progressBar.setVisible(false);
   }
 
   private void cancelledRequest() {
     flushPendingText();
     setStatus(TeacherStrings.get("Teacher.status.cancelled", "Commentary stopped."));
     setRunning(false);
-    progressBar.setVisible(false);
   }
 
   private void stopRequest() {
@@ -640,7 +677,24 @@ public final class TeacherDialog extends JDialog {
 
   private void setRunning(boolean running) {
     requestRunning = running;
+    progressBar.setVisible(running);
+    if (!running) {
+      textFlushTimer.stop();
+    }
     updateControlState();
+  }
+
+  private void queuePendingText(String text) {
+    if (text == null || text.isEmpty()) {
+      return;
+    }
+    pendingText.add(text);
+    SwingUtilities.invokeLater(
+        () -> {
+          if (isDisplayable() && requestRunning && !textFlushTimer.isRunning()) {
+            textFlushTimer.start();
+          }
+        });
   }
 
   private void updateControlState() {
@@ -717,42 +771,154 @@ public final class TeacherDialog extends JDialog {
     return color == null ? new Color(190, 190, 190) : color;
   }
 
-  private static String markdownToHtml(String md) {
-    if (md == null || md.isEmpty()) return "<html><body></body></html>";
+  static String markdownToHtml(String markdown) {
+    if (markdown == null || markdown.isEmpty()) {
+      return "<html><body></body></html>";
+    }
+    String normalized = markdown.replace("\r\n", "\n").replace('\r', '\n');
     StringBuilder html = new StringBuilder("<html><body>");
-    for (String line : md.split("\n")) {
-      if (line.startsWith("### ")) {
-        html.append("<h3>").append(escapeHtml(line.substring(4))).append("</h3>");
-      } else if (line.startsWith("## ")) {
-        html.append("<h3>").append(escapeHtml(line.substring(3))).append("</h3>");
-      } else if (line.startsWith("# ")) {
-        html.append("<h3>").append(escapeHtml(line.substring(2))).append("</h3>");
-      } else if (line.startsWith("> ")) {
-        html.append("<div class=\"verifier\">").append(escapeHtml(line.substring(2))).append("</div>");
-      } else if (line.startsWith("- ") || line.startsWith("* ")) {
-        html.append("<li>").append(inlineMarkdown(line.substring(2))).append("</li>");
-      } else if (line.matches("\\d+\\. .*")) {
-        int dot = line.indexOf('.');
-        html.append("<li>").append(inlineMarkdown(line.substring(dot + 2))).append("</li>");
-      } else if (line.trim().isEmpty()) {
-        html.append("<br>");
-      } else {
-        html.append(inlineMarkdown(line)).append("<br>");
+    String openList = null;
+    boolean inCodeBlock = false;
+    for (String line : normalized.split("\n", -1)) {
+      if (line.startsWith("```")) {
+        openList = closeList(html, openList);
+        if (inCodeBlock) {
+          html.append("</code></pre>");
+        } else {
+          html.append("<pre><code>");
+        }
+        inCodeBlock = !inCodeBlock;
+        continue;
       }
+      if (inCodeBlock) {
+        appendEscaped(html, line);
+        html.append('\n');
+        continue;
+      }
+      boolean unordered = line.startsWith("- ") || line.startsWith("* ");
+      boolean ordered = line.matches("\\d+\\.\\s+.*");
+      if (unordered || ordered) {
+        String listType = unordered ? "ul" : "ol";
+        if (!listType.equals(openList)) {
+          openList = closeList(html, openList);
+          html.append('<').append(listType).append('>');
+          openList = listType;
+        }
+        int contentStart = unordered ? 2 : line.indexOf('.') + 1;
+        while (contentStart < line.length() && Character.isWhitespace(line.charAt(contentStart))) {
+          contentStart++;
+        }
+        html.append("<li>").append(inlineMarkdown(line.substring(contentStart))).append("</li>");
+        continue;
+      }
+      openList = closeList(html, openList);
+      if (line.startsWith("### ")) {
+        html.append("<h3>").append(inlineMarkdown(line.substring(4))).append("</h3>");
+      } else if (line.startsWith("## ")) {
+        html.append("<h2>").append(inlineMarkdown(line.substring(3))).append("</h2>");
+      } else if (line.startsWith("# ")) {
+        html.append("<h1>").append(inlineMarkdown(line.substring(2))).append("</h1>");
+      } else if (line.startsWith("> ")) {
+        html.append("<blockquote>")
+            .append(inlineMarkdown(line.substring(2)))
+            .append("</blockquote>");
+      } else if (line.trim().isEmpty()) {
+        html.append("<div>&nbsp;</div>");
+      } else {
+        html.append("<div>").append(inlineMarkdown(line)).append("</div>");
+      }
+    }
+    closeList(html, openList);
+    if (inCodeBlock) {
+      html.append("</code></pre>");
     }
     html.append("</body></html>");
     return html.toString();
   }
 
   private static String inlineMarkdown(String text) {
-    String result = escapeHtml(text);
-    result = result.replaceAll("\\*\\*(.+?)\\*\\*", "<b>$1</b>");
-    result = result.replaceAll("\\*(.+?)\\*", "<i>$1</i>");
-    result = result.replaceAll("`(.+?)`", "<code>$1</code>");
-    return result;
+    StringBuilder html = new StringBuilder();
+    int index = 0;
+    while (index < text.length()) {
+      if (text.charAt(index) == '`') {
+        int end = text.indexOf('`', index + 1);
+        if (end > index + 1) {
+          html.append("<code>");
+          appendEscaped(html, text.substring(index + 1, end));
+          html.append("</code>");
+          index = end + 1;
+          continue;
+        }
+      }
+      if (text.startsWith("**", index)) {
+        int end = text.indexOf("**", index + 2);
+        if (end > index + 2) {
+          html.append("<strong>");
+          appendEscaped(html, text.substring(index + 2, end));
+          html.append("</strong>");
+          index = end + 2;
+          continue;
+        }
+      }
+      if (text.charAt(index) == '*') {
+        int end = text.indexOf('*', index + 1);
+        if (end > index + 1) {
+          html.append("<em>");
+          appendEscaped(html, text.substring(index + 1, end));
+          html.append("</em>");
+          index = end + 1;
+          continue;
+        }
+      }
+      appendEscaped(html, text.charAt(index));
+      index++;
+    }
+    return html.toString();
   }
 
-  private static String escapeHtml(String text) {
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  private static String closeList(StringBuilder html, String openList) {
+    if (openList != null) {
+      html.append("</").append(openList).append('>');
+    }
+    return null;
+  }
+
+  private static void appendEscaped(StringBuilder html, String text) {
+    for (int index = 0; index < text.length(); index++) {
+      appendEscaped(html, text.charAt(index));
+    }
+  }
+
+  private static void appendEscaped(StringBuilder html, char character) {
+    switch (character) {
+      case '&':
+        html.append("&amp;");
+        break;
+      case '<':
+        html.append("&lt;");
+        break;
+      case '>':
+        html.append("&gt;");
+        break;
+      case '"':
+        html.append("&quot;");
+        break;
+      case '\'':
+        html.append("&#39;");
+        break;
+      default:
+        html.append(character);
+        break;
+    }
+  }
+
+  private static Color uiColor(String key, Color fallback) {
+    Color color = UIManager.getColor(key);
+    return color == null ? fallback : color;
+  }
+
+  private static String cssColor(Color color) {
+    Color safe = color == null ? Color.BLACK : color;
+    return String.format("#%02x%02x%02x", safe.getRed(), safe.getGreen(), safe.getBlue());
   }
 }

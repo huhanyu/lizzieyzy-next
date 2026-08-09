@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Locale;
 import java.util.OptionalDouble;
+import java.util.ResourceBundle;
 import org.junit.jupiter.api.Test;
 
 class TeacherPromptBuilderTest {
@@ -30,6 +31,7 @@ class TeacherPromptBuilderTest {
 
     assertTrue(system.contains("Simplified Chinese"));
     assertTrue(system.contains("Never invent"));
+    assertTrue(evidence.contains("第 42 手之后的局面"));
     assertTrue(evidence.contains("D4"));
     assertTrue(evidence.contains("Q16"));
     assertTrue(evidence.contains("pv=Q16"));
@@ -52,6 +54,9 @@ class TeacherPromptBuilderTest {
     String evidence =
         TeacherPromptBuilder.forPosition(position, Locale.ENGLISH, null).get(1).content;
 
+    assertTrue(evidence.contains("Position after move 9"));
+    assertTrue(evidence.contains("Actual next move: C3"));
+    assertTrue(evidence.contains("Candidate #1: move=Q16"));
     assertTrue(evidence.contains("C3"));
     assertTrue(evidence.contains("\n"));
     assertFalse(evidence.contains("list.\\\\n"));
@@ -72,5 +77,31 @@ class TeacherPromptBuilderTest {
     assertEquals("move 12 evidence\nmove 38 evidence", followUp.get(1).content);
     assertEquals("previous answer", followUp.get(2).content);
     assertTrue(followUp.get(3).content.contains("Why was move 12 important?"));
+  }
+
+  @Test
+  void everySupportedLocaleProvidesValidPromptTemplates() {
+    List<Locale> locales =
+        List.of(
+            Locale.ENGLISH,
+            Locale.SIMPLIFIED_CHINESE,
+            Locale.TRADITIONAL_CHINESE,
+            Locale.JAPANESE,
+            Locale.KOREAN,
+            Locale.forLanguageTag("th-TH"));
+
+    for (Locale locale : locales) {
+      ResourceBundle bundle = ResourceBundle.getBundle("l10n.DisplayStrings", locale);
+      assertTrue(bundle.containsKey("Teacher.status.evidenceReady"), locale.toLanguageTag());
+      assertTrue(bundle.containsKey("Teacher.progress.accessible"), locale.toLanguageTag());
+      assertTrue(
+          java.text.MessageFormat.format(bundle.getString("Teacher.prompt.positionAfter"), 42)
+              .contains("42"),
+          locale.toLanguageTag());
+      assertTrue(
+          java.text.MessageFormat.format(bundle.getString("Teacher.prompt.winrateLoss"), "2.5")
+              .contains("2.5"),
+          locale.toLanguageTag());
+    }
   }
 }

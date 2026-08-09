@@ -81,13 +81,17 @@ public final class JsonKnowledgeLoader {
   }
 
   // ---- joseki-pattern-cards.json → JosekiPatternCard ----
-  public static List<JosekiRecognizer.JosekiPatternCard> loadJosekiPatternCards() {
-    return JosekiPatternCardsHolder.CARDS;
+  private static volatile List<JosekiRecognizer.JosekiPatternCard> josekiPatternCardsCache;
+
+  public static synchronized List<JosekiRecognizer.JosekiPatternCard> loadJosekiPatternCards() {
+    if (josekiPatternCardsCache == null) {
+      josekiPatternCardsCache = Collections.unmodifiableList(parseJosekiPatternCards());
+    }
+    return josekiPatternCardsCache;
   }
 
-  private static final class JosekiPatternCardsHolder {
-    private static final List<JosekiRecognizer.JosekiPatternCard> CARDS =
-        Collections.unmodifiableList(parseJosekiPatternCards());
+  static synchronized void invalidateJosekiPatternCardsCache() {
+    josekiPatternCardsCache = null;
   }
 
   private static List<JosekiRecognizer.JosekiPatternCard> parseJosekiPatternCards() {
