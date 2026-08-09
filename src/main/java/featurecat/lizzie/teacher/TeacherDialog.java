@@ -23,11 +23,12 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
+import javax.swing.JEditorPane;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SpinnerNumberModel;
@@ -36,6 +37,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.UIManager;
+import javax.swing.text.html.HTMLEditorKit;
+import javax.swing.text.html.StyleSheet;
 
 /** Non-modal AI commentary window backed only by existing KataGo analysis evidence. */
 public final class TeacherDialog extends JDialog {
@@ -46,7 +49,8 @@ public final class TeacherDialog extends JDialog {
   private final ConcurrentLinkedQueue<String> pendingText = new ConcurrentLinkedQueue<>();
   private final Timer textFlushTimer;
 
-  private final JTextArea output = new JTextArea();
+  private final JEditorPane output = new JEditorPane();
+  private final StringBuilder rawOutput = new StringBuilder();
   private final JLabel status = new JLabel(" ");
   private final JLabel modelStatus = new JLabel(" ", SwingConstants.RIGHT);
   private final JButton explainNext =
@@ -65,6 +69,7 @@ public final class TeacherDialog extends JDialog {
   private final JTextField followUp = new JTextField();
   private final JSpinner rangeStart = new JSpinner();
   private final JSpinner rangeEnd = new JSpinner();
+  private final JProgressBar progressBar = new JProgressBar();
 
   private BoardHistoryNode requestTarget;
   private List<TeacherLlmClient.Message> lastEvidenceContext = List.of();
@@ -100,9 +105,8 @@ public final class TeacherDialog extends JDialog {
             KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
             JComponent.WHEN_IN_FOCUSED_WINDOW);
 
-    textFlushTimer = new Timer(60, event -> flushPendingText());
-    textFlushTimer.setRepeats(true);
-    textFlushTimer.start();
+    textFlushTimer = new Timer(140, event -> flushPendingText());
+    textFlushTimer.setRepeats(false);
 
     addWindowListener(
         new WindowAdapter() {
@@ -172,10 +176,49 @@ public final class TeacherDialog extends JDialog {
     header.add(actions, BorderLayout.SOUTH);
     content.add(header, BorderLayout.NORTH);
 
+    output.setContentType("text/html");
     output.setEditable(false);
-    output.setLineWrap(true);
-    output.setWrapStyleWord(true);
-    output.setMargin(new Insets(14, 14, 14, 14));
+    output.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+    Color outputForeground = uiColor("TextPane.foreground", output.getForeground());
+    Color outputBackground = uiColor("TextPane.background", output.getBackground());
+    Color secondaryBackground = uiColor("TextField.background", outputBackground);
+    output.setForeground(outputForeground);
+    output.setBackground(outputBackground);
+    HTMLEditorKit kit = new HTMLEditorKit();
+    StyleSheet style = kit.getStyleSheet();
+    String fontFamily = output.getFont().getFamily().replace("'", "\\'");
+    style.addRule(
+        "body { font-family: '"
+            + fontFamily
+            + "', sans-serif; font-size: 14px; margin: 14px; color: "
+            + cssColor(outputForeground)
+            + "; background-color: "
+            + cssColor(outputBackground)
+            + "; }");
+    style.addRule("h1 { font-size: 22px; margin: 14px 0 6px 0; }");
+    style.addRule("h2 { font-size: 19px; margin: 13px 0 5px 0; }");
+    style.addRule("h3 { font-size: 16px; margin: 12px 0 4px 0; }");
+    style.addRule("b, strong { font-weight: bold; }");
+    style.addRule(
+        "code { background-color: "
+            + cssColor(secondaryBackground)
+            + "; padding: 1px 4px; font-family: monospace; }");
+    style.addRule(
+        "pre { background-color: "
+            + cssColor(secondaryBackground)
+            + "; padding: 8px; border: 1px solid "
+            + cssColor(borderColor())
+            + "; font-family: monospace; }");
+    style.addRule("ul { margin: 4px 0; padding-left: 20px; }");
+    style.addRule("ol { margin: 4px 0; padding-left: 24px; }");
+    style.addRule(
+        "blockquote { color: "
+            + cssColor(mutedText())
+            + "; border-left: 3px solid "
+            + cssColor(borderColor())
+            + "; margin: 8px 0; padding-left: 10px; }");
+    output.setEditorKit(kit);
+    output.setText("<html><body></body></html>");
     output
         .getAccessibleContext()
         .setAccessibleName(TeacherStrings.get("Teacher.output", "AI commentary result"));
@@ -203,9 +246,18 @@ public final class TeacherDialog extends JDialog {
     followUpRow.add(ask, BorderLayout.EAST);
 
     JPanel footer = new JPanel(new BorderLayout(0, 8));
-    footer.add(statusRow, BorderLayout.NORTH);
-    footer.add(followUpRow, BorderLayout.CENTER);
-    footer.add(writeToSgf, BorderLayout.SOUTH);
+    progressBar.setIndeterminate(true);
+    progressBar.setVisible(false);
+    progressBar
+        .getAccessibleContext()
+        .setAccessibleName(
+            TeacherStrings.get("Teacher.progress.accessible", "Commentary generation progress"));
+    JPanel bottomPanel = new JPanel(new java.awt.BorderLayout(0, 4));
+    bottomPanel.add(followUpRow, java.awt.BorderLayout.NORTH);
+    bottomPanel.add(writeToSgf, java.awt.BorderLayout.SOUTH);
+    footer.add(statusRow, java.awt.BorderLayout.NORTH);
+    footer.add(progressBar, java.awt.BorderLayout.CENTER);
+    footer.add(bottomPanel, java.awt.BorderLayout.SOUTH);
     content.add(footer, BorderLayout.SOUTH);
 
     explainNext.addActionListener(event -> explainNextMove());
@@ -247,7 +299,9 @@ public final class TeacherDialog extends JDialog {
     if (!requests.isRunning() && saved.isPresent()) {
       lastEvidenceContext = List.of();
       lastEvidencePositions = List.of();
-      output.setText(saved.get());
+      rawOutput.setLength(0);
+      rawOutput.append(saved.get());
+      output.setText(markdownToHtml(rawOutput.toString()));
       output.setCaretPosition(0);
       setStatus(
           TeacherStrings.get(
@@ -338,7 +392,15 @@ public final class TeacherDialog extends JDialog {
             TeacherStrings.locale(),
             settings.snapshot());
     lastEvidencePositions = evidence.positions;
-    startRequest(lastEvidenceContext, currentNode());
+    startRequest(
+        lastEvidenceContext,
+        currentNode(),
+        TeacherStrings.format(
+            "Teacher.status.evidenceReady",
+            "{0} key positions selected ({1} analyzed, {2} omitted). Generating commentary...",
+            evidence.positions.size(),
+            evidence.analyzedPositions,
+            evidence.omittedPositions));
   }
 
   private void explainWholeGame() {
@@ -361,7 +423,15 @@ public final class TeacherDialog extends JDialog {
             TeacherStrings.locale(),
             settings.snapshot());
     lastEvidencePositions = evidence.positions;
-    startRequest(lastEvidenceContext, root);
+    startRequest(
+        lastEvidenceContext,
+        root,
+        TeacherStrings.format(
+            "Teacher.status.evidenceReady",
+            "{0} key positions selected ({1} analyzed, {2} omitted). Generating commentary...",
+            evidence.positions.size(),
+            evidence.analyzedPositions,
+            evidence.omittedPositions));
   }
 
   private void askFollowUp() {
@@ -390,7 +460,7 @@ public final class TeacherDialog extends JDialog {
     startRequest(
         TeacherPromptBuilder.forFollowUp(
             lastEvidenceContext,
-            output.getText(),
+            rawOutput.toString(),
             question,
             TeacherStrings.locale(),
             settings.snapshot()),
@@ -399,6 +469,14 @@ public final class TeacherDialog extends JDialog {
   }
 
   private void startRequest(List<TeacherLlmClient.Message> messages, BoardHistoryNode targetNode) {
+    startRequest(
+        messages,
+        targetNode,
+        TeacherStrings.get("Teacher.status.requesting", "Generating commentary..."));
+  }
+
+  private void startRequest(
+      List<TeacherLlmClient.Message> messages, BoardHistoryNode targetNode, String runningStatus) {
     messages = appendKnowledge(messages, targetNode);
     TeacherLlmClient client = configuredClient();
     if (client == null) {
@@ -409,16 +487,17 @@ public final class TeacherDialog extends JDialog {
     requestTarget = targetNode;
     requestPositions = List.copyOf(lastEvidencePositions);
     pendingText.clear();
-    output.setText("");
+    rawOutput.setLength(0);
+    output.setText("<html><body></body></html>");
     setRunning(true);
-    setStatus(TeacherStrings.get("Teacher.status.requesting", "Generating commentary..."));
+    setStatus(runningStatus);
     requests.start(
         client,
         messages,
         new TeacherRequestController.Listener() {
           @Override
           public void onText(String text) {
-            pendingText.add(text);
+            queuePendingText(text);
           }
 
           @Override
@@ -488,7 +567,9 @@ public final class TeacherDialog extends JDialog {
       failRequest(new IllegalStateException("AI service returned an empty response."));
       return;
     }
-    output.setText(result);
+    rawOutput.setLength(0);
+    rawOutput.append(result);
+    output.setText(markdownToHtml(result));
     output.setCaretPosition(0);
     appendVerifierNotes(result);
     if (writeToSgf.isSelected() && requestTarget != null && requestTarget.getData() != null) {
@@ -529,7 +610,8 @@ public final class TeacherDialog extends JDialog {
               .append(TeacherStrings.get("Teacher.verify.note", "Verifier notes"))
               .append(": ")
               .append(String.join("; ", shown));
-      output.append(builder.toString());
+      rawOutput.append(builder);
+      output.setText(markdownToHtml(rawOutput.toString()));
     } catch (Exception ignored) {
       // 校验失败不阻断解说显示
     }
@@ -587,14 +669,32 @@ public final class TeacherDialog extends JDialog {
       addition.append(text);
     }
     if (addition.length() > 0) {
-      output.append(addition.toString());
+      rawOutput.append(addition);
+      output.setText(markdownToHtml(rawOutput.toString()));
       output.setCaretPosition(output.getDocument().getLength());
     }
   }
 
   private void setRunning(boolean running) {
     requestRunning = running;
+    progressBar.setVisible(running);
+    if (!running) {
+      textFlushTimer.stop();
+    }
     updateControlState();
+  }
+
+  private void queuePendingText(String text) {
+    if (text == null || text.isEmpty()) {
+      return;
+    }
+    pendingText.add(text);
+    SwingUtilities.invokeLater(
+        () -> {
+          if (isDisplayable() && requestRunning && !textFlushTimer.isRunning()) {
+            textFlushTimer.start();
+          }
+        });
   }
 
   private void updateControlState() {
@@ -669,5 +769,156 @@ public final class TeacherDialog extends JDialog {
   private static Color borderColor() {
     Color color = UIManager.getColor("Separator.foreground");
     return color == null ? new Color(190, 190, 190) : color;
+  }
+
+  static String markdownToHtml(String markdown) {
+    if (markdown == null || markdown.isEmpty()) {
+      return "<html><body></body></html>";
+    }
+    String normalized = markdown.replace("\r\n", "\n").replace('\r', '\n');
+    StringBuilder html = new StringBuilder("<html><body>");
+    String openList = null;
+    boolean inCodeBlock = false;
+    for (String line : normalized.split("\n", -1)) {
+      if (line.startsWith("```")) {
+        openList = closeList(html, openList);
+        if (inCodeBlock) {
+          html.append("</code></pre>");
+        } else {
+          html.append("<pre><code>");
+        }
+        inCodeBlock = !inCodeBlock;
+        continue;
+      }
+      if (inCodeBlock) {
+        appendEscaped(html, line);
+        html.append('\n');
+        continue;
+      }
+      boolean unordered = line.startsWith("- ") || line.startsWith("* ");
+      boolean ordered = line.matches("\\d+\\.\\s+.*");
+      if (unordered || ordered) {
+        String listType = unordered ? "ul" : "ol";
+        if (!listType.equals(openList)) {
+          openList = closeList(html, openList);
+          html.append('<').append(listType).append('>');
+          openList = listType;
+        }
+        int contentStart = unordered ? 2 : line.indexOf('.') + 1;
+        while (contentStart < line.length() && Character.isWhitespace(line.charAt(contentStart))) {
+          contentStart++;
+        }
+        html.append("<li>").append(inlineMarkdown(line.substring(contentStart))).append("</li>");
+        continue;
+      }
+      openList = closeList(html, openList);
+      if (line.startsWith("### ")) {
+        html.append("<h3>").append(inlineMarkdown(line.substring(4))).append("</h3>");
+      } else if (line.startsWith("## ")) {
+        html.append("<h2>").append(inlineMarkdown(line.substring(3))).append("</h2>");
+      } else if (line.startsWith("# ")) {
+        html.append("<h1>").append(inlineMarkdown(line.substring(2))).append("</h1>");
+      } else if (line.startsWith("> ")) {
+        html.append("<blockquote>")
+            .append(inlineMarkdown(line.substring(2)))
+            .append("</blockquote>");
+      } else if (line.trim().isEmpty()) {
+        html.append("<div>&nbsp;</div>");
+      } else {
+        html.append("<div>").append(inlineMarkdown(line)).append("</div>");
+      }
+    }
+    closeList(html, openList);
+    if (inCodeBlock) {
+      html.append("</code></pre>");
+    }
+    html.append("</body></html>");
+    return html.toString();
+  }
+
+  private static String inlineMarkdown(String text) {
+    StringBuilder html = new StringBuilder();
+    int index = 0;
+    while (index < text.length()) {
+      if (text.charAt(index) == '`') {
+        int end = text.indexOf('`', index + 1);
+        if (end > index + 1) {
+          html.append("<code>");
+          appendEscaped(html, text.substring(index + 1, end));
+          html.append("</code>");
+          index = end + 1;
+          continue;
+        }
+      }
+      if (text.startsWith("**", index)) {
+        int end = text.indexOf("**", index + 2);
+        if (end > index + 2) {
+          html.append("<strong>");
+          appendEscaped(html, text.substring(index + 2, end));
+          html.append("</strong>");
+          index = end + 2;
+          continue;
+        }
+      }
+      if (text.charAt(index) == '*') {
+        int end = text.indexOf('*', index + 1);
+        if (end > index + 1) {
+          html.append("<em>");
+          appendEscaped(html, text.substring(index + 1, end));
+          html.append("</em>");
+          index = end + 1;
+          continue;
+        }
+      }
+      appendEscaped(html, text.charAt(index));
+      index++;
+    }
+    return html.toString();
+  }
+
+  private static String closeList(StringBuilder html, String openList) {
+    if (openList != null) {
+      html.append("</").append(openList).append('>');
+    }
+    return null;
+  }
+
+  private static void appendEscaped(StringBuilder html, String text) {
+    for (int index = 0; index < text.length(); index++) {
+      appendEscaped(html, text.charAt(index));
+    }
+  }
+
+  private static void appendEscaped(StringBuilder html, char character) {
+    switch (character) {
+      case '&':
+        html.append("&amp;");
+        break;
+      case '<':
+        html.append("&lt;");
+        break;
+      case '>':
+        html.append("&gt;");
+        break;
+      case '"':
+        html.append("&quot;");
+        break;
+      case '\'':
+        html.append("&#39;");
+        break;
+      default:
+        html.append(character);
+        break;
+    }
+  }
+
+  private static Color uiColor(String key, Color fallback) {
+    Color color = UIManager.getColor(key);
+    return color == null ? fallback : color;
+  }
+
+  private static String cssColor(Color color) {
+    Color safe = color == null ? Color.BLACK : color;
+    return String.format("#%02x%02x%02x", safe.getRed(), safe.getGreen(), safe.getBlue());
   }
 }
