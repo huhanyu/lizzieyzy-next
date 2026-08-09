@@ -29,20 +29,20 @@ public final class RemoteComputeConfig {
   public static final String PROVIDER_CUSTOM = "custom";
   public static final String PROVIDER_LEGACY_SSH = "legacy-ssh";
   public static final String VIP_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type vip-share --kata-name katago-TENSORRT --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type vip-share --kata-name katago-TENSORRT --kata-weight 10b512t";
   public static final String DEFAULT_ZHIZI_ARGS = VIP_ZHIZI_ARGS;
   public static final String ON_DEMAND_1X_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type 1x --kata-name katago-TENSORRT --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type 1x --kata-name katago-TENSORRT --kata-weight 10b512t";
   public static final String FASTER_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type 3x --kata-name katago-TENSORRT --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type 3x --kata-name katago-TENSORRT --kata-weight 10b512t";
   public static final String FASTEST_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type 6x --kata-name katago-TENSORRT --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type 6x --kata-name katago-TENSORRT --kata-weight 10b512t";
   public static final String TWELVE_X_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type 12x --kata-name katago-TENSORRT --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type 12x --kata-name katago-TENSORRT --kata-weight 10b512t";
   public static final String TWENTY_FOUR_X_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type 24x --kata-name katago-TENSORRT --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type 24x --kata-name katago-TENSORRT --kata-weight 10b512t";
   public static final String QUICK_START_ZHIZI_ARGS =
-      "--platform all --engine-type go --gpu-type 1x --kata-name katago-CUDA --kata-weight 28bnbt";
+      "--platform all --engine-type go --gpu-type 1x --kata-name katago-CUDA --kata-weight 10b512t";
   public static final long ZHIZI_CATALOG_REFRESH_INTERVAL_MILLIS = 6L * 60L * 60L * 1000L;
 
   private static final String LEGACY_TOKEN_KEY = "zhizi-account-token";
@@ -295,7 +295,10 @@ public final class RemoteComputeConfig {
   }
 
   public static boolean shouldRefreshZhiziCatalog(State state, long nowMillis) {
-    if (state == null || state.zhiziCatalogUpdatedAt <= 0L) {
+    if (state == null
+        || state.zhiziCatalog == null
+        || !state.zhiziCatalog.isServerAuthoritative()
+        || state.zhiziCatalogUpdatedAt <= 0L) {
       return true;
     }
     return nowMillis - state.zhiziCatalogUpdatedAt >= ZHIZI_CATALOG_REFRESH_INTERVAL_MILLIS;
@@ -502,11 +505,14 @@ public final class RemoteComputeConfig {
   }
 
   public static String kataWeightForArgs(String args) {
-    return optionValueForArgs(args, "--kata-weight", "28bnbt");
+    return optionValueForArgs(args, "--kata-weight", ZhiziEngineCatalog.DEFAULT_WEIGHT);
   }
 
   public static String withKataWeight(String args, String weight) {
-    String safeWeight = ZhiziEngineCatalog.isSelectableWeight(weight) ? weight.trim() : "28bnbt";
+    String safeWeight =
+        ZhiziEngineCatalog.isSelectableWeight(weight)
+            ? weight.trim()
+            : ZhiziEngineCatalog.DEFAULT_WEIGHT;
     return withOptionValue(
         args == null || args.trim().isEmpty() ? DEFAULT_ZHIZI_ARGS : args,
         "--kata-weight",

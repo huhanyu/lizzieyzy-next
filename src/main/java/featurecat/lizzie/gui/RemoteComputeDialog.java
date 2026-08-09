@@ -162,7 +162,7 @@ public class RemoteComputeDialog extends JDialog {
   private Component resetPasswordRowGap;
   private Component resetConfirmPasswordRowGap;
   private Component fastLoginHintGap;
-  private JLabel loggedInAccountLabel;
+  private JTextArea loggedInAccountLabel;
   private JLabel membershipLabel;
   private JLabel balanceLabel;
   private JLabel accountActivityLabel;
@@ -263,19 +263,13 @@ public class RemoteComputeDialog extends JDialog {
   }
 
   private JPanel buildZhiziPage() {
-    JPanel page = transparent(new GridBagLayout());
-    GridBagConstraints gbc = new GridBagConstraints();
-    gbc.gridy = 0;
-    gbc.fill = GridBagConstraints.BOTH;
-    gbc.weighty = 1;
-    gbc.insets = new Insets(0, 0, 0, 18);
-    gbc.gridx = 0;
-    gbc.weightx = 0.52;
-    page.add(buildZhiziLoginCard(), gbc);
-    gbc.gridx = 1;
-    gbc.weightx = 0.48;
-    gbc.insets = new Insets(0, 0, 0, 0);
-    page.add(buildZhiziActionCard(), gbc);
+    return createTwoColumnPage(buildZhiziLoginCard(), buildZhiziActionCard());
+  }
+
+  static JPanel createTwoColumnPage(JPanel left, JPanel right) {
+    JPanel page = transparent(new GridLayout(1, 2, 18, 0));
+    page.add(left);
+    page.add(right);
     return page;
   }
 
@@ -349,7 +343,7 @@ public class RemoteComputeDialog extends JDialog {
     loggedInPanel.add(loggedInTitle);
     loggedInPanel.add(Box.createVerticalStrut(10));
     loggedInAccountLabel =
-        smallText(
+        wrappedAccountText(
             text(
                 "RemoteCompute.loginSavedNoPassword",
                 "This login is saved. The password is not stored."));
@@ -387,6 +381,7 @@ public class RemoteComputeDialog extends JDialog {
     loggedInPanel.add(fullWidth(paymentButton, 44));
     loggedInPanel.add(Box.createVerticalStrut(10));
     loggedInPanel.add(fullWidth(logoutButton, 48));
+    stretchHorizontally(loggedInPanel);
     loggedInPanel.setVisible(false);
     showAccountLoadingState();
     card.add(loggedInPanel);
@@ -407,20 +402,7 @@ public class RemoteComputeDialog extends JDialog {
   }
 
   private JPanel buildCustomPage() {
-    JPanel page = transparent(new GridBagLayout());
-    GridBagConstraints gbc = new GridBagConstraints();
-    gbc.gridy = 0;
-    gbc.fill = GridBagConstraints.BOTH;
-    gbc.weighty = 1;
-    gbc.insets = new Insets(0, 0, 0, 18);
-    gbc.gridx = 0;
-    gbc.weightx = 0.55;
-    page.add(buildCustomConnectCard(), gbc);
-    gbc.gridx = 1;
-    gbc.weightx = 0.45;
-    gbc.insets = new Insets(0, 0, 0, 0);
-    page.add(buildCustomActionCard(), gbc);
-    return page;
+    return createTwoColumnPage(buildCustomConnectCard(), buildCustomActionCard());
   }
 
   private JPanel buildCustomConnectCard() {
@@ -1073,22 +1055,22 @@ public class RemoteComputeDialog extends JDialog {
 
   private String selectedWeightName() {
     Object selected = weightBox.getSelectedItem();
-    return selected instanceof WeightItem ? ((WeightItem) selected).name : "28bnbt";
+    return selected instanceof WeightItem
+        ? ((WeightItem) selected).name
+        : ZhiziEngineCatalog.DEFAULT_WEIGHT;
   }
 
   private void populateWeightOptions(ZhiziEngineCatalog catalog, String preferredWeight) {
     ZhiziEngineCatalog safeCatalog =
         catalog == null ? ZhiziEngineCatalog.fallback() : catalog.withDocumentedWeights();
-    String preferred =
+    String requested =
         ZhiziEngineCatalog.isSelectableWeight(preferredWeight)
             ? preferredWeight.trim()
             : safeCatalog.defaultWeight();
+    String preferred = safeCatalog.resolveSupportedWeight(requested);
     updatingWeightOptions = true;
     try {
       weightBox.removeAllItems();
-      if (!safeCatalog.containsWeight(preferred)) {
-        weightBox.addItem(WeightItem.preserved(preferred));
-      }
       for (ZhiziEngineCatalog.Option option : safeCatalog.weights()) {
         boolean preferredOption = option.name().equalsIgnoreCase(preferred);
         boolean confirmedOption =
@@ -1165,15 +1147,26 @@ public class RemoteComputeDialog extends JDialog {
             try {
               ZhiziEngineCatalog refreshed = get();
               RemoteComputeConfig.State latest = RemoteComputeConfig.load();
+              boolean retiredSelection = !refreshed.containsWeight(preferredWeight);
+              String resolvedWeight = refreshed.resolveSupportedWeight(preferredWeight);
               latest.zhiziCatalog = refreshed;
               latest.zhiziCatalogUpdatedAt = System.currentTimeMillis();
+              latest.zhiziArgs =
+                  RemoteComputeConfig.withKataWeight(latest.zhiziArgs, resolvedWeight);
               RemoteComputeConfig.save(latest);
-              populateWeightOptions(refreshed, preferredWeight);
+              populateWeightOptions(refreshed, resolvedWeight);
               updateStatus(
-                  format(
-                      "RemoteCompute.status.weightsRefreshed",
-                      "Refreshed {0} models from Zhizi.",
-                      refreshed.weights().size()),
+                  retiredSelection
+                      ? format(
+                          "RemoteCompute.status.weightsRefreshedRetired",
+                          "Refreshed {0} models from Zhizi. {1} is no longer available; switched to {2}.",
+                          refreshed.weights().size(),
+                          preferredWeight,
+                          RemoteComputeConfig.displayNameForZhiziWeight(resolvedWeight))
+                      : format(
+                          "RemoteCompute.status.weightsRefreshed",
+                          "Refreshed {0} models from Zhizi.",
+                          refreshed.weights().size()),
                   true);
             } catch (Exception error) {
               Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -1201,7 +1194,7 @@ public class RemoteComputeDialog extends JDialog {
 
   private void selectOfficialBaseline() {
     for (int i = 0; i < weightBox.getItemCount(); i++) {
-      if ("28bnbt".equalsIgnoreCase(weightBox.getItemAt(i).name)) {
+      if (ZhiziEngineCatalog.DEFAULT_WEIGHT.equalsIgnoreCase(weightBox.getItemAt(i).name)) {
         weightBox.setSelectedIndex(i);
         updateStatus(
             text(
@@ -2215,6 +2208,25 @@ public class RemoteComputeDialog extends JDialog {
     return label;
   }
 
+  private JTextArea wrappedAccountText(String value) {
+    JTextArea area = new JTextArea(value, 2, 28);
+    area.setEditable(false);
+    area.setFocusable(false);
+    area.setOpaque(false);
+    area.setLineWrap(true);
+    area.setWrapStyleWord(true);
+    area.setForeground(MUTED);
+    area.setFont(area.getFont().deriveFont(Font.BOLD, 13F));
+    area.setBorder(null);
+    area.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+    return area;
+  }
+
+  static void stretchHorizontally(JComponent component) {
+    Dimension preferred = component.getPreferredSize();
+    component.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferred.height));
+  }
+
   private JTextArea multilineHint(String value) {
     JTextArea area = new JTextArea(value, 2, 24);
     area.setEditable(false);
@@ -2345,10 +2357,6 @@ public class RemoteComputeDialog extends JDialog {
       this.description = description == null ? "" : description.replaceAll("\\s+", " ").trim();
       this.defaultOption = defaultOption;
       this.source = source == null ? ZhiziEngineCatalog.DiscoverySource.CACHED_LEGACY : source;
-    }
-
-    static WeightItem preserved(String name) {
-      return new WeightItem(name, "", false, ZhiziEngineCatalog.DiscoverySource.USER_PRESERVED);
     }
 
     boolean isConfirmed() {

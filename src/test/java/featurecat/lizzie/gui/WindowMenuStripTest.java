@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.awt.Component;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -15,6 +17,36 @@ import javax.swing.JPopupMenu;
 import org.junit.jupiter.api.Test;
 
 class WindowMenuStripTest {
+  @Test
+  void mirrorsProminentToolbarActionsAndDelegatesClicks() {
+    JMenuBar menuBar = new JMenuBar();
+    menuBar.add(new JMenu("分析"));
+    menuBar.add(Box.createHorizontalStrut(6));
+    JButton sourceButton = new JButton("AI 解说");
+    sourceButton.setName("aiCommentaryToolbarButton");
+    sourceButton.getAccessibleContext().setAccessibleName("AI 解说");
+    sourceButton.getAccessibleContext().setAccessibleDescription("生成当前棋局解说");
+    AtomicInteger invocationCount = new AtomicInteger();
+    sourceButton.addActionListener(event -> invocationCount.incrementAndGet());
+    menuBar.add(sourceButton);
+
+    WindowMenuStrip strip = new WindowMenuStrip(menuBar);
+
+    assertEquals(2, strip.getComponentCount());
+    assertTrue(strip.getComponent(1) instanceof JButton);
+    JButton mirroredButton = (JButton) strip.getComponent(1);
+    assertEquals("AI 解说", mirroredButton.getText());
+    assertEquals("aiCommentaryToolbarButton", mirroredButton.getName());
+    assertEquals("AI 解说", mirroredButton.getAccessibleContext().getAccessibleName());
+    assertEquals(
+        "生成当前棋局解说",
+        mirroredButton.getAccessibleContext().getAccessibleDescription());
+
+    mirroredButton.doClick(0);
+
+    assertEquals(1, invocationCount.get());
+  }
+
   @Test
   void mirrorsSourceMenuTextAndEnabledStateWithoutRebuild() {
     JMenuBar menuBar = new JMenuBar();

@@ -2801,7 +2801,15 @@ class EngineManagerLifecycleReservationTest {
     RestartIndexLeelaz unrelated = new RestartIndexLeelaz("unrelated");
     try (RestartIndexTestEnvironment environment =
         new RestartIndexTestEnvironment(List.of(shared, unrelated), 0, 0)) {
-      environment.manager.reStartEngine();
+      // This path stops before any frame interaction. Avoid showing a real modal dialog from the
+      // Unsafe-allocated test frame, which is not a fully initialized AWT Window on Windows.
+      LizzieFrame testFrame = Lizzie.frame;
+      Lizzie.frame = null;
+      try {
+        environment.manager.reStartEngine();
+      } finally {
+        Lizzie.frame = testFrame;
+      }
 
       assertEquals(0, shared.shutdownCount);
       assertEquals(0, unrelated.shutdownCount);
@@ -3757,7 +3765,7 @@ class EngineManagerLifecycleReservationTest {
     private final UpdateForegroundLeelaz previousForegroundEngine;
     private final UpdateBoard board;
     private final EngineManager manager;
-    private final Path commandScript;
+    private final String commandPrefix;
     private final Path commandLog;
     private final Path startupGate;
     private final Path loadSgfFailure;
@@ -3769,14 +3777,12 @@ class EngineManagerLifecycleReservationTest {
       previousForegroundEngine.oriEnginename = "update-target";
       previousForegroundEngine.started = true;
       previousForegroundEngine.isLoaded = true;
-      commandScript = Files.createTempFile("lizzie-update-engine-", ".sh");
       commandLog = Files.createTempFile("lizzie-update-engine-", ".log");
       startupGate = Files.createTempFile("lizzie-update-engine-startup-", ".gate");
       loadSgfFailure = Files.createTempFile("lizzie-update-engine-loadsgf-", ".failure");
       Files.delete(loadSgfFailure);
       Files.delete(startupGate);
-      Files.writeString(commandScript, updateEngineScript());
-      assertTrue(commandScript.toFile().setExecutable(true));
+      commandPrefix = updateEngineCommandPrefix();
       board = allocate(UpdateBoard.class);
       board.startStonelist = new ArrayList<>();
       board.hasStartStone = false;
@@ -3798,13 +3804,13 @@ class EngineManagerLifecycleReservationTest {
                           new JSONObject()
                               .put(
                                   "command",
-                                  commandScript.toString()
+                                  commandPrefix
                                       + " "
-                                      + commandLog
+                                      + quoteCommandPath(commandLog)
                                       + " "
-                                      + startupGate
+                                      + quoteCommandPath(startupGate)
                                       + " "
-                                      + loadSgfFailure)
+                                      + quoteCommandPath(loadSgfFailure))
                               .put("name", "update-target")
                               .put("preload", false)
                               .put("width", targetWidth)
@@ -3852,7 +3858,6 @@ class EngineManagerLifecycleReservationTest {
         }
       }
       try {
-        Files.deleteIfExists(commandScript);
         Files.deleteIfExists(commandLog);
         Files.deleteIfExists(startupGate);
         Files.deleteIfExists(loadSgfFailure);
@@ -3882,55 +3887,22 @@ class EngineManagerLifecycleReservationTest {
       }
     }
 
-    private static String updateEngineScript() {
-      return "#!/bin/sh\n"
-          + "log=\"$1\"\n"
-          + "gate=\"$2\"\n"
-          + "loadsgf_failure=\"$3\"\n"
-          + "while IFS= read -r line; do\n"
-          + "  printf '%s\\n"
-          + "' \"$line\" >> \"$log\"\n"
-          + "  rest=\"$line\"\n"
-          + "  id=\"\"\n"
-          + "  case \"$line\" in\n"
-          + "    [0-9]*\\ *) id=\"${line%% *}\"; rest=\"${line#* }\" ;;\n"
-          + "  esac\n"
-          + "  case \"$rest\" in\n"
-          + "    loadsgf\\ *)\n"
-          + "      printf 'SGF:%s\\n"
-          + "' \"$(cat \"${rest#loadsgf }\")\" >> \"$log\"\n"
-          + "      if [ -f \"$loadsgf_failure\" ]; then\n"
-          + "        if [ -n \"$id\" ]; then printf '?%s controlled restore failure\\n"
-          + "\\n"
-          + "' \"$id\"; else printf '? controlled restore failure\\n"
-          + "\\n"
-          + "'; fi\n"
-          + "        continue\n"
-          + "      fi ;;\n"
-          + "  esac\n"
-          + "  case \"$rest\" in\n"
-          + "    name) while [ ! -f \"$gate\" ]; do sleep 0.01; done ;;\n"
-          + "  esac\n"
-          + "  if [ -n \"$id\" ]; then printf '=%s\\n"
-          + "\\n"
-          + "' \"$id\"; else\n"
-          + "    case \"$rest\" in\n"
-          + "      name) printf '= KataGo\\n"
-          + "\\n"
-          + "' ;;\n"
-          + "      version) printf '= 1.15\\n"
-          + "\\n"
-          + "' ;;\n"
-          + "      list_commands) printf '= protocol_version\\n"
-          + "\\n"
-          + "' ;;\n"
-          + "      *) printf '=\\n"
-          + "\\n"
-          + "' ;;\n"
-          + "    esac\n"
-          + "  fi\n"
-          + "  [ \"$rest\" = quit ] && exit 0\n"
-          + "done\n";
+    private static String updateEngineCommandPrefix() throws Exception {
+      String javaName = System.getProperty("os.name", "").startsWith("Windows")
+          ? "java.exe"
+          : "java";
+      Path javaExecutable = Path.of(System.getProperty("java.home"), "bin", javaName);
+      Path testClasses =
+          Path.of(UpdateEngineGtpFixture.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+      return quoteCommandPath(javaExecutable)
+          + " -cp "
+          + quoteCommandPath(testClasses)
+          + " "
+          + UpdateEngineGtpFixture.class.getName();
+    }
+
+    private static String quoteCommandPath(Path path) {
+      return "\"" + path.toAbsolutePath().normalize() + "\"";
     }
   }
 

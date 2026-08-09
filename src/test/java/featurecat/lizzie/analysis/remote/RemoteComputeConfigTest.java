@@ -63,17 +63,17 @@ class RemoteComputeConfigTest {
         AppLocale.SIMPLIFIED_CHINESE.loadBundle(),
         () -> {
           assertEquals(
-              "智子云算力 VIP 包月 · 28B NBT · TensorRT",
+              "智子云算力 VIP 包月 · Transformer 10B · 均衡版 · TensorRT",
               RemoteComputeConfig.displayNameForZhiziArgs(RemoteComputeConfig.DEFAULT_ZHIZI_ARGS));
           assertEquals(
-              "智子云算力 按量 1x · 28B NBT · TensorRT",
+              "智子云算力 按量 1x · Transformer 10B · 均衡版 · TensorRT",
               RemoteComputeConfig.displayNameForZhiziArgs(
                   RemoteComputeConfig.ON_DEMAND_1X_ZHIZI_ARGS));
           assertEquals(
-              "智子云算力 按量 3x · 28B NBT · TensorRT",
+              "智子云算力 按量 3x · Transformer 10B · 均衡版 · TensorRT",
               RemoteComputeConfig.displayNameForZhiziArgs(RemoteComputeConfig.FASTER_ZHIZI_ARGS));
           assertEquals(
-              "智子云算力 VIP 包月 · 28B NBT · TensorRT",
+              "智子云算力 VIP 包月 · Transformer 10B · 均衡版 · TensorRT",
               RemoteComputeConfig.displayNameForZhiziArgs(RemoteComputeConfig.VIP_ZHIZI_ARGS));
         });
   }
@@ -140,7 +140,7 @@ class RemoteComputeConfigTest {
         RemoteComputeConfig.withKataWeight(
             RemoteComputeConfig.ON_DEMAND_1X_ZHIZI_ARGS, "60b --gpu-type 24x");
 
-    assertEquals("28bnbt", RemoteComputeConfig.kataWeightForArgs(selected));
+    assertEquals("10b512t", RemoteComputeConfig.kataWeightForArgs(selected));
     assertEquals("1x", RemoteComputeConfig.gpuTypeForArgs(selected));
 
     String futureServerModel =
@@ -150,7 +150,7 @@ class RemoteComputeConfigTest {
   }
 
   @Test
-  void zhiziCatalogCachePersistsAndExpiresAfterRefreshInterval() throws Exception {
+  void legacyZhiziCatalogPersistsButRefreshesImmediately() throws Exception {
     withConfig(
         () -> {
           ZhiziEngineCatalog catalog =
@@ -166,13 +166,53 @@ class RemoteComputeConfigTest {
           RemoteComputeConfig.save(state);
 
           RemoteComputeConfig.State restored = RemoteComputeConfig.load();
-          assertEquals("28bnbt", restored.zhiziCatalog.defaultWeight());
-          assertEquals(8, restored.zhiziCatalog.weights().size());
-          assertTrue(restored.zhiziCatalog.containsWeight("18bnbt"));
-          assertTrue(restored.zhiziCatalog.containsWeight("fdx"));
+          assertEquals("10b512t", restored.zhiziCatalog.defaultWeight());
+          assertEquals(4, restored.zhiziCatalog.weights().size());
+          assertFalse(restored.zhiziCatalog.containsWeight("18bnbt"));
+          assertFalse(restored.zhiziCatalog.containsWeight("28bnbt"));
+          assertFalse(restored.zhiziCatalog.containsWeight("fdx"));
           assertTrue(restored.zhiziCatalog.containsWeight("20b"));
           assertTrue(restored.zhiziCatalog.containsWeight("10b512t"));
           assertFalse(restored.zhiziCatalog.containsWeight("60b"));
+          assertTrue(
+              RemoteComputeConfig.shouldRefreshZhiziCatalog(
+                  restored,
+                  1_000L + RemoteComputeConfig.ZHIZI_CATALOG_REFRESH_INTERVAL_MILLIS - 1L));
+          assertTrue(
+              RemoteComputeConfig.shouldRefreshZhiziCatalog(
+                  restored, 1_000L + RemoteComputeConfig.ZHIZI_CATALOG_REFRESH_INTERVAL_MILLIS));
+        });
+  }
+
+  @Test
+  void serverConfirmedZhiziCatalogUsesRefreshInterval() throws Exception {
+    withConfig(
+        () -> {
+          ZhiziEngineCatalog catalog =
+              new ZhiziEngineCatalog(
+                  "9.0.0",
+                  "10b512t",
+                  List.of(
+                      new ZhiziEngineCatalog.Option(
+                          "10b512t",
+                          "balanced transformer",
+                          ZhiziEngineCatalog.DiscoverySource.SERVER_CAPABILITIES),
+                      new ZhiziEngineCatalog.Option(
+                          "11b768t",
+                          "large transformer",
+                          ZhiziEngineCatalog.DiscoverySource.SERVER_CAPABILITIES)));
+          RemoteComputeConfig.State state = RemoteComputeConfig.load();
+          state.zhiziCatalog = catalog;
+          state.zhiziCatalogUpdatedAt = 1_000L;
+          RemoteComputeConfig.save(state);
+
+          RemoteComputeConfig.State restored = RemoteComputeConfig.load();
+          assertTrue(restored.zhiziCatalog.isServerAuthoritative());
+          assertEquals(
+              List.of("10b512t", "11b768t"),
+              restored.zhiziCatalog.weights().stream()
+                  .map(ZhiziEngineCatalog.Option::name)
+                  .toList());
           assertFalse(
               RemoteComputeConfig.shouldRefreshZhiziCatalog(
                   restored,
@@ -216,7 +256,9 @@ class RemoteComputeConfigTest {
                   RemoteComputeConfig.ON_DEMAND_1X_ZHIZI_ARGS);
 
           assertEquals("การคำนวณแบบกำหนดเอง · compute.example.com", custom);
-          assertTrue(zhizi.startsWith("คลาวด์ Zhizi ตามการใช้งาน 1x · 28B NBT · "));
+          assertTrue(
+              zhizi.startsWith(
+                  "คลาวด์ Zhizi ตามการใช้งาน 1x · Transformer 10B · รุ่นสมดุล · "));
           assertFalse(custom.matches(".*\\p{IsHan}.*"));
           assertFalse(zhizi.matches(".*\\p{IsHan}.*"));
         });

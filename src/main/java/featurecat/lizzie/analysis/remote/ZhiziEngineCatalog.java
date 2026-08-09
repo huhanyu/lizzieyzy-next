@@ -14,14 +14,13 @@ import org.json.JSONObject;
 
 /** Available Zhizi engine resources together with their discovery provenance. */
 public final class ZhiziEngineCatalog {
+  public static final String DEFAULT_WEIGHT = "10b512t";
+
   private static final Pattern SAFE_OPTION_NAME =
       Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]{0,63}");
   private static final int MAX_DESCRIPTION_LENGTH = 180;
   private static final List<Option> CURRENT_BUILT_IN_WEIGHTS =
       List.of(
-          new Option("18bnbt", "weight for 18bnbt", DiscoverySource.OFFICIAL_DOCUMENTED),
-          new Option("28bnbt", "weight for 28bnbt", DiscoverySource.OFFICIAL_DOCUMENTED),
-          new Option("fdx", "40B NBT extra-large weight", DiscoverySource.OFFICIAL_DOCUMENTED),
           new Option(
               "20b", "20B, commonly used for handicap games", DiscoverySource.BUILT_IN_CURRENT),
           new Option(
@@ -30,11 +29,8 @@ public final class ZhiziEngineCatalog {
               "10b512t", "v1.17 medium Transformer, b10c512", DiscoverySource.BUILT_IN_CURRENT),
           new Option(
               "11b768t", "v1.17 large Transformer, b11c768", DiscoverySource.BUILT_IN_CURRENT));
-  private static final List<Option> OFFICIAL_DOCUMENTED_WEIGHTS =
-      CURRENT_BUILT_IN_WEIGHTS.stream()
-          .filter(option -> option.source == DiscoverySource.OFFICIAL_DOCUMENTED)
-          .toList();
-  private static final List<String> LEGACY_COMPATIBLE_WEIGHTS = List.of("60b", "40b");
+  private static final List<String> LEGACY_COMPATIBLE_WEIGHTS =
+      List.of("18bnbt", "28bnbt", "fdx", "60b", "40b");
 
   private final String serverVersion;
   private final String defaultWeight;
@@ -84,6 +80,24 @@ public final class ZhiziEngineCatalog {
     return false;
   }
 
+  /** Returns true only when every displayed option came from the latest server response. */
+  public boolean isServerAuthoritative() {
+    return !weights.isEmpty()
+        && weights.stream()
+            .allMatch(option -> option.source == DiscoverySource.SERVER_CAPABILITIES);
+  }
+
+  /** Keeps a requested model only while the current catalog still advertises it. */
+  public String resolveSupportedWeight(String requested) {
+    String candidate = safeName(requested);
+    for (Option option : weights) {
+      if (option.name.equalsIgnoreCase(candidate)) {
+        return option.name;
+      }
+    }
+    return defaultWeight;
+  }
+
   /**
    * Adds the most recently verified built-in baseline to old caches.
    *
@@ -114,6 +128,9 @@ public final class ZhiziEngineCatalog {
                   builtIn.source));
     }
     for (Option option : reported.values()) {
+      if (isLegacyCompatibleWeight(option.name)) {
+        continue;
+      }
       DiscoverySource source = option.source;
       if (source == DiscoverySource.OFFICIAL_DOCUMENTED) {
         source = DiscoverySource.CACHED_LEGACY;
@@ -122,11 +139,9 @@ public final class ZhiziEngineCatalog {
     }
 
     String preferred =
-        reportedDefault != null
-                && reportedDefault.source == DiscoverySource.SERVER_CAPABILITIES
-                && isSelectableWeight(defaultWeight)
+        reportedDefault != null && isCurrentBuiltInWeight(defaultWeight)
             ? canonicalKnownName(defaultWeight)
-            : "28bnbt";
+            : DEFAULT_WEIGHT;
     try {
       return new ZhiziEngineCatalog(serverVersion, preferred, merged);
     } catch (IOException impossible) {
@@ -186,18 +201,49 @@ public final class ZhiziEngineCatalog {
 
   /** Parses an authoritative catalog returned by the currently connected Zhizi service. */
   public static ZhiziEngineCatalog fromServerCapabilities(String json) throws IOException {
-    ZhiziEngineCatalog parsed = fromJson(json);
-    List<Option> confirmed = new ArrayList<>();
-    for (Option option : parsed.weights) {
-      confirmed.add(
-          new Option(option.name, option.description, DiscoverySource.SERVER_CAPABILITIES));
+    try {
+      JSONObject response = new JSONObject(json == null ? "" : json);
+      JSONArray items = response.optJSONArray("supportKataWeights");
+      List<Option> confirmed = new ArrayList<>();
+      if (items != null) {
+        for (int i = 0; i < items.length(); i++) {
+          Object rawItem = items.opt(i);
+          JSONObject item = rawItem instanceof JSONObject ? (JSONObject) rawItem : null;
+          String name =
+              safeName(
+                  item == null
+                      ? (rawItem instanceof String ? (String) rawItem : "")
+                      : item.optString("name", ""));
+          if (!name.isEmpty()) {
+            confirmed.add(
+                new Option(
+                    name,
+                    item == null ? "" : item.optString("description", ""),
+                    DiscoverySource.SERVER_CAPABILITIES));
+          }
+        }
+      }
+
+      String reportedDefault = safeName(response.optString("defaultKataWeight", ""));
+      String confirmedDefault = "";
+      for (Option option : confirmed) {
+        if (option.name.equalsIgnoreCase(reportedDefault)) {
+          confirmedDefault = option.name;
+          break;
+        }
+      }
+      return new ZhiziEngineCatalog(
+          response.optString("serverVersion", ""), confirmedDefault, confirmed);
+    } catch (IOException e) {
+      throw e;
+    } catch (RuntimeException e) {
+      throw new IOException("Zhizi engine catalog is not valid JSON.", e);
     }
-    return new ZhiziEngineCatalog(parsed.serverVersion, parsed.defaultWeight, confirmed);
   }
 
   public static ZhiziEngineCatalog fallback() {
     try {
-      return new ZhiziEngineCatalog("", "28bnbt", CURRENT_BUILT_IN_WEIGHTS);
+      return new ZhiziEngineCatalog("", DEFAULT_WEIGHT, CURRENT_BUILT_IN_WEIGHTS);
     } catch (IOException impossible) {
       throw new IllegalStateException(impossible);
     }
@@ -208,13 +254,7 @@ public final class ZhiziEngineCatalog {
   }
 
   public static boolean isDocumentedWeight(String value) {
-    String safeValue = safeName(value);
-    for (Option option : OFFICIAL_DOCUMENTED_WEIGHTS) {
-      if (option.name.equalsIgnoreCase(safeValue)) {
-        return true;
-      }
-    }
-    return false;
+    return isCurrentBuiltInWeight(value);
   }
 
   public static boolean isLegacyCompatibleWeight(String value) {
