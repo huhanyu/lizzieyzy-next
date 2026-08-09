@@ -17,6 +17,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -33,6 +34,7 @@ public class WindowMenuStrip extends JPanel {
   private static final long SAME_MENU_REOPEN_SUPPRESS_MS = 250L;
   private final JMenuBar sourceMenuBar;
   private final List<MenuButton> menuButtons = new ArrayList<>();
+  private final List<ActionButton> actionButtons = new ArrayList<>();
   private static final String POPUP_LISTENER_KEY = "lizzie.window-menu-strip.popup-listener";
   private JMenu recentlyHiddenMenu;
   private long recentlyHiddenAtMillis;
@@ -49,24 +51,41 @@ public class WindowMenuStrip extends JPanel {
     for (MenuButton button : menuButtons) {
       button.detach();
     }
+    for (ActionButton button : actionButtons) {
+      button.detach();
+    }
     removeAll();
     menuButtons.clear();
+    actionButtons.clear();
     if (sourceMenuBar == null) {
       return;
     }
-    int menuCount = sourceMenuBar.getMenuCount();
-    for (int i = 0; i < menuCount; i++) {
-      JMenu menu = sourceMenuBar.getMenu(i);
-      if (menu == null || !menu.isVisible()) {
+    for (java.awt.Component component : sourceMenuBar.getComponents()) {
+      if (!component.isVisible()) {
         continue;
       }
-      String text = menu.getText();
-      if (text == null || text.trim().isEmpty()) {
+      if (component instanceof JMenu) {
+        JMenu menu = (JMenu) component;
+        String text = menu.getText();
+        if (text == null || text.trim().isEmpty()) {
+          continue;
+        }
+        MenuButton button = new MenuButton(menu);
+        menuButtons.add(button);
+        add(button);
         continue;
       }
-      MenuButton button = new MenuButton(menu);
-      menuButtons.add(button);
-      add(button);
+      if (component instanceof AbstractButton) {
+        AbstractButton sourceButton = (AbstractButton) component;
+        String text = sourceButton.getText();
+        if ((text == null || text.trim().isEmpty()) && sourceButton.getIcon() == null) {
+          continue;
+        }
+        ActionButton button = new ActionButton(sourceButton);
+        actionButtons.add(button);
+        add(button);
+        button.installStyle();
+      }
     }
     revalidate();
     repaint();
@@ -76,6 +95,9 @@ public class WindowMenuStrip extends JPanel {
     Color fg = AppleStyleSupport.dialogTextColor();
     for (MenuButton b : menuButtons) {
       b.setForeground(fg);
+    }
+    for (ActionButton b : actionButtons) {
+      b.syncFromSource();
     }
   }
 
@@ -322,6 +344,74 @@ public class WindowMenuStrip extends JPanel {
       }
       g2.dispose();
       super.paintComponent(g);
+    }
+  }
+
+  private final class ActionButton extends JButton {
+    private final AbstractButton sourceButton;
+    private final PropertyChangeListener sourcePropertyListener = this::sourcePropertyChanged;
+
+    private ActionButton(AbstractButton sourceButton) {
+      this.sourceButton = sourceButton;
+      syncFromSource();
+      sourceButton.addPropertyChangeListener(sourcePropertyListener);
+      addActionListener(event -> sourceButton.doClick(0));
+    }
+
+    private void installStyle() {
+      AppleStyleSupport.copyButtonRole(sourceButton, this);
+      AppleStyleSupport.installButtonStyle(this);
+      setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    }
+
+    private void sourcePropertyChanged(PropertyChangeEvent event) {
+      String property = event.getPropertyName();
+      if ("visible".equals(property)) {
+        SwingUtilities.invokeLater(WindowMenuStrip.this::rebuild);
+        return;
+      }
+      if ("text".equals(property)
+          || "enabled".equals(property)
+          || "font".equals(property)
+          || "foreground".equals(property)
+          || "icon".equals(property)
+          || "toolTipText".equals(property)
+          || "name".equals(property)
+          || "preferredSize".equals(property)) {
+        syncFromSource();
+      }
+    }
+
+    private void syncFromSource() {
+      setText(sourceButton.getText());
+      setIcon(sourceButton.getIcon());
+      setEnabled(sourceButton.isEnabled());
+      setName(sourceButton.getName());
+      setToolTipText(sourceButton.getToolTipText());
+      if (sourceButton.getFont() != null) {
+        setFont(sourceButton.getFont());
+      }
+      Dimension preferred = sourceButton.getPreferredSize();
+      if (preferred != null) {
+        setPreferredSize(new Dimension(preferred));
+      }
+      if (getAccessibleContext() != null) {
+        String accessibleName = sourceButton.getAccessibleContext().getAccessibleName();
+        String accessibleDescription =
+            sourceButton.getAccessibleContext().getAccessibleDescription();
+        getAccessibleContext()
+            .setAccessibleName(
+                accessibleName == null || accessibleName.trim().isEmpty()
+                    ? sourceButton.getText()
+                    : accessibleName);
+        getAccessibleContext().setAccessibleDescription(accessibleDescription);
+      }
+      revalidate();
+      repaint();
+    }
+
+    private void detach() {
+      sourceButton.removePropertyChangeListener(sourcePropertyListener);
     }
   }
 }

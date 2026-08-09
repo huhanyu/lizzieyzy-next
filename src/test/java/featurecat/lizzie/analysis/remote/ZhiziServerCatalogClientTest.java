@@ -54,8 +54,8 @@ class ZhiziServerCatalogClientTest {
         client.fetchCatalog(
             new ZhiziApiClient.ConnectAccount("zz-player@example.com", "temporary-password"));
 
-    assertEquals("28bnbt", catalog.defaultWeight());
-    assertEquals(7, catalog.weights().size());
+    assertEquals("10b512t", catalog.defaultWeight());
+    assertEquals(4, catalog.weights().size());
     assertTrue(catalog.containsWeight("11b768t"));
     assertTrue(
         catalog.weights().stream()
@@ -97,13 +97,12 @@ class ZhiziServerCatalogClientTest {
 
   private static JSONObject liveCatalog() {
     JSONArray weights = new JSONArray();
-    for (String name :
-        new String[] {"18bnbt", "28bnbt", "fdx", "20b", "10b384t", "10b512t", "11b768t"}) {
+    for (String name : new String[] {"20b", "10b384t", "10b512t", "11b768t"}) {
       weights.put(new JSONObject().put("name", name).put("description", name + " weight"));
     }
     return new JSONObject()
         .put("serverVersion", "8.0.1")
-        .put("defaultKataWeight", "28bnbt")
+        .put("defaultKataWeight", "10b512t")
         .put("supportKataWeights", weights);
   }
 }

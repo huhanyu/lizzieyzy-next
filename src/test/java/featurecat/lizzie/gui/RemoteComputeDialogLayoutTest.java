@@ -48,6 +48,22 @@ class RemoteComputeDialogLayoutTest {
   }
 
   @Test
+  void remoteComputePagesKeepBothColumnsUsableAtWindowsHighDpi() {
+    JPanel left = new JPanel();
+    JPanel right = new JPanel();
+    JPanel page = RemoteComputeDialog.createTwoColumnPage(left, right);
+
+    page.setSize(900, 520);
+    page.doLayout();
+
+    assertEquals(left.getWidth(), right.getWidth());
+    assertEquals(18, right.getX() - left.getWidth());
+    assertTrue(left.getWidth() >= 400);
+    assertEquals(520, left.getHeight());
+    assertEquals(520, right.getHeight());
+  }
+
+  @Test
   void zhiziWebsiteCardKeepsItsActionCompactAndContentVisible() {
     JButton button = new JButton("Open official website");
     JPanel card =

@@ -5486,6 +5486,30 @@ public class Menu extends JMenuBar {
     // Math.max(Lizzie.config.allFontSize, 12));
     this.add(engineMenu2);
 
+    JFontButton aiCommentaryButton =
+        new JFontButton(resourceBundle.getString("Menu.aiCommentary"));
+    aiCommentaryButton.setName("aiCommentaryToolbarButton");
+    aiCommentaryButton.setFont(baseMenuFont.deriveFont(Font.BOLD));
+    aiCommentaryButton.setMargin(new Insets(0, 10, 0, 10));
+    AppleStyleSupport.markPrimary(aiCommentaryButton);
+    Dimension commentarySize = aiCommentaryButton.getPreferredSize();
+    aiCommentaryButton.setPreferredSize(
+        new Dimension(
+            Math.max(
+                Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 5,
+                commentarySize.width + 16),
+            Math.max(24, Config.menuHeight - 2)));
+    aiCommentaryButton.setToolTipText(resourceBundle.getString("Menu.aiCommentary"));
+    aiCommentaryButton
+        .getAccessibleContext()
+        .setAccessibleName(resourceBundle.getString("Menu.aiCommentary"));
+    aiCommentaryButton
+        .getAccessibleContext()
+        .setAccessibleDescription(resourceBundle.getString("Teacher.subtitle"));
+    aiCommentaryButton.addActionListener(event -> TeacherDialog.show(Lizzie.frame));
+    this.add(Box.createHorizontalStrut(6));
+    this.add(aiCommentaryButton);
+
     playing = new ImageIcon();
     try {
       playing.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/playing.png")));

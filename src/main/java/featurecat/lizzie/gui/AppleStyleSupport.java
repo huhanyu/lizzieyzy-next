@@ -85,6 +85,13 @@ public final class AppleStyleSupport {
     }
   }
 
+  static void copyButtonRole(AbstractButton source, AbstractButton target) {
+    if (source == null || target == null) {
+      return;
+    }
+    target.putClientProperty(BUTTON_ROLE, source.getClientProperty(BUTTON_ROLE));
+  }
+
   /** Keeps a purpose-built button renderer from being replaced by global theme refreshes. */
   public static void preserveCustomButtonStyle(AbstractButton button) {
     if (button != null) {
