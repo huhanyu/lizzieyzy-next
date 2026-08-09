@@ -381,6 +381,7 @@ public class RemoteComputeDialog extends JDialog {
     loggedInPanel.add(fullWidth(paymentButton, 44));
     loggedInPanel.add(Box.createVerticalStrut(10));
     loggedInPanel.add(fullWidth(logoutButton, 48));
+    stretchHorizontally(loggedInPanel);
     loggedInPanel.setVisible(false);
     showAccountLoadingState();
     card.add(loggedInPanel);
@@ -2219,6 +2220,11 @@ public class RemoteComputeDialog extends JDialog {
     area.setBorder(null);
     area.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
     return area;
+  }
+
+  static void stretchHorizontally(JComponent component) {
+    Dimension preferred = component.getPreferredSize();
+    component.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferred.height));
   }
 
   private JTextArea multilineHint(String value) {

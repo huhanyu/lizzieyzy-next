@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Dimension;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.accessibility.AccessibleContext;
 import javax.swing.JButton;
@@ -61,6 +62,17 @@ class RemoteComputeDialogLayoutTest {
     assertTrue(left.getWidth() >= 400);
     assertEquals(520, left.getHeight());
     assertEquals(520, right.getHeight());
+  }
+
+  @Test
+  void signedInAccountCardFillsItsColumnWithoutGrowingVertically() {
+    JPanel accountCard = new JPanel();
+    accountCard.setPreferredSize(new Dimension(240, 280));
+
+    RemoteComputeDialog.stretchHorizontally(accountCard);
+
+    assertEquals(Integer.MAX_VALUE, accountCard.getMaximumSize().width);
+    assertEquals(280, accountCard.getMaximumSize().height);
   }
 
   @Test
