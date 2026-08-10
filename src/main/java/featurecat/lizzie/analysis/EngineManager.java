@@ -2849,8 +2849,12 @@ public class EngineManager {
         || index != (isMain ? currentEngineNo2 : currentEngineNo)) {
       return false;
     }
-    Utils.showMsg(resourceBundle.getString("EngineManager.sameEngineHint"));
+    showSameEngineSelection();
     return true;
+  }
+
+  protected void showSameEngineSelection() {
+    Utils.showMsg(resourceBundle.getString("EngineManager.sameEngineHint"));
   }
 
   private Runnable releaseEngineLifecycleAfterBoardSync(
@@ -3028,15 +3032,19 @@ public class EngineManager {
     switchEngineInternal(index, isMain, prepareEngineSwitch(index, isMain), afterSync);
   }
 
+  protected void showContributingEngineSwitchUnavailable() {
+    Utils.showMsg(resourceBundle.getString("Contribute.tips.contributingAndStartAnotherLizzieYzy"));
+  }
+
   protected void switchEngineInternal(
       int index, boolean isMain, PreparedEngineSwitch preparedSwitch, Runnable afterSync) {
     boolean syncScheduled = false;
     try {
     if (Lizzie.frame.isContributing) {
-      Utils.showMsg(
-          resourceBundle.getString("Contribute.tips.contributingAndStartAnotherLizzieYzy"));
+      showContributingEngineSwitchUnavailable();
       return;
     }
+
     engineNo = index;
       if (rejectSameEngineSelection(index, isMain)) {
       return;
@@ -3980,11 +3988,12 @@ public class EngineManager {
       reconcileCapturedBoardSize();
       PreparedLifecycleRestore route = pendingRoute;
       if (route.exactRestore.isPresent()) {
-        board.resendMoveToEngine(
-            targetEngine,
-            false,
-            route.exactRestore.orElseThrow(),
-            engineGameInitialization);
+        if (engineGameInitialization) {
+          board.resendMoveToEngine(
+              targetEngine, false, route.exactRestore.orElseThrow(), true);
+        } else {
+          board.resendMoveToEngine(targetEngine, false, route.exactRestore.orElseThrow());
+        }
       } else {
         if (ensureRootReplayKomiTransport) {
           ensureRootReplayKomiCommand(targetEngine, route);
