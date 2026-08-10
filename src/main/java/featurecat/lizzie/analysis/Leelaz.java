@@ -9655,9 +9655,6 @@ public class Leelaz {
       return owner;
     }
 
-    Leelaz capturedMirror() {
-      return capturedMirror;
-    }
     private void runAsCompletionFenceOwner(Runnable action) {
       LifecycleCompletionClaim previous = lifecycleCompletionCommandContext.get();
       lifecycleCompletionCommandContext.set(this);
