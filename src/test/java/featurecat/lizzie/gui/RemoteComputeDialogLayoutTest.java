@@ -120,6 +120,37 @@ class RemoteComputeDialogLayoutTest {
   }
 
   @Test
+  void zhiziActionCardFitsConstrainedWindowsWorkAreaWithoutClippingWebsite() {
+    JPanel plan = new JPanel();
+    plan.setAlignmentX(Component.LEFT_ALIGNMENT);
+    plan.setPreferredSize(new Dimension(400, 169));
+    plan.setMinimumSize(new Dimension(0, 169));
+    plan.setMaximumSize(new Dimension(Integer.MAX_VALUE, 169));
+    JButton useButton = new JButton("Enable Zhizi Cloud");
+    useButton.setName("enableZhizi");
+    JButton localButton = new JButton("Switch to local engine");
+    localButton.setName("switchToLocal");
+    JButton websiteButton = new JButton("Open official website");
+    JPanel websiteCard =
+        RemoteComputeDialog.createZhiziWebsiteCard(
+            websiteButton, "Zhizi official website", "www.zhizigo.cn");
+    JPanel card =
+        RemoteComputeDialog.createZhiziActionCardLayout(
+            plan, useButton, localButton, websiteCard);
+
+    card.setSize(520, 417);
+    layoutTree(card);
+
+    assertWithinParent(plan);
+    assertWithinParent(useButton);
+    assertWithinParent(localButton);
+    assertWithinParent(websiteCard);
+    assertWithinParent(findByName(card, "zhiziWebsiteTitle"));
+    assertWithinParent(findByName(card, "zhiziWebsiteUrl"));
+    assertWithinParent(findByName(card, "zhiziWebsiteAction"));
+  }
+
+  @Test
   void statusChangesRemainAvailableAfterTheLiveAnnouncement() {
     JLabel status = new JLabel("Custom compute enabled");
     JPanel indicator = new JPanel();

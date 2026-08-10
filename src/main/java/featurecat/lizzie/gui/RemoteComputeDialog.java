@@ -389,14 +389,20 @@ public class RemoteComputeDialog extends JDialog {
   }
 
   private JPanel buildZhiziActionCard() {
+    return createZhiziActionCardLayout(
+        planPanel(), useZhiziButton, localFromZhiziButton, buildZhiziWebsiteCard());
+  }
+
+  static JPanel createZhiziActionCardLayout(
+      JPanel plan, JButton useButton, JButton localButton, JPanel websiteCard) {
     JPanel card = compactActionCard(text("RemoteCompute.oneClickEnable", "One-click enable"));
-    card.add(planPanel());
-    card.add(Box.createVerticalStrut(14));
-    card.add(fullWidth(useZhiziButton, 54));
+    card.add(plan);
     card.add(Box.createVerticalStrut(10));
-    card.add(fullWidth(localFromZhiziButton, 46));
-    card.add(Box.createVerticalStrut(12));
-    card.add(buildZhiziWebsiteCard());
+    card.add(fullWidth(useButton, 48));
+    card.add(Box.createVerticalStrut(6));
+    card.add(fullWidth(localButton, 42));
+    card.add(Box.createVerticalStrut(6));
+    card.add(websiteCard);
     card.add(Box.createVerticalGlue());
     return card;
   }
@@ -523,7 +529,7 @@ public class RemoteComputeDialog extends JDialog {
     styleWeightCombo();
     JPanel panel = new RoundPanel(24, new Color(255, 250, 241), new Color(231, 213, 181));
     panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-    panel.setBorder(new EmptyBorder(14, 16, 14, 16));
+    panel.setBorder(new EmptyBorder(10, 16, 10, 16));
     panel.setAlignmentX(Component.LEFT_ALIGNMENT);
     JLabel label = new JLabel(text("RemoteCompute.connectionMode", "Connection mode"));
     AccessibilitySupport.labelFor(
@@ -536,7 +542,7 @@ public class RemoteComputeDialog extends JDialog {
     panel.add(label);
     panel.add(Box.createVerticalStrut(6));
     panel.add(fullWidth(presetBox, 44));
-    panel.add(Box.createVerticalStrut(12));
+    panel.add(Box.createVerticalStrut(8));
 
     JLabel weightLabel = new JLabel(text("RemoteCompute.weightModel", "Network weight"));
     AccessibilitySupport.labelFor(
@@ -593,7 +599,7 @@ public class RemoteComputeDialog extends JDialog {
   static JPanel createZhiziWebsiteCard(JButton websiteButton, String titleText, String urlText) {
     JPanel panel = new RoundPanel(24, new Color(246, 252, 247), new Color(188, 222, 200));
     panel.setLayout(new BorderLayout(12, 0));
-    panel.setBorder(new EmptyBorder(13, 14, 13, 14));
+    panel.setBorder(new EmptyBorder(8, 14, 8, 14));
     panel.setAlignmentX(Component.LEFT_ALIGNMENT);
     panel.add(new WebsiteGlyph(), BorderLayout.WEST);
 
@@ -606,7 +612,7 @@ public class RemoteComputeDialog extends JDialog {
     title.setFont(title.getFont().deriveFont(Font.BOLD, 16F));
     title.setAlignmentX(Component.LEFT_ALIGNMENT);
     copy.add(title);
-    copy.add(Box.createVerticalStrut(5));
+    copy.add(Box.createVerticalStrut(3));
     JLabel url = new JLabel(urlText);
     url.setName("zhiziWebsiteUrl");
     url.setForeground(GREEN);
@@ -629,7 +635,8 @@ public class RemoteComputeDialog extends JDialog {
     panel.add(action, BorderLayout.EAST);
 
     Dimension preferred = panel.getPreferredSize();
-    int cardHeight = Math.max(72, preferred.height);
+    int cardHeight =
+        Math.max(58, Math.max(preferred.height, websiteButton.getPreferredSize().height + 26));
     panel.setPreferredSize(new Dimension(preferred.width, cardHeight));
     panel.setMinimumSize(new Dimension(0, cardHeight));
     panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, cardHeight));
@@ -2075,16 +2082,16 @@ public class RemoteComputeDialog extends JDialog {
     return card;
   }
 
-  private JPanel compactActionCard(String title) {
+  private static JPanel compactActionCard(String title) {
     JPanel card = new RoundPanel(30, CARD, BORDER);
     card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-    card.setBorder(new EmptyBorder(20, 30, 20, 30));
+    card.setBorder(new EmptyBorder(16, 30, 16, 30));
     JLabel titleLabel = new JLabel(title);
     titleLabel.setForeground(TEXT);
-    titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 26F));
+    titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 24F));
     titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
     card.add(titleLabel);
-    card.add(Box.createVerticalStrut(14));
+    card.add(Box.createVerticalStrut(10));
     return card;
   }
 
@@ -2287,7 +2294,7 @@ public class RemoteComputeDialog extends JDialog {
     return Math.max(minimumWidth, width);
   }
 
-  private Component fullWidth(JComponent component, int height) {
+  private static Component fullWidth(JComponent component, int height) {
     JPanel wrapper = transparent(new BorderLayout());
     wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
     wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
