@@ -16,11 +16,18 @@ concurrency:
 jobs:
   windows-script-validation:
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
 
       - name: Parse RTX 50 benchmark script
         shell: pwsh
@@ -36,6 +43,13 @@ jobs:
             $errors | Format-List | Out-String | Write-Error
             exit 1
           }
+
+      - name: Verify Windows credential persistence
+        shell: pwsh
+        run: >-
+          mvn -B -Dfmt.skip=true
+          "-Dtest=PlatformCredentialStoreTest,RemoteComputeConfigTest,MigratingCredentialStoreTest"
+          test
 
   build:
     runs-on: ubuntu-latest

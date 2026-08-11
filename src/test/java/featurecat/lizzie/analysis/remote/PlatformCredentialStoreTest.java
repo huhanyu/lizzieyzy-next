@@ -2,6 +2,7 @@ package featurecat.lizzie.analysis.remote;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -11,6 +12,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 class PlatformCredentialStoreTest {
   @Test
@@ -67,7 +70,7 @@ class PlatformCredentialStoreTest {
     Path directory = Files.createTempDirectory("dpapi-store");
     RecordingRunner runner = new RecordingRunner();
     runner.protectedOutput = "encrypted-dpapi-blob";
-    runner.unprotectedOutput = "windows-secret";
+    runner.unprotectedOutput = "never-in-file";
     CredentialStore store = PlatformCredentialStore.create("Windows 11", directory, runner);
 
     store.write(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com", "never-in-file");
@@ -80,10 +83,48 @@ class PlatformCredentialStoreTest {
     assertEquals("encrypted-dpapi-blob", Files.readString(files.get(0)));
     assertFalse(files.get(0).getFileName().toString().contains("user@example.com"));
     assertEquals(
-        "windows-secret",
+        "never-in-file",
         store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com").orElseThrow());
     assertFalse(runner.flattenedCommands().contains("never-in-file"));
     assertTrue(runner.inputs.contains("never-in-file"));
+    assertTrue(runner.flattenedCommands().contains("LoadWithPartialName('System.Security')"));
+    assertTrue(runner.flattenedCommands().contains("$ErrorActionPreference='Stop'"));
+    assertTrue(runner.flattenedCommands().contains("lizzieyzy-next-dpapi-probe"));
+  }
+
+  @Test
+  void windowsDpapiRejectsCredentialThatCannotBeReadBack() throws Exception {
+    Path directory = Files.createTempDirectory("dpapi-store-verification");
+    RecordingRunner runner = new RecordingRunner();
+    runner.protectedOutput = "encrypted-dpapi-blob";
+    runner.unprotectedOutput = "different-secret";
+    CredentialStore store = PlatformCredentialStore.create("Windows 11", directory, runner);
+
+    assertThrows(
+        IOException.class,
+        () -> store.write(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com", "token"));
+    try (var files = Files.list(directory)) {
+      assertEquals(0L, files.count());
+    }
+  }
+
+  @Test
+  @EnabledOnOs(OS.WINDOWS)
+  void windowsDpapiRoundTripsAcrossRealPowerShellProcesses() throws Exception {
+    Path directory = Files.createTempDirectory("dpapi-store-real");
+    String account = "dpapi-regression-test";
+    String secret = "round-trip-secret-\u4e2d\u6587";
+
+    CredentialStore writer = PlatformCredentialStore.create(directory);
+    assertTrue(writer.isAvailable());
+    writer.write(CredentialStore.Kind.ACCOUNT_TOKEN, account, secret);
+
+    CredentialStore reader = PlatformCredentialStore.create(directory);
+    assertTrue(reader.isAvailable());
+    assertEquals(secret, reader.read(CredentialStore.Kind.ACCOUNT_TOKEN, account).orElseThrow());
+
+    reader.delete(CredentialStore.Kind.ACCOUNT_TOKEN, account);
+    assertTrue(reader.read(CredentialStore.Kind.ACCOUNT_TOKEN, account).isEmpty());
   }
 
   @Test

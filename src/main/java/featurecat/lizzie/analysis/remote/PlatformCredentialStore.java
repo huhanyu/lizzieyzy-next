@@ -264,18 +264,34 @@ public final class PlatformCredentialStore {
 
   private static final class WindowsDpapiStore extends CommandCredentialStore {
     private static final String POWERSHELL = "powershell.exe";
+    private static final String LOAD_DPAPI_ASSEMBLY =
+        "$ErrorActionPreference='Stop';"
+            + "[void][Reflection.Assembly]::LoadWithPartialName('System.Security');"
+            + "[Console]::InputEncoding=[Text.Encoding]::UTF8;"
+            + "[Console]::OutputEncoding=[Text.Encoding]::UTF8;";
     private static final String PROTECT_SCRIPT =
-        "$v=[Console]::In.ReadToEnd();"
+        LOAD_DPAPI_ASSEMBLY
+            + "$v=[Console]::In.ReadToEnd();"
             + "$b=[Text.Encoding]::UTF8.GetBytes($v);"
             + "$p=[Security.Cryptography.ProtectedData]::Protect($b,$null,"
             + "[Security.Cryptography.DataProtectionScope]::CurrentUser);"
             + "[Console]::Out.Write([Convert]::ToBase64String($p))";
     private static final String UNPROTECT_SCRIPT =
-        "$v=[Console]::In.ReadToEnd().Trim();"
+        LOAD_DPAPI_ASSEMBLY
+            + "$v=[Console]::In.ReadToEnd().Trim();"
             + "$b=[Convert]::FromBase64String($v);"
             + "$p=[Security.Cryptography.ProtectedData]::Unprotect($b,$null,"
             + "[Security.Cryptography.DataProtectionScope]::CurrentUser);"
             + "[Console]::Out.Write([Text.Encoding]::UTF8.GetString($p))";
+    private static final String PROBE_SCRIPT =
+        LOAD_DPAPI_ASSEMBLY
+            + "$s='lizzieyzy-next-dpapi-probe';"
+            + "$b=[Text.Encoding]::UTF8.GetBytes($s);"
+            + "$p=[Security.Cryptography.ProtectedData]::Protect($b,$null,"
+            + "[Security.Cryptography.DataProtectionScope]::CurrentUser);"
+            + "$u=[Security.Cryptography.ProtectedData]::Unprotect($p,$null,"
+            + "[Security.Cryptography.DataProtectionScope]::CurrentUser);"
+            + "if([Text.Encoding]::UTF8.GetString($u) -cne $s){exit 1};exit 0";
 
     private final Path directory;
     private volatile Boolean available;
@@ -305,7 +321,7 @@ public final class PlatformCredentialStore {
                             "-NoProfile",
                             "-NonInteractive",
                             "-Command",
-                            "$null=[Security.Cryptography.ProtectedData];exit 0"),
+                            PROBE_SCRIPT),
                         "")
                     .exitCode
                 == 0;
@@ -342,11 +358,16 @@ public final class PlatformCredentialStore {
       if (result.exitCode != 0 || nonEmptySecret(result.output).isEmpty()) {
         throw failure("write");
       }
+      String encrypted = result.output.trim();
+      CommandResult verification = run(powershell(UNPROTECT_SCRIPT), encrypted);
+      if (verification.exitCode != 0 || !secret.equals(verification.output)) {
+        throw failure("verify");
+      }
       Files.createDirectories(directory);
       Path target = credentialPath(kind, account);
       Path temporary = Files.createTempFile(directory, target.getFileName().toString(), ".tmp");
       try {
-        Files.writeString(temporary, result.output.trim(), StandardCharsets.US_ASCII);
+        Files.writeString(temporary, encrypted, StandardCharsets.US_ASCII);
         moveAtomically(temporary, target);
       } finally {
         Files.deleteIfExists(temporary);
