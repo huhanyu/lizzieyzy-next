@@ -74,7 +74,7 @@
 		</plugins>
 		<pluginManagement>
 			<plugins>
-				<!--This plugin's configuration is used to store Eclipse m2e settings 
+				<!--This plugin's configuration is used to store Eclipse m2e settings
 					only. It has no influence on the Maven build itself. -->
 				<plugin>
 					<groupId>org.eclipse.m2e</groupId>
@@ -176,20 +176,20 @@
 			</exclusions>
 		</dependency>
 
-		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-windows-amd64</artifactId> 
-			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version> 
+		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-windows-amd64</artifactId>
+			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version>
 			</dependency> -->
 
-		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-windows-i386</artifactId> 
-			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version> 
+		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-windows-i386</artifactId>
+			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version>
 			</dependency> -->
 
-		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-linux-amd64</artifactId> 
-			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version> 
+		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-linux-amd64</artifactId>
+			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version>
 			</dependency> -->
 
-		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-macosx-amd64</artifactId> 
-			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version> 
+		<!-- <dependency> <groupId>me.friwi</groupId> <artifactId>jcef-natives-macosx-amd64</artifactId>
+			<version>jcef-a51ff7f+cef-95.7.14+g9f72f35+chromium-95.0.4638.69</version>
 			</dependency> -->
 
 		<dependency>
