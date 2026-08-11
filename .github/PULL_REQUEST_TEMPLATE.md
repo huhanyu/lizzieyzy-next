@@ -19,6 +19,8 @@
 - [ ] Added screenshots if UI changed
 - [ ] Updated README / docs if user-facing behavior changed
 - [ ] Noted affected platforms if the change is platform-specific
+- [ ] Verified there is no unrelated formatting or line-ending churn
+- [ ] Ran `python3 scripts/check_line_endings.py` (or equivalent `python` on Windows)
 
 ## Notes
 

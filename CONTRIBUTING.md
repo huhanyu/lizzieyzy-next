@@ -58,6 +58,7 @@ A concise, reproducible report saves a lot of time for everyone.
 3. 如果改了打包、引擎路径、野狐同步流程，请说明测试方式。打包相关改动建议同时参考 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)。
 4. 如果改了文案或界面，请附截图。
 5. 尽量保持中英文术语一致，尤其是 `Fox nickname / 野狐昵称`、`with-katago`、`nvidia`、`without.engine`。
+6. 不要混入无关格式化或换行改写。仓库文本统一使用 LF，只有 `.bat`、`.cmd` 使用 CRLF；提交前运行 `python3 scripts/check_line_endings.py`。
 
 如果你准备从源码构建、改打包脚本或继续维护，建议先看 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
