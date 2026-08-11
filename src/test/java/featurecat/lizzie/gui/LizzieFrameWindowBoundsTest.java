@@ -29,6 +29,16 @@ class LizzieFrameWindowBoundsTest {
   }
 
   @Test
+  void keepsDefaultWindowAboveTaskbarAtHighDisplayScale() {
+    Rectangle fitted =
+        LizzieFrame.fitWindowBounds(
+            new Rectangle(107, 10, 1065, 700),
+            Collections.singletonList(new Rectangle(0, 0, 1280, 672)));
+
+    assertEquals(new Rectangle(107, 0, 1065, 672), fitted);
+  }
+
+  @Test
   void preservesBoundsThatAlreadyFit() {
     Rectangle requested = new Rectangle(40, 30, 1000, 700);
 
