@@ -45,6 +45,7 @@ mvn -B -DskipTests package
 提交前，至少建议做这些检查：
 
 ```bash
+python3 scripts/check_line_endings.py
 python3 scripts/check_markdown_links.py
 git diff --check
 ```
@@ -56,6 +57,14 @@ mvn -B -DskipTests package
 ```
 
 如果你改了打包、引擎路径、首次启动流程、野狐抓谱流程，建议再做对应平台的手工验证。
+
+## 换行规则
+
+- 仓库中的文本文件统一使用 LF，不受开发者操作系统或 `core.autocrlf` 配置影响。
+- 只有 Windows 命令脚本 `.bat`、`.cmd` 在工作区使用 CRLF；PowerShell、Shell、Java、Python、Markdown 和资源文件均使用 LF。
+- `.gitattributes` 是 Git 层面的最终规则，`.editorconfig` 用于让常见编辑器在保存时提前遵守规则。
+- 日常功能 PR 不要运行全仓 `git add --renormalize .`，也不要混入无关的 `fmt:format` 改写。
+- CI 会运行 `python3 scripts/check_line_endings.py`，发现混合换行或错误行尾时直接失败。
 
 ## 仓库结构速览
 

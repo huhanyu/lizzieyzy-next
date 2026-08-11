@@ -22,6 +22,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Verify clean Windows checkout
+        shell: pwsh
+        run: |
+          $changes = git status --porcelain
+          if ($changes) {
+            $changes | Write-Error
+            throw 'Checkout is dirty; verify .gitattributes normalization.'
+          }
+
+      - name: Verify repository line endings
+        shell: pwsh
+        run: python scripts/check_line_endings.py
+
       - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
@@ -58,6 +71,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Verify repository line endings
+        run: |
+          python3 scripts/test_check_line_endings.py
+          python3 scripts/check_line_endings.py
 
       - name: Set up Java 21
         uses: actions/setup-java@v5

@@ -1,0 +1,30 @@
+# Store text as LF in Git and check it out as LF on every platform.
+* text=auto eol=lf
+
+# Windows command scripts retain their native working-tree line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets must never be passed through text normalization.
+*.7z binary
+*.bin binary
+*.dmg binary
+*.dll binary
+*.dylib binary
+*.exe binary
+*.gif binary
+*.gz binary
+*.icns binary
+*.ico binary
+*.jar binary
+*.jpeg binary
+*.jpg binary
+*.onnx binary
+*.p12 binary
+*.pdf binary
+*.png binary
+*.so binary
+*.ttf binary
+*.wav binary
+*.webp binary
+*.zip binary
