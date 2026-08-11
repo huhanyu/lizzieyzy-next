@@ -1,5 +1,7 @@
 package featurecat.lizzie.analysis.remote;
 
+import com.sun.jna.platform.win32.Crypt32Util;
+import com.sun.jna.platform.win32.WinCrypt;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +13,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -30,11 +34,22 @@ public final class PlatformCredentialStore {
 
   public static CredentialStore create(Path credentialDirectory) {
     return create(
-        System.getProperty("os.name", ""), credentialDirectory, new ProcessCommandRunner());
+        System.getProperty("os.name", ""),
+        credentialDirectory,
+        new ProcessCommandRunner(),
+        new JnaWindowsDataProtector());
   }
 
   static CredentialStore create(
       String osName, Path credentialDirectory, CredentialCommandRunner runner) {
+    return create(osName, credentialDirectory, runner, new JnaWindowsDataProtector());
+  }
+
+  static CredentialStore create(
+      String osName,
+      Path credentialDirectory,
+      CredentialCommandRunner runner,
+      WindowsDataProtector windowsDataProtector) {
     String os = normalize(osName);
     if (os.contains("mac")) {
       return new MacKeychainStore(runner);
@@ -43,7 +58,7 @@ public final class PlatformCredentialStore {
       if (credentialDirectory == null) {
         return new UnavailableStore("session-only");
       }
-      return new WindowsDpapiStore(credentialDirectory, runner);
+      return new WindowsDpapiStore(credentialDirectory, windowsDataProtector);
     }
     if (os.contains("linux")) {
       return new LinuxSecretServiceStore(runner);
@@ -262,27 +277,14 @@ public final class PlatformCredentialStore {
     }
   }
 
-  private static final class WindowsDpapiStore extends CommandCredentialStore {
-    private static final String POWERSHELL = "powershell.exe";
-    private static final String PROTECT_SCRIPT =
-        "$v=[Console]::In.ReadToEnd();"
-            + "$b=[Text.Encoding]::UTF8.GetBytes($v);"
-            + "$p=[Security.Cryptography.ProtectedData]::Protect($b,$null,"
-            + "[Security.Cryptography.DataProtectionScope]::CurrentUser);"
-            + "[Console]::Out.Write([Convert]::ToBase64String($p))";
-    private static final String UNPROTECT_SCRIPT =
-        "$v=[Console]::In.ReadToEnd().Trim();"
-            + "$b=[Convert]::FromBase64String($v);"
-            + "$p=[Security.Cryptography.ProtectedData]::Unprotect($b,$null,"
-            + "[Security.Cryptography.DataProtectionScope]::CurrentUser);"
-            + "[Console]::Out.Write([Text.Encoding]::UTF8.GetString($p))";
-
+  private static final class WindowsDpapiStore implements CredentialStore {
     private final Path directory;
+    private final WindowsDataProtector protector;
     private volatile Boolean available;
 
-    WindowsDpapiStore(Path directory, CredentialCommandRunner runner) {
-      super(runner);
+    WindowsDpapiStore(Path directory, WindowsDataProtector protector) {
       this.directory = directory;
+      this.protector = protector;
     }
 
     @Override
@@ -296,21 +298,20 @@ public final class PlatformCredentialStore {
       if (cached != null) {
         return cached;
       }
+      byte[] probe = "lizzieyzy-next-dpapi-probe".getBytes(StandardCharsets.UTF_8);
+      byte[] encrypted = null;
+      byte[] decrypted = null;
       boolean detected;
       try {
-        detected =
-            run(
-                        List.of(
-                            POWERSHELL,
-                            "-NoProfile",
-                            "-NonInteractive",
-                            "-Command",
-                            "$null=[Security.Cryptography.ProtectedData];exit 0"),
-                        "")
-                    .exitCode
-                == 0;
-      } catch (IOException e) {
+        encrypted = protector.protect(probe);
+        decrypted = protector.unprotect(encrypted);
+        detected = MessageDigest.isEqual(probe, decrypted);
+      } catch (IOException | LinkageError | RuntimeException e) {
         detected = false;
+      } finally {
+        clear(probe);
+        clear(encrypted);
+        clear(decrypted);
       }
       available = detected;
       return detected;
@@ -322,31 +323,52 @@ public final class PlatformCredentialStore {
       if (!isAvailable() || !Files.isRegularFile(path)) {
         return Optional.empty();
       }
-      String encrypted = Files.readString(path, StandardCharsets.US_ASCII).trim();
-      if (encrypted.isEmpty()) {
+      String encoded = Files.readString(path, StandardCharsets.US_ASCII).trim();
+      if (encoded.isEmpty()) {
         return Optional.empty();
       }
-      CommandResult result = run(powershell(UNPROTECT_SCRIPT), encrypted);
-      if (result.exitCode != 0) {
-        throw failure("read");
+      byte[] encrypted = null;
+      byte[] plaintext = null;
+      try {
+        encrypted = Base64.getDecoder().decode(encoded);
+        plaintext = protector.unprotect(encrypted);
+        return nonEmptySecret(new String(plaintext, StandardCharsets.UTF_8));
+      } catch (RuntimeException e) {
+        throw CommandCredentialStore.failure("read");
+      } finally {
+        clear(encrypted);
+        clear(plaintext);
       }
-      return nonEmptySecret(result.output);
     }
 
     @Override
     public void write(Kind kind, String account, String secret) throws IOException {
       if (!isAvailable() || secret == null || secret.isEmpty()) {
-        throw failure("write");
+        throw CommandCredentialStore.failure("write");
       }
-      CommandResult result = run(powershell(PROTECT_SCRIPT), secret);
-      if (result.exitCode != 0 || nonEmptySecret(result.output).isEmpty()) {
-        throw failure("write");
+      byte[] plaintext = secret.getBytes(StandardCharsets.UTF_8);
+      byte[] encrypted = null;
+      byte[] verification = null;
+      String encoded;
+      try {
+        encrypted = protector.protect(plaintext);
+        verification = protector.unprotect(encrypted);
+        if (!MessageDigest.isEqual(plaintext, verification)) {
+          throw CommandCredentialStore.failure("verify");
+        }
+        encoded = Base64.getEncoder().encodeToString(encrypted);
+      } catch (RuntimeException e) {
+        throw CommandCredentialStore.failure("write");
+      } finally {
+        clear(plaintext);
+        clear(encrypted);
+        clear(verification);
       }
       Files.createDirectories(directory);
       Path target = credentialPath(kind, account);
       Path temporary = Files.createTempFile(directory, target.getFileName().toString(), ".tmp");
       try {
-        Files.writeString(temporary, result.output.trim(), StandardCharsets.US_ASCII);
+        Files.writeString(temporary, encoded, StandardCharsets.US_ASCII);
         moveAtomically(temporary, target);
       } finally {
         Files.deleteIfExists(temporary);
@@ -359,12 +381,52 @@ public final class PlatformCredentialStore {
     }
 
     private Path credentialPath(Kind kind, String account) {
-      return directory.resolve(kind.id() + "-" + accountDigest(account(account)) + ".dpapi");
+      return directory.resolve(
+          kind.id() + "-" + accountDigest(CommandCredentialStore.account(account)) + ".dpapi");
     }
 
-    private static List<String> powershell(String script) {
-      return List.of(POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", script);
+    private static void clear(byte[] bytes) {
+      if (bytes != null) {
+        Arrays.fill(bytes, (byte) 0);
+      }
     }
+  }
+
+  interface WindowsDataProtector {
+    byte[] protect(byte[] plaintext) throws IOException;
+
+    byte[] unprotect(byte[] encrypted) throws IOException;
+  }
+
+  private static final class JnaWindowsDataProtector implements WindowsDataProtector {
+    @Override
+    public byte[] protect(byte[] plaintext) throws IOException {
+      return callDpapi(
+          () -> Crypt32Util.cryptProtectData(plaintext, WinCrypt.CRYPTPROTECT_UI_FORBIDDEN));
+    }
+
+    @Override
+    public byte[] unprotect(byte[] encrypted) throws IOException {
+      return callDpapi(
+          () -> Crypt32Util.cryptUnprotectData(encrypted, WinCrypt.CRYPTPROTECT_UI_FORBIDDEN));
+    }
+
+    private static byte[] callDpapi(DpapiCall call) throws IOException {
+      try {
+        byte[] result = call.run();
+        if (result == null || result.length == 0) {
+          throw new IOException("Windows DPAPI returned no data.");
+        }
+        return result;
+      } catch (LinkageError | RuntimeException e) {
+        throw new IOException("Windows DPAPI is unavailable.", e);
+      }
+    }
+  }
+
+  @FunctionalInterface
+  private interface DpapiCall {
+    byte[] run();
   }
 
   private static final class UnavailableStore implements CredentialStore {

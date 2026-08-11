@@ -2,15 +2,21 @@ package featurecat.lizzie.analysis.remote;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 class PlatformCredentialStoreTest {
   @Test
@@ -66,9 +72,10 @@ class PlatformCredentialStoreTest {
   void windowsDpapiPersistsOnlyEncryptedUserScopedBlob() throws Exception {
     Path directory = Files.createTempDirectory("dpapi-store");
     RecordingRunner runner = new RecordingRunner();
-    runner.protectedOutput = "encrypted-dpapi-blob";
-    runner.unprotectedOutput = "windows-secret";
-    CredentialStore store = PlatformCredentialStore.create("Windows 11", directory, runner);
+    FakeWindowsDataProtector protector = new FakeWindowsDataProtector();
+    protector.protectedOutput = "encrypted-dpapi-blob".getBytes(StandardCharsets.UTF_8);
+    CredentialStore store =
+        PlatformCredentialStore.create("Windows 11", directory, runner, protector);
 
     store.write(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com", "never-in-file");
 
@@ -77,13 +84,52 @@ class PlatformCredentialStoreTest {
       files = paths.toList();
     }
     assertEquals(1, files.size());
-    assertEquals("encrypted-dpapi-blob", Files.readString(files.get(0)));
+    assertEquals(
+        Base64.getEncoder().encodeToString(protector.protectedOutput),
+        Files.readString(files.get(0)));
     assertFalse(files.get(0).getFileName().toString().contains("user@example.com"));
     assertEquals(
-        "windows-secret",
+        "never-in-file",
         store.read(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com").orElseThrow());
-    assertFalse(runner.flattenedCommands().contains("never-in-file"));
-    assertTrue(runner.inputs.contains("never-in-file"));
+    assertTrue(runner.commands.isEmpty());
+    assertTrue(protector.protectCalls >= 2);
+    assertTrue(protector.unprotectCalls >= 3);
+  }
+
+  @Test
+  void windowsDpapiRejectsCredentialThatCannotBeReadBack() throws Exception {
+    Path directory = Files.createTempDirectory("dpapi-store-verification");
+    RecordingRunner runner = new RecordingRunner();
+    FakeWindowsDataProtector protector = new FakeWindowsDataProtector();
+    protector.corruptAfterProbe = true;
+    CredentialStore store =
+        PlatformCredentialStore.create("Windows 11", directory, runner, protector);
+
+    assertThrows(
+        IOException.class,
+        () -> store.write(CredentialStore.Kind.ACCOUNT_TOKEN, "user@example.com", "token"));
+    try (var files = Files.list(directory)) {
+      assertEquals(0L, files.count());
+    }
+  }
+
+  @Test
+  @EnabledOnOs(OS.WINDOWS)
+  void windowsDpapiRoundTripsAcrossRealNativeCalls() throws Exception {
+    Path directory = Files.createTempDirectory("dpapi-store-real");
+    String account = "dpapi-regression-test";
+    String secret = "round-trip-secret-\u4e2d\u6587";
+
+    CredentialStore writer = PlatformCredentialStore.create(directory);
+    assertTrue(writer.isAvailable());
+    writer.write(CredentialStore.Kind.ACCOUNT_TOKEN, account, secret);
+
+    CredentialStore reader = PlatformCredentialStore.create(directory);
+    assertTrue(reader.isAvailable());
+    assertEquals(secret, reader.read(CredentialStore.Kind.ACCOUNT_TOKEN, account).orElseThrow());
+
+    reader.delete(CredentialStore.Kind.ACCOUNT_TOKEN, account);
+    assertTrue(reader.read(CredentialStore.Kind.ACCOUNT_TOKEN, account).isEmpty());
   }
 
   @Test
@@ -100,8 +146,6 @@ class PlatformCredentialStoreTest {
     final List<List<String>> commands = new ArrayList<>();
     final List<String> inputs = new ArrayList<>();
     String readOutput = "";
-    String protectedOutput = "encrypted";
-    String unprotectedOutput = "decrypted";
 
     @Override
     public PlatformCredentialStore.CommandResult run(
@@ -109,12 +153,6 @@ class PlatformCredentialStoreTest {
       commands.add(List.copyOf(command));
       inputs.add(input == null ? "" : input);
       String flattened = String.join(" ", command);
-      if (flattened.contains("Unprotect(")) {
-        return new PlatformCredentialStore.CommandResult(0, unprotectedOutput);
-      }
-      if (flattened.contains("Protect(")) {
-        return new PlatformCredentialStore.CommandResult(0, protectedOutput);
-      }
       if (flattened.contains("find-generic-password") || flattened.contains("secret-tool lookup")) {
         return new PlatformCredentialStore.CommandResult(0, readOutput);
       }
@@ -130,6 +168,31 @@ class PlatformCredentialStoreTest {
         out.append(String.join(" ", command));
       }
       return out.toString();
+    }
+  }
+
+  private static final class FakeWindowsDataProtector
+      implements PlatformCredentialStore.WindowsDataProtector {
+    byte[] protectedOutput = "encrypted".getBytes(StandardCharsets.UTF_8);
+    byte[] lastPlaintext = new byte[0];
+    int protectCalls;
+    int unprotectCalls;
+    boolean corruptAfterProbe;
+
+    @Override
+    public byte[] protect(byte[] plaintext) {
+      protectCalls++;
+      lastPlaintext = Arrays.copyOf(plaintext, plaintext.length);
+      return Arrays.copyOf(protectedOutput, protectedOutput.length);
+    }
+
+    @Override
+    public byte[] unprotect(byte[] encrypted) {
+      unprotectCalls++;
+      if (corruptAfterProbe && unprotectCalls > 1) {
+        return "different-secret".getBytes(StandardCharsets.UTF_8);
+      }
+      return Arrays.copyOf(lastPlaintext, lastPlaintext.length);
     }
   }
 }
