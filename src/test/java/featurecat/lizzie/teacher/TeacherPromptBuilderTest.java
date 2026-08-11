@@ -28,8 +28,9 @@ class TeacherPromptBuilderTest {
     String system = messages.get(0).content;
     String evidence = messages.get(1).content;
 
-    assertTrue(system.contains("Simplified Chinese"));
-    assertTrue(system.contains("Never invent"));
+    assertTrue(system.contains("简体中文"));
+    assertTrue(system.contains("禁止编造"));
+    assertTrue(system.contains("围棋 AI 讲棋老师"));
     assertTrue(evidence.contains("D4"));
     assertTrue(evidence.contains("Q16"));
     assertTrue(evidence.contains("pv=Q16"));
