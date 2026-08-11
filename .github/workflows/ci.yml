@@ -47,7 +47,7 @@ jobs:
       - name: Verify Windows credential persistence
         shell: pwsh
         run: >-
-          mvn -B -Dfmt.skip=true
+          mvn -B "-Dfmt.skip=true"
           "-Dtest=PlatformCredentialStoreTest,RemoteComputeConfigTest,MigratingCredentialStoreTest"
           test
 
