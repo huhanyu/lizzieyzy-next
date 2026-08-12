@@ -194,6 +194,41 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   @Test
+  void utf8BomConfigCanMergeAndAtomicallyPersistOnWindows() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-config-bom-merge");
+    Path configFile = tempRoot.resolve("config.txt");
+    byte[] json =
+        "{\"ui\":{\"first-time-load\":false},\"leelaz\":{\"custom\":\"preserved\"}}"
+            .getBytes(StandardCharsets.UTF_8);
+    byte[] withBom = new byte[json.length + 3];
+    withBom[0] = (byte) 0xEF;
+    withBom[1] = (byte) 0xBB;
+    withBom[2] = (byte) 0xBF;
+    System.arraycopy(json, 0, withBom, 3, json.length);
+    Files.write(configFile, withBom);
+
+    Config config = ConfigTestHelper.createForTests(tempRoot);
+    Method method =
+        Config.class.getDeclaredMethod(
+            "loadAndMergeConfig", JSONObject.class, String.class, boolean.class);
+    method.setAccessible(true);
+    JSONObject defaults =
+        new JSONObject()
+            .put("ui", new JSONObject().put("show-status", true))
+            .put("leelaz", new JSONObject().put("default-added", true));
+
+    JSONObject merged =
+        (JSONObject) method.invoke(config, defaults, configFile.toString(), false);
+
+    assertFalse(merged.getJSONObject("ui").getBoolean("first-time-load"));
+    assertTrue(merged.getJSONObject("ui").getBoolean("show-status"));
+    assertEquals("preserved", merged.getJSONObject("leelaz").getString("custom"));
+    JSONObject persisted = Config.readJsonObjectForTests(configFile);
+    assertTrue(persisted.getJSONObject("leelaz").getBoolean("default-added"));
+    assertFalse(Files.exists(tempRoot.resolve("config.txt.unreadable-backup")));
+  }
+
+  @Test
   void utf8BomPortableConfigIsNotBackedUpAsUnreadable() throws Exception {
     Path parent = Files.createTempDirectory("lizzie-portable-bom");
     Path currentRoot = Files.createDirectories(parent.resolve("current"));

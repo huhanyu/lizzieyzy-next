@@ -1969,8 +1969,8 @@ public class Config {
         System.exit(1);
       }
     }
-    try (Reader reader = openUtf8JsonReader(file)) {
-      JSONObject mergedcfg = new JSONObject(new JSONTokener(reader));
+    try {
+      JSONObject mergedcfg = readJsonObject(file.toPath());
       boolean modified = mergeDefaults(mergedcfg, defaultCfg);
 
       if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
@@ -2031,16 +2031,14 @@ public class Config {
       }
     }
 
-    try (Reader reader = openUtf8JsonReader(file)) {
-      JSONObject mergedcfg = new JSONObject(new JSONTokener(reader));
-      boolean modified = mergeDefaults(mergedcfg, defaultCfg);
+    JSONObject mergedcfg = readJsonObject(file.toPath());
+    boolean modified = mergeDefaults(mergedcfg, defaultCfg);
 
-      if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
-      if (modified) {
-        writeConfig(mergedcfg, file);
-      }
-      return mergedcfg;
+    if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
+    if (modified) {
+      writeConfig(mergedcfg, file);
     }
+    return mergedcfg;
   }
 
   private JSONObject loadAndMergeConfigdef(
@@ -2054,16 +2052,14 @@ public class Config {
       System.exit(1);
     }
 
-    try (Reader reader = openUtf8JsonReader(file)) {
-      JSONObject mergedcfg = new JSONObject(new JSONTokener(reader));
-      boolean modified = mergeDefaults(mergedcfg, defaultCfg);
+    JSONObject mergedcfg = readJsonObject(file.toPath());
+    boolean modified = mergeDefaults(mergedcfg, defaultCfg);
 
-      if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
-      if (modified) {
-        writeConfig(mergedcfg, file);
-      }
-      return mergedcfg;
+    if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
+    if (modified) {
+      writeConfig(mergedcfg, file);
     }
+    return mergedcfg;
   }
 
   /**
@@ -2208,7 +2204,7 @@ public class Config {
     // Main properties
     try {
       this.config = loadAndMergeConfig(defaultConfig, configFilename, true);
-    } catch (Exception e) {
+    } catch (JSONException e) {
       e.printStackTrace();
       backupUnreadableConfig(new File(configFilename));
       this.config = loadAndMergeConfigdef(defaultConfig, configFilename, true);
