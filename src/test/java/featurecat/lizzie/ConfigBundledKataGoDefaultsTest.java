@@ -526,6 +526,41 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   @Test
+  void brokenLegacyAuxiliaryEnginesAreRepairedWithoutVersionMetadata() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-legacy-package");
+    Files.writeString(tempRoot.resolve("config.txt"), "{}");
+    createBundledKataGoAssets(tempRoot);
+
+    Config config = ConfigTestHelper.createForTests(tempRoot);
+    JSONObject ui =
+        new JSONObject()
+            .put("first-time-load", false)
+            .put("autoload-default", true)
+            .put("default-engine", 0)
+            .put("analysis-engine-command", "java -jar legacy/missing-analysis.jar")
+            .put("analysis-engine-command-customized", true)
+            .put("estimate-command", "java -jar legacy/missing-estimate.jar");
+    JSONObject leelaz =
+        new JSONObject()
+            .put(
+                "engine-settings-list",
+                new JSONArray()
+                    .put(
+                        new JSONObject()
+                            .put("name", "Legacy KataGo")
+                            .put("command", "java -jar legacy/missing-engine.jar")
+                            .put("isDefault", true)));
+    config.config = new JSONObject().put("ui", ui).put("leelaz", leelaz);
+
+    withUserDir(tempRoot, () -> applyBundledKataGoDefaults(config));
+
+    assertFalse(ui.getString("analysis-engine-command").contains("java -jar"));
+    assertFalse(ui.getBoolean("analysis-engine-command-customized"));
+    assertFalse(ui.getString("estimate-command").contains("java -jar"));
+    assertFalse(ui.optBoolean("migrated-default-transformer-v1", false));
+  }
+
+  @Test
   void existingJavaJarDefaultIsPreservedWhenLauncherStillExists() throws Exception {
     Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-valid-java");
     Files.writeString(tempRoot.resolve("config.txt"), "{}");

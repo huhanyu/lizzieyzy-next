@@ -1382,7 +1382,7 @@ public class Config {
       if (!reusedAutoSetupEntry) {
         bundledEngine.put("name", BUNDLED_ENGINE_NAME);
       }
-      if (!newProfile && bundledConfig.transformerDefault) {
+      if (!newProfile) {
         boolean analysisCustomized =
             AnalysisEngineCommandHelper.isAnalysisCommandCustomized(
                 ui.has("analysis-engine-command-customized"),
@@ -1399,7 +1399,9 @@ public class Config {
             || isClearlyBrokenJavaJarCommand(estimateCommand)) {
           ui.put("estimate-command", bundledConfig.estimateCommand);
         }
-        ui.put(DEFAULT_TRANSFORMER_MIGRATION_KEY, true);
+        if (bundledConfig.transformerDefault) {
+          ui.put(DEFAULT_TRANSFORMER_MIGRATION_KEY, true);
+        }
       }
     }
     if (createdBundledEngine) {
