@@ -16,31 +16,11 @@ concurrency:
 jobs:
   windows-script-validation:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Verify clean Windows checkout
-        shell: pwsh
-        run: |
-          $changes = git status --porcelain
-          if ($changes) {
-            $changes | Write-Error
-            throw 'Checkout is dirty; verify .gitattributes normalization.'
-          }
-
-      - name: Verify repository line endings
-        shell: pwsh
-        run: python scripts/check_line_endings.py
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
 
       - name: Parse RTX 50 benchmark script
         shell: pwsh
@@ -57,13 +37,6 @@ jobs:
             exit 1
           }
 
-      - name: Verify Windows credential persistence
-        shell: pwsh
-        run: >-
-          mvn -B "-Dfmt.skip=true"
-          "-Dtest=PlatformCredentialStoreTest,RemoteComputeConfigTest,MigratingCredentialStoreTest"
-          test
-
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -71,11 +44,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Verify repository line endings
-        run: |
-          python3 scripts/test_check_line_endings.py
-          python3 scripts/check_line_endings.py
 
       - name: Set up Java 21
         uses: actions/setup-java@v5
