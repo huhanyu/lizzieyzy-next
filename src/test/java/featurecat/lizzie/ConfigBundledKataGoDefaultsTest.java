@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -173,6 +174,84 @@ public class ConfigBundledKataGoDefaultsTest {
     JSONObject recovered = new JSONObject(Files.readString(currentData.resolve("config.txt")));
     assertEquals(
         2, recovered.getJSONObject("leelaz").getJSONArray("engine-settings-list").length());
+  }
+
+  @Test
+  void utf8BomConfigRemainsReadable() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-config-bom");
+    Path configFile = tempRoot.resolve("config.txt");
+    byte[] json = "{\"ui\":{\"first-time-load\":false}}".getBytes(StandardCharsets.UTF_8);
+    byte[] withBom = new byte[json.length + 3];
+    withBom[0] = (byte) 0xEF;
+    withBom[1] = (byte) 0xBB;
+    withBom[2] = (byte) 0xBF;
+    System.arraycopy(json, 0, withBom, 3, json.length);
+    Files.write(configFile, withBom);
+
+    JSONObject parsed = Config.readJsonObjectForTests(configFile);
+
+    assertFalse(parsed.getJSONObject("ui").getBoolean("first-time-load"));
+  }
+
+  @Test
+  void utf8BomConfigCanMergeAndAtomicallyPersistOnWindows() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-config-bom-merge");
+    Path configFile = tempRoot.resolve("config.txt");
+    byte[] json =
+        "{\"ui\":{\"first-time-load\":false},\"leelaz\":{\"custom\":\"preserved\"}}"
+            .getBytes(StandardCharsets.UTF_8);
+    byte[] withBom = new byte[json.length + 3];
+    withBom[0] = (byte) 0xEF;
+    withBom[1] = (byte) 0xBB;
+    withBom[2] = (byte) 0xBF;
+    System.arraycopy(json, 0, withBom, 3, json.length);
+    Files.write(configFile, withBom);
+
+    Config config = ConfigTestHelper.createForTests(tempRoot);
+    Method method =
+        Config.class.getDeclaredMethod(
+            "loadAndMergeConfig", JSONObject.class, String.class, boolean.class);
+    method.setAccessible(true);
+    JSONObject defaults =
+        new JSONObject()
+            .put("ui", new JSONObject().put("show-status", true))
+            .put("leelaz", new JSONObject().put("default-added", true));
+
+    JSONObject merged =
+        (JSONObject) method.invoke(config, defaults, configFile.toString(), false);
+
+    assertFalse(merged.getJSONObject("ui").getBoolean("first-time-load"));
+    assertTrue(merged.getJSONObject("ui").getBoolean("show-status"));
+    assertEquals("preserved", merged.getJSONObject("leelaz").getString("custom"));
+    JSONObject persisted = Config.readJsonObjectForTests(configFile);
+    assertTrue(persisted.getJSONObject("leelaz").getBoolean("default-added"));
+    assertFalse(Files.exists(tempRoot.resolve("config.txt.unreadable-backup")));
+  }
+
+  @Test
+  void utf8BomPortableConfigIsNotBackedUpAsUnreadable() throws Exception {
+    Path parent = Files.createTempDirectory("lizzie-portable-bom");
+    Path currentRoot = Files.createDirectories(parent.resolve("current"));
+    Files.writeString(currentRoot.resolve(".lizzie-portable"), "portable");
+    Path currentData = Files.createDirectories(currentRoot.resolve("user-data"));
+    byte[] json = richPortableConfig().toString(2).getBytes(StandardCharsets.UTF_8);
+    byte[] withBom = new byte[json.length + 3];
+    withBom[0] = (byte) 0xEF;
+    withBom[1] = (byte) 0xBB;
+    withBom[2] = (byte) 0xBF;
+    System.arraycopy(json, 0, withBom, 3, json.length);
+    Files.write(currentData.resolve("config.txt"), withBom);
+
+    Config.prepareWindowsPortableWorkDirWithSourcesForTests(currentRoot);
+
+    assertFalse(Files.exists(currentData.resolve("config.txt.unreadable-backup")));
+    JSONObject parsed = Config.readJsonObjectForTests(currentData.resolve("config.txt"));
+    assertEquals(
+        "saved-user",
+        parsed
+            .getJSONObject("leelaz")
+            .getJSONObject(RemoteComputeConfig.CONFIG_KEY)
+            .getString("zhizi-identifier"));
   }
 
   @Test
@@ -390,6 +469,131 @@ public class ConfigBundledKataGoDefaultsTest {
         customCommand,
         storedEngine.getString("command"),
         "a custom command in the default slot must not be overwritten by the bundled default.");
+  }
+
+  @Test
+  void brokenLegacyJavaDefaultFallsBackToBundledEngine() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-broken-legacy");
+    Files.writeString(tempRoot.resolve("config.txt"), "{}");
+    createBundledKataGoAssets(tempRoot, KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_FILE_NAME);
+
+    Config config = ConfigTestHelper.createForTests(tempRoot);
+    JSONObject ui =
+        new JSONObject()
+            .put("first-time-load", false)
+            .put("autoload-default", true)
+            .put("autoload-last", false)
+            .put("autoload-empty", false)
+            .put("default-engine", 0)
+            .put("analysis-engine-command", "java -jar legacy/missing-analysis.jar")
+            .put("estimate-command", "java -jar legacy/missing-estimate.jar");
+    JSONObject legacyEngine =
+        new JSONObject()
+            .put("name", "Legacy KataGo")
+            .put("command", "java -jar legacy/missing-engine.jar")
+            .put("isDefault", true);
+    JSONObject leelaz =
+        new JSONObject().put("engine-settings-list", new JSONArray().put(legacyEngine));
+    config.config = new JSONObject().put("ui", ui).put("leelaz", leelaz);
+
+    boolean changed =
+        withUserDirResult(tempRoot, () -> applyBundledKataGoDefaultsAndPersist(config));
+
+    JSONArray engines = leelaz.getJSONArray("engine-settings-list");
+    int defaultIndex = ui.getInt("default-engine");
+    assertTrue(changed);
+    assertEquals(2, engines.length());
+    assertEquals(1, defaultIndex);
+    assertFalse(engines.getJSONObject(0).getBoolean("isDefault"));
+    assertTrue(engines.getJSONObject(defaultIndex).getBoolean("isDefault"));
+    assertFalse(engines.getJSONObject(defaultIndex).getString("command").contains("java -jar"));
+    assertFalse(ui.getString("analysis-engine-command").contains("java -jar"));
+    assertFalse(ui.getString("estimate-command").contains("java -jar"));
+    assertTrue(ui.getBoolean("autoload-default"));
+    assertFalse(ui.getBoolean("autoload-last"));
+    assertFalse(ui.getBoolean("autoload-empty"));
+
+    JSONObject persisted = Config.readJsonObjectForTests(tempRoot.resolve("config.txt"));
+    int persistedDefault = persisted.getJSONObject("ui").getInt("default-engine");
+    assertEquals(1, persistedDefault);
+    assertFalse(
+        persisted
+            .getJSONObject("leelaz")
+            .getJSONArray("engine-settings-list")
+            .getJSONObject(persistedDefault)
+            .getString("command")
+            .contains("java -jar"));
+  }
+
+  @Test
+  void brokenLegacyAuxiliaryEnginesAreRepairedWithoutVersionMetadata() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-legacy-package");
+    Files.writeString(tempRoot.resolve("config.txt"), "{}");
+    createBundledKataGoAssets(tempRoot);
+
+    Config config = ConfigTestHelper.createForTests(tempRoot);
+    JSONObject ui =
+        new JSONObject()
+            .put("first-time-load", false)
+            .put("autoload-default", true)
+            .put("default-engine", 0)
+            .put("analysis-engine-command", "java -jar legacy/missing-analysis.jar")
+            .put("analysis-engine-command-customized", true)
+            .put("estimate-command", "java -jar legacy/missing-estimate.jar");
+    JSONObject leelaz =
+        new JSONObject()
+            .put(
+                "engine-settings-list",
+                new JSONArray()
+                    .put(
+                        new JSONObject()
+                            .put("name", "Legacy KataGo")
+                            .put("command", "java -jar legacy/missing-engine.jar")
+                            .put("isDefault", true)));
+    config.config = new JSONObject().put("ui", ui).put("leelaz", leelaz);
+
+    withUserDir(tempRoot, () -> applyBundledKataGoDefaults(config));
+
+    assertFalse(ui.getString("analysis-engine-command").contains("java -jar"));
+    assertFalse(ui.getBoolean("analysis-engine-command-customized"));
+    assertFalse(ui.getString("estimate-command").contains("java -jar"));
+    assertFalse(ui.optBoolean("migrated-default-transformer-v1", false));
+  }
+
+  @Test
+  void existingJavaJarDefaultIsPreservedWhenLauncherStillExists() throws Exception {
+    Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-valid-java");
+    Files.writeString(tempRoot.resolve("config.txt"), "{}");
+    createBundledKataGoAssets(tempRoot, KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_FILE_NAME);
+    Path launcher = Files.createDirectories(tempRoot.resolve("legacy")).resolve("engine.jar");
+    Files.write(launcher, new byte[] {1});
+    String command = "java -jar " + quote(launcher);
+
+    Config config = ConfigTestHelper.createForTests(tempRoot);
+    JSONObject ui =
+        new JSONObject()
+            .put("first-time-load", false)
+            .put("autoload-default", true)
+            .put("default-engine", 0)
+            .put("analysis-engine-command", command)
+            .put("estimate-command", command);
+    JSONObject customEngine =
+        new JSONObject()
+            .put("name", "Custom Java Engine")
+            .put("command", command)
+            .put("isDefault", true);
+    JSONObject leelaz =
+        new JSONObject().put("engine-settings-list", new JSONArray().put(customEngine));
+    config.config = new JSONObject().put("ui", ui).put("leelaz", leelaz);
+
+    withUserDir(tempRoot, () -> applyBundledKataGoDefaults(config));
+
+    assertEquals(0, ui.getInt("default-engine"));
+    assertEquals(
+        command,
+        leelaz.getJSONArray("engine-settings-list").getJSONObject(0).getString("command"));
+    assertEquals(command, ui.getString("analysis-engine-command"));
+    assertEquals(command, ui.getString("estimate-command"));
   }
 
   @Test
@@ -758,10 +962,16 @@ public class ConfigBundledKataGoDefaultsTest {
     assertTrue(Files.exists(tempRoot.resolve("save").resolve("save")));
   }
 
-  private static void applyBundledKataGoDefaults(Config config) throws Exception {
+  private static boolean applyBundledKataGoDefaults(Config config) throws Exception {
     Method method = Config.class.getDeclaredMethod("applyBundledKataGoDefaults");
     method.setAccessible(true);
-    method.invoke(config);
+    return (Boolean) method.invoke(config);
+  }
+
+  private static boolean applyBundledKataGoDefaultsAndPersist(Config config) throws Exception {
+    Method method = Config.class.getDeclaredMethod("applyBundledKataGoDefaultsAndPersist");
+    method.setAccessible(true);
+    return (Boolean) method.invoke(config);
   }
 
   private static JSONObject createDefaultConfig(Config config) throws Exception {
@@ -841,6 +1051,21 @@ public class ConfigBundledKataGoDefaultsTest {
     }
   }
 
+  private static <T> T withUserDirResult(Path userDir, ThrowingSupplier<T> action)
+      throws Exception {
+    String previousUserDir = System.getProperty("user.dir");
+    try {
+      System.setProperty("user.dir", userDir.toString());
+      return action.get();
+    } finally {
+      if (previousUserDir == null) {
+        System.clearProperty("user.dir");
+      } else {
+        System.setProperty("user.dir", previousUserDir);
+      }
+    }
+  }
+
   private static void createBundledKataGoAssets(Path root) throws Exception {
     createBundledKataGoAssets(root, "");
   }
@@ -892,5 +1117,9 @@ public class ConfigBundledKataGoDefaultsTest {
 
   private interface ThrowingRunnable {
     void run() throws Exception;
+  }
+
+  private interface ThrowingSupplier<T> {
+    T get() throws Exception;
   }
 }
