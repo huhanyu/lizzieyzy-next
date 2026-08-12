@@ -13,6 +13,7 @@ import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Toolkit;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -716,7 +717,7 @@ public class Config {
       }
       int tier;
       try {
-        tier = configUserStateTier(new JSONObject(Files.readString(configFile)));
+        tier = configUserStateTier(readJsonObject(configFile));
       } catch (Exception e) {
         continue;
       }
@@ -765,7 +766,7 @@ public class Config {
       return false;
     }
     try {
-      JSONObject parsed = new JSONObject(Files.readString(configFile));
+      JSONObject parsed = readJsonObject(configFile);
       return parsed.optJSONObject("ui") != null || parsed.optJSONObject("leelaz") != null;
     } catch (Exception e) {
       return false;
@@ -777,8 +778,8 @@ public class Config {
     Path targetConfigFile = target.resolve("config.txt");
     Path sourceConfigFile = source.resolve("config.txt");
     try {
-      JSONObject targetConfig = new JSONObject(Files.readString(targetConfigFile));
-      JSONObject sourceConfig = new JSONObject(Files.readString(sourceConfigFile));
+      JSONObject targetConfig = readJsonObject(targetConfigFile);
+      JSONObject sourceConfig = readJsonObject(sourceConfigFile);
       JSONObject targetUi = targetConfig.optJSONObject("ui");
       if (targetUi != null && targetUi.optBoolean(WINDOWS_PORTABLE_STATE_MIGRATION_KEY, false)) {
         return false;
@@ -1155,6 +1156,43 @@ public class Config {
     return "";
   }
 
+  private static boolean isClearlyBrokenJavaJarCommand(String command) {
+    List<String> commandParts = Utils.splitCommand(command == null ? "" : command.trim());
+    if (commandParts.isEmpty() || !Utils.isJavaCommand(commandParts.get(0))) {
+      return false;
+    }
+    for (int i = 0; i < commandParts.size(); i++) {
+      if (!"-jar".equalsIgnoreCase(commandParts.get(i))) {
+        continue;
+      }
+      if (i + 1 >= commandParts.size()) {
+        return true;
+      }
+      String jarToken = commandParts.get(i + 1);
+      if (jarToken == null || jarToken.trim().isEmpty()) {
+        return true;
+      }
+      try {
+        Path jarPath = Path.of(jarToken.trim());
+        if (jarPath.isAbsolute()) {
+          return !Files.isRegularFile(jarPath);
+        }
+        LinkedHashSet<Path> roots = new LinkedHashSet<>();
+        roots.add(Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize());
+        findBundledAppRoot().ifPresent(roots::add);
+        for (Path root : roots) {
+          if (Files.isRegularFile(root.resolve(jarPath).normalize())) {
+            return false;
+          }
+        }
+        return true;
+      } catch (RuntimeException e) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public static boolean isBundledKataGoExecutable(Path executable) {
     if (executable == null) {
       return false;
@@ -1270,11 +1308,12 @@ public class Config {
     return false;
   }
 
-  private void applyBundledKataGoDefaults() {
+  private boolean applyBundledKataGoDefaults() {
     BundledKataGoConfig bundledConfig = detectBundledKataGoConfig();
     if (bundledConfig == null) {
-      return;
+      return false;
     }
+    String configBeforeRepair = config.toString();
 
     JSONObject ui = config.getJSONObject("ui");
     JSONObject leelaz = config.getJSONObject("leelaz");
@@ -1349,12 +1388,15 @@ public class Config {
                 ui.has("analysis-engine-command-customized"),
                 ui.optBoolean("analysis-engine-command-customized", false),
                 ui.optString("analysis-engine-command", ""));
-        if (!analysisCustomized
-            && isManagedBundledDefaultCommand(ui.optString("analysis-engine-command", ""))) {
+        String analysisCommand = ui.optString("analysis-engine-command", "");
+        if ((!analysisCustomized && isManagedBundledDefaultCommand(analysisCommand))
+            || isClearlyBrokenJavaJarCommand(analysisCommand)) {
           ui.put("analysis-engine-command", bundledConfig.analysisCommand);
           ui.put("analysis-engine-command-customized", false);
         }
-        if (isManagedBundledDefaultCommand(ui.optString("estimate-command", ""))) {
+        String estimateCommand = ui.optString("estimate-command", "");
+        if (isManagedBundledDefaultCommand(estimateCommand)
+            || isClearlyBrokenJavaJarCommand(estimateCommand)) {
           ui.put("estimate-command", bundledConfig.estimateCommand);
         }
         ui.put(DEFAULT_TRANSFORMER_MIGRATION_KEY, true);
@@ -1388,9 +1430,23 @@ public class Config {
       putIfMissing(bundledEngine, "initialCommand", "");
     }
 
-    // Existing profiles may deliberately use manual or no-engine startup. Discovering a bundled
-    // engine must never rewrite that choice; only a genuinely new profile receives defaults.
-    boolean shouldPreferBundled = newProfile;
+    // Existing profiles may deliberately use manual or no-engine startup. Preserve that choice;
+    // only a new profile or an automatically loaded Java launcher whose JAR is gone may switch to
+    // the complete package's bundled engine.
+    int configuredDefaultIndex = ui.optInt("default-engine", -1);
+    JSONObject configuredDefaultEngine =
+        configuredDefaultIndex >= 0 && configuredDefaultIndex < engineSettings.length()
+            ? engineSettings.optJSONObject(configuredDefaultIndex)
+            : null;
+    String configuredDefaultCommand =
+        configuredDefaultEngine == null ? "" : configuredDefaultEngine.optString("command", "");
+    boolean brokenAutomaticDefault =
+        !newProfile
+            && ui.optBoolean("autoload-default", false)
+            && (configuredDefaultEngine == null
+                || configuredDefaultCommand.trim().isEmpty()
+                || isClearlyBrokenJavaJarCommand(configuredDefaultCommand));
+    boolean shouldPreferBundled = newProfile || brokenAutomaticDefault;
     if (shouldPreferBundled) {
       for (int i = 0; i < engineSettings.length(); i++) {
         JSONObject engineInfo = engineSettings.optJSONObject(i);
@@ -1398,14 +1454,27 @@ public class Config {
           engineInfo.put("isDefault", i == bundledIndex);
         }
       }
-      ui.put("autoload-default", true);
-      ui.put("autoload-last", false);
-      ui.put("autoload-empty", false);
+      if (newProfile) {
+        ui.put("autoload-default", true);
+        ui.put("autoload-last", false);
+        ui.put("autoload-empty", false);
+      }
       ui.put("default-engine", bundledIndex);
-      ui.put("analysis-engine-command", bundledConfig.analysisCommand);
-      ui.put("analysis-engine-command-customized", false);
-      ui.put("estimate-command", bundledConfig.estimateCommand);
+      if (newProfile) {
+        ui.put("analysis-engine-command", bundledConfig.analysisCommand);
+        ui.put("analysis-engine-command-customized", false);
+        ui.put("estimate-command", bundledConfig.estimateCommand);
+      }
     }
+    return !configBeforeRepair.equals(config.toString());
+  }
+
+  private boolean applyBundledKataGoDefaultsAndPersist() throws IOException {
+    boolean changed = applyBundledKataGoDefaults();
+    if (changed) {
+      writeConfig(this.config, new File(configFilename));
+    }
+    return changed;
   }
 
   public boolean moveListTopCurNode = false;
@@ -1900,8 +1969,7 @@ public class Config {
         System.exit(1);
       }
     }
-    try (FileInputStream fp = new FileInputStream(file);
-        InputStreamReader reader = new InputStreamReader(fp, "utf-8")) {
+    try (Reader reader = openUtf8JsonReader(file)) {
       JSONObject mergedcfg = new JSONObject(new JSONTokener(reader));
       boolean modified = mergeDefaults(mergedcfg, defaultCfg);
 
@@ -1924,6 +1992,32 @@ public class Config {
     }
   }
 
+  private static Reader openUtf8JsonReader(File file) throws IOException {
+    PushbackReader reader =
+        new PushbackReader(
+            new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8), 1);
+    try {
+      int first = reader.read();
+      if (first != -1 && first != '\uFEFF') {
+        reader.unread(first);
+      }
+      return reader;
+    } catch (IOException | RuntimeException e) {
+      reader.close();
+      throw e;
+    }
+  }
+
+  private static JSONObject readJsonObject(Path file) throws IOException {
+    try (Reader reader = openUtf8JsonReader(file.toFile())) {
+      return new JSONObject(new JSONTokener(reader));
+    }
+  }
+
+  static JSONObject readJsonObjectForTests(Path file) throws IOException {
+    return readJsonObject(file);
+  }
+
   private JSONObject loadAndMergeConfig(
       JSONObject defaultCfg, String fileName, boolean needValidation) throws IOException {
     File file = new File(fileName);
@@ -1937,8 +2031,7 @@ public class Config {
       }
     }
 
-    try (FileInputStream fp = new FileInputStream(file);
-        InputStreamReader reader = new InputStreamReader(fp, "utf-8")) {
+    try (Reader reader = openUtf8JsonReader(file)) {
       JSONObject mergedcfg = new JSONObject(new JSONTokener(reader));
       boolean modified = mergeDefaults(mergedcfg, defaultCfg);
 
@@ -1961,8 +2054,7 @@ public class Config {
       System.exit(1);
     }
 
-    try (FileInputStream fp = new FileInputStream(file);
-        InputStreamReader reader = new InputStreamReader(fp, "utf-8")) {
+    try (Reader reader = openUtf8JsonReader(file)) {
       JSONObject mergedcfg = new JSONObject(new JSONTokener(reader));
       boolean modified = mergeDefaults(mergedcfg, defaultCfg);
 
@@ -2121,7 +2213,7 @@ public class Config {
       backupUnreadableConfig(new File(configFilename));
       this.config = loadAndMergeConfigdef(defaultConfig, configFilename, true);
     }
-    applyBundledKataGoDefaults();
+    applyBundledKataGoDefaultsAndPersist();
     // Persisted properties
 
     this.saveBoard = loadAndMergeSaveBoardConfig(saveBoardConf, saveBoardFilename, false);
