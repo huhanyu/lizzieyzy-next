@@ -15,12 +15,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.IntStream;
 import javax.imageio.ImageIO;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -31,6 +31,18 @@ import org.json.JSONTokener;
 public class Theme {
   public static final String CUSTOM_BOARD_IMAGE_KEY = "custom-board-image";
   public static final String CUSTOM_BACKGROUND_IMAGE_KEY = "custom-window-background-image";
+  private static final String BLUNDER_THRESHOLDS_KEY = "blunder-winrate-thresholds";
+  private static final String BLUNDER_COLORS_KEY = "blunder-node-colors";
+  private static final double[] DEFAULT_BLUNDER_THRESHOLDS = {-24, -12, -6, -3, -1, 3, 100};
+  private static final int[][] DEFAULT_BLUNDER_COLORS = {
+    {155, 25, 150},
+    {208, 16, 19},
+    {200, 140, 50},
+    {180, 180, 0},
+    {140, 202, 34},
+    {0, 220, 0},
+    {0, 210, 210}
+  };
 
   BufferedImage blackStoneCached = null;
   BufferedImage whiteStoneCached = null;
@@ -43,12 +55,13 @@ public class Theme {
   public String path = null;
   public JSONObject config = new JSONObject();
   private JSONObject uiConfig = null;
-  private Optional<List<Double>> blunderWinrateThresholds = Optional.empty();
+  private BlunderNodeRuleSet blunderNodeRuleSet;
 
   public Theme() {}
 
   public boolean getTheme(JSONObject uiConfig) {
     this.uiConfig = uiConfig;
+    this.blunderNodeRuleSet = null;
     String themeName = uiConfig.optString("theme");
     this.path = Theme.pathPrefix + (themeName.isEmpty() ? "" : themeName + separator);
     File file = new File(this.path + this.configFile);
@@ -349,37 +362,112 @@ public class Theme {
 
   /** The threshold list of the blunder winrate */
   public Optional<List<Double>> blunderWinrateThresholds() {
-    String key = "blunder-winrate-thresholds";
-    Optional<JSONArray> array = Optional.ofNullable(config.optJSONArray(key));
-    if (!array.isPresent()) {
-      array = Optional.ofNullable(uiConfig.optJSONArray(key));
-    }
-    array.ifPresent(
-        m -> {
-          blunderWinrateThresholds = Optional.of(new ArrayList<Double>());
-          m.forEach(a -> blunderWinrateThresholds.get().add(Double.valueOf(a.toString())));
-        });
-    return blunderWinrateThresholds;
+    return Optional.of(blunderNodeRuleSet().thresholds);
   }
 
   /** The color list of the blunder node */
   public Optional<Map<Double, Color>> blunderNodeColors() {
-    Optional<Map<Double, Color>> map = Optional.of(new HashMap<Double, Color>());
-    String key = "blunder-node-colors";
-    Optional<JSONArray> array = Optional.ofNullable(config.optJSONArray(key));
-    if (!array.isPresent()) {
-      array = Optional.ofNullable(uiConfig.optJSONArray(key));
+    return Optional.of(blunderNodeRuleSet().colorsByThreshold);
+  }
+
+  private synchronized BlunderNodeRuleSet blunderNodeRuleSet() {
+    if (blunderNodeRuleSet == null) {
+      blunderNodeRuleSet =
+          parseBlunderNodeRuleSet(config)
+              .orElseGet(
+                  () ->
+                      parseBlunderNodeRuleSet(uiConfig)
+                          .orElseGet(Theme::defaultBlunderNodeRuleSet));
     }
-    array.ifPresent(
-        a -> {
-          IntStream.range(0, a.length())
-              .forEach(
-                  i -> {
-                    Color color = array2Color((JSONArray) a.get(i), null);
-                    blunderWinrateThresholds.map(l -> l.get(i)).map(t -> map.get().put(t, color));
-                  });
-        });
-    return map;
+    return blunderNodeRuleSet;
+  }
+
+  private static Optional<BlunderNodeRuleSet> parseBlunderNodeRuleSet(JSONObject source) {
+    if (source == null) {
+      return Optional.empty();
+    }
+
+    JSONArray thresholds = source.optJSONArray(BLUNDER_THRESHOLDS_KEY);
+    JSONArray colors = source.optJSONArray(BLUNDER_COLORS_KEY);
+    if (thresholds == null
+        || colors == null
+        || thresholds.length() == 0
+        || thresholds.length() != colors.length()) {
+      return Optional.empty();
+    }
+
+    List<Double> parsedThresholds = new ArrayList<>(thresholds.length());
+    Map<Double, Color> parsedColors = new LinkedHashMap<>();
+    double previousThreshold = Double.NEGATIVE_INFINITY;
+    for (int i = 0; i < thresholds.length(); i++) {
+      Object thresholdValue = thresholds.opt(i);
+      if (!(thresholdValue instanceof Number)) {
+        return Optional.empty();
+      }
+      double threshold = ((Number) thresholdValue).doubleValue();
+      if (!Double.isFinite(threshold)
+          || (i > 0 && Double.compare(threshold, previousThreshold) <= 0)) {
+        return Optional.empty();
+      }
+
+      Color color = parseBlunderNodeColor(colors.optJSONArray(i));
+      if (color == null) {
+        return Optional.empty();
+      }
+      parsedThresholds.add(threshold);
+      parsedColors.put(threshold, color);
+      previousThreshold = threshold;
+    }
+
+    return Optional.of(new BlunderNodeRuleSet(parsedThresholds, parsedColors));
+  }
+
+  private static Color parseBlunderNodeColor(JSONArray channels) {
+    if (channels == null || (channels.length() != 3 && channels.length() != 4)) {
+      return null;
+    }
+
+    int[] values = new int[channels.length()];
+    for (int i = 0; i < channels.length(); i++) {
+      Object channelValue = channels.opt(i);
+      if (!(channelValue instanceof Number)) {
+        return null;
+      }
+      double channel = ((Number) channelValue).doubleValue();
+      if (!Double.isFinite(channel)
+          || channel != Math.rint(channel)
+          || channel < 0
+          || channel > 255) {
+        return null;
+      }
+      values[i] = (int) channel;
+    }
+    return values.length == 3
+        ? new Color(values[0], values[1], values[2])
+        : new Color(values[0], values[1], values[2], values[3]);
+  }
+
+  private static BlunderNodeRuleSet defaultBlunderNodeRuleSet() {
+    List<Double> thresholds = new ArrayList<>(DEFAULT_BLUNDER_THRESHOLDS.length);
+    Map<Double, Color> colors = new LinkedHashMap<>();
+    for (int i = 0; i < DEFAULT_BLUNDER_THRESHOLDS.length; i++) {
+      double threshold = DEFAULT_BLUNDER_THRESHOLDS[i];
+      int[] color = DEFAULT_BLUNDER_COLORS[i];
+      thresholds.add(threshold);
+      colors.put(threshold, new Color(color[0], color[1], color[2]));
+    }
+    return new BlunderNodeRuleSet(thresholds, colors);
+  }
+
+  private static final class BlunderNodeRuleSet {
+    private final List<Double> thresholds;
+    private final Map<Double, Color> colorsByThreshold;
+
+    private BlunderNodeRuleSet(List<Double> thresholds, Map<Double, Color> colorsByThreshold) {
+      this.thresholds = Collections.unmodifiableList(new ArrayList<>(thresholds));
+      this.colorsByThreshold =
+          Collections.unmodifiableMap(new LinkedHashMap<>(colorsByThreshold));
+    }
   }
 
   private Color getColorByKey(String key, Color defaultColor) {

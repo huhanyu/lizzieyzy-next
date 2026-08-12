@@ -28,6 +28,8 @@ import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -1664,6 +1666,61 @@ class ReadBoardEngineResumeTest {
   }
 
   @Test
+  void closingReadBoardDuringDelayedSnapshotLoadKeepsFileAliveForEngineRestart()
+      throws Exception {
+    Stone[] authoritativeStones = stones(placement(0, 0, Stone.BLACK));
+    try (EngineResumeHarness harness =
+        EngineResumeHarness.create(rootHistory(authoritativeStones, false))) {
+      harness.frame.bothSync = true;
+      harness.leelaz.enableReadBoardGmaSupport();
+      Lizzie.config.suppressReadBoardWebSocketPonderingNotice = true;
+
+      harness.readBoard.parseLine("play>white>5 12 0 gma");
+      harness.sync(snapshot(authoritativeStones, Optional.empty(), Stone.EMPTY));
+      assertEquals(1, harness.leelaz.readBoardGmaCount);
+
+      assertTrue(harness.readBoard.handleReadBoardGmaEnginePlay("pass"));
+      harness.leelaz.isThinking = false;
+      harness.leelaz.blockNextLoadSgf();
+      harness.readBoard.afterReadBoardGmaTerminalResponseConsumed("close-readboard");
+      assertTrue(
+          harness.leelaz.awaitBlockedLoadSgf(),
+          "the exact snapshot load must reach the engine before closing ReadBoard");
+
+      Path pendingSnapshot = harness.leelaz.pendingLoadSgf();
+      assertNotNull(pendingSnapshot);
+      assertTrue(
+          Files.exists(pendingSnapshot),
+          "the temporary SGF must exist while the engine has not consumed loadsgf");
+
+      harness.readBoard.shutdown();
+
+      assertNull(harness.frame.readBoard, "closing ReadBoard should detach the helper window");
+      assertTrue(
+          Files.exists(pendingSnapshot),
+          "closing ReadBoard must not delete an SGF still being consumed by KataGo");
+
+      harness.leelaz.releaseBlockedLoadSgf();
+      assertTrue(
+          waitForFileDeletion(pendingSnapshot),
+          "the temporary SGF should be cleaned only after KataGo consumes it");
+
+      SnapshotTrackingLeelaz restartedEngine = SnapshotTrackingLeelaz.create();
+      Lizzie.leelaz = restartedEngine;
+      harness.board.resendMoveToEngine(restartedEngine, false);
+
+      assertNotNull(
+          restartedEngine.lastLoadedSgfContent(),
+          "a restarted engine should load the authoritative snapshot without a missing-file error");
+      assertTrue(restartedEngine.lastLoadedSgfContent().contains("AB[aa]"));
+      assertTrue(restartedEngine.lastLoadedSgfContent().contains("PL[W]"));
+      assertTrue(
+          waitForFileDeletion(restartedEngine.lastLoadedSgf()),
+          "the restarted engine snapshot should also be cleaned after consumption");
+    }
+  }
+
+  @Test
   void suppressedWebsocketPonderingNoticeContinuesWithoutChangingReadBoardPreference()
       throws Exception {
     try (EngineResumeHarness harness =
@@ -2097,6 +2154,17 @@ class ReadBoardEngineResumeTest {
   private static boolean waitForSentCommand(SnapshotTrackingLeelaz leelaz, String command)
       throws InterruptedException {
     return waitForSentCommandPrefix(leelaz, command, true);
+  }
+
+  private static boolean waitForFileDeletion(Path path) throws InterruptedException {
+    if (path == null) {
+      return false;
+    }
+    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+    while (Files.exists(path) && System.nanoTime() < deadline) {
+      Thread.sleep(10L);
+    }
+    return Files.notExists(path);
   }
 
   private static boolean waitForSentCommandPrefix(SnapshotTrackingLeelaz leelaz, String prefix)

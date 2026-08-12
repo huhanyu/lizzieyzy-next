@@ -2701,11 +2701,11 @@ public class EngineManager {
     if (explicitRestart && !isMain && target != null) {
       return () -> {
         if (Lizzie.leelaz2 != target || !target.isStarted() || !target.isLoaded()) {
-          target.isLoaded = false;
-          target.markLifecycleBoardSynchronizationFailed(
-              "restart engine was unavailable before board synchronization", targetWasUnrestored);
-          showEngineSynchronizationFailure(target);
-          reservations.close();
+          settleBoardSynchronizationFailure(
+              target,
+              "restart engine was unavailable before board synchronization",
+              targetWasUnrestored,
+              reservations);
           return;
         }
         target.confirmBoardSynchronization(
@@ -2726,10 +2726,8 @@ public class EngineManager {
               }
             },
             detail -> {
-              target.isLoaded = false;
-              target.markLifecycleBoardSynchronizationFailed(detail, targetWasUnrestored);
-              showEngineSynchronizationFailure(target);
-              reservations.close();
+              settleBoardSynchronizationFailure(
+                  target, detail, targetWasUnrestored, reservations);
             });
       };
     }
@@ -2750,10 +2748,12 @@ public class EngineManager {
     return () -> {
       if (Lizzie.leelaz != target || !target.isStarted() || !target.isLoaded()) {
         if (explicitRestart) {
-          target.isLoaded = false;
-          target.markLifecycleBoardSynchronizationFailed(
-              "restart engine was unavailable before board synchronization", targetWasUnrestored);
-          showEngineSynchronizationFailure(target);
+          settleBoardSynchronizationFailure(
+              target,
+              "restart engine was unavailable before board synchronization",
+              targetWasUnrestored,
+              reservations);
+          return;
         }
         reservations.close();
         return;
@@ -2778,12 +2778,26 @@ public class EngineManager {
             }
           },
           detail -> {
-            target.isLoaded = false;
-            target.markLifecycleBoardSynchronizationFailed(detail, targetWasUnrestored);
-            showEngineSynchronizationFailure(target);
-            reservations.close();
+            settleBoardSynchronizationFailure(
+                target, detail, targetWasUnrestored, reservations);
           });
     };
+  }
+
+  private void settleBoardSynchronizationFailure(
+      Leelaz target,
+      String detail,
+      boolean targetWasUnrestored,
+      EngineLifecycleReservations reservations) {
+    target.isLoaded = false;
+    try {
+      target.markLifecycleBoardSynchronizationFailed(detail, targetWasUnrestored);
+    } finally {
+      // Publish the failure only after the engine can accept work again. Callers and UI
+      // observers must never see a terminal failure while its lifecycle lease is still held.
+      reservations.close();
+    }
+    showEngineSynchronizationFailure(target);
   }
 
   protected void switchEngineInternal(int index, boolean isMain, Runnable afterSync) {

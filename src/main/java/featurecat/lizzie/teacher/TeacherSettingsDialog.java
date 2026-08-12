@@ -199,10 +199,12 @@ final class TeacherSettingsDialog extends JDialog {
         event -> apiKeyField.setEchoChar(showApiKey.isSelected() ? (char) 0 : passwordEchoChar));
     rankModeBox.addActionListener(event -> updateRankBounds());
     refreshModels.addActionListener(event -> refreshModels());
-    reloadKnowledge.addActionListener(event -> {
-      featurecat.lizzie.teacher.knowledge.JosekiSgfDatabase.invalidateCache();
-      status.setText(TeacherStrings.get("Teacher.settings.knowledgeReloaded", "Knowledge reloaded."));
-    });
+    reloadKnowledge.addActionListener(
+        event -> {
+          featurecat.lizzie.teacher.knowledge.JosekiRecognizer.invalidateCache();
+          status.setText(
+              TeacherStrings.get("Teacher.settings.knowledgeReloaded", "Knowledge reloaded."));
+        });
     cancelButton.addActionListener(event -> dispose());
     saveButton.addActionListener(event -> save());
     getRootPane().setDefaultButton(saveButton);

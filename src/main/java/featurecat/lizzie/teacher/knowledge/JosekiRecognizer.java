@@ -144,8 +144,8 @@ public final class JosekiRecognizer {
   private static final List<JosekiPatternCard> cachedCards = new ArrayList<>();
   private static boolean loaded = false;
 
-  static List<JosekiPatternCard> loadJosekiCards() {
-    if (loaded) return cachedCards;
+  static synchronized List<JosekiPatternCard> loadJosekiCards() {
+    if (loaded) return List.copyOf(cachedCards);
     cachedCards.addAll(JosekiSgfDatabase.loadBundledJosekiSgfCards());
     // curated json（joseki-pattern-cards.json）如有则合并
     List<JosekiPatternCard> curated = JsonKnowledgeLoader.loadJosekiPatternCards();
@@ -153,7 +153,15 @@ public final class JosekiRecognizer {
     for (JosekiPatternCard c : cachedCards) seen.add(c.id);
     for (JosekiPatternCard c : curated) if (!seen.contains(c.id)) cachedCards.add(c);
     loaded = true;
-    return cachedCards;
+    return List.copyOf(cachedCards);
+  }
+
+  /** Reload all commentary joseki sources on the next lookup. */
+  public static synchronized void invalidateCache() {
+    loaded = false;
+    cachedCards.clear();
+    JosekiSgfDatabase.invalidateCache();
+    JsonKnowledgeLoader.invalidateJosekiPatternCardsCache();
   }
 
   static int confidenceScore(double score) {

@@ -39,6 +39,7 @@ class SnapshotTrackingLeelaz extends Leelaz {
   private boolean blackToPlay = true;
   private Path lastLoadedSgf;
   private String lastLoadedSgfContent;
+  private volatile Path pendingLoadSgf;
   private volatile CountDownLatch blockedLoadSgfStarted;
   private volatile CountDownLatch blockedLoadSgfRelease;
   private Runnable beforeNextClearBoard;
@@ -262,8 +263,13 @@ class SnapshotTrackingLeelaz extends Leelaz {
   @Override
   public void loadSgf(Path sgfFile) {
     recordedCommands().add("loadsgf " + sgfFile.toAbsolutePath());
-    waitForBlockedLoadSgfRelease();
-    restoreSnapshotSgf(sgfFile);
+    pendingLoadSgf = sgfFile;
+    try {
+      waitForBlockedLoadSgfRelease();
+      restoreSnapshotSgf(sgfFile);
+    } finally {
+      pendingLoadSgf = null;
+    }
   }
 
   void blockNextLoadSgf() {
@@ -301,6 +307,10 @@ class SnapshotTrackingLeelaz extends Leelaz {
 
   Path lastLoadedSgf() {
     return lastLoadedSgf;
+  }
+
+  Path pendingLoadSgf() {
+    return pendingLoadSgf;
   }
 
   String lastLoadedSgfContent() {

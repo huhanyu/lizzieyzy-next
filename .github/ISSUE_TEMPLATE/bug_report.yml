@@ -38,8 +38,8 @@ body:
     attributes:
       label: Is this related to Fox sync?
       options:
-        - Yes
-        - No
+        - "Yes"
+        - "No"
     validations:
       required: true
   - type: input

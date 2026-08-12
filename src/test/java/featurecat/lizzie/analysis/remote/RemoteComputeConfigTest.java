@@ -750,8 +750,8 @@ class RemoteComputeConfigTest {
 
   @Test
   void startupKeepsZhiziSelectedWhenRememberedLoginIsAvailable() throws Exception {
-    withConfig(
-        () -> {
+    withConfigAndStore(
+        store -> {
           RemoteComputeConfig.clearZhiziToken();
           ArrayList<EngineData> engines = new ArrayList<>();
           EngineData local = new EngineData();
@@ -767,10 +767,24 @@ class RemoteComputeConfigTest {
           Utils.saveEngineSettings(engines);
 
           RemoteComputeConfig.saveZhiziToken(
-              "remembered-token", true, RemoteComputeConfig.DEFAULT_ZHIZI_ARGS, "user");
+              "remembered-token",
+              true,
+              RemoteComputeConfig.DEFAULT_ZHIZI_ARGS,
+              "user",
+              "remembered-password",
+              true);
+          RemoteComputeConfig.setCredentialStoreForTests(store);
+
+          RemoteComputeConfig.State restored = RemoteComputeConfig.load();
           RemoteComputeConfig.StartupSelection selection =
               RemoteComputeConfig.resolveStartupSelection(-1, true);
 
+          assertEquals("remembered-token", restored.zhiziAccountToken);
+          assertEquals("remembered-password", restored.zhiziPassword);
+          assertTrue(restored.rememberZhiziToken);
+          assertTrue(restored.rememberZhiziPassword);
+          assertTrue(restored.tokenStoredSecurely);
+          assertTrue(restored.passwordStoredSecurely);
           assertEquals(-1, selection.engineIndex);
           assertTrue(selection.loadDefault);
         });

@@ -1050,6 +1050,7 @@ public class LizzieFrame extends JFrame {
     if (!hasSetBounds) {
       setSize(1065, 700);
       setLocationRelativeTo(null); // Start centered, needs to be called *after* setSize...
+      constrainWindowToAvailableWorkArea(this);
     }
 
     listTable.addMouseWheelListener(
