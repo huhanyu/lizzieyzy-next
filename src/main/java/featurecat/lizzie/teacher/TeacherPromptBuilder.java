@@ -1,5 +1,6 @@
 package featurecat.lizzie.teacher;
 
+import featurecat.lizzie.teacher.analysis.TeacherPersona;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
@@ -174,6 +175,10 @@ final class TeacherPromptBuilder {
   }
 
   private static String systemPrompt(Locale locale, TeacherSettings.Snapshot snapshot) {
+    if (isChinese(locale)) {
+      return chineseSystemPrompt(locale, snapshot);
+    }
+
     StringBuilder prompt =
         new StringBuilder("You are a careful Go review assistant. Reply in ")
             .append(outputLanguage(locale))
@@ -193,17 +198,107 @@ final class TeacherPromptBuilder {
             "Refer to the person naturally in the answer without role labels such as \"student\", ")
         .append("\"teacher\" or \"coach\".\n");
     prompt
-        .append("Perspective note: winrate and scoreLead are already given from the side-to-play ")
-        .append("point of view as final values; use them as-is, do not convert or flip them. ")
-        .append("Score lead uses the black-positive convention.\n");
+        .append("Perspective note: winrate and scoreLead are final values normalized by the ")
+        .append("application. Use them exactly as supplied; do not infer another perspective, ")
+        .append("convert them, or flip their sign.\n");
     return prompt.toString();
   }
 
-  /** 讲解设置（等级/风格/术语密度/节奏/变化细节）→ persona 指令。 */
+  private static String chineseSystemPrompt(Locale locale, TeacherSettings.Snapshot snapshot) {
+    StringBuilder prompt = new StringBuilder();
+    prompt.append("你是一个围棋 AI 讲棋老师。\n");
+    if (snapshot != null) {
+      prompt.append(buildChinesePersona(snapshot)).append("\n");
+    }
+    prompt
+        .append("只能依据提供的 KataGo 分析证据进行讲解。禁止编造坐标、变化、胜率、")
+        .append("目差、落子意图或比赛结果；证据不足时必须坦诚说明。事实与教学性解读要明确区分。\n")
+        .append("不得进行作弊指控，也不得声称用户具有任何官方段位。\n")
+        .append("指出关键手、问题手与更好的应对，语言通俗、具体且可执行。\n");
+    prompt.append("讲解格式要求：\n");
+    prompt.append("1) 先用通俗语言讲解这一手的好坏与原因；\n");
+    prompt.append("2) 末尾用以下固定标记补充结构化内容（无则省略该段）：\n");
+    prompt.append("### 正确思路\n（给出比实战更好的下法及其变化图/结果，1-3 条）\n");
+    prompt.append("### 练习建议\n（给出 1-2 个针对性练习，标明类型：死活/手筋/思路）\n");
+    prompt.append("讲解正文严禁出现\"围棋老师\"、\"讲棋老师\"、\"教练\"等称呼。\n");
+    prompt.append("不要在回答中提及用户的段位。\n");
+    prompt.append("输出语言：请全程使用 ").append(chineseOutputLanguage(locale)).append("，不要混用其他语言。\n");
+    prompt.append("视角说明：胜率和目差都是应用已经处理好的最终值。").append("必须按原值使用，不得自行推测其他视角、再次换算或翻转正负号。\n");
+    return prompt.toString();
+  }
+
+  private static String buildChinesePersona(TeacherSettings.Snapshot s) {
+    TeacherPersona.TeacherPersonaInput pin = new TeacherPersona.TeacherPersonaInput();
+    pin.level = snapshotToLevel(s);
+    pin.rank = snapshotToRank(s);
+    pin.exactAge = null;
+    pin.ageRange = TeacherPersona.AgeRange.UNKNOWN;
+    pin.style = snapshotToStyle(s);
+    pin.terminologyDensity = snapshotToDensity(s);
+    pin.explanationPace = snapshotToPace(s);
+    pin.variationDetail = snapshotToVariation(s);
+    return TeacherPersona.buildTeacherPersonaInstruction(pin);
+  }
+
+  private static TeacherPersona.Level snapshotToLevel(TeacherSettings.Snapshot s) {
+    if ("d".equalsIgnoreCase(s.rankMode)) {
+      return TeacherPersona.Level.DAN;
+    }
+    if (s.rankNum >= 10) {
+      return TeacherPersona.Level.BEGINNER;
+    }
+    if (s.rankNum >= 5) {
+      return TeacherPersona.Level.INTERMEDIATE;
+    }
+    return TeacherPersona.Level.ADVANCED;
+  }
+
+  private static TeacherPersona.Rank snapshotToRank(TeacherSettings.Snapshot s) {
+    if ("d".equalsIgnoreCase(s.rankMode)) {
+      int dan = Math.max(1, Math.min(9, s.rankNum));
+      return TeacherPersona.Rank.values()[dan];
+    }
+    return TeacherPersona.Rank.SUB1D;
+  }
+
+  private static TeacherPersona.Style snapshotToStyle(TeacherSettings.Snapshot s) {
+    return switch (Math.max(0, Math.min(4, s.styleIndex))) {
+      case 1 -> TeacherPersona.Style.RIGOROUS;
+      case 2 -> TeacherPersona.Style.GENTLE;
+      case 3 -> TeacherPersona.Style.STRICT;
+      case 4 -> TeacherPersona.Style.HUMOROUS;
+      default -> TeacherPersona.Style.BALANCED;
+    };
+  }
+
+  private static TeacherPersona.TerminologyDensity snapshotToDensity(TeacherSettings.Snapshot s) {
+    return switch (Math.max(0, Math.min(2, s.densityIndex))) {
+      case 0 -> TeacherPersona.TerminologyDensity.LOW;
+      case 2 -> TeacherPersona.TerminologyDensity.HIGH;
+      default -> TeacherPersona.TerminologyDensity.MEDIUM;
+    };
+  }
+
+  private static TeacherPersona.ExplanationPace snapshotToPace(TeacherSettings.Snapshot s) {
+    return switch (Math.max(0, Math.min(2, s.paceIndex))) {
+      case 0 -> TeacherPersona.ExplanationPace.BRIEF;
+      case 2 -> TeacherPersona.ExplanationPace.DETAILED;
+      default -> TeacherPersona.ExplanationPace.STANDARD;
+    };
+  }
+
+  private static TeacherPersona.VariationDetail snapshotToVariation(TeacherSettings.Snapshot s) {
+    return switch (Math.max(0, Math.min(2, s.variationIndex))) {
+      case 0 -> TeacherPersona.VariationDetail.FEW;
+      case 2 -> TeacherPersona.VariationDetail.MANY;
+      default -> TeacherPersona.VariationDetail.MODERATE;
+    };
+  }
+
   private static String teachingPersona(TeacherSettings.Snapshot s) {
     StringBuilder persona = new StringBuilder();
     String rank;
-    if ("d".equals(s.rankMode)) {
+    if ("d".equalsIgnoreCase(s.rankMode)) {
       rank =
           s.rankNum >= 4
               ? "strong dan player"
@@ -215,7 +310,7 @@ final class TeacherPromptBuilder {
               : s.rankNum >= 5 ? "intermediate amateur" : "advanced amateur (single-digit kyu)";
     }
     persona
-        .append("The student is a ")
+        .append("The person is a ")
         .append(rank)
         .append(" (rank ")
         .append(s.rankMode)
@@ -228,7 +323,7 @@ final class TeacherPromptBuilder {
             "Be rigorous and structured; present complete evidence before conclusions. ");
         break;
       case 2:
-        persona.append("Be patient and encouraging, guiding like a friendly coach. ");
+        persona.append("Be patient and encouraging while keeping conclusions evidence-based. ");
         break;
       case 3:
         persona.append("Be strict and direct; point out problems clearly. ");
@@ -311,6 +406,15 @@ final class TeacherPromptBuilder {
                 + "three candidates. Follow each supplied PV move by move, then give one practical "
                 + "principle. If there is no actual next move, explain only the candidates.");
     }
+  }
+
+  private static boolean isChinese(Locale locale) {
+    return locale == null || "zh".equals(locale.getLanguage());
+  }
+
+  private static String chineseOutputLanguage(Locale locale) {
+    String country = locale == null ? "" : locale.getCountry();
+    return "TW".equalsIgnoreCase(country) || "HK".equalsIgnoreCase(country) ? "繁體中文" : "简体中文";
   }
 
   private static String outputLanguage(Locale locale) {
