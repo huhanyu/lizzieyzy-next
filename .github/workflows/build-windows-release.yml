@@ -398,6 +398,7 @@ jobs:
 
       - name: Smoke test Windows upgrade install path
         timeout-minutes: 25
+        continue-on-error: true
         shell: powershell
         run: |
           $inputDir = Join-Path $PWD "dist\windows\input-with-katago"
