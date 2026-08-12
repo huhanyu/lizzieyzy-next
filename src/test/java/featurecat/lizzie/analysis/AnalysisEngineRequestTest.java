@@ -378,6 +378,30 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
+  void missingMainlineTrackingHandoffSurvivesBrowsingWithinTheSameKifu() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Lizzie.config.analysisReuseCurrentEngine = true;
+      singleUnanalyzedMoveNode();
+      Leelaz foreground = reusableForegroundEngine(true);
+      ByteArrayOutputStream output = installLeelazOutput(foreground);
+      Lizzie.leelaz = foreground;
+      activateTracking(foreground);
+      AnalysisEngine engine = new AnalysisEngine(false);
+
+      assertEquals(1, engine.startRequestMissingMainline(false));
+      assertTrue(Lizzie.board.getHistory().previous().isPresent());
+      assertTrue(dispatchExclusiveLine(foreground, ""));
+      assertTrue(dispatchExclusiveLine(foreground, "=800000002"));
+      assertTrue(dispatchExclusiveLine(foreground, ""));
+
+      assertTrue(
+          output.toString(StandardCharsets.UTF_8).contains("kata-get-rules\n"),
+          "browsing the same kifu must not cancel pending quick-curve handoff");
+      closeExclusiveSessionForTest(foreground);
+    }
+  }
+
+  @Test
   void reuseModeClaimsActiveTrackingBeforeStartingWholeGameRequest() throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       Lizzie.config.analysisReuseCurrentEngine = true;
@@ -602,6 +626,7 @@ class AnalysisEngineRequestTest {
 
       assertEquals(1, engine.startRequestMissingMainline(false));
       requestedNode.getData().setPlayouts(120);
+      requestedNode.getData().analysisHeaderSlots = 3;
       assertEquals("800000000 stop\n", output.toString(StandardCharsets.UTF_8));
 
       processCommandResponse(foreground, "=800000000");
@@ -635,6 +660,7 @@ class AnalysisEngineRequestTest {
 
       assertEquals(1, engine.startRequestMissingMainline(false));
       requestedNode.getData().setPlayouts(120);
+      requestedNode.getData().analysisHeaderSlots = 3;
 
       assertTrue(dispatchExclusiveLine(foreground, ""));
       assertTrue(dispatchExclusiveLine(foreground, "=800000002"));
@@ -1735,6 +1761,7 @@ class AnalysisEngineRequestTest {
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
       analyzed.setPlayouts(120);
       analyzed.engineName = "cached-analysis";
+      analyzed.analysisHeaderSlots = 3;
       history.add(analyzed);
       history.add(
           moveNode(
@@ -1760,6 +1787,38 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
+  void missingMainlineResponseIsRejectedAfterAnotherKifuLoads() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList firstHistory =
+          new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      BoardData firstMove =
+          moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
+      firstHistory.add(firstMove);
+      boardWithHistory(firstHistory);
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      AtomicInteger failures = new AtomicInteger();
+      engine.setFailureCallback(failures::incrementAndGet);
+
+      assertEquals(1, engine.startRequestMissingMainline(false));
+
+      BoardHistoryList secondHistory =
+          new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      BoardData secondMove =
+          moveNode(stones(placement(1, 0, Stone.BLACK)), new int[] {1, 0}, Stone.BLACK, false, 1);
+      secondHistory.add(secondMove);
+      boardWithHistory(secondHistory);
+
+      engine.parseResult(analysisResult(1, 200, 62.0));
+      javax.swing.SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(1, failures.get());
+      assertEquals(0, firstMove.getPlayouts(), "a stale response must not mutate the old kifu");
+      assertEquals(0, secondMove.getPlayouts(), "a stale response must not leak into the new kifu");
+      assertFalse(engine.isAnalysisInProgress());
+    }
+  }
+
+  @Test
   void startRequestMissingMainlineStillSkipsExistingAnalysisWhenOverrideIsEnabled()
       throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
@@ -1769,6 +1828,7 @@ class AnalysisEngineRequestTest {
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
       analyzed.setPlayouts(120);
       analyzed.engineName = "cached-analysis";
+      analyzed.analysisHeaderSlots = 3;
       history.add(analyzed);
       history.add(
           moveNode(
@@ -1799,6 +1859,7 @@ class AnalysisEngineRequestTest {
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
       lowVisits.setPlayouts(AnalysisEngine.targetAnalysisVisits() - 1);
       lowVisits.engineName = "partial-analysis";
+      lowVisits.analysisHeaderSlots = 3;
       history.add(lowVisits);
       boardWithHistory(history);
       TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();

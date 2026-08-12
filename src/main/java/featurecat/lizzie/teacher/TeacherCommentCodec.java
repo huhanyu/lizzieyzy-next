@@ -19,7 +19,7 @@ public final class TeacherCommentCodec {
     if (body.length() > MAX_COMMENTARY_CHARACTERS) {
       throw new IllegalArgumentException("AI commentary is too large for an SGF comment.");
     }
-    String cleanOriginal = removeBlocks(originalComment).trim();
+    String cleanOriginal = removeBlocks(originalComment);
     String safeModel = escapeMarkers(normalize(model)).replace('\n', ' ').trim();
     StringBuilder block = new StringBuilder();
     block.append(BEGIN).append('\n');
@@ -52,7 +52,7 @@ public final class TeacherCommentCodec {
   }
 
   public static String removeBlocks(String comment) {
-    String remaining = normalize(comment);
+    String remaining = comment == null ? "" : comment;
     int searchFrom = remaining.length();
     while (searchFrom > 0) {
       int start = remaining.lastIndexOf(BEGIN, searchFrom - 1);
@@ -65,10 +65,14 @@ public final class TeacherCommentCodec {
         continue;
       }
       int after = end + END.length();
-      remaining = remaining.substring(0, start) + remaining.substring(after);
-      searchFrom = start;
+      int removeStart =
+          start >= 2 && remaining.charAt(start - 2) == '\n' && remaining.charAt(start - 1) == '\n'
+              ? start - 2
+              : start;
+      remaining = remaining.substring(0, removeStart) + remaining.substring(after);
+      searchFrom = removeStart;
     }
-    return remaining.replaceAll("[ \\t]+\\n", "\n").replaceAll("\\n{3,}", "\n\n");
+    return remaining;
   }
 
   private static String normalize(String value) {

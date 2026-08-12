@@ -23,6 +23,8 @@ import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.teacher.CommentDisplayRenderer;
+import featurecat.lizzie.teacher.TeacherCommentCodec;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.GraphicsConfiguration;
@@ -47,10 +49,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.BorderFactory;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
+import javax.swing.text.html.HTMLDocument;
+import javax.swing.text.html.StyleSheet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -125,6 +133,116 @@ class LizzieFrameRegressionTest {
       assertTrue(graphics.getFontMetrics(font).getHeight() <= 58);
     } finally {
       graphics.dispose();
+    }
+  }
+
+  @Test
+  void aiCommentDisplayPaintsTextWithoutAnOpaqueWhiteBlock(@TempDir Path tempDir)
+      throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config = ConfigTestHelper.createForTests(tempDir);
+      Lizzie.config.uiFontName = "SansSerif";
+      Lizzie.config.commentFontSize = 16;
+      String storedComment =
+          TeacherCommentCodec.upsert(
+              "User <comment>\n\nSecond line",
+              "# AI review\n\n| Move | Review |\n| --- | --- |\n| D4 | **Good** |",
+              "test-model");
+      AtomicReference<BufferedImage> painted = new AtomicReference<>();
+
+      SwingUtilities.invokeAndWait(
+          () -> {
+            LizzieFrame.HtmlKit kit = new LizzieFrame.HtmlKit();
+            StyleSheet style = kit.getStyleSheet();
+            LizzieFrame.configureCommentHtmlStyle(
+                style, new Color(31, 91, 61), "SansSerif", 16);
+            JPaintTextPane pane = new JPaintTextPane();
+            pane.setBorder(BorderFactory.createEmptyBorder());
+            pane.setOpaque(false);
+            pane.setEditorKit(kit);
+            pane.setDocument((HTMLDocument) kit.createDefaultDocument());
+            pane.setEditable(false);
+            pane.setForeground(new Color(31, 91, 61));
+            pane.setText(CommentDisplayRenderer.render(storedComment));
+            pane.setSize(420, 260);
+            pane.doLayout();
+
+            BufferedImage image =
+                new BufferedImage(pane.getWidth(), pane.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = image.createGraphics();
+            try {
+              pane.paint(graphics);
+            } finally {
+              graphics.dispose();
+            }
+            painted.set(image);
+          });
+
+      BufferedImage image = painted.get();
+      assertEquals(0, image.getRGB(0, 0) >>> 24);
+      assertEquals(0, image.getRGB(image.getWidth() - 1, 0) >>> 24);
+      assertEquals(0, image.getRGB(0, image.getHeight() - 1) >>> 24);
+      assertEquals(
+          0, image.getRGB(image.getWidth() - 1, image.getHeight() - 1) >>> 24);
+      int paintedPixels = 0;
+      int nearWhitePixels = 0;
+      for (int y = 0; y < image.getHeight(); y++) {
+        for (int x = 0; x < image.getWidth(); x++) {
+          int argb = image.getRGB(x, y);
+          if ((argb >>> 24) != 0) {
+            paintedPixels++;
+            Color pixel = new Color(argb, true);
+            if (pixel.getAlpha() > 220
+                && pixel.getRed() > 245
+                && pixel.getGreen() > 245
+                && pixel.getBlue() > 245) {
+              nearWhitePixels++;
+            }
+          }
+        }
+      }
+      assertTrue(paintedPixels > 100, "comment text and table borders should still be visible");
+      assertEquals(0, nearWhitePixels, "HTML content must not paint an opaque white background");
+    } finally {
+      env.close();
+    }
+  }
+
+  @Test
+  void commentDisplayStaysTransparentAfterThemeRefresh(@TempDir Path tempDir) throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config = ConfigTestHelper.createForTests(tempDir);
+      AtomicReference<JPaintTextPane> paneReference = new AtomicReference<>();
+      AtomicReference<JScrollPane> scrollReference = new AtomicReference<>();
+
+      SwingUtilities.invokeAndWait(
+          () -> {
+            JPaintTextPane pane = new JPaintTextPane();
+            JScrollPane scrollPane = new JScrollPane(pane);
+            pane.setOpaque(true);
+            pane.setBackground(Color.WHITE);
+            scrollPane.setOpaque(true);
+            scrollPane.setBackground(Color.WHITE);
+            scrollPane.getViewport().setOpaque(true);
+            scrollPane.getViewport().setBackground(Color.WHITE);
+
+            LizzieFrame.configureCommentDisplaySurface(pane, scrollPane);
+            paneReference.set(pane);
+            scrollReference.set(scrollPane);
+          });
+
+      JPaintTextPane pane = paneReference.get();
+      JScrollPane scrollPane = scrollReference.get();
+      assertFalse(pane.isOpaque());
+      assertEquals(0, pane.getBackground().getAlpha());
+      assertFalse(scrollPane.isOpaque());
+      assertEquals(0, scrollPane.getBackground().getAlpha());
+      assertFalse(scrollPane.getViewport().isOpaque());
+      assertEquals(0, scrollPane.getViewport().getBackground().getAlpha());
+    } finally {
+      env.close();
     }
   }
 
@@ -272,6 +390,50 @@ class LizzieFrameRegressionTest {
         frame.releaseSecondaryAnalysisResourcesForForeground());
     assertSame(userTask, frame.analysisEngine);
     assertEquals(0, userTask.normalQuitCount);
+  }
+
+  @Test
+  void foregroundAnalysisDoesNotDuplicateAnActiveSharedQuickRequest() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config = configWithAutoQuickAnalyze();
+      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      LizzieFrame frame = allocate(LizzieFrame.class);
+      ResourceTrackingAnalysisEngine shared = allocate(ResourceTrackingAnalysisEngine.class);
+      shared.shared = true;
+      shared.analysisInProgress = true;
+      frame.analysisEngine = shared;
+      setField(frame, "loadedGameQuickAnalysisActive", true);
+      setField(frame, "loadedGameQuickAnalysisRunning", true);
+      setField(frame, "loadedGameQuickAnalysisRoot", Lizzie.board.getHistory().getStart());
+
+      assertEquals(
+          featurecat.lizzie.analysis.AnalysisResourceCoordinator.ForegroundDecision.SHARED_ENGINE,
+          frame.releaseSecondaryAnalysisResourcesForForeground());
+      assertTrue(
+          (boolean) getField(frame, "loadedGameQuickAnalysisRunning"),
+          "foreground activity must not mark a still-running shared request as idle");
+      assertSame(shared, frame.analysisEngine);
+      invokeStopLoadedGameQuickAnalysisRetry(frame);
+    } finally {
+      env.close();
+    }
+  }
+
+  @Test
+  void automaticWarmupWithoutAPendingRequestReleasesItsEngine() throws Exception {
+    LizzieFrame frame = allocate(LizzieFrame.class);
+    ResourceTrackingAnalysisEngine warmed = allocate(ResourceTrackingAnalysisEngine.class);
+    warmed.automatic = true;
+    warmed.reusable = true;
+    setField(frame, "quickAnalysisEngineStarting", new AtomicBoolean(true));
+    setField(frame, "quickAnalysisEngineGeneration", new AtomicLong(7L));
+
+    invokeFinishQuickAnalysisEngineWarmup(frame, warmed, 7L);
+
+    assertNull(frame.analysisEngine);
+    assertEquals(1, warmed.normalQuitCount);
+    assertFalse(((AtomicBoolean) getField(frame, "quickAnalysisEngineStarting")).get());
   }
 
   @Test
@@ -919,6 +1081,38 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
+  void autoQuickAnalyzeTreatsMetadataOnlyPayloadAsMissing() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config = configWithAutoQuickAnalyze();
+      Lizzie.board = boardWith(historyWithPlaceholderAnalysisMove());
+      LizzieFrame frame = allocate(LizzieFrame.class);
+
+      assertTrue(
+          invokeShouldAutoQuickAnalyze(frame),
+          "engine/header placeholders without visits must not suppress the fast curve.");
+    } finally {
+      env.close();
+    }
+  }
+
+  @Test
+  void autoQuickAnalyzeTreatsVisitOnlyPlaceholderAsMissing() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config = configWithAutoQuickAnalyze();
+      Lizzie.board = boardWith(historyWithVisitOnlyPlaceholderAnalysisMove());
+      LizzieFrame frame = allocate(LizzieFrame.class);
+
+      assertTrue(
+          invokeShouldAutoQuickAnalyze(frame),
+          "a visit counter without a serialized header or candidate is not a graph result");
+    } finally {
+      env.close();
+    }
+  }
+
+  @Test
   void remoteKifuLoadWaitsForPrimaryEngineBeforeStartingSilentQuickAnalyze() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
@@ -956,12 +1150,12 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
-  void downloadedKifuForcesSilentQuickAnalyzeEvenWhenSgfContainsAnalysisPayload()
+  void downloadedKifuAnalyzesMetadataOnlySgfPayload()
       throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze();
-      Lizzie.board = boardWith(historyWithTargetVisitAnalyzedMove());
+      Lizzie.board = boardWith(historyWithPlaceholderAnalysisMove());
       Lizzie.leelaz = null;
       EngineManager.isEmpty = true;
       EngineManager.isEngineGame = false;
@@ -970,7 +1164,7 @@ class LizzieFrameRegressionTest {
 
       assertTrue(
           frame.ensureAnalysisResumedAfterDownloadedKifuLoad(),
-          "downloaded Fox/Tencent records should build the fast graph even if SGF has stale payload.");
+          "downloaded Fox/Tencent records should build the fast graph when SGF has placeholders.");
       assertEquals(1, frame.flashAnalyzeGameCount);
       assertTrue(frame.lastIsAllGame);
       assertFalse(frame.lastIsAllBranches);
@@ -1110,6 +1304,21 @@ class LizzieFrameRegressionTest {
           engine.completionCallback != null,
           "silent quick analysis should resume foreground board analysis after graph completion.");
 
+      Lizzie.board
+          .getHistory()
+          .getStart()
+          .next()
+          .orElseThrow()
+          .getData()
+          .setPlayouts(10);
+      Lizzie.board
+          .getHistory()
+          .getStart()
+          .next()
+          .orElseThrow()
+          .getData()
+          .analysisHeaderSlots = 3;
+
       SwingUtilities.invokeAndWait(engine.completionCallback);
 
       assertEquals(
@@ -1225,7 +1434,7 @@ class LizzieFrameRegressionTest {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze();
-      Lizzie.board = boardWith(historyWithTargetVisitAnalyzedMove());
+      Lizzie.board = boardWith(historyWithPlaceholderAnalysisMove());
       TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
       Lizzie.leelaz = leelaz;
       EngineManager.isEmpty = false;
@@ -1264,6 +1473,7 @@ class LizzieFrameRegressionTest {
 
       SwingUtilities.invokeAndWait(frame::continueQuickAnalysisAfterHistoryNavigationWhenIdle);
 
+      assertTrue(engine.awaitRequestStarted());
       assertEquals(
           0,
           engine.keepAliveCount,
@@ -1275,6 +1485,21 @@ class LizzieFrameRegressionTest {
       assertTrue(
           engine.completionCallback != null,
           "navigation-triggered curve completion should also resume foreground board analysis.");
+
+      Lizzie.board
+          .getHistory()
+          .getStart()
+          .next()
+          .orElseThrow()
+          .getData()
+          .setPlayouts(10);
+      Lizzie.board
+          .getHistory()
+          .getStart()
+          .next()
+          .orElseThrow()
+          .getData()
+          .analysisHeaderSlots = 3;
 
       SwingUtilities.invokeAndWait(engine.completionCallback);
 
@@ -1357,6 +1582,7 @@ class LizzieFrameRegressionTest {
 
       leelaz.loaded = true;
       SwingUtilities.invokeAndWait(frame::continueQuickAnalysisAfterHistoryNavigationWhenIdle);
+      assertTrue(engine.awaitRequestStarted());
       assertEquals(1, engine.missingMainlineRequestCount);
     } finally {
       env.close();
@@ -1384,6 +1610,32 @@ class LizzieFrameRegressionTest {
           0,
           engine.missingMainlineRequestCount,
           "navigation continuation must not clear or restart an active quick-analysis queue.");
+    } finally {
+      env.close();
+    }
+  }
+
+  @Test
+  void loadedQuickAnalysisRetryDoesNotDuplicatePendingEngineHandoff() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config = configWithAutoQuickAnalyze();
+      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      EngineManager.isEmpty = false;
+      EngineManager.isEngineGame = false;
+      EngineManager.isPreEngineGame = false;
+      AnalysisResumeTrackingFrame frame = allocate(AnalysisResumeTrackingFrame.class);
+      Lizzie.frame = frame;
+
+      assertTrue(frame.ensureAnalysisResumedAfterLoad());
+      invokeRetryLoadedGameQuickAnalysisIfMissing(frame);
+      invokeRetryLoadedGameQuickAnalysisIfMissing(frame);
+
+      assertEquals(
+          1,
+          frame.flashAnalyzeGameCount,
+          "the retry timer must not duplicate a request that is still waiting for engine handoff");
+      invokeStopLoadedGameQuickAnalysisRetry(frame);
     } finally {
       env.close();
     }
@@ -1434,12 +1686,18 @@ class LizzieFrameRegressionTest {
       assertTrue(frame.ensureAnalysisResumedAfterLoad());
       assertEquals(1, frame.flashAnalyzeGameCount);
 
-      invokeRetryLoadedGameQuickAnalysisIfMissing(frame);
+      for (int retry = 0; retry < 5; retry++) {
+        setField(
+            frame,
+            "loadedGameQuickAnalysisDispatchStartedAt",
+            System.currentTimeMillis() - 60_000L);
+        invokeRetryLoadedGameQuickAnalysisIfMissing(frame);
+      }
 
       assertEquals(
-          2,
+          6,
           frame.flashAnalyzeGameCount,
-          "if the first silent quick-curve dispatch vanishes, the load guard should retry it.");
+          "slow or vanished dispatches must continue beyond the former three-retry limit.");
       assertEquals(
           0,
           leelaz.ponderCount,
@@ -1862,6 +2120,23 @@ class LizzieFrameRegressionTest {
     return history;
   }
 
+  private static BoardHistoryList historyWithPlaceholderAnalysisMove() {
+    BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+    BoardData placeholder = moveData(new int[] {0, 0}, Stone.BLACK, false, 1, 0);
+    placeholder.engineName = "downloaded-placeholder";
+    placeholder.analysisHeaderSlots = 3;
+    history.add(placeholder);
+    return history;
+  }
+
+  private static BoardHistoryList historyWithVisitOnlyPlaceholderAnalysisMove() {
+    BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+    BoardData placeholder = moveData(new int[] {0, 0}, Stone.BLACK, false, 1, 0);
+    placeholder.setPlayouts(targetAnalysisVisitsForTest());
+    history.add(placeholder);
+    return history;
+  }
+
   private static int targetAnalysisVisitsForTest() {
     return Lizzie.config.analysisMaxVisits + 1;
   }
@@ -1870,7 +2145,8 @@ class LizzieFrameRegressionTest {
       int[] lastMove, Stone lastMoveColor, boolean blackToPlay, int moveNumber, int playouts) {
     Stone[] stones = emptyStones();
     stones[Board.getIndex(lastMove[0], lastMove[1])] = lastMoveColor;
-    return BoardData.move(
+    BoardData data =
+        BoardData.move(
         stones,
         lastMove,
         lastMoveColor,
@@ -1882,6 +2158,11 @@ class LizzieFrameRegressionTest {
         0,
         50,
         playouts);
+    if (playouts > 0) {
+      data.engineName = "saved-analysis";
+      data.analysisHeaderSlots = 3;
+    }
+    return data;
   }
 
   private static BoardData snapshotData(
@@ -1971,6 +2252,15 @@ class LizzieFrameRegressionTest {
     Field field = LizzieFrame.class.getDeclaredField(name);
     field.setAccessible(true);
     return field.get(target);
+  }
+
+  private static void invokeFinishQuickAnalysisEngineWarmup(
+      LizzieFrame frame, AnalysisEngine engine, long generation) throws Exception {
+    Method method =
+        LizzieFrame.class.getDeclaredMethod(
+            "finishQuickAnalysisEngineWarmup", AnalysisEngine.class, long.class);
+    method.setAccessible(true);
+    method.invoke(frame, engine, generation);
   }
 
   private static void setField(Object target, String name, Object value) throws Exception {
@@ -2247,9 +2537,11 @@ class LizzieFrameRegressionTest {
   }
 
   private static final class ResourceTrackingAnalysisEngine extends AnalysisEngine {
+    private boolean shared;
     private boolean localDedicated;
     private boolean analysisInProgress;
     private boolean automatic;
+    private boolean reusable;
     private int normalQuitCount;
 
     @SuppressWarnings("unused")
@@ -2259,7 +2551,22 @@ class LizzieFrameRegressionTest {
 
     @Override
     public boolean usesSharedForegroundEngine() {
-      return false;
+      return shared;
+    }
+
+    @Override
+    public boolean isLoaded() {
+      return reusable;
+    }
+
+    @Override
+    public boolean isRunning() {
+      return reusable;
+    }
+
+    @Override
+    public boolean matchesCurrentAnalysisBackend() {
+      return reusable;
     }
 
     @Override
@@ -2332,9 +2639,10 @@ class LizzieFrameRegressionTest {
     public void setKeepAliveAfterCurrentRequest(boolean keepAliveAfterCurrentRequest) {}
 
     @Override
-    public void startRequest(int startMove, int endMove, boolean showProgressDialog) {
+    public int startRequestMissingMainline(boolean showProgressDialog) {
       lastShowProgressDialog = showProgressDialog;
       requestStarted.countDown();
+      return 1;
     }
   }
 
@@ -2342,6 +2650,7 @@ class LizzieFrameRegressionTest {
     private boolean analysisInProgress;
     private int keepAliveCount;
     private int missingMainlineRequestCount;
+    private CountDownLatch requestStarted = new CountDownLatch(1);
     private Runnable completionCallback;
     private Runnable failureCallback;
 
@@ -2390,7 +2699,19 @@ class LizzieFrameRegressionTest {
     @Override
     public int startRequestMissingMainline(boolean showProgressDialog) {
       missingMainlineRequestCount++;
+      requestStartedLatch().countDown();
       return 1;
+    }
+
+    private boolean awaitRequestStarted() throws InterruptedException {
+      return requestStartedLatch().await(2, TimeUnit.SECONDS);
+    }
+
+    private synchronized CountDownLatch requestStartedLatch() {
+      if (requestStarted == null) {
+        requestStarted = new CountDownLatch(1);
+      }
+      return requestStarted;
     }
   }
 
