@@ -18020,15 +18020,18 @@ public class LizzieFrame extends JFrame {
       return;
     }
     if (LizzieFrame.boardRenderer.incrementDisplayedBranchLength(movesToAdvance)) {
+      Lizzie.frame.refresh();
       return;
     }
     if (Lizzie.config.isDoubleEngineMode()
         && LizzieFrame.boardRenderer2.incrementDisplayedBranchLength(movesToAdvance)) {
+      Lizzie.frame.refresh();
       return;
     }
     if (Lizzie.frame.independentMainBoard != null) {
       if (Lizzie.frame.independentMainBoard.boardRenderer.incrementDisplayedBranchLength(
           movesToAdvance)) {
+        Lizzie.frame.refresh();
         return;
       }
     }
@@ -18067,15 +18070,18 @@ public class LizzieFrame extends JFrame {
     if (Lizzie.frame.isPlayingAgainstLeelaz || Lizzie.frame.isAnaPlayingAgainstLeelaz) return;
     if (boardRenderer.isShowingBranch()) {
       Lizzie.frame.doBranch(-movesToAdvance);
+      Lizzie.frame.refresh();
       return;
     }
     if (Lizzie.config.isDoubleEngineMode() && boardRenderer2.isShowingBranch()) {
       Lizzie.frame.doBranch(-movesToAdvance);
+      Lizzie.frame.refresh();
       return;
     }
     if (Lizzie.frame.independentMainBoard != null) {
       if (Lizzie.frame.independentMainBoard.boardRenderer.isShowingBranch()) {
         Lizzie.frame.independentMainBoard.doBranch(-movesToAdvance);
+        Lizzie.frame.refresh();
         return;
       }
     }

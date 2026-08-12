@@ -2108,8 +2108,8 @@ public class Leelaz {
                   .engineList
                   .get(EngineManager.engineGameInfo.blackEngineIndex)
                   .nameCmdfornoponder();
-            Lizzie.leelaz =
-                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.blackEngineIndex);
+            Lizzie.setPrimaryEngine(
+                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.blackEngineIndex));
           } else {
             if (!Lizzie.engineManager
                 .engineList
@@ -2126,8 +2126,8 @@ public class Leelaz {
                   .engineList
                   .get(EngineManager.engineGameInfo.whiteEngineIndex)
                   .nameCmdfornoponder();
-            Lizzie.leelaz =
-                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.whiteEngineIndex);
+            Lizzie.setPrimaryEngine(
+                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.whiteEngineIndex));
           }
           return;
         } else {
@@ -2175,8 +2175,8 @@ public class Leelaz {
                   .engineList
                   .get(EngineManager.engineGameInfo.blackEngineIndex)
                   .nameCmdfornoponder();
-            Lizzie.leelaz =
-                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.blackEngineIndex);
+            Lizzie.setPrimaryEngine(
+                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.blackEngineIndex));
 
           } else {
             if (!Lizzie.engineManager
@@ -2194,8 +2194,8 @@ public class Leelaz {
                   .engineList
                   .get(EngineManager.engineGameInfo.whiteEngineIndex)
                   .nameCmdfornoponder();
-            Lizzie.leelaz =
-                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.whiteEngineIndex);
+            Lizzie.setPrimaryEngine(
+                Lizzie.engineManager.engineList.get(EngineManager.engineGameInfo.whiteEngineIndex));
           }
           return;
         }
@@ -2436,9 +2436,9 @@ public class Leelaz {
                       && this
                           == Lizzie.engineManager.engineList.get(
                               EngineManager.engineGameInfo.whiteEngineIndex)) {
-                Lizzie.leelaz = this;
+                Lizzie.setPrimaryEngine(this);
               }
-            } else Lizzie.leelaz = this;
+            } else Lizzie.setPrimaryEngine(this);
           }
           // Clear switching prompt
           // switching = false;
@@ -4989,7 +4989,7 @@ public class Leelaz {
     return sendExactSnapshotRestoreCommand(command, onResponse, onSendFailure, null);
   }
 
-  private boolean sendExactSnapshotRestoreCommand(
+  private boolean sendExactSnapshotRestoreCommandAdmitted(
       String command,
       Runnable onResponse,
       CommandSendFailureHandler onSendFailure,
@@ -5017,12 +5017,25 @@ public class Leelaz {
             : this == admission.mirror ? admission.mirrorIncarnation : null;
     return incarnation instanceof ReaderStreamBinding binding ? binding : null;
   }
-
-  boolean sendExactSnapshotRestoreCommand(
-      String command, ExactSnapshotRestoreAdmission admission) {
+  private boolean sendExactSnapshotRestoreCommand(
+      String command,
+      Runnable onResponse,
+      CommandSendFailureHandler onSendFailure,
+      ExactSnapshotRestoreAdmission admission) {
     if (!isExactSnapshotRestoreAdmissionValid(admission)) {
       return false;
     }
+    final boolean[] sent = new boolean[1];
+    boolean ownerCurrent =
+        admission.runIfCurrentBoardSyncPrimary(
+            () ->
+                sent[0] =
+                    sendExactSnapshotRestoreCommandAdmitted(command, onResponse, onSendFailure, admission));
+    return ownerCurrent && sent[0];
+  }
+
+  boolean sendExactSnapshotRestoreCommand(
+      String command, ExactSnapshotRestoreAdmission admission) {
     return sendExactSnapshotRestoreCommand(command, null, null, admission);
   }
 
@@ -6748,16 +6761,31 @@ public class Leelaz {
   /** Captures the board-sync owner for one immutable exact restore plan. */
   public ExactSnapshotRestoreAdmission captureBoardSyncExactSnapshotRestoreAdmission() {
     return captureExactSnapshotRestoreAdmission(
-        ExactSnapshotRestoreOwner.BOARD_SYNC, null, resolveLoadSgfMirrorEngine());
+        ExactSnapshotRestoreOwner.BOARD_SYNC, null, resolveLoadSgfMirrorEngine(), false);
+  }
+
+  /** Captures a board-sync restore that must remain bound to the selected primary engine. */
+  public ExactSnapshotRestoreAdmission captureHistoryNavigationExactSnapshotRestoreAdmission() {
+    return captureExactSnapshotRestoreAdmission(
+        ExactSnapshotRestoreOwner.BOARD_SYNC, null, resolveLoadSgfMirrorEngine(), true);
   }
 
   /** Captures the arbitration owner for one immutable exact restore plan. */
   ExactSnapshotRestoreAdmission captureExactSnapshotRestoreAdmission(
       ExactSnapshotRestoreOwner owner, Object ownerIdentity, Leelaz mirror) {
+    return captureExactSnapshotRestoreAdmission(owner, ownerIdentity, mirror, false);
+  }
+
+  private ExactSnapshotRestoreAdmission captureExactSnapshotRestoreAdmission(
+      ExactSnapshotRestoreOwner owner,
+      Object ownerIdentity,
+      Leelaz mirror,
+      boolean bindToPrimaryEngine) {
     if (owner == null) {
       throw new IllegalArgumentException("owner");
     }
     Object capturedOwnerIdentity = ownerIdentity;
+    long primaryEngineGeneration = -1L;
     LifecycleCompletionClaim completionClaim = null;
     synchronized (engineArbitrationLock()) {
       if (owner == ExactSnapshotRestoreOwner.READ_BOARD_GMA && capturedOwnerIdentity == null) {
@@ -6768,6 +6796,13 @@ public class Leelaz {
             "Exact snapshot restore is not admitted for owner " + owner);
       }
       if (owner == ExactSnapshotRestoreOwner.BOARD_SYNC) {
+        if (bindToPrimaryEngine) {
+          primaryEngineGeneration = Lizzie.capturePrimaryEngineGeneration(this);
+          if (primaryEngineGeneration < 0) {
+            throw new ExactSnapshotRestoreAdmissionException(
+                "Board-sync exact restore primary ownership changed during capture");
+          }
+        }
         completionClaim = lifecycleCompletionClaim;
       }
     }
@@ -6795,7 +6830,8 @@ public class Leelaz {
         capturedOwnerIdentity,
         authorityIncarnation,
         mirrorIncarnation,
-        boardSyncLease);
+        boardSyncLease,
+        primaryEngineGeneration);
   }
 
 
@@ -6909,6 +6945,11 @@ public class Leelaz {
           }
           break;
         case BOARD_SYNC:
+          if (admission.primaryEngineGeneration >= 0
+              && Lizzie.capturePrimaryEngineGeneration(authority)
+                  != admission.primaryEngineGeneration) {
+            return false;
+          }
           if (authority.hasConflictingBoardSyncRestoreWorkLocked()) {
             return false;
           }
@@ -9039,6 +9080,7 @@ public class Leelaz {
     private final Object authorityIncarnation;
     private final Object mirrorIncarnation;
     private final LifecycleCompletionClaim.BoardSyncCompletionLease boardSyncLease;
+    private final long primaryEngineGeneration;
 
     private ExactSnapshotRestoreAdmission(
         Leelaz authority,
@@ -9047,7 +9089,8 @@ public class Leelaz {
         Object ownerIdentity,
         Object authorityIncarnation,
         Object mirrorIncarnation,
-        LifecycleCompletionClaim.BoardSyncCompletionLease boardSyncLease) {
+        LifecycleCompletionClaim.BoardSyncCompletionLease boardSyncLease,
+        long primaryEngineGeneration) {
       this.authority = authority;
       this.mirror = mirror;
       this.owner = owner;
@@ -9055,6 +9098,7 @@ public class Leelaz {
       this.authorityIncarnation = authorityIncarnation;
       this.mirrorIncarnation = mirrorIncarnation;
       this.boardSyncLease = boardSyncLease;
+      this.primaryEngineGeneration = primaryEngineGeneration;
     }
 
     Leelaz authority() {
@@ -9071,6 +9115,13 @@ public class Leelaz {
 
     private boolean includes(Leelaz engine) {
       return engine == authority || engine == mirror;
+    }
+    private boolean runIfCurrentBoardSyncPrimary(Runnable action) {
+      if (owner != ExactSnapshotRestoreOwner.BOARD_SYNC || primaryEngineGeneration < 0) {
+        action.run();
+        return true;
+      }
+      return Lizzie.runIfPrimaryEngine(authority, primaryEngineGeneration, action);
     }
 
     void completeBoardSync() {
