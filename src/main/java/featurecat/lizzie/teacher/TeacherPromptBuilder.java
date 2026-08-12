@@ -27,9 +27,9 @@ final class TeacherPromptBuilder {
         new TeacherLlmClient.Message("system", systemPrompt(locale, snapshot)),
         new TeacherLlmClient.Message(
             "user",
-            modeInstruction(Mode.NEXT_MOVE, locale)
+            modeInstruction(Mode.NEXT_MOVE)
                 + "\n\n【KataGo evidence】\n"
-                + formatPosition(position, locale)));
+                + formatPosition(position)));
   }
 
   static List<TeacherLlmClient.Message> forRange(
@@ -45,12 +45,12 @@ final class TeacherPromptBuilder {
     }
     evidence.append('\n');
     for (TeacherEvidence.Position position : range.positions) {
-      evidence.append('\n').append(formatPosition(position, locale));
+      evidence.append('\n').append(formatPosition(position));
     }
     return List.of(
         new TeacherLlmClient.Message("system", systemPrompt(locale, snapshot)),
         new TeacherLlmClient.Message(
-            "user", modeInstruction(mode, locale) + "\n\n【KataGo evidence】\n" + evidence));
+            "user", modeInstruction(mode) + "\n\n【KataGo evidence】\n" + evidence));
   }
 
   static List<TeacherLlmClient.Message> forFollowUp(
@@ -75,62 +75,59 @@ final class TeacherPromptBuilder {
     }
     messages.add(
         new TeacherLlmClient.Message(
-            "user", modeInstruction(Mode.FOLLOW_UP, locale) + "\n\n" + question.trim()));
+            "user", modeInstruction(Mode.FOLLOW_UP) + "\n\n" + question.trim()));
     return List.copyOf(messages);
   }
 
-  static String formatPosition(TeacherEvidence.Position position) {
-    return formatPosition(position, TeacherStrings.locale());
+  private static String modeInstruction(Mode mode) {
+    switch (mode) {
+      case RANGE:
+        return "回顾选定手数范围。重点关注最重要的转折点，"
+            + "比较实战手与 KataGo 候选，仅使用提供的 PV 变化，"
+            + "最后给出三条可执行的改进建议。";
+      case WHOLE_GAME:
+        return "从选定的关键局面回顾整局。给出简短总览，"
+            + "按时间顺序列出决定性转折点，以及三条可执行的改进建议。"
+            + "不要假设被省略的局面已被分析。";
+      case FOLLOW_UP:
+        return "基于相同证据回答追问。如果问题需要的信息不在现有数据中，"
+            + "说明需要补充哪些 KataGo 分析。";
+      case NEXT_MOVE:
+      default:
+        return "讲解实战下一手（如有），并与 KataGo 前三个候选比较。"
+            + "逐一跟踪每个提供的 PV，然后给出一个实用原则。"
+            + "如果没有实战下一手，仅讲解候选。";
+    }
   }
 
-  static String formatPosition(TeacherEvidence.Position position, Locale locale) {
+  static String formatPosition(TeacherEvidence.Position position) {
     StringBuilder text = new StringBuilder();
-    text.append(
-            TeacherStrings.format(
-                locale,
-                "Teacher.prompt.positionAfter",
-                "Position after move {0}",
-                position.moveNumber))
-        .append('\n');
-    text.append(
-            TeacherStrings.format(
-                locale, "Teacher.prompt.sideToPlay", "Side to play: {0}", position.toPlay))
-        .append('\n');
-    text.append(
-            TeacherStrings.format(
-                locale, "Teacher.prompt.rootVisits", "Root visits: {0}", position.playouts))
-        .append('\n');
-    text.append(
-            TeacherStrings.format(
-                locale,
-                "Teacher.prompt.actualMove",
-                "Actual next move: {0}",
-                position.actualMove.isEmpty()
-                    ? TeacherStrings.get(locale, "Teacher.prompt.notAvailable", "not available")
-                    : position.actualMove))
+    text.append(TeacherStrings.format("Teacher.prompt.positionAfter", "Position after move {0}", position.moveNumber)).append('\n');
+    text.append(TeacherStrings.format("Teacher.prompt.sideToPlay", "Side to play: {0}", position.toPlay)).append('\n');
+    text.append(TeacherStrings.format("Teacher.prompt.rootVisits", "Root visits: {0}", position.playouts)).append('\n');
+    text.append(TeacherStrings.format(
+            "Teacher.prompt.actualMove",
+            "Actual next move: {0}",
+            position.actualMove.isEmpty()
+                ? TeacherStrings.get("Teacher.prompt.notAvailable", "not available")
+                : position.actualMove))
         .append('\n');
     if (position.actualWinrateLoss.isPresent()) {
-      text.append(
-              TeacherStrings.format(
-                  locale,
-                  "Teacher.prompt.winrateLoss",
-                  "Actual move winrate loss versus top candidate: {0} percentage points",
-                  format(position.actualWinrateLoss.getAsDouble())))
+      text.append(TeacherStrings.format(
+              "Teacher.prompt.winrateLoss",
+              "Actual move winrate loss versus top candidate: {0} percentage points",
+              format(position.actualWinrateLoss.getAsDouble())))
           .append("\n");
     }
     if (!position.playedContinuation.isEmpty()) {
-      text.append(
-              TeacherStrings.format(
-                  locale,
-                  "Teacher.prompt.playedContinuation",
-                  "Played continuation: {0}",
-                  String.join(" ", position.playedContinuation)))
+      text.append(TeacherStrings.format(
+              "Teacher.prompt.playedContinuation",
+              "Played continuation: {0}",
+              String.join(" ", position.playedContinuation)))
           .append('\n');
     }
     for (TeacherEvidence.Candidate candidate : position.candidates) {
-      text.append(
-              TeacherStrings.format(
-                  locale, "Teacher.prompt.candidateRank", "Candidate #{0}", candidate.rank))
+      text.append(TeacherStrings.format("Teacher.prompt.candidateRank", "Candidate #{0}", candidate.rank))
           .append(": move=")
           .append(candidate.coordinate)
           .append(", visits=")
@@ -144,8 +141,8 @@ final class TeacherPromptBuilder {
       if (!candidate.variation.isEmpty()) {
         text.append(", pv=");
         boolean black = "B".equals(position.toPlay);
-        String blackLabel = TeacherStrings.get(locale, "Teacher.prompt.black", "(B)");
-        String whiteLabel = TeacherStrings.get(locale, "Teacher.prompt.white", "(W)");
+        String blackLabel = TeacherStrings.get("Teacher.prompt.black", "(B)");
+        String whiteLabel = TeacherStrings.get("Teacher.prompt.white", "(W)");
         for (int index = 0; index < candidate.variation.size(); index++) {
           String variationMove = candidate.variation.get(index);
           if (index > 0) {
@@ -163,70 +160,66 @@ final class TeacherPromptBuilder {
                 candidate ->
                     candidate.coordinate != null
                         && candidate.coordinate.equalsIgnoreCase(position.actualMove))) {
-      text.append(
-              TeacherStrings.format(
-                  locale,
-                  "Teacher.prompt.notInCandidates",
-                  "Note: the played move {0} is NOT among the top candidates above; compare it against the list.",
-                  position.actualMove))
+      text.append(TeacherStrings.format(
+              "Teacher.prompt.notInCandidates",
+              "Note: the played move {0} is NOT among the top candidates above; compare it against the list.",
+              position.actualMove))
           .append("\n");
     }
     return text.toString();
   }
 
   private static String systemPrompt(Locale locale, TeacherSettings.Snapshot snapshot) {
-    if (isChinese(locale)) {
-      return chineseSystemPrompt(locale, snapshot);
-    }
-
-    StringBuilder prompt =
-        new StringBuilder("You are a careful Go review assistant. Reply in ")
-            .append(outputLanguage(locale))
-            .append(
-                ". Use only the supplied KataGo evidence. Never invent coordinates, variations, ")
-            .append(
-                "winrates, score leads, move intentions, or game results. If evidence is missing, ")
-            .append("say so plainly. Separate facts from teaching interpretation. Do not make ")
-            .append(
-                "cheating accusations or claim an official rank. Keep the explanation practical ")
-            .append("and understandable.\n\n");
-    if (snapshot != null) {
-      prompt.append(teachingPersona(snapshot)).append("\n");
-    }
-    prompt
-        .append(
-            "Refer to the person naturally in the answer without role labels such as \"student\", ")
-        .append("\"teacher\" or \"coach\".\n");
-    prompt
-        .append("Perspective note: winrate and scoreLead are final values normalized by the ")
-        .append("application. Use them exactly as supplied; do not infer another perspective, ")
-        .append("convert them, or flip their sign.\n");
-    return prompt.toString();
-  }
-
-  private static String chineseSystemPrompt(Locale locale, TeacherSettings.Snapshot snapshot) {
     StringBuilder prompt = new StringBuilder();
-    prompt.append("你是一个围棋 AI 讲棋老师。\n");
+    prompt.append("\n**角色设定：**\n");
+    prompt.append("你是一位世界顶尖围棋职业棋手，同时也是一位优秀的围棋教师。")
+        .append("你的任务是帮助一位业余爱好者理解KataGo给出的分析结果，")
+        .append("让他真正看懂每一步棋背后的逻辑。\n");
+    prompt.append("请忠实于KataGo给出的分析结果进行解读，而非推荐你个人的下法。")
+        .append("你的角色是帮助用户理解AI为什么这么推荐，而不是替AI做决定。\n\n");
     if (snapshot != null) {
       prompt.append(buildChinesePersona(snapshot)).append("\n");
     }
-    prompt
-        .append("只能依据提供的 KataGo 分析证据进行讲解。禁止编造坐标、变化、胜率、")
-        .append("目差、落子意图或比赛结果；证据不足时必须坦诚说明。事实与教学性解读要明确区分。\n")
-        .append("不得进行作弊指控，也不得声称用户具有任何官方段位。\n")
-        .append("指出关键手、问题手与更好的应对，语言通俗、具体且可执行。\n");
+    prompt.append("**分析要求：**\n");
+    prompt.append("请对给出的分析数据进行讲解，每个选点的分析必须包含以下内容：\n\n");
+    prompt.append("**1. 逐手追踪变化图**\n");
+    prompt.append("- 按照变化图中的手顺编号，逐步说明每手棋在做什么\n");
+    prompt.append("- 标注关键转折点（比如：在哪一手，局面发生了质变）\n");
+    prompt.append("- 说明最终结果：谁得了什么，谁亏了什么\n\n");
+    prompt.append("**2. 胜率与目差解读**\n");
+    prompt.append("以目差为核心判断标准，胜率仅作辅助参考：\n");
+    prompt.append("- 目差在 0.5 目以内，三个选点对人类来说基本等价\n");
+    prompt.append("- 目差在 0.5 目~1.5 目之间，存在细微倾向，但不要夸大\n");
+    prompt.append("- 目差在 1.5 目以上，才存在明显优劣，需要重点解释\n");
+    prompt.append("- 胜率在 50% 附近波动时（如 48%~52%），目差很小仍应视为等价\n\n");
+    prompt.append("**3. 棋理分析**\n");
+    prompt.append("- 该选点的核心意图（攻击/防守/腾挪/弃子/脱先/扩张）\n");
+    prompt.append("- 为什么KataGo推荐这手棋\n");
+    prompt.append("- 变化图中存在定式或常见棋形时请指出\n\n");
+    prompt.append("**4. 与其余选点的对比**\n");
+    prompt.append("- 各选点在策略上的本质区别\n");
+    prompt.append("- 什么风格/局面下会选择哪一步\n\n");
     prompt.append("讲解格式要求：\n");
     prompt.append("1) 先用通俗语言讲解这一手的好坏与原因；\n");
     prompt.append("2) 末尾用以下固定标记补充结构化内容（无则省略该段）：\n");
     prompt.append("### 正确思路\n（给出比实战更好的下法及其变化图/结果，1-3 条）\n");
     prompt.append("### 练习建议\n（给出 1-2 个针对性练习，标明类型：死活/手筋/思路）\n");
-    prompt.append("讲解正文严禁出现\"围棋老师\"、\"讲棋老师\"、\"教练\"等称呼。\n");
-    prompt.append("不要在回答中提及用户的段位。\n");
-    prompt.append("输出语言：请全程使用 ").append(chineseOutputLanguage(locale)).append("，不要混用其他语言。\n");
-    prompt.append("视角说明：胜率和目差都是应用已经处理好的最终值。").append("必须按原值使用，不得自行推测其他视角、再次换算或翻转正负号。\n");
+    prompt.append("若数据不足以判断，坦诚说明。\n\n");
+    prompt.append("**禁止事项：**\n");
+    prompt.append("- 不要脱离变化图凭感觉描述\n");
+    prompt.append("- 不要用应该/可能/大概等模糊表述\n");
+    prompt.append("- 不要因微小目差制造虚假优劣感\n");
+    prompt.append("- 所有坐标/胜率/目差必须来自证据，禁用编造\n");
+    prompt.append("- 讲解正文严禁出现\"围棋老师\"、\"讲棋老师\"、\"教练\"等称呼\n");
+    prompt.append("- 不要在回答中提及用户的段位\n\n");
+    prompt.append("输出语言：请全程使用 ").append(outputLanguage(locale))
+        .append(" 输出解说（包括标题、正文、对比表、训练建议），不要混用其他语言。\n");
+    prompt.append("视角说明：胜率和目差已换算为当前行棋方视角（落子方胜率，黑正目差），")
+        .append("直接使用，不要再换算。\n");
     return prompt.toString();
   }
 
+  /** 用 TeacherPersona 生成完整的中文 persona 指令 */
   private static String buildChinesePersona(TeacherSettings.Snapshot s) {
     TeacherPersona.TeacherPersonaInput pin = new TeacherPersona.TeacherPersonaInput();
     pin.level = snapshotToLevel(s);
@@ -241,22 +234,16 @@ final class TeacherPromptBuilder {
   }
 
   private static TeacherPersona.Level snapshotToLevel(TeacherSettings.Snapshot s) {
-    if ("d".equalsIgnoreCase(s.rankMode)) {
-      return TeacherPersona.Level.DAN;
+    if ("d".equals(s.rankMode)) {
+      return s.rankNum >= 5 ? TeacherPersona.Level.DAN : TeacherPersona.Level.ADVANCED;
     }
-    if (s.rankNum >= 10) {
-      return TeacherPersona.Level.BEGINNER;
-    }
-    if (s.rankNum >= 5) {
-      return TeacherPersona.Level.INTERMEDIATE;
-    }
-    return TeacherPersona.Level.ADVANCED;
+    return s.rankNum >= 10 ? TeacherPersona.Level.BEGINNER : TeacherPersona.Level.INTERMEDIATE;
   }
 
   private static TeacherPersona.Rank snapshotToRank(TeacherSettings.Snapshot s) {
-    if ("d".equalsIgnoreCase(s.rankMode)) {
-      int dan = Math.max(1, Math.min(9, s.rankNum));
-      return TeacherPersona.Rank.values()[dan];
+    if ("d".equals(s.rankMode)) {
+      int d = Math.max(1, Math.min(9, s.rankNum));
+      return TeacherPersona.Rank.values()[d];
     }
     return TeacherPersona.Rank.SUB1D;
   }
@@ -295,144 +282,22 @@ final class TeacherPromptBuilder {
     };
   }
 
-  private static String teachingPersona(TeacherSettings.Snapshot s) {
-    StringBuilder persona = new StringBuilder();
-    String rank;
-    if ("d".equalsIgnoreCase(s.rankMode)) {
-      rank =
-          s.rankNum >= 4
-              ? "strong dan player"
-              : s.rankNum >= 1 ? "advanced amateur (dan level)" : "advanced amateur";
-    } else {
-      rank =
-          s.rankNum >= 10
-              ? "beginner"
-              : s.rankNum >= 5 ? "intermediate amateur" : "advanced amateur (single-digit kyu)";
-    }
-    persona
-        .append("The person is a ")
-        .append(rank)
-        .append(" (rank ")
-        .append(s.rankMode)
-        .append(s.rankNum)
-        .append("). Adjust the depth of the explanation to that level; do not state the rank ")
-        .append("in the answer. ");
-    switch (Math.max(0, Math.min(4, s.styleIndex))) {
-      case 1:
-        persona.append(
-            "Be rigorous and structured; present complete evidence before conclusions. ");
-        break;
-      case 2:
-        persona.append("Be patient and encouraging while keeping conclusions evidence-based. ");
-        break;
-      case 3:
-        persona.append("Be strict and direct; point out problems clearly. ");
-        break;
-      case 4:
-        persona.append("Use vivid analogies and light humor to explain the reasoning. ");
-        break;
-      case 0:
-      default:
-        persona.append("Keep a balanced tone: explain the reasoning before the conclusion. ");
-        break;
-    }
-    switch (Math.max(0, Math.min(2, s.densityIndex))) {
-      case 0:
-        persona.append("Use everyday language and avoid heavy jargon. ");
-        break;
-      case 2:
-        persona.append("Use proper Go terminology and explain each term briefly. ");
-        break;
-      case 1:
-      default:
-        persona.append("Use Go terminology at a moderate level. ");
-        break;
-    }
-    switch (Math.max(0, Math.min(2, s.paceIndex))) {
-      case 0:
-        persona.append("Keep the commentary concise and to the point. ");
-        break;
-      case 2:
-        persona.append("Explain at a relaxed, detailed pace. ");
-        break;
-      case 1:
-      default:
-        persona.append("Keep a standard pace. ");
-        break;
-    }
-    switch (Math.max(0, Math.min(2, s.variationIndex))) {
-      case 0:
-        persona.append("Mention only the essential variations. ");
-        break;
-      case 2:
-        persona.append("Describe the important variations in detail. ");
-        break;
-      case 1:
-      default:
-        persona.append("Describe variations in moderate detail. ");
-        break;
-    }
-    return persona.toString();
-  }
-
-  private static String modeInstruction(Mode mode, Locale locale) {
-    switch (mode) {
-      case RANGE:
-        return TeacherStrings.get(
-            locale,
-            "Teacher.prompt.modeRange",
-            "Review the selected move range. Focus on the most important turning points, "
-                + "compare the actual move with KataGo's candidates, follow only the supplied PVs, "
-                + "and finish with three actionable lessons.");
-      case WHOLE_GAME:
-        return TeacherStrings.get(
-            locale,
-            "Teacher.prompt.modeWhole",
-            "Review the whole game from the selected key positions. Give a short overview, "
-                + "the decisive turning points in chronological order, and three actionable lessons. "
-                + "Do not pretend that omitted positions were analyzed.");
-      case FOLLOW_UP:
-        return TeacherStrings.get(
-            locale,
-            "Teacher.prompt.modeFollowUp",
-            "Answer the follow-up using the same evidence. If the question needs information "
-                + "that is not present, explain what additional KataGo analysis is required.");
-      case NEXT_MOVE:
-      default:
-        return TeacherStrings.get(
-            locale,
-            "Teacher.prompt.modeNextMove",
-            "Explain the actual next move when available and compare it with KataGo's top "
-                + "three candidates. Follow each supplied PV move by move, then give one practical "
-                + "principle. If there is no actual next move, explain only the candidates.");
-    }
-  }
-
-  private static boolean isChinese(Locale locale) {
-    return locale == null || "zh".equals(locale.getLanguage());
-  }
-
-  private static String chineseOutputLanguage(Locale locale) {
-    String country = locale == null ? "" : locale.getCountry();
-    return "TW".equalsIgnoreCase(country) || "HK".equalsIgnoreCase(country) ? "繁體中文" : "简体中文";
-  }
-
   private static String outputLanguage(Locale locale) {
     String language = locale == null ? "zh" : locale.getLanguage();
     String country = locale == null ? "" : locale.getCountry();
     if ("zh".equals(language)) {
       return "TW".equalsIgnoreCase(country) || "HK".equalsIgnoreCase(country)
-          ? "Traditional Chinese"
-          : "Simplified Chinese";
+          ? "繁體中文"
+          : "简体中文";
     }
     if ("ja".equals(language)) {
-      return "Japanese";
+      return "日本語";
     }
     if ("ko".equals(language)) {
-      return "Korean";
+      return "한국어";
     }
     if ("th".equals(language)) {
-      return "Thai";
+      return "ไทย";
     }
     return "English";
   }
