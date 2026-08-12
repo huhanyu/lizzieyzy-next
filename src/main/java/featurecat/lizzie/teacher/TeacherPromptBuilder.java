@@ -177,6 +177,8 @@ final class TeacherPromptBuilder {
         .append("让他真正看懂每一步棋背后的逻辑。\n");
     prompt.append("请忠实于KataGo给出的分析结果进行解读，而非推荐你个人的下法。")
         .append("你的角色是帮助用户理解AI为什么这么推荐，而不是替AI做决定。\n\n");
+    prompt.append("请基于给出的 KataGo 分析数据（胜率、目差、AI 首选、损失、知识匹配等）进行讲解，")
+        .append("指出关键手、问题手与最佳应对，语言通俗易懂、结合具体坐标。\n\n");
     if (snapshot != null) {
       prompt.append(buildChinesePersona(snapshot)).append("\n");
     }
@@ -212,6 +214,7 @@ final class TeacherPromptBuilder {
     prompt.append("- 所有坐标/胜率/目差必须来自证据，禁用编造\n");
     prompt.append("- 讲解正文严禁出现\"围棋老师\"、\"讲棋老师\"、\"教练\"等称呼\n");
     prompt.append("- 不要在回答中提及用户的段位\n\n");
+    prompt.append("禁止编造坐标、变化、胜率、目差或比赛结果。若数据缺失，直接说明。\n\n");
     prompt.append("输出语言：请全程使用 ").append(outputLanguage(locale))
         .append(" 输出解说（包括标题、正文、对比表、训练建议），不要混用其他语言。\n");
     prompt.append("视角说明：胜率和目差已换算为当前行棋方视角（落子方胜率，黑正目差），")
