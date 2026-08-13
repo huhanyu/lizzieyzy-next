@@ -21,9 +21,33 @@ class TeacherCommentCodecTest {
   }
 
   @Test
+  void preservesUserWhitespaceExactlyAcrossAddingAndReplacingCommentary() {
+    String original = "User note  \n\n\nSecond line\t  \n";
+
+    String first = TeacherCommentCodec.upsert(original, "First answer", "m1");
+    String second = TeacherCommentCodec.upsert(first, "Replacement answer", "m2");
+
+    assertEquals(original, TeacherCommentCodec.removeBlocks(first));
+    assertEquals(original, TeacherCommentCodec.removeBlocks(second));
+  }
+
+  @Test
   void incompleteMarkerInUserCommentIsNotDeleted() {
     String original = "Keep this " + TeacherCommentCodec.BEGIN + " fragment";
     assertEquals(original, TeacherCommentCodec.removeBlocks(original));
+  }
+
+  @Test
+  void removingCommentaryDoesNotNormalizeUserWhitespace() {
+    String userText = "first  aligned  \n\n\nlast";
+    String stored =
+        userText
+            + "\n"
+            + TeacherCommentCodec.BEGIN
+            + "\n\nanswer\n"
+            + TeacherCommentCodec.END;
+
+    assertEquals(userText + "\n", TeacherCommentCodec.removeBlocks(stored));
   }
 
   @Test

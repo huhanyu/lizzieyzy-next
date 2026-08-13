@@ -641,6 +641,18 @@ public class BoardData {
         || (estimateArray != null && !estimateArray.isEmpty());
   }
 
+  /** True when the primary payload contains a winrate point that can actually be graphed. */
+  public boolean hasDisplayablePrimaryAnalysis() {
+    if (getPlayouts() <= 0 || !Double.isFinite(winrate) || winrate < 0 || winrate > 100) {
+      return false;
+    }
+    // Imported SGFs may legitimately contain only the serialized analysis header. Live engine
+    // results, on the other hand, carry at least one candidate. Requiring either signal prevents
+    // download/sync placeholders with a default 50% winrate and a visit counter from suppressing
+    // automatic curve completion.
+    return analysisHeaderSlots >= 3 || (bestMoves != null && !bestMoves.isEmpty());
+  }
+
   public boolean hasSecondaryAnalysisPayload() {
     return getPlayouts2() > 0
         || analysisHeaderSlots2 > 0

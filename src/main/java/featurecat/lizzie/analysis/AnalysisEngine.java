@@ -1301,6 +1301,7 @@ public class AnalysisEngine {
 
   private int startRequestMissingMainlineNow(boolean showProgressDialog) {
     prepareRequestState(showProgressDialog);
+    captureCurrentGameIdentity();
     if (useRemoteCompute) {
       enqueueRemoteGtpMainlineRequests(
           targetAnalysisVisitsForCurrentRequest(showProgressDialog),
@@ -1309,6 +1310,7 @@ public class AnalysisEngine {
       BoardHistoryNode node = firstHistoryActionNode(Lizzie.board.getHistory().getStart());
       while (node != null) {
         if (shouldAnalyzeMissingNode(node)) {
+          captureRequestPosition(node);
           if (!sendRequest(node)) break;
         }
         node = nextHistoryActionNode(node);
@@ -1487,6 +1489,29 @@ public class AnalysisEngine {
     requestPositionFingerprints().clear();
     if (!showProgressDialog) waitFrame = null;
     pauseForegroundAnalysisForRequest(showProgressDialog);
+  }
+
+  private void captureCurrentGameIdentity() {
+    requestHistoryRoot =
+        Lizzie.board == null || Lizzie.board.getHistory() == null
+            ? null
+            : Lizzie.board.getHistory().getStart();
+    requestBoardWidth = Board.boardWidth;
+    requestBoardHeight = Board.boardHeight;
+    requestKomi =
+        Lizzie.board == null
+                || Lizzie.board.getHistory() == null
+                || Lizzie.board.getHistory().getGameInfo() == null
+            ? Double.NaN
+            : Lizzie.board.getHistory().getGameInfo().getKomi();
+    requestRulesSignature = currentAnalysisRulesSignature();
+  }
+
+  private void captureRequestPosition(BoardHistoryNode node) {
+    if (node != null && node.getData() != null) {
+      requestPositionFingerprints()
+          .put(node, WholeGameAnalysisPlan.PositionFingerprint.capture(node.getData()));
+    }
   }
 
   static boolean shouldPauseForegroundAnalysisForRequest(
@@ -1714,6 +1739,7 @@ public class AnalysisEngine {
       if (commands == null) {
         commands = buildRemoteGtpSetupCommands(selectedNode);
       }
+      captureRequestPosition(selectedNode);
       enqueueRemoteGtpRequest(selectedNode, Math.max(1, targetVisits), commands);
       previousQueuedNode = selectedNode;
     }
@@ -2366,7 +2392,7 @@ public class AnalysisEngine {
 
   private static boolean shouldAnalyzeMissingNode(BoardHistoryNode node) {
     BoardData data = node == null ? null : node.getData();
-    return isRealHistoryAction(data) && !data.hasPrimaryAnalysisPayload();
+    return isRealHistoryAction(data) && !data.hasDisplayablePrimaryAnalysis();
   }
 
   public static int targetAnalysisVisits() {
@@ -2538,6 +2564,7 @@ public class AnalysisEngine {
             && Lizzie.board.getHistory() != null
             && Lizzie.board.getHistory().getStart() == historyRoot
             && (kind == ForegroundRequestKind.WHOLE_GAME
+                || kind == ForegroundRequestKind.MISSING_MAINLINE
                 || (Lizzie.board.getHistory().getCurrentHistoryNode() == historyNode
                     && Lizzie.board.getHistory().getZobrist().equals(boardPosition)
                     && Lizzie.board.getHistory().isBlacksTurn() == blackToPlay
@@ -2627,6 +2654,15 @@ public class AnalysisEngine {
 
   public synchronized boolean isAnalysisInProgress() {
     return analyzeMap.size() > 0 && responseCount < analyzeMap.size();
+  }
+
+  /** Includes requests that are still acquiring or restoring a shared foreground-engine lease. */
+  public synchronized boolean hasRequestLifecycleInProgress() {
+    return pendingForegroundRequest != null
+        || sharedForegroundHandoffOwner != null
+        || sharedForegroundLeaseStarting
+        || sharedForegroundLeaseActive
+        || isAnalysisInProgress();
   }
 
   /** Silent analysis is safe to pause and resume when the user explicitly changes engines. */
