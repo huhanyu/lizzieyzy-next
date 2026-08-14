@@ -226,7 +226,8 @@ class OnlineDialogYikeSessionStateTest {
       double winrate,
       int playouts) {
     Stone[] stones = stonesWith(x, y, color);
-    return BoardData.move(
+    BoardData data =
+        BoardData.move(
         stones,
         new int[] {x, y},
         color,
@@ -238,6 +239,11 @@ class OnlineDialogYikeSessionStateTest {
         0,
         winrate,
         playouts);
+    if (playouts > 0) {
+      data.engineName = "saved-analysis";
+      data.analysisHeaderSlots = 3;
+    }
+    return data;
   }
 
   private static BoardHistoryNode append(BoardHistoryNode parent, BoardData data) {

@@ -180,7 +180,10 @@ final class TeacherPromptBuilder {
     }
 
     StringBuilder prompt =
-        new StringBuilder("You are a careful Go review assistant. Reply in ")
+        new StringBuilder(
+                "You are a world-class professional Go player and a careful, practical teacher. "
+                    + "Your role is to help the user understand KataGo's evidence, not to replace "
+                    + "KataGo with your personal preferred move. Reply in ")
             .append(outputLanguage(locale))
             .append(
                 ". Use only the supplied KataGo evidence. Never invent coordinates, variations, ")
@@ -190,6 +193,13 @@ final class TeacherPromptBuilder {
             .append(
                 "cheating accusations or claim an official rank. Keep the explanation practical ")
             .append("and understandable.\n\n");
+    prompt
+        .append("For every reviewed position, follow each supplied PV move by move and identify ")
+        .append("the turning point and concrete result. Treat score differences within 0.5 points ")
+        .append("as effectively equivalent for a human player, 0.5 to 1.5 as a small preference, ")
+        .append("and more than 1.5 as a meaningful difference worth explaining. Use winrate only ")
+        .append("as supporting context. Compare the candidates' strategic tradeoffs, and clearly ")
+        .append("label any teaching interpretation that is not directly stated by the evidence.\n");
     if (snapshot != null) {
       prompt.append(teachingPersona(snapshot)).append("\n");
     }
@@ -206,7 +216,9 @@ final class TeacherPromptBuilder {
 
   private static String chineseSystemPrompt(Locale locale, TeacherSettings.Snapshot snapshot) {
     StringBuilder prompt = new StringBuilder();
-    prompt.append("你是一个围棋 AI 讲棋老师。\n");
+    prompt
+        .append("你是一位世界顶尖围棋职业棋手，同时也是一位耐心、严谨的围棋教师。\n")
+        .append("你的任务是帮助用户理解 KataGo 为什么这样判断，而不是用个人偏好替代 KataGo 的结论。\n");
     if (snapshot != null) {
       prompt.append(buildChinesePersona(snapshot)).append("\n");
     }
@@ -215,6 +227,11 @@ final class TeacherPromptBuilder {
         .append("目差、落子意图或比赛结果；证据不足时必须坦诚说明。事实与教学性解读要明确区分。\n")
         .append("不得进行作弊指控，也不得声称用户具有任何官方段位。\n")
         .append("指出关键手、问题手与更好的应对，语言通俗、具体且可执行。\n");
+    prompt.append("分析要求：\n");
+    prompt.append("1) 按提供的变化图逐手说明，并指出关键转折点和最终得失；\n");
+    prompt.append("2) 以目差为主要判断依据：0.5 目以内视为基本等价，0.5 至 1.5 目只说明细微倾向，超过 1.5 目再重点解释；\n");
+    prompt.append("3) 胜率仅作辅助，不因 50% 附近的小幅波动制造虚假优劣感；\n");
+    prompt.append("4) 比较各候选的策略差异；棋理和意图属于教学性解读时，必须与数据事实明确区分。\n");
     prompt.append("讲解格式要求：\n");
     prompt.append("1) 先用通俗语言讲解这一手的好坏与原因；\n");
     prompt.append("2) 末尾用以下固定标记补充结构化内容（无则省略该段）：\n");

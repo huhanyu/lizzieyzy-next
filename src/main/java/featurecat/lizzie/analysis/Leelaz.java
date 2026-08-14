@@ -320,9 +320,11 @@ public class Leelaz {
   public boolean isThinking = false;
   public boolean isInputCommand = false;
 
-  public boolean getRcentLine = false;
+  public volatile boolean getRcentLine = false;
+  private final Object parameterReadTimeoutLock = new Object();
+  private long parameterReadTimeoutGeneration;
   private int recentLineNumber = 0;
-  public String recentRulesLine = "";
+  public volatile String recentRulesLine = "";
   public int usingSpecificRules = -1; // 1=中国规则2=中古规则3=日本规则4=TT规则5=其他规则
   public boolean preload = false;
   public volatile boolean started = false;
@@ -13426,27 +13428,46 @@ public class Leelaz {
   }
 
   public void getParameterScadule(boolean sendCommand) {
-    getRcentLine = true;
-    if (sendCommand) {
-      recentLineNumber = 0;
-      sendCommand("kata-get-param playoutDoublingAdvantage");
-      sendCommand("kata-get-param analysisWideRootNoise");
-      sendCommand("kata-get-rules");
+    getParameterScadule(sendCommand, TimeUnit.SECONDS.toMillis(30));
+  }
+
+  void getParameterScadule(boolean sendCommand, long timeoutMillis) {
+    final long timeoutGeneration;
+    synchronized (parameterReadTimeoutLock) {
+      timeoutGeneration = ++parameterReadTimeoutGeneration;
+      getRcentLine = true;
+      if (sendCommand) {
+        recentLineNumber = 0;
+        sendCommand("kata-get-param playoutDoublingAdvantage");
+        sendCommand("kata-get-param analysisWideRootNoise");
+        sendCommand("kata-get-rules");
+      }
     }
-    Runnable runnable =
-        new Runnable() {
-          public void run() {
-            try {
-              Thread.sleep(30000);
-            } catch (InterruptedException e) {
-              // TODO Auto-generated catch block
-              e.printStackTrace();
-            }
-            Lizzie.leelaz.getRcentLine = false;
-          }
-        };
-    Thread thread = new Thread(runnable);
-    thread.start();
+    Thread timeoutThread =
+        new Thread(
+            () -> {
+              try {
+                Thread.sleep(Math.max(0L, timeoutMillis));
+              } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return;
+              }
+              synchronized (parameterReadTimeoutLock) {
+                if (parameterReadTimeoutGeneration == timeoutGeneration) {
+                  getRcentLine = false;
+                }
+              }
+            },
+            "lizzie-katago-parameter-timeout");
+    timeoutThread.setDaemon(true);
+    timeoutThread.start();
+  }
+
+  public void cancelParameterRead() {
+    synchronized (parameterReadTimeoutLock) {
+      parameterReadTimeoutGeneration++;
+      getRcentLine = false;
+    }
   }
 
   public void getSuicidalAndRules() {

@@ -4152,6 +4152,7 @@ public class Board {
 
   public void setHistory(BoardHistoryList newList) {
     synchronized (this) {
+      movelistRefreshGeneration++;
       history = newList;
       syncBoardDimensionsWithHistory(newList);
       syncBoardKataFlagsWithHistory(newList);
@@ -4712,7 +4713,7 @@ public class Board {
   //  }
 
   public double lastWinrateDiff(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && hasPrimaryAnalysisPayload(node.previous().get().previous().get().getData())) {
@@ -4740,7 +4741,7 @@ public class Board {
   }
 
   public double lastWinrateDiff2(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && hasSecondaryAnalysisPayload(node.previous().get().previous().get().getData())) {
@@ -4789,7 +4790,7 @@ public class Board {
   }
 
   public double lastScoreMeanDiff(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && node.previous().get().previous().get().getData().getPlayouts() > 0) {
@@ -4821,7 +4822,7 @@ public class Board {
   }
 
   public double lastScoreMeanDiff2(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && node.previous().get().previous().get().getData().getPlayouts2() > 0) {
@@ -4854,19 +4855,26 @@ public class Board {
 
   public void setMovelistAll() {
     final int generation = ++movelistRefreshGeneration;
+    final BoardHistoryList refreshHistory = history;
+    if (refreshHistory == null) {
+      return;
+    }
     Thread thread =
         new Thread(
             new Runnable() {
               public void run() {
-                BoardHistoryNode node = Lizzie.board.getHistory().getStart();
+                BoardHistoryNode node = refreshHistory.getStart();
                 Stack<BoardHistoryNode> stack = new Stack<>();
                 stack.push(node);
                 int processed = 0;
                 while (!stack.isEmpty()) {
-                  if (generation != movelistRefreshGeneration) {
+                  if (generation != movelistRefreshGeneration || history != refreshHistory) {
                     return;
                   }
                   if (!pauseMovelistRefreshForRecentNavigation()) {
+                    return;
+                  }
+                  if (generation != movelistRefreshGeneration || history != refreshHistory) {
                     return;
                   }
                   BoardHistoryNode cur = stack.pop();
@@ -4927,7 +4935,7 @@ public class Board {
   }
 
   public void setMovelistAll2() {
-    BoardHistoryNode node = Lizzie.board.getHistory().getStart();
+    BoardHistoryNode node = history.getStart();
     Stack<BoardHistoryNode> stack = new Stack<>();
     stack.push(node);
     while (!stack.isEmpty()) {
@@ -4956,7 +4964,7 @@ public class Board {
             && previousNode.getData().winrate >= 0)
         || previousNode.getData().playoutsChanged) {
       double winrateDiff = lastWinrateDiff(node);
-      if (Lizzie.board.isPkBoard && playouts > 0) {
+      if (isPkBoard && playouts > 0) {
         if (node.isMainTrunk() && node.previous().get().isMainTrunk()) {
           if (node.getData().isMoveNode()
               && previousNode.previous().isPresent()
@@ -5049,7 +5057,7 @@ public class Board {
                 != previousNode.nodeInfo2.previousPlayouts)
         && previousNode.getData().winrate2 >= 0) {
       double winrateDiff = lastWinrateDiff2(node);
-      if (Lizzie.board.isPkBoard) {
+      if (isPkBoard) {
         if (node.getData().isMoveNode()
             && previousNode.previous().isPresent()
             && previousNode.getData().isMoveNode()) {

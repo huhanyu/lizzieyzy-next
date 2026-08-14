@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.HumanSlGameController;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -122,6 +123,116 @@ class AnalysisEngineRequestTest {
       assertTrue(engine.isLoaded());
       assertNull(engine.process);
       assertTrue(engine.matchesCurrentAnalysisBackend());
+    }
+  }
+
+  @Test
+  void automaticQuickAnalysisReusesRemoteAndBundledNvidiaForegroundWhenAppropriate() {
+    assertTrue(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true, false, false, false));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true, false, false, true));
+    assertTrue(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, true, true));
+    assertTrue(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, false, false));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, false, true));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS, true, true, true, false));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.WHOLE_GAME_ANALYSIS, true, true, true, false));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, false, false, false));
+  }
+
+  @Test
+  void automaticQuickAnalysisBindsTheActiveRemoteEngineWithoutChangingUserSettings()
+      throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Leelaz foreground = reusableForegroundEngine(true);
+      foreground.setEngineCommand(RemoteComputeConfig.COMMAND_ZHIZI);
+      Lizzie.leelaz = foreground;
+      Lizzie.config.analysisReuseCurrentEngine = false;
+      Lizzie.config.quickAnalysisLightweightModelEnabled = false;
+
+      AnalysisEngine engine = AnalysisEngine.createAutomaticQuickAnalysis();
+
+      assertTrue(engine.isLoaded());
+      assertTrue(engine.usesSharedForegroundEngine());
+      assertTrue(engine.usesAutomaticPrimaryForegroundReuse());
+      assertTrue(engine.matchesCurrentAnalysisBackend());
+      assertNull(engine.process);
+      assertFalse(Lizzie.config.analysisReuseCurrentEngine);
+    }
+  }
+
+  @Test
+  void automaticPrimaryForegroundReuseInvalidatesWhenThePrimaryEngineChanges()
+      throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Leelaz firstForeground = reusableForegroundEngine(true);
+      Leelaz secondForeground = reusableForegroundEngine(true);
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      Lizzie.config.analysisReuseCurrentEngine = false;
+      Lizzie.leelaz = firstForeground;
+      setField(
+          AnalysisEngine.class,
+          engine,
+          "purpose",
+          AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS);
+      setField(AnalysisEngine.class, engine, "sharedForegroundEngine", firstForeground);
+      setField(AnalysisEngine.class, engine, "automaticPrimaryForegroundReuse", true);
+      setField(
+          AnalysisEngine.class,
+          engine,
+          "automaticPrimaryForegroundCommand",
+          firstForeground.engineCommand());
+
+      assertTrue(engine.matchesCurrentAnalysisBackend());
+      assertFalse(Lizzie.config.analysisReuseCurrentEngine);
+
+      Lizzie.leelaz = secondForeground;
+
+      assertFalse(engine.matchesCurrentAnalysisBackend());
+    }
+  }
+
+  @Test
+  void automaticPrimaryForegroundReuseInvalidatesWhenTheSameEngineObjectChangesCommand()
+      throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Leelaz foreground = reusableForegroundEngine(true);
+      foreground.setEngineCommand("bundled-tensorrt-command");
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      Lizzie.config.analysisReuseCurrentEngine = false;
+      Lizzie.leelaz = foreground;
+      setField(
+          AnalysisEngine.class,
+          engine,
+          "purpose",
+          AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS);
+      setField(AnalysisEngine.class, engine, "sharedForegroundEngine", foreground);
+      setField(AnalysisEngine.class, engine, "automaticPrimaryForegroundReuse", true);
+      setField(
+          AnalysisEngine.class,
+          engine,
+          "automaticPrimaryForegroundCommand",
+          foreground.engineCommand());
+
+      assertTrue(engine.matchesCurrentAnalysisBackend());
+
+      foreground.setEngineCommand("different-engine-command");
+
+      assertFalse(engine.matchesCurrentAnalysisBackend());
     }
   }
 
@@ -378,6 +489,30 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
+  void missingMainlineTrackingHandoffSurvivesBrowsingWithinTheSameKifu() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Lizzie.config.analysisReuseCurrentEngine = true;
+      singleUnanalyzedMoveNode();
+      Leelaz foreground = reusableForegroundEngine(true);
+      ByteArrayOutputStream output = installLeelazOutput(foreground);
+      Lizzie.leelaz = foreground;
+      activateTracking(foreground);
+      AnalysisEngine engine = new AnalysisEngine(false);
+
+      assertEquals(1, engine.startRequestMissingMainline(false));
+      assertTrue(Lizzie.board.getHistory().previous().isPresent());
+      assertTrue(dispatchExclusiveLine(foreground, ""));
+      assertTrue(dispatchExclusiveLine(foreground, "=800000002"));
+      assertTrue(dispatchExclusiveLine(foreground, ""));
+
+      assertTrue(
+          output.toString(StandardCharsets.UTF_8).contains("kata-get-rules\n"),
+          "browsing the same kifu must not cancel pending quick-curve handoff");
+      closeExclusiveSessionForTest(foreground);
+    }
+  }
+
+  @Test
   void reuseModeClaimsActiveTrackingBeforeStartingWholeGameRequest() throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       Lizzie.config.analysisReuseCurrentEngine = true;
@@ -602,6 +737,7 @@ class AnalysisEngineRequestTest {
 
       assertEquals(1, engine.startRequestMissingMainline(false));
       requestedNode.getData().setPlayouts(120);
+      requestedNode.getData().analysisHeaderSlots = 3;
       assertEquals("800000000 stop\n", output.toString(StandardCharsets.UTF_8));
 
       processCommandResponse(foreground, "=800000000");
@@ -635,6 +771,7 @@ class AnalysisEngineRequestTest {
 
       assertEquals(1, engine.startRequestMissingMainline(false));
       requestedNode.getData().setPlayouts(120);
+      requestedNode.getData().analysisHeaderSlots = 3;
 
       assertTrue(dispatchExclusiveLine(foreground, ""));
       assertTrue(dispatchExclusiveLine(foreground, "=800000002"));
@@ -1108,6 +1245,40 @@ class AnalysisEngineRequestTest {
       javax.swing.SwingUtilities.invokeAndWait(() -> {});
 
       assertEquals(1, failures.get());
+    }
+  }
+
+  @Test
+  void normalQuitContinuationWaitsForSharedForegroundRestore() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      DeferredRestoreLeelaz foreground = new DeferredRestoreLeelaz();
+      AtomicInteger continuations = new AtomicInteger();
+      setField(AnalysisEngine.class, engine, "sharedForegroundEngine", foreground);
+      setField(AnalysisEngine.class, engine, "sharedForegroundLease", foregroundLease(foreground));
+
+      engine.normalQuit(continuations::incrementAndGet);
+
+      assertEquals(0, continuations.get());
+      foreground.completeRestore();
+      assertEquals(1, continuations.get());
+    }
+  }
+
+  @Test
+  void normalQuitContinuationAlsoRunsOnceWhenSharedRestoreFails() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      DeferredRestoreLeelaz foreground = new DeferredRestoreLeelaz();
+      AtomicInteger continuations = new AtomicInteger();
+      setField(AnalysisEngine.class, engine, "sharedForegroundEngine", foreground);
+      setField(AnalysisEngine.class, engine, "sharedForegroundLease", foregroundLease(foreground));
+
+      engine.normalQuit(continuations::incrementAndGet);
+
+      assertEquals(0, continuations.get());
+      foreground.failRestore();
+      assertEquals(1, continuations.get());
     }
   }
 
@@ -1735,6 +1906,7 @@ class AnalysisEngineRequestTest {
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
       analyzed.setPlayouts(120);
       analyzed.engineName = "cached-analysis";
+      analyzed.analysisHeaderSlots = 3;
       history.add(analyzed);
       history.add(
           moveNode(
@@ -1760,6 +1932,38 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
+  void missingMainlineResponseIsRejectedAfterAnotherKifuLoads() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList firstHistory =
+          new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      BoardData firstMove =
+          moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
+      firstHistory.add(firstMove);
+      boardWithHistory(firstHistory);
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      AtomicInteger failures = new AtomicInteger();
+      engine.setFailureCallback(failures::incrementAndGet);
+
+      assertEquals(1, engine.startRequestMissingMainline(false));
+
+      BoardHistoryList secondHistory =
+          new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      BoardData secondMove =
+          moveNode(stones(placement(1, 0, Stone.BLACK)), new int[] {1, 0}, Stone.BLACK, false, 1);
+      secondHistory.add(secondMove);
+      boardWithHistory(secondHistory);
+
+      engine.parseResult(analysisResult(1, 200, 62.0));
+      javax.swing.SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(1, failures.get());
+      assertEquals(0, firstMove.getPlayouts(), "a stale response must not mutate the old kifu");
+      assertEquals(0, secondMove.getPlayouts(), "a stale response must not leak into the new kifu");
+      assertFalse(engine.isAnalysisInProgress());
+    }
+  }
+
+  @Test
   void startRequestMissingMainlineStillSkipsExistingAnalysisWhenOverrideIsEnabled()
       throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
@@ -1769,6 +1973,7 @@ class AnalysisEngineRequestTest {
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
       analyzed.setPlayouts(120);
       analyzed.engineName = "cached-analysis";
+      analyzed.analysisHeaderSlots = 3;
       history.add(analyzed);
       history.add(
           moveNode(
@@ -1799,6 +2004,7 @@ class AnalysisEngineRequestTest {
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1);
       lowVisits.setPlayouts(AnalysisEngine.targetAnalysisVisits() - 1);
       lowVisits.engineName = "partial-analysis";
+      lowVisits.analysisHeaderSlots = 3;
       history.add(lowVisits);
       boardWithHistory(history);
       TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
