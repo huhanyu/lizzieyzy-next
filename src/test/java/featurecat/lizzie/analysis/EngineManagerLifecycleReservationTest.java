@@ -48,6 +48,39 @@ import org.junit.jupiter.api.Test;
 class EngineManagerLifecycleReservationTest {
 
   @Test
+  void setupModeRejectsForegroundEngineSwitchBeforeLifecyclePreparation() throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Board previousBoard = Lizzie.board;
+    boolean previousEmpty = EngineManager.isEmpty;
+    int previousEngineNo = EngineManager.currentEngineNo;
+    RecordingSwitchLeelaz current = new RecordingSwitchLeelaz();
+    RecordingSwitchLeelaz target = new RecordingSwitchLeelaz();
+    SetupGuardEngineManager manager = new SetupGuardEngineManager(List.of(current, target));
+    try {
+      Lizzie.board = preparedRestoreBoard();
+      Lizzie.board.setSetupMode(true);
+      Lizzie.leelaz = current;
+      Lizzie.leelaz2 = null;
+      EngineManager.isEmpty = false;
+      EngineManager.currentEngineNo = 0;
+
+      manager.switchEngine(1, true);
+
+      assertEquals(1, manager.setupModeBlockCount);
+      assertSame(current, Lizzie.leelaz);
+      assertFalse(current.hasExclusiveGtpWorkInProgress());
+      assertFalse(target.hasExclusiveGtpWorkInProgress());
+    } finally {
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      Lizzie.board = previousBoard;
+      EngineManager.isEmpty = previousEmpty;
+      EngineManager.currentEngineNo = previousEngineNo;
+    }
+  }
+
+  @Test
   void switchReservesCurrentAndFrozenTargetWithoutSeparateMirrorReservation() throws Exception {
     Leelaz previousPrimary = Lizzie.leelaz;
     Leelaz previousSecondary = Lizzie.leelaz2;
@@ -4251,6 +4284,18 @@ class EngineManagerLifecycleReservationTest {
       this.synchronizationEngine = engine;
       this.synchronization = synchronization;
       this.afterSync = afterSync;
+    }
+  }
+  private static final class SetupGuardEngineManager extends EngineManager {
+    private int setupModeBlockCount;
+
+    private SetupGuardEngineManager(List<Leelaz> engines) {
+      super(engines);
+    }
+
+    @Override
+    protected void showSetupModeEngineUnavailable() {
+      setupModeBlockCount++;
     }
   }
 

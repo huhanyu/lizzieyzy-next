@@ -1281,6 +1281,7 @@ public class EngineManager {
   }
 
   public void startNewEngineGame(boolean firstTime) {
+    if (rejectForegroundEngineStartDuringSetup(true)) return;
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     if (currentForegroundEngine != null) {
       if (!currentForegroundEngine.beginExclusiveGtpLifecycleTransition()) {
@@ -1601,7 +1602,7 @@ public class EngineManager {
   //  }
 
   private void checkEngineAlive() {
-    if (isEmpty) return;
+    if (isEmpty || isSetupModeActive()) return;
     if (!isEngineGame && Lizzie.leelaz != null) {
       if (Lizzie.leelaz.isStarted()
           && Lizzie.leelaz.canCheckAlive
@@ -1701,6 +1702,7 @@ public class EngineManager {
   }
 
   public void updateEngines() throws JSONException, IOException {
+    if (rejectForegroundEngineStartDuringSetup(true)) return;
     isUpdating = true;
     int preIndex = currentEngineNo;
     Leelaz previousForegroundEngine = Lizzie.leelaz;
@@ -1896,7 +1898,7 @@ public class EngineManager {
   }
 
   private void restartRemoteEngineInBackground(Leelaz engine, int index) {
-    if (engine == null) {
+    if (engine == null || isSetupModeActive()) {
       return;
     }
     Leelaz.ExclusiveGtpLifecycleReservation reservation =
@@ -1917,6 +1919,7 @@ public class EngineManager {
                 if (Lizzie.leelaz != engine
                     || currentEngineNo != index
                     || isEmpty
+                    || isSetupModeActive()
                     || !engine.isProcessDead()) {
                   engine.canCheckAlive = true;
                   return;
@@ -1939,6 +1942,7 @@ public class EngineManager {
 
   void restartUnresponsiveRemoteEngine(Leelaz engine, int index) {
     if (engine == null
+        || isSetupModeActive()
         || engine != Lizzie.leelaz
         || index != currentEngineNo
         || isEmpty
@@ -1949,6 +1953,7 @@ public class EngineManager {
   }
 
   private void restartEngineAutomatically(Leelaz engine, int index) throws IOException {
+    if (isSetupModeActive()) return;
     Leelaz.ExclusiveGtpLifecycleReservation reservation =
         engine.beginAutomaticEngineRestartReservation();
     if (reservation == null) {
@@ -2144,6 +2149,7 @@ public class EngineManager {
 
   public void reStartEngine() {
     // currentEngineNo = -1;
+    if (rejectForegroundEngineStartDuringSetup(true)) return;
     if (isEmpty || Lizzie.leelaz == null) return;
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     boolean restartPonderIntent =
@@ -2197,6 +2203,7 @@ public class EngineManager {
 
   public void reStartEngine(int index) {
     // currentEngineNo = -1;
+    if (rejectForegroundEngineStartDuringSetup(true)) return;
     if (isEmpty || Lizzie.leelaz == null) return;
     if (rejectSameEngineSelection(index, true)) return;
     Leelaz currentForegroundEngine = Lizzie.leelaz;
@@ -2465,6 +2472,7 @@ public class EngineManager {
   }
 
   public void restartEngineForPk(int index) {
+    if (rejectForegroundEngineStartDuringSetup(true)) return;
     if (index < 0 || index >= this.engineList.size()) return;
     Leelaz targetEngine = engineList.get(index);
     Board restoreBoard = Lizzie.board;
@@ -2611,6 +2619,7 @@ public class EngineManager {
       boolean isMain,
       boolean showConflict,
       Leelaz.EngineModeReservation retainedForegroundReservation) {
+    if (rejectForegroundEngineStartDuringSetup(showConflict)) return false;
     if (engineList == null || index < 0 || index >= engineList.size()) {
       return false;
     }
@@ -2685,6 +2694,20 @@ public class EngineManager {
       return;
     }
     Utils.showMsg(resourceBundle.getString("EngineManager.sameEngineHint"));
+  }
+
+  private boolean isSetupModeActive() {
+    return Lizzie.board != null && Lizzie.board.isSetupMode();
+  }
+
+  private boolean rejectForegroundEngineStartDuringSetup(boolean showMessage) {
+    if (!isSetupModeActive()) return false;
+    if (showMessage) showSetupModeEngineUnavailable();
+    return true;
+  }
+
+  protected void showSetupModeEngineUnavailable() {
+    Utils.showMsg(resourceBundle.getString("EngineManager.setupModeActive"));
   }
 
   private Runnable releaseEngineLifecycleAfterBoardSync(
