@@ -2056,8 +2056,7 @@ public class Board {
       newState.dummy = dummy;
       history.addOrGoto(newState, newBranch);
       // update leelaz with pass
-      if (!Lizzie.leelaz.isInputCommand && !EngineManager.isEngineGame)
-        feedEngineForMainlineMove(color, "pass");
+      if (!EngineManager.isEngineGame) feedEngineForMainlineMove(color, "pass");
 
       if (Lizzie.frame.isPlayingAgainstLeelaz
           && Lizzie.frame.playerIsBlack != getData().blackToPlay)
@@ -2674,14 +2673,6 @@ public class Board {
     setupMode = false;
   }
 
-  /**
-   * Replaces the current position with a standard 19x19 fixed-handicap root position.
-   *
-   * <p>Handicap stones are setup stones, not a sequence of Black moves. Keeping them on the root
-   * preserves move number zero and guarantees that White is next for every handicap count.
-   *
-   * @return {@code true} when the requested fixed handicap was applied
-   */
   public boolean setupFixedHandicap(int handicap) {
     int[][] points = fixedHandicapPoints(handicap);
     if (boardWidth != 19 || boardHeight != 19 || points.length == 0) {
@@ -2724,28 +2715,18 @@ public class Board {
 
   private static int[][] fixedHandicapPoints(int handicap) {
     switch (handicap) {
-      case 2:
-        return new int[][] {{3, 15}, {15, 3}};
-      case 3:
-        return new int[][] {{3, 3}, {15, 3}, {3, 15}};
-      case 4:
-        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}};
-      case 5:
-        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 9}};
-      case 6:
-        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {3, 9}, {15, 9}};
-      case 7:
-        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {15, 9}, {3, 9}, {9, 9}};
-      case 8:
-        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}};
-      case 9:
-        return new int[][] {
-          {3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}, {9, 9}
-        };
-      default:
-        return new int[0][];
+      case 2: return new int[][] {{3, 15}, {15, 3}};
+      case 3: return new int[][] {{3, 3}, {15, 3}, {3, 15}};
+      case 4: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}};
+      case 5: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 9}};
+      case 6: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {3, 9}, {15, 9}};
+      case 7: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {15, 9}, {3, 9}, {9, 9}};
+      case 8: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}};
+      case 9: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}, {9, 9}};
+      default: return new int[0][];
     }
   }
+
 
   public void flattenWithCondition(
       Stone[] stones,

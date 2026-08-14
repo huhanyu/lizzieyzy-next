@@ -2674,6 +2674,7 @@ public class EngineManager {
                 targetEngine,
                 isMain,
                 false,
+                false,
                 reservations,
                 preparedSwitch == null ? null : preparedSwitch.lifecycleRestore));
     return true;
