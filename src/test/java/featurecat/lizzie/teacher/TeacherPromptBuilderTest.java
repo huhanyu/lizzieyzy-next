@@ -31,7 +31,12 @@ class TeacherPromptBuilderTest {
 
     assertTrue(system.contains("简体中文"));
     assertTrue(system.contains("禁止编造"));
-    assertTrue(system.contains("围棋 AI 讲棋老师"));
+    assertTrue(system.contains("世界顶尖围棋职业棋手"));
+    assertTrue(system.contains("不是用个人偏好替代 KataGo"));
+    assertTrue(system.contains("0.5 目以内视为基本等价"));
+    assertTrue(system.contains("超过 1.5 目再重点解释"));
+    assertTrue(system.contains("胜率仅作辅助"));
+    assertTrue(system.contains("教学性解读"));
     assertTrue(evidence.contains("第 42 手之后的局面"));
     assertTrue(system.contains("不得进行作弊指控"));
     assertTrue(system.contains("不得声称用户具有任何官方段位"));
@@ -99,6 +104,10 @@ class TeacherPromptBuilderTest {
         TeacherPromptBuilder.forPosition(position, Locale.ENGLISH, snapshot("d", 3));
 
     assertTrue(messages.get(0).content.contains("Reply in English"));
+    assertTrue(messages.get(0).content.contains("world-class professional Go player"));
+    assertTrue(messages.get(0).content.contains("not to replace KataGo"));
+    assertTrue(messages.get(0).content.contains("within 0.5 points"));
+    assertTrue(messages.get(0).content.contains("more than 1.5"));
     assertTrue(messages.get(0).content.contains("Never invent"));
     assertTrue(messages.get(0).content.contains("Do not make cheating accusations"));
     assertTrue(messages.get(0).content.contains("final values normalized by the application"));
