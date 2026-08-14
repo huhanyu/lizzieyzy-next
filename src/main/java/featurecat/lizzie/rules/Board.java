@@ -1006,6 +1006,7 @@ public class Board {
       }
       data.stones[index] = color;
       data.zobrist.toggleStone(x, y, color);
+      invalidateSetupAnalysis(root);
       advanceContextRevision();
       Lizzie.frame.refresh();
       return true;
@@ -1030,6 +1031,7 @@ public class Board {
       }
       data.stones[index] = Stone.EMPTY;
       data.zobrist.toggleStone(x, y, existing);
+      invalidateSetupAnalysis(root);
       advanceContextRevision();
       Lizzie.frame.refresh();
       return true;
@@ -1057,6 +1059,7 @@ public class Board {
         changed = true;
       }
       if (changed) {
+        invalidateSetupAnalysis(root);
         advanceContextRevision();
         Lizzie.frame.refresh();
       }
@@ -1076,10 +1079,19 @@ public class Board {
         return true;
       }
       data.blackToPlay = blackToPlay;
+      invalidateSetupAnalysis(root);
       advanceContextRevision();
       Lizzie.frame.refresh();
       return true;
     }
+  }
+
+  private void invalidateSetupAnalysis(BoardHistoryNode root) {
+    root.getData().clearAnalysisPayloadState();
+    root.nodeInfo = new NodeInfo();
+    root.nodeInfoMain = new NodeInfo();
+    root.nodeInfo2 = new NodeInfo();
+    root.nodeInfoMain2 = new NodeInfo();
   }
 
   /** Returns whether any variation in the current tree contains a real move or pass. */

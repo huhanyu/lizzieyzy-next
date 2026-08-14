@@ -12,6 +12,7 @@ import featurecat.lizzie.analysis.EngineCommandSink;
 import featurecat.lizzie.analysis.EngineFollowController;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.gui.BoardRenderer;
 import featurecat.lizzie.gui.HumanSlGameController;
 import featurecat.lizzie.gui.Input;
@@ -104,6 +105,33 @@ class BoardRootSetupSeamTest {
       assertEquals(Stone.BLACK, root.getData().stones[Board.getIndex(1, 1)]);
       assertEquals(0, root.numberOfChildren(), "replacement must not create nodes.");
       assertTrue(root.getData().isSnapshotNode(), "replacement must keep the root a snapshot.");
+    } finally {
+      env.close();
+    }
+  }
+
+  @Test
+  void setupMutationInvalidatesAnalysisFromThePreviousPosition() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      BoardData rootData = Lizzie.board.getHistory().getStart().getData();
+      rootData.setPlayouts(500);
+      rootData.winrate = 71.5;
+      rootData.scoreMean = 8.25;
+      rootData.bestMoves.add(new MoveData());
+
+      assertTrue(Lizzie.board.setupPlaceStone(0, 0, Stone.BLACK));
+
+      assertEquals(0, rootData.getPlayouts());
+      assertEquals(50.0, rootData.winrate);
+      assertEquals(0.0, rootData.scoreMean);
+      assertTrue(rootData.bestMoves.isEmpty());
+
+      rootData.setPlayouts(250);
+      rootData.bestMoves.add(new MoveData());
+      assertTrue(Lizzie.board.setupSetSideToPlay(false));
+      assertEquals(0, rootData.getPlayouts());
+      assertTrue(rootData.bestMoves.isEmpty());
     } finally {
       env.close();
     }
