@@ -63,6 +63,7 @@ public class Board {
   private BoardHistoryList activeHistoryRestoreHistory;
   // private boolean scoreMode;
   private boolean analysisMode;
+  private boolean setupMode = false;
   public String boardstatbeforeedit = "";
   public String boardstatafteredit = "";
   public boolean isLoadingFile = false;
@@ -111,6 +112,7 @@ public class Board {
     forceRefresh2 = false;
     hasBigBranch = false;
     history = new BoardHistoryList(BoardData.empty(boardWidth, boardHeight));
+    setupMode = false;
     if (isEngineGame) {
       Lizzie.board
           .getHistory()
@@ -984,6 +986,210 @@ public class Board {
     }
   }
 
+  /** Returns whether starting-position setup mode is active. */
+  public boolean isSetupMode() {
+    return setupMode;
+  }
+
+  /** Updates the starting-position setup mode used by the UI input router. */
+  public void setSetupMode(boolean setupMode) {
+    this.setupMode = setupMode;
+  }
+
+  /**
+   * Returns the root node when it can be edited safely as a starting position.
+   *
+   * <p>Setup editing mutates a root snapshot in place, so existing child moves or variations must
+   * first go through the explicit conversion flow.
+   */
+  private BoardHistoryNode rootSetupNode() {
+    if (history == null) {
+      return null;
+    }
+    BoardHistoryNode root = history.getStart();
+    if (root == null || !root.getData().isSnapshotNode() || root.numberOfChildren() > 0) {
+      return null;
+    }
+    return root;
+  }
+
+  /** Places or replaces a setup stone without applying capture, ko, or suicide rules. */
+  public boolean setupPlaceStone(int x, int y, Stone color) {
+    synchronized (this) {
+      if (!isValid(x, y) || color == null || !(color.isBlack() || color.isWhite())) {
+        return false;
+      }
+      BoardHistoryNode root = rootSetupNode();
+      if (root == null) {
+        return false;
+      }
+      BoardData data = root.getData();
+      int index = getIndex(x, y);
+      Stone existing = data.stones[index];
+      if (existing == color) {
+        return true;
+      }
+      if (!existing.isEmpty()) {
+        data.stones[index] = Stone.EMPTY;
+        data.zobrist.toggleStone(x, y, existing);
+      }
+      data.stones[index] = color;
+      data.zobrist.toggleStone(x, y, color);
+      invalidateSetupAnalysis(root);
+      advanceContextRevision();
+      Lizzie.frame.refresh();
+      return true;
+    }
+  }
+
+  /** Erases only the selected setup stone from the root starting position. */
+  public boolean setupEraseStone(int x, int y) {
+    synchronized (this) {
+      if (!isValid(x, y)) {
+        return false;
+      }
+      BoardHistoryNode root = rootSetupNode();
+      if (root == null) {
+        return false;
+      }
+      BoardData data = root.getData();
+      int index = getIndex(x, y);
+      Stone existing = data.stones[index];
+      if (existing.isEmpty()) {
+        return true;
+      }
+      data.stones[index] = Stone.EMPTY;
+      data.zobrist.toggleStone(x, y, existing);
+      invalidateSetupAnalysis(root);
+      advanceContextRevision();
+      Lizzie.frame.refresh();
+      return true;
+    }
+  }
+
+  /** Clears all setup stones while preserving game metadata and the selected side to play. */
+  public boolean setupClearAll() {
+    synchronized (this) {
+      BoardHistoryNode root = rootSetupNode();
+      if (root == null) {
+        return false;
+      }
+      BoardData data = root.getData();
+      boolean changed = false;
+      for (int index = 0; index < data.stones.length; index++) {
+        Stone existing = data.stones[index];
+        if (existing.isEmpty()) {
+          continue;
+        }
+        int x = index / boardHeight;
+        int y = index % boardHeight;
+        data.stones[index] = Stone.EMPTY;
+        data.zobrist.toggleStone(x, y, existing);
+        changed = true;
+      }
+      if (changed) {
+        invalidateSetupAnalysis(root);
+        advanceContextRevision();
+        Lizzie.frame.refresh();
+      }
+      return true;
+    }
+  }
+
+  /** Sets which color plays first from the edited starting position. */
+  public boolean setupSetSideToPlay(boolean blackToPlay) {
+    synchronized (this) {
+      BoardHistoryNode root = rootSetupNode();
+      if (root == null) {
+        return false;
+      }
+      BoardData data = root.getData();
+      if (data.blackToPlay == blackToPlay) {
+        return true;
+      }
+      data.blackToPlay = blackToPlay;
+      invalidateSetupAnalysis(root);
+      advanceContextRevision();
+      Lizzie.frame.refresh();
+      return true;
+    }
+  }
+
+  private void invalidateSetupAnalysis(BoardHistoryNode root) {
+    root.getData().clearAnalysisPayloadState();
+    root.nodeInfo = new NodeInfo();
+    root.nodeInfoMain = new NodeInfo();
+    root.nodeInfo2 = new NodeInfo();
+    root.nodeInfoMain2 = new NodeInfo();
+  }
+
+  /** Returns whether any variation in the current tree contains a real move or pass. */
+  public boolean hasRealMoveOrPassHistory() {
+    synchronized (this) {
+      if (history == null || history.getStart() == null) {
+        return false;
+      }
+      ArrayDeque<BoardHistoryNode> pending = new ArrayDeque<>();
+      pending.push(history.getStart());
+      while (!pending.isEmpty()) {
+        BoardHistoryNode node = pending.pop();
+        BoardData data = node.getData();
+        if (data != null && data.isHistoryActionNode() && !data.dummy) {
+          return true;
+        }
+        for (BoardHistoryNode variation : node.getVariations()) {
+          pending.push(variation);
+        }
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Converts the displayed position to a root-only snapshot and discards its move tree.
+   *
+   * <p>The UI owns the destructive-operation confirmation. This method preserves game metadata and
+   * non-setup root SGF properties while materializing the displayed stones and side to play.
+   */
+  public boolean convertCurrentPositionToStartingPosition() {
+    synchronized (this) {
+      if (history == null
+          || history.getStart() == null
+          || history.getCurrentHistoryNode() == null
+          || history.getData() == null) {
+        return false;
+      }
+
+      BoardHistoryNode oldRoot = history.getStart();
+      BoardData current = history.getData();
+      GameInfo gameInfo = history.getGameInfo();
+      BoardData startingPosition =
+          BoardData.snapshot(
+              current.stones,
+              Optional.empty(),
+              Stone.EMPTY,
+              current.blackToPlay,
+              current.zobrist,
+              0,
+              new int[boardWidth * boardHeight],
+              0,
+              0,
+              50,
+              0);
+      startingPosition.setProperties(oldRoot.getData().getProperties());
+      startingPosition.comment = oldRoot.getData().comment;
+
+      BoardHistoryList converted = new BoardHistoryList(startingPosition);
+      converted.setGameInfo(gameInfo);
+      setHistory(converted);
+      hasStartStone = false;
+      startStonelist = new ArrayList<>();
+      advanceContextRevision();
+      Lizzie.frame.refresh();
+      return true;
+    }
+  }
+
   /**
    * Add a key and value to node
    *
@@ -1836,6 +2042,10 @@ public class Board {
 
   public void pass(Stone color, boolean newBranch, boolean dummy, boolean changeMove) {
     synchronized (this) {
+      if (setupMode) {
+        return;
+      }
+
       // check to see if this move is being replayed in history
       if (history.getNext().map(this::isKnownPass).orElse(false) && !newBranch) {
         // this is the next move in history. Just increment history so that we don't
@@ -2493,6 +2703,7 @@ public class Board {
                   0.0,
                   0));
       history.setGameInfo(oldHistory.getGameInfo());
+      setupMode = false;
     }
   }
 
@@ -2537,6 +2748,7 @@ public class Board {
                   0));
       fixedHandicapHistory.setGameInfo(gameInfo);
       history = fixedHandicapHistory;
+      setupMode = false;
       hasStartStone = false;
       startStonelist = new ArrayList<Movelist>();
       advanceContextRevision();
@@ -2598,6 +2810,7 @@ public class Board {
                   0,
                   0.0,
                   0));
+      setupMode = false;
       if (!hasStartStone) {
         hasStartStone = true;
         startStonelist = new ArrayList<Movelist>();
@@ -2655,6 +2868,7 @@ public class Board {
                   0,
                   0.0,
                   0));
+      setupMode = false;
       hasStartStone = true;
       startStonelist = new ArrayList<Movelist>();
       collectedExtraStones =
@@ -4154,6 +4368,7 @@ public class Board {
     synchronized (this) {
       movelistRefreshGeneration++;
       history = newList;
+      setupMode = false;
       syncBoardDimensionsWithHistory(newList);
       syncBoardKataFlagsWithHistory(newList);
     }

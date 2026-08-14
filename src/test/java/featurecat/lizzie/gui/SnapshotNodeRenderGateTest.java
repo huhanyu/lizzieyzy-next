@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Branch;
+import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -21,6 +22,7 @@ import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import javax.swing.SwingUtilities;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +33,55 @@ class SnapshotNodeRenderGateTest {
   private static final int STONE_RADIUS = 12;
   private static final int SCALED_MARGIN = 20;
   private static final int SQUARE_SIZE = 40;
+
+  @Test
+  void enteringSetupModeClearsStaleBranchOverlay() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    boolean previousEmpty = EngineManager.isEmpty;
+    BoardRenderer previousRenderer = LizzieFrame.boardRenderer;
+    try {
+      EngineManager.isEmpty = true;
+      Board board = boardWithRoot(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      Lizzie.board = board;
+      BoardRenderer renderer = new BoardRenderer(false);
+      renderer.branchOpt = Optional.of(branchWith(branchLinePreview()));
+      setBooleanField(renderer, "isShowingBranch", true);
+      LizzieFrame.boardRenderer = renderer;
+
+      assertTrue(renderer.isShowingBranch(), "fixture should start with a visible branch overlay.");
+      assertTrue(Lizzie.frame.enterSetupMode(), "root-only board should enter setup mode.");
+
+      assertFalse(
+          renderer.isShowingBranch(), "setup mode must not retain a stale branch overlay.");
+      assertTrue(renderer.branchOpt.isEmpty(), "setup mode must clear the branch selection.");
+    } finally {
+      EngineManager.isEmpty = previousEmpty;
+      LizzieFrame.boardRenderer = previousRenderer;
+      env.close();
+    }
+  }
+
+  @Test
+  void setupModeDrawBranchCannotRecreateSuggestionOverlay() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Board board = boardWithRoot(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      board.setSetupMode(true);
+      Lizzie.board = board;
+      BoardRenderer renderer = new BoardRenderer(false);
+      renderer.branchOpt = Optional.of(branchWith(branchLinePreview()));
+      setBooleanField(renderer, "isShowingBranch", true);
+
+      Method drawBranch = BoardRenderer.class.getDeclaredMethod("drawBranch");
+      drawBranch.setAccessible(true);
+      drawBranch.invoke(renderer);
+
+      assertFalse(renderer.isShowingBranch(), "setup redraw must not recreate a branch overlay.");
+      assertTrue(renderer.branchOpt.isEmpty(), "setup redraw must keep branch selection empty.");
+    } finally {
+      env.close();
+    }
+  }
 
   @Test
   void mainBoardCurrentSnapshotWithMarkerDrawsNoOverlay() throws Exception {
@@ -216,6 +267,12 @@ class SnapshotNodeRenderGateTest {
     field.setInt(target, value);
   }
 
+  private static void setBooleanField(Object target, String name, boolean value) throws Exception {
+    Field field = target.getClass().getDeclaredField(name);
+    field.setAccessible(true);
+    field.setBoolean(target, value);
+  }
+
   private static BoardData snapshotWithMarker(
       int[] lastMove, Stone lastMoveColor, boolean blackToPlay, int moveNumber) {
     Stone[] stones = emptyStones();
@@ -356,7 +413,7 @@ class SnapshotNodeRenderGateTest {
       Lizzie.resourceBundle = ResourceBundle.getBundle("l10n.DisplayStrings", Locale.US);
       LizzieFrame.uiFont = new Font("Dialog", Font.PLAIN, 12);
 
-      LizzieFrame frame = allocate(LizzieFrame.class);
+      LizzieFrame frame = allocate(TrackingFrame.class);
       frame.isTrying = false;
       Lizzie.frame = frame;
 
@@ -372,6 +429,7 @@ class SnapshotNodeRenderGateTest {
 
     @Override
     public void close() {
+      drainEventQueue();
       Board.boardWidth = previousBoardWidth;
       Board.boardHeight = previousBoardHeight;
       Zobrist.init();
@@ -381,6 +439,32 @@ class SnapshotNodeRenderGateTest {
       Lizzie.resourceBundle = previousResourceBundle;
       LizzieFrame.uiFont = previousUiFont;
     }
+
+    private static void drainEventQueue() {
+      if (SwingUtilities.isEventDispatchThread()) {
+        return;
+      }
+      try {
+        SwingUtilities.invokeAndWait(() -> {});
+      } catch (Exception ex) {
+        throw new AssertionError("Failed to drain pending Swing work before restoring globals", ex);
+      }
+    }
+  }
+
+  private static final class TrackingFrame extends LizzieFrame {
+    private TrackingFrame() {
+      super();
+    }
+
+    @Override
+    public void requestProblemListRefresh() {}
+
+    @Override
+    public void refreshProblemListSnapshot() {}
+
+    @Override
+    public void refresh() {}
   }
 
   private static final class UnsafeHolder {

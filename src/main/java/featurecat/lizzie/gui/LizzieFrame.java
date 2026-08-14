@@ -14,6 +14,7 @@ import featurecat.lizzie.analysis.AnalysisEngine;
 import featurecat.lizzie.analysis.AnalysisResourceCoordinator;
 import featurecat.lizzie.analysis.CaptureTsumeGo;
 import featurecat.lizzie.analysis.ContributeEngine;
+import featurecat.lizzie.analysis.EngineFollowController;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.KataEstimate;
@@ -345,6 +346,12 @@ public class LizzieFrame extends JFrame {
   public MoveListFrame moveListFrame;
   public MoveListFrame moveListFrame2;
   public int blackorwhite = 0;
+
+  public static final int SETUP_TOOL_BLACK = 0;
+  public static final int SETUP_TOOL_WHITE = 1;
+  public static final int SETUP_TOOL_ERASE = 2;
+  public int setupTool = SETUP_TOOL_BLACK;
+
   // private final BufferStrategy bs;
   public boolean isCounting = false;
   public boolean isAutocounting = false;
@@ -2266,6 +2273,7 @@ public class LizzieFrame extends JFrame {
   }
 
   boolean shouldShowBestMovesFor(BoardHistoryNode node) {
+    if (Lizzie.board != null && Lizzie.board.isSetupMode()) return false;
     boolean configured = Lizzie.config != null && Lizzie.config.showBestMovesNow();
     WholeGameAnalysisResultView resultView = wholeGameAnalysisResultView;
     return resultView == null
@@ -2274,6 +2282,7 @@ public class LizzieFrame extends JFrame {
   }
 
   boolean shouldShowBranchesFor(BoardHistoryNode node) {
+    if (Lizzie.board != null && Lizzie.board.isSetupMode()) return false;
     boolean configured = Lizzie.config != null && Lizzie.config.showBranchNow();
     WholeGameAnalysisResultView resultView = wholeGameAnalysisResultView;
     return resultView == null
@@ -2282,6 +2291,7 @@ public class LizzieFrame extends JFrame {
   }
 
   boolean shouldShowSuggestionVariationsFor(BoardHistoryNode node) {
+    if (Lizzie.board != null && Lizzie.board.isSetupMode()) return false;
     boolean configured = Lizzie.config != null && Lizzie.config.showSuggestionVariations;
     WholeGameAnalysisResultView resultView = wholeGameAnalysisResultView;
     return resultView == null
@@ -2290,6 +2300,7 @@ public class LizzieFrame extends JFrame {
   }
 
   boolean shouldShowCandidatesFor(BoardHistoryNode node) {
+    if (Lizzie.board != null && Lizzie.board.isSetupMode()) return false;
     boolean configured =
         Lizzie.config != null
             && node != null
@@ -7791,6 +7802,131 @@ public class LizzieFrame extends JFrame {
     }
   }
 
+  /** Enters root-only starting-position setup mode. */
+  public boolean enterSetupMode() {
+    if (!canEnterSetupMode()) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setupModeEngineNotReady"));
+      return false;
+    }
+    if (Lizzie.board.hasRealMoveOrPassHistory()
+        && !convertCurrentPositionToStartingPositionCommand()) {
+      return false;
+    }
+    BoardHistoryNode root = Lizzie.board.getHistory().getStart();
+    if (root == null || root.numberOfChildren() > 0) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setupModeRequiresRootOnly"));
+      return false;
+    }
+    clearSetupOverlayState();
+    Lizzie.board.setSetupMode(true);
+    refresh();
+    return true;
+  }
+
+  private boolean canEnterSetupMode() {
+    if (EngineManager.isEngineGame()) {
+      return false;
+    }
+    EngineFollowController controller = Lizzie.engineFollowController;
+    if (controller != null && controller.isTrialActive()) {
+      return false;
+    }
+    return EngineManager.isEmpty;
+  }
+
+  /** Exits setup mode and synchronizes the final root snapshot to engine followers. */
+  public void exitSetupMode() {
+    Lizzie.board.setSetupMode(false);
+    EngineFollowController controller = Lizzie.engineFollowController;
+    if (controller != null) {
+      controller.onSetupModeExit(Lizzie.board.getHistory().getCurrentHistoryNode());
+    }
+    refresh();
+  }
+
+  public boolean toggleSetupMode() {
+    if (Lizzie.board.isSetupMode()) {
+      exitSetupMode();
+      return false;
+    }
+    return enterSetupMode();
+  }
+
+  /** Selects a setup tool and enters setup mode when necessary. */
+  public void selectSetupTool(int tool) {
+    setupTool = tool;
+    if (!Lizzie.board.isSetupMode()) {
+      enterSetupMode();
+    }
+  }
+
+  /** Routes a left or right board click through the root setup seam. */
+  public void handleSetupBoardClick(int[] coords, boolean rightClick) {
+    if (coords == null) {
+      return;
+    }
+    boolean applied;
+    switch (setupTool) {
+      case SETUP_TOOL_BLACK:
+        applied =
+            Lizzie.board.setupPlaceStone(
+                coords[0], coords[1], rightClick ? Stone.WHITE : Stone.BLACK);
+        break;
+      case SETUP_TOOL_WHITE:
+        applied =
+            Lizzie.board.setupPlaceStone(
+                coords[0], coords[1], rightClick ? Stone.BLACK : Stone.WHITE);
+        break;
+      case SETUP_TOOL_ERASE:
+      default:
+        applied = Lizzie.board.setupEraseStone(coords[0], coords[1]);
+        break;
+    }
+    if (!applied) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setupEditRequiresRootOnly"));
+    } else {
+      clearSetupOverlayState();
+    }
+  }
+
+  public void setupClearAllCommand() {
+    if (!Lizzie.board.setupClearAll()) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setupEditRequiresRootOnly"));
+    } else {
+      clearSetupOverlayState();
+    }
+  }
+
+  public void setupSetSideToPlayCommand(boolean blackToPlay) {
+    if (!Lizzie.board.setupSetSideToPlay(blackToPlay)) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setupEditRequiresRootOnly"));
+    } else {
+      clearSetupOverlayState();
+    }
+  }
+
+  /** Converts the displayed position into a root snapshot after destructive confirmation. */
+  public boolean convertCurrentPositionToStartingPositionCommand() {
+    if (Lizzie.board.hasRealMoveOrPassHistory() && !confirmStartingPositionConversion()) {
+      return false;
+    }
+    boolean converted = Lizzie.board.convertCurrentPositionToStartingPosition();
+    if (converted) {
+      clearSetupOverlayState();
+    }
+    return converted;
+  }
+
+  protected boolean confirmStartingPositionConversion() {
+    return JOptionPane.showConfirmDialog(
+            this,
+            Lizzie.resourceBundle.getString("LizzieFrame.convertStartingPositionConfirmMessage"),
+            Lizzie.resourceBundle.getString("LizzieFrame.convertStartingPositionConfirmTitle"),
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE)
+        == JOptionPane.YES_OPTION;
+  }
+
   /**
    * Checks whether or not something was clicked and performs the appropriate action
    *
@@ -7805,6 +7941,10 @@ public class LizzieFrame extends JFrame {
     Optional<int[]> boardCoordinates = boardRenderer.convertScreenToCoordinates(x, y);
     if (boardCoordinates.isPresent()) {
       int[] coords = boardCoordinates.get();
+      if (Lizzie.board.isSetupMode()) {
+        handleSetupBoardClick(coords, false);
+        return;
+      }
       if (blackorwhite == 0) Lizzie.board.placeForManual(coords[0], coords[1]);
       if (blackorwhite == 1) Lizzie.board.placeForManual(coords[0], coords[1], Stone.BLACK);
       if (blackorwhite == 2) Lizzie.board.placeForManual(coords[0], coords[1], Stone.WHITE);
@@ -7823,7 +7963,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public boolean onClickedRight(int x, int y) {
-    if (blackorwhite == 0) return false;
     Optional<int[]> boardCoordinates;
     if (Lizzie.config.isThinkingMode()) {
       boardCoordinates = boardRenderer2.convertScreenToCoordinates(x, y);
@@ -7834,6 +7973,11 @@ public class LizzieFrame extends JFrame {
     }
     if (boardCoordinates.isPresent()) {
       int[] coords = boardCoordinates.get();
+      if (Lizzie.board.isSetupMode()) {
+        handleSetupBoardClick(coords, true);
+        return true;
+      }
+      if (blackorwhite == 0) return false;
       if (!isPlayingAgainstLeelaz && !isAnaPlayingAgainstLeelaz) {
         if (Lizzie.board.getHistory().getStones()[Board.getIndex(coords[0], coords[1])]
             != Stone.EMPTY) {
@@ -7862,6 +8006,20 @@ public class LizzieFrame extends JFrame {
   public void onClicked(int x, int y) {
     if (isTrialActive()) {
       showTrialBlockedHint();
+      return;
+    }
+    if (Lizzie.board.isSetupMode()) {
+      Optional<int[]> setupBoardCoordinates;
+      if (Lizzie.config.isThinkingMode()) {
+        setupBoardCoordinates = boardRenderer2.convertScreenToCoordinates(x, y);
+        if (!setupBoardCoordinates.isPresent())
+          setupBoardCoordinates = boardRenderer.convertScreenToCoordinates(x, y);
+      } else {
+        setupBoardCoordinates = boardRenderer.convertScreenToCoordinates(x, y);
+      }
+      if (setupBoardCoordinates.isPresent()) {
+        handleSetupBoardClick(setupBoardCoordinates.get(), false);
+      }
       return;
     }
     if (humanSlGame != null && !humanSlGame.isFinished()) {
@@ -8170,6 +8328,7 @@ public class LizzieFrame extends JFrame {
   }
 
   public List<MoveData> getBestMoves() {
+    if (Lizzie.board != null && Lizzie.board.isSetupMode()) return new ArrayList<>();
     List<MoveData> bestMoves;
     if (EngineManager.isEngineGame && Lizzie.config.showPreviousBestmovesInEngineGame) {
       if (Lizzie.board.getHistory().getCurrentHistoryNode().previous().isPresent())
@@ -8392,6 +8551,33 @@ public class LizzieFrame extends JFrame {
     mouseOverCoordinate = outOfBoundCoordinate;
     isMouseOver = false;
     clearBoardBranchPreview();
+  }
+
+  /** Clears transient analysis overlays while editing a static starting position. */
+  private void clearSetupOverlayState() {
+    isReplayVariation = false;
+    isMouseOver = false;
+    clickOrder = -1;
+    selectedorder = -1;
+    currentRow = -1;
+    suggestionclick = outOfBoundCoordinate;
+    mouseOverCoordinate = outOfBoundCoordinate;
+    if (boardRenderer != null) {
+      boardRenderer.startNormalBoard();
+      boardRenderer.clearBranch();
+    }
+    if (boardRenderer2 != null) {
+      boardRenderer2.startNormalBoard();
+      boardRenderer2.clearBranch();
+    }
+    if (independentMainBoard != null) {
+      independentMainBoard.mouseOverCoordinate = outOfBoundCoordinate;
+      independentMainBoard.clearMoved();
+    }
+    if (floatBoard != null) {
+      floatBoard.mouseOverCoordinate = outOfBoundCoordinate;
+      floatBoard.clearMoved();
+    }
   }
 
   private void clearBoardBranchPreview() {

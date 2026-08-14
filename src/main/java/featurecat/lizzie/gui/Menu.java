@@ -3134,16 +3134,126 @@ public class Menu extends JMenuBar {
         });
     gameMenu.add(playPassMove);
 
-    final JFontMenuItem flattenBoard =
-        new JFontMenuItem(resourceBundle.getString("Menu.flattenBoard"));
-    flattenBoard.addActionListener(
+
+    final JFontMenu startingPositionSetup =
+        new JFontMenu(resourceBundle.getString("Menu.startingPositionSetup"));
+    gameMenu.add(startingPositionSetup);
+    ButtonGroup setupToolGroup = new ButtonGroup();
+
+    final JFontCheckBoxMenuItem setupModeToggle =
+        new JFontCheckBoxMenuItem(resourceBundle.getString("Menu.setupModeToggle"));
+    setupModeToggle.addActionListener(
         new ActionListener() {
           @Override
           public void actionPerformed(ActionEvent e) {
-            Lizzie.frame.flattenBoard();
+            setupModeToggle.setState(Lizzie.frame.toggleSetupMode());
           }
         });
-    gameMenu.add(flattenBoard);
+    startingPositionSetup.add(setupModeToggle);
+
+    final JFontCheckBoxMenuItem setupToolBlack =
+        new JFontCheckBoxMenuItem(resourceBundle.getString("Menu.setupToolBlack"));
+    setupToolBlack.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.selectSetupTool(LizzieFrame.SETUP_TOOL_BLACK);
+            setupModeToggle.setState(Lizzie.board.isSetupMode());
+          }
+        });
+    startingPositionSetup.add(setupToolBlack);
+
+    final JFontCheckBoxMenuItem setupToolWhite =
+        new JFontCheckBoxMenuItem(resourceBundle.getString("Menu.setupToolWhite"));
+    setupToolWhite.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.selectSetupTool(LizzieFrame.SETUP_TOOL_WHITE);
+            setupModeToggle.setState(Lizzie.board.isSetupMode());
+          }
+        });
+    startingPositionSetup.add(setupToolWhite);
+
+    final JFontCheckBoxMenuItem setupToolErase =
+        new JFontCheckBoxMenuItem(resourceBundle.getString("Menu.setupToolErase"));
+    setupToolErase.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.selectSetupTool(LizzieFrame.SETUP_TOOL_ERASE);
+            setupModeToggle.setState(Lizzie.board.isSetupMode());
+          }
+        });
+    startingPositionSetup.add(setupToolErase);
+    setupToolGroup.add(setupToolBlack);
+    setupToolGroup.add(setupToolWhite);
+    setupToolGroup.add(setupToolErase);
+    startingPositionSetup.addSeparator();
+
+    final JFontMenuItem setupClearAll =
+        new JFontMenuItem(resourceBundle.getString("Menu.setupClearAll"));
+    setupClearAll.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.setupClearAllCommand();
+          }
+        });
+    startingPositionSetup.add(setupClearAll);
+    startingPositionSetup.addSeparator();
+
+    final JFontMenuItem setupBlackToPlay =
+        new JFontMenuItem(resourceBundle.getString("Menu.setupBlackToPlay"));
+    setupBlackToPlay.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.setupSetSideToPlayCommand(true);
+          }
+        });
+    startingPositionSetup.add(setupBlackToPlay);
+
+    final JFontMenuItem setupWhiteToPlay =
+        new JFontMenuItem(resourceBundle.getString("Menu.setupWhiteToPlay"));
+    setupWhiteToPlay.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.setupSetSideToPlayCommand(false);
+          }
+        });
+    startingPositionSetup.add(setupWhiteToPlay);
+    startingPositionSetup.addSeparator();
+
+    final JFontMenuItem convertCurrentPosition =
+        new JFontMenuItem(
+            resourceBundle.getString("Menu.convertCurrentPositionToStartingPosition"));
+    convertCurrentPosition.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Lizzie.frame.convertCurrentPositionToStartingPositionCommand();
+          }
+        });
+    startingPositionSetup.add(convertCurrentPosition);
+
+    startingPositionSetup.addMenuListener(
+        new MenuListener() {
+          @Override
+          public void menuSelected(MenuEvent e) {
+            setupModeToggle.setState(Lizzie.board.isSetupMode());
+            setupToolBlack.setState(Lizzie.frame.setupTool == LizzieFrame.SETUP_TOOL_BLACK);
+            setupToolWhite.setState(Lizzie.frame.setupTool == LizzieFrame.SETUP_TOOL_WHITE);
+            setupToolErase.setState(Lizzie.frame.setupTool == LizzieFrame.SETUP_TOOL_ERASE);
+          }
+
+          @Override
+          public void menuDeselected(MenuEvent e) {}
+
+          @Override
+          public void menuCanceled(MenuEvent e) {}
+        });
 
     final JFontMenuItem continueLadder =
         new JFontMenuItem(resourceBundle.getString("Menu.game.continueLadder"));
