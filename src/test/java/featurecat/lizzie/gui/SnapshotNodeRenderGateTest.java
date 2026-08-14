@@ -22,6 +22,7 @@ import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import javax.swing.SwingUtilities;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
@@ -412,7 +413,7 @@ class SnapshotNodeRenderGateTest {
       Lizzie.resourceBundle = ResourceBundle.getBundle("l10n.DisplayStrings", Locale.US);
       LizzieFrame.uiFont = new Font("Dialog", Font.PLAIN, 12);
 
-      LizzieFrame frame = allocate(LizzieFrame.class);
+      LizzieFrame frame = allocate(TrackingFrame.class);
       frame.isTrying = false;
       Lizzie.frame = frame;
 
@@ -428,6 +429,7 @@ class SnapshotNodeRenderGateTest {
 
     @Override
     public void close() {
+      drainEventQueue();
       Board.boardWidth = previousBoardWidth;
       Board.boardHeight = previousBoardHeight;
       Zobrist.init();
@@ -437,6 +439,32 @@ class SnapshotNodeRenderGateTest {
       Lizzie.resourceBundle = previousResourceBundle;
       LizzieFrame.uiFont = previousUiFont;
     }
+
+    private static void drainEventQueue() {
+      if (SwingUtilities.isEventDispatchThread()) {
+        return;
+      }
+      try {
+        SwingUtilities.invokeAndWait(() -> {});
+      } catch (Exception ex) {
+        throw new AssertionError("Failed to drain pending Swing work before restoring globals", ex);
+      }
+    }
+  }
+
+  private static final class TrackingFrame extends LizzieFrame {
+    private TrackingFrame() {
+      super();
+    }
+
+    @Override
+    public void requestProblemListRefresh() {}
+
+    @Override
+    public void refreshProblemListSnapshot() {}
+
+    @Override
+    public void refresh() {}
   }
 
   private static final class UnsafeHolder {
