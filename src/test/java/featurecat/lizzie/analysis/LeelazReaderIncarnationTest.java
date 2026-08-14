@@ -33,6 +33,50 @@ import org.junit.jupiter.api.Test;
 
 class LeelazReaderIncarnationTest {
   @Test
+  void parameterReadTimeoutBelongsToTheEngineThatScheduledIt() throws Exception {
+    try (GlobalState ignored = GlobalState.install()) {
+      Leelaz scheduledEngine = new Leelaz("");
+      Leelaz replacementEngine = new Leelaz("");
+      replacementEngine.getRcentLine = true;
+      Lizzie.leelaz = replacementEngine;
+
+      scheduledEngine.getParameterScadule(false, 20L);
+
+      assertTrue(awaitParameterReadState(scheduledEngine, false, 1, TimeUnit.SECONDS));
+      assertTrue(replacementEngine.getRcentLine);
+    }
+  }
+
+  @Test
+  void staleParameterReadTimeoutCannotCancelANewerRequest() throws Exception {
+    try (GlobalState ignored = GlobalState.install()) {
+      Leelaz engine = new Leelaz("");
+
+      engine.getParameterScadule(false, 30L);
+      Thread.sleep(10L);
+      engine.getParameterScadule(false, 250L);
+
+      Thread.sleep(80L);
+      assertTrue(engine.getRcentLine);
+      assertTrue(awaitParameterReadState(engine, false, 1, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
+  void cancelledParameterReadCannotBeReactivatedByItsTimeout() throws Exception {
+    try (GlobalState ignored = GlobalState.install()) {
+      Leelaz engine = new Leelaz("");
+
+      engine.getParameterScadule(false, 30L);
+      engine.cancelParameterRead();
+
+      assertFalse(engine.getRcentLine);
+      Thread.sleep(80L);
+      assertFalse(engine.getRcentLine);
+    }
+  }
+
+  @Test
   void staleReadersDoNotConsumeOrTerminateReboundStreams() throws Exception {
     try (GlobalState ignored = GlobalState.install()) {
       Leelaz engine = new Leelaz("");
@@ -408,6 +452,18 @@ class LeelazReaderIncarnationTest {
     Field field = Leelaz.class.getDeclaredField(name);
     field.setAccessible(true);
     return field.get(engine);
+  }
+
+  private static boolean awaitParameterReadState(
+      Leelaz engine, boolean expected, long timeout, TimeUnit unit) throws InterruptedException {
+    long deadline = System.nanoTime() + unit.toNanos(timeout);
+    do {
+      if (engine.getRcentLine == expected) {
+        return true;
+      }
+      Thread.sleep(5L);
+    } while (System.nanoTime() < deadline);
+    return engine.getRcentLine == expected;
   }
 
   private static void setField(Leelaz engine, String name, Object value) throws Exception {

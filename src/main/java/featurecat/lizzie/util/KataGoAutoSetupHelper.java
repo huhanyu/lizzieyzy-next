@@ -3115,7 +3115,13 @@ public final class KataGoAutoSetupHelper {
   }
 
   private static PackageFlavor packageFlavorFromText(String value) {
-    String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT).replace('\\', '/');
+    String normalized =
+        value == null
+            ? ""
+            : value
+                .toLowerCase(Locale.ROOT)
+                .replace('\\', '/')
+                .replaceAll("[\\s._]+", "-");
     if (normalized.contains("without.engine") || normalized.contains("without-engine")) {
       return PackageFlavor.WITHOUT_ENGINE;
     }

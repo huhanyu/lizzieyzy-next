@@ -598,6 +598,18 @@ public final class KataGoRuntimeHelper {
     return resolveNvidiaBackend(enginePath) != null;
   }
 
+  public static boolean isBundledNvidiaCommand(String engineCommand) {
+    if (engineCommand == null || engineCommand.trim().isEmpty()) {
+      return false;
+    }
+    try {
+      Path executable = resolveCommandExecutable(Utils.splitCommand(engineCommand));
+      return Config.isBundledKataGoExecutable(executable) && isNvidiaBundledPath(executable);
+    } catch (RuntimeException e) {
+      return false;
+    }
+  }
+
   public static boolean isBundledTensorRtPath(Path enginePath) {
     return isWindowsPlatform()
         && enginePath != null

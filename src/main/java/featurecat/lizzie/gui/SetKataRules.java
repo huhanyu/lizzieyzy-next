@@ -1,6 +1,7 @@
 package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.util.Utils;
 import java.awt.Dimension;
 import java.awt.Insets;
@@ -37,8 +38,14 @@ public class SetKataRules extends JDialog {
   // private JFontLabel lblNewLabel_3;
   private JFontRadioButton rdoButtonGo;
   private JFontRadioButton rdoNoButtonGo;
+  private final Leelaz engine;
 
   public SetKataRules() {
+    this(Lizzie.leelaz);
+  }
+
+  SetKataRules(Leelaz engine) {
+    this.engine = engine;
     // this.setModal(true);
     // setType(Type.POPUP);
     setResizable(false);
@@ -50,10 +57,10 @@ public class SetKataRules extends JDialog {
     this.addWindowListener(
         new WindowAdapter() {
           public void windowClosing(WindowEvent e) {
-            if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
-            setVisible(false);
+            closeDialog();
           }
         });
+    AccessibilitySupport.installEscapeAction(getRootPane(), this, this::closeDialog);
 
     JFontLabel lblScoringRule =
         new JFontLabel(resourceBundle.getString("SetKataRules.lblScoringRule")); // ("胜负判断:");
@@ -291,8 +298,7 @@ public class SetKataRules extends JDialog {
     btnCancel.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
-            if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
-            setVisible(false);
+            closeDialog();
           }
         });
     btnCancel.setBounds(292, 293, 93, 23);
@@ -303,7 +309,12 @@ public class SetKataRules extends JDialog {
     btnApply.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
-            if (Lizzie.leelaz.hasExclusiveGtpWorkInProgress()) {
+            if (!isCurrentEngine() || !engine.isLoaded() || !engine.isStarted()) {
+              Utils.showMsg(resourceBundle.getString("LizzieFrame.setParamNoEngineHint"));
+              setVisible(false);
+              return;
+            }
+            if (engine.hasExclusiveGtpWorkInProgress()) {
               Utils.showMsg(
                   resourceBundle.getString("AnalysisSettings.reuseStatus.existing_lease"));
               return;
@@ -333,31 +344,31 @@ public class SetKataRules extends JDialog {
             if (rdoButtonGo.isSelected()) jo.put("hasButton", true);
             if (rdoNoButtonGo.isSelected()) jo.put("hasButton", false);
 
-            int oriRules = Lizzie.leelaz.usingSpecificRules;
+            int oriRules = engine.usingSpecificRules;
             if (jo.optString("scoring", "").contentEquals("AREA")
                 && jo.optString("ko", "").contentEquals("POSITIONAL")
                 && jo.optBoolean("suicide", false)
                 && jo.optString("tax", "").contentEquals("NONE")
                 && jo.optString("whiteHandicapBonus", "").contentEquals("N")
                 && !jo.optBoolean("hasButton", true)) {
-              Lizzie.leelaz.usingSpecificRules = 4; // tt规则
+              engine.usingSpecificRules = 4; // tt规则
             } else if (jo.optString("scoring", "").contentEquals("AREA")
                 && jo.optString("tax", "").contentEquals("NONE")
                 && !jo.optBoolean("hasButton", true)) {
-              Lizzie.leelaz.usingSpecificRules = 1; // 中国规则
+              engine.usingSpecificRules = 1; // 中国规则
             } else if (jo.optString("scoring", "").contentEquals("AREA")
                 && jo.optString("tax", "").contentEquals("ALL")
                 && !jo.optBoolean("hasButton", true)) {
-              Lizzie.leelaz.usingSpecificRules = 2; // 中古规则
+              engine.usingSpecificRules = 2; // 中古规则
             } else if (jo.optString("scoring", "").contentEquals("TERRITORY")
                 && jo.optString("tax", "").contentEquals("SEKI")) {
-              Lizzie.leelaz.usingSpecificRules = 3; // 日本规则
+              engine.usingSpecificRules = 3; // 日本规则
             } else if (jo.optString("scoring", "").contentEquals("AREA")
                 || jo.optString("scoring", "").contentEquals("TERRITORY")) {
-              Lizzie.leelaz.usingSpecificRules = 5; // 其他规则
+              engine.usingSpecificRules = 5; // 其他规则
             }
-            if (Lizzie.leelaz.usingSpecificRules != oriRules) Lizzie.frame.refresh();
-            Lizzie.leelaz.sendCommand("kata-set-rules " + jo.toString());
+            if (engine.usingSpecificRules != oriRules) Lizzie.frame.refresh();
+            engine.sendCommand("kata-set-rules " + jo.toString());
 
             if (chkbxAutoLoadRules.isSelected()) {
               Lizzie.config.autoLoadKataRules = true;
@@ -368,9 +379,9 @@ public class SetKataRules extends JDialog {
               Lizzie.config.autoLoadKataRules = false;
               Lizzie.config.uiConfig.put("auto-load-kata-rules", false);
             }
-            Lizzie.leelaz.getParameterScadule(false);
-            Lizzie.leelaz.sendCommand("kata-get-rules");
-            if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
+            engine.getParameterScadule(false);
+            engine.sendCommand("kata-get-rules");
+            if (engine.isPondering()) engine.ponder();
             setVisible(false);
           }
         });
@@ -444,22 +455,34 @@ public class SetKataRules extends JDialog {
       // TODO Auto-generated catch block
       e1.printStackTrace();
     }
-    if (!Lizzie.leelaz.isKatago) {
+    if (!engine.isKatago) {
       //      Message msg = new Message();
       //      msg.setMessage("当前引擎不是KataGo引擎(或未加载完成),可能无法修改规则");
       //      msg.setVisible(true);
       Utils.showMsg(resourceBundle.getString("SetKataRules.notKataGoHint"));
     }
-    Lizzie.leelaz.getRcentLine = true;
-    Lizzie.leelaz.nameCmd();
-    Lizzie.leelaz.sendCommand("kata-get-rules");
+    engine.recentRulesLine = "";
+    engine.getParameterScadule(false);
+    engine.nameCmd();
+    engine.sendCommand("kata-get-rules");
+  }
+
+  private void closeDialog() {
+    if (isCurrentEngine() && engine.isPondering()) {
+      engine.ponder();
+    }
+    setVisible(false);
+  }
+
+  public boolean hasRulesResponse() {
+    return !engine.recentRulesLine.isEmpty();
   }
 
   public boolean getRules() {
-    if (Lizzie.leelaz.recentRulesLine.equals("")) {
+    if (engine.recentRulesLine.equals("")) {
       return false;
     } else {
-      String line = Lizzie.leelaz.recentRulesLine;
+      String line = engine.recentRulesLine;
       jo = new JSONObject(new String(line.substring(2)));
       // Lizzie.leelaz.usingSpecificRules=
       if (jo.optBoolean("hasButton", false)) rdoButtonGo.setSelected(true);
@@ -494,5 +517,9 @@ public class SetKataRules extends JDialog {
 
       return true;
     }
+  }
+
+  private boolean isCurrentEngine() {
+    return engine != null && engine == Lizzie.leelaz;
   }
 }

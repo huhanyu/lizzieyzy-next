@@ -10996,7 +10996,17 @@ public class LizzieFrame extends JFrame {
       Utils.showMsg(Lizzie.resourceBundle.getString("WholeGameAnalysis.conflict.analysis"));
       return;
     }
-    setkatarules = new SetKataRules();
+    Leelaz rulesEngine = Lizzie.leelaz;
+    if (!isRulesEngineReady(rulesEngine)) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setParamNoEngineHint"));
+      return;
+    }
+    if (!rulesEngine.isKatago) {
+      Utils.showMsg(Lizzie.resourceBundle.getString("SetKataRules.notKataGoHint"));
+      return;
+    }
+    SetKataRules rulesDialog = new SetKataRules(rulesEngine);
+    setkatarules = rulesDialog;
     setkatarules.setVisible(true);
     Runnable runnable =
         new Runnable() {
@@ -11005,26 +11015,39 @@ public class LizzieFrame extends JFrame {
             for (int i = 0; i < 10; i++) {
               try {
                 Thread.sleep(200);
-                if (setkatarules.getRules()) {
+                if (rulesDialog.hasRulesResponse()) {
                   success = true;
                   break;
                 }
 
               } catch (InterruptedException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
+                Thread.currentThread().interrupt();
+                return;
               }
             }
-            Lizzie.leelaz.getRcentLine = false;
-            if (!success) {
-              if (setkatarules.isVisible())
-                JOptionPane.showMessageDialog(
-                    setkatarules, Lizzie.resourceBundle.getString("LizzieFrame.ruleWarning"));
-            }
+            rulesEngine.cancelParameterRead();
+            boolean responseReceived = success;
+            SwingUtilities.invokeLater(
+                () -> {
+                  if (!rulesDialog.isVisible() || rulesEngine != Lizzie.leelaz) {
+                    return;
+                  }
+                  if (responseReceived) {
+                    rulesDialog.getRules();
+                  } else {
+                    JOptionPane.showMessageDialog(
+                        rulesDialog, Lizzie.resourceBundle.getString("LizzieFrame.ruleWarning"));
+                  }
+                });
           }
         };
-    Thread thread = new Thread(runnable);
+    Thread thread = new Thread(runnable, "lizzie-katago-rules-loader");
+    thread.setDaemon(true);
     thread.start();
+  }
+
+  static boolean isRulesEngineReady(Leelaz engine) {
+    return engine != null && engine.isLoaded() && engine.isStarted();
   }
 
   public void endHumanSlGameIfActive() {
@@ -14658,15 +14681,20 @@ public class LizzieFrame extends JFrame {
     if (analysisEngine == null) {
       return false;
     }
+    boolean lightweightQuickModelRequested =
+        KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().isPresent();
+    boolean bundledTensorRtPrimary = isCurrentPrimaryEngineBundledTensorRt();
+    boolean needsAutomaticPrimaryForegroundReuse =
+        (isCurrentPrimaryEngineRemote() && !lightweightQuickModelRequested)
+            || (isCurrentPrimaryEngineBundledNvidia()
+                && (bundledTensorRtPrimary || !lightweightQuickModelRequested));
     boolean needsDedicatedLightweightModel =
-        !isCurrentPrimaryEngineBundledTensorRt()
-            && KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().isPresent();
-    boolean needsAutomaticTensorRtForegroundReuse = isCurrentPrimaryEngineBundledTensorRt();
+        lightweightQuickModelRequested && !needsAutomaticPrimaryForegroundReuse;
     if (shouldReplaceAutomaticQuickAnalysisEngine(
         needsDedicatedLightweightModel,
         analysisEngine.usesDedicatedLightweightQuickModel(),
-        needsAutomaticTensorRtForegroundReuse,
-        analysisEngine.usesAutomaticTensorRtForegroundReuse(),
+        needsAutomaticPrimaryForegroundReuse,
+        analysisEngine.usesAutomaticPrimaryForegroundReuse(),
         analysisEngine.matchesCurrentAnalysisBackend(),
         analysisEngine.isAnalysisInProgress())) {
       AnalysisEngine staleEngine = analysisEngine;
@@ -14685,14 +14713,14 @@ public class LizzieFrame extends JFrame {
   static boolean shouldReplaceAutomaticQuickAnalysisEngine(
       boolean wantsDedicatedLightweightModel,
       boolean currentUsesDedicatedLightweightModel,
-      boolean wantsAutomaticTensorRtForegroundReuse,
-      boolean currentUsesAutomaticTensorRtForegroundReuse,
+      boolean wantsAutomaticPrimaryForegroundReuse,
+      boolean currentUsesAutomaticPrimaryForegroundReuse,
       boolean currentMatchesBackend,
       boolean currentAnalysisInProgress) {
     return currentAnalysisInProgress
         || !currentMatchesBackend
         || wantsDedicatedLightweightModel != currentUsesDedicatedLightweightModel
-        || wantsAutomaticTensorRtForegroundReuse != currentUsesAutomaticTensorRtForegroundReuse;
+        || wantsAutomaticPrimaryForegroundReuse != currentUsesAutomaticPrimaryForegroundReuse;
   }
 
   private void releaseDedicatedLightweightQuickAnalysisEngine() {
@@ -19077,12 +19105,17 @@ public class LizzieFrame extends JFrame {
         && KataGoRuntimeHelper.isBundledTensorRtCommand(Lizzie.leelaz.engineCommand());
   }
 
+  private boolean isCurrentPrimaryEngineBundledNvidia() {
+    return Lizzie.leelaz != null
+        && KataGoRuntimeHelper.isBundledNvidiaCommand(Lizzie.leelaz.engineCommand());
+  }
+
   private QuickAnalysisWarmupAction currentQuickAnalysisWarmupAction(boolean requiresAutoAnalyze) {
     boolean dependsOnPrimary =
         quickAnalysisDependsOnPrimary(
             isCurrentPrimaryEngineRemote(),
             isCurrentPrimaryEngineBundledOpenCl(),
-            isCurrentPrimaryEngineBundledTensorRt(),
+            isCurrentPrimaryEngineBundledNvidia(),
             Lizzie.config != null && Lizzie.config.analysisReuseCurrentEngine);
     boolean primaryLoaded =
         !dependsOnPrimary || (Lizzie.leelaz != null && Lizzie.leelaz.isLoaded());
@@ -19101,9 +19134,9 @@ public class LizzieFrame extends JFrame {
   static boolean quickAnalysisDependsOnPrimary(
       boolean remotePrimary,
       boolean bundledOpenClPrimary,
-      boolean bundledTensorRtPrimary,
+      boolean bundledNvidiaPrimary,
       boolean reusePrimary) {
-    return remotePrimary || bundledOpenClPrimary || bundledTensorRtPrimary || reusePrimary;
+    return remotePrimary || bundledOpenClPrimary || bundledNvidiaPrimary || reusePrimary;
   }
 
   static QuickAnalysisWarmupAction decideQuickAnalysisWarmup(

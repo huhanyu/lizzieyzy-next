@@ -342,6 +342,17 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
+  void rulesDialogRequiresAFullyStartedEngine() throws Exception {
+    assertFalse(LizzieFrame.isRulesEngineReady(null));
+    Leelaz engine = new Leelaz("");
+    assertFalse(LizzieFrame.isRulesEngineReady(engine));
+    engine.isLoaded = true;
+    assertFalse(LizzieFrame.isRulesEngineReady(engine));
+    engine.started = true;
+    assertTrue(LizzieFrame.isRulesEngineReady(engine));
+  }
+
+  @Test
   void automaticQuickAnalysisDoesNotReuseTheWrongModelBackend() {
     assertTrue(
         LizzieFrame.shouldReplaceAutomaticQuickAnalysisEngine(

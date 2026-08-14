@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.HumanSlGameController;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -126,23 +127,57 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
-  void onlyAutomaticQuickAnalysisOptsIntoTensorRtForegroundReuse() {
+  void automaticQuickAnalysisReusesRemoteAndBundledNvidiaForegroundWhenAppropriate() {
     assertTrue(
-        AnalysisEngine.shouldAutomaticallyReuseTensorRtForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true));
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true, false, false, false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReuseTensorRtForeground(
-            AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS, true));
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true, false, false, true));
+    assertTrue(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, true, true));
+    assertTrue(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, false, false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReuseTensorRtForeground(
-            AnalysisResourceCoordinator.Purpose.WHOLE_GAME_ANALYSIS, true));
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, false, true));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReuseTensorRtForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false));
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS, true, true, true, false));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.WHOLE_GAME_ANALYSIS, true, true, true, false));
+    assertFalse(
+        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, false, false, false));
   }
 
   @Test
-  void automaticTensorRtForegroundReuseInvalidatesWhenThePrimaryEngineChanges() throws Exception {
+  void automaticQuickAnalysisBindsTheActiveRemoteEngineWithoutChangingUserSettings()
+      throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Leelaz foreground = reusableForegroundEngine(true);
+      foreground.setEngineCommand(RemoteComputeConfig.COMMAND_ZHIZI);
+      Lizzie.leelaz = foreground;
+      Lizzie.config.analysisReuseCurrentEngine = false;
+      Lizzie.config.quickAnalysisLightweightModelEnabled = false;
+
+      AnalysisEngine engine = AnalysisEngine.createAutomaticQuickAnalysis();
+
+      assertTrue(engine.isLoaded());
+      assertTrue(engine.usesSharedForegroundEngine());
+      assertTrue(engine.usesAutomaticPrimaryForegroundReuse());
+      assertTrue(engine.matchesCurrentAnalysisBackend());
+      assertNull(engine.process);
+      assertFalse(Lizzie.config.analysisReuseCurrentEngine);
+    }
+  }
+
+  @Test
+  void automaticPrimaryForegroundReuseInvalidatesWhenThePrimaryEngineChanges()
+      throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       Leelaz firstForeground = reusableForegroundEngine(true);
       Leelaz secondForeground = reusableForegroundEngine(true);
@@ -155,11 +190,11 @@ class AnalysisEngineRequestTest {
           "purpose",
           AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS);
       setField(AnalysisEngine.class, engine, "sharedForegroundEngine", firstForeground);
-      setField(AnalysisEngine.class, engine, "automaticTensorRtForegroundReuse", true);
+      setField(AnalysisEngine.class, engine, "automaticPrimaryForegroundReuse", true);
       setField(
           AnalysisEngine.class,
           engine,
-          "automaticTensorRtForegroundCommand",
+          "automaticPrimaryForegroundCommand",
           firstForeground.engineCommand());
 
       assertTrue(engine.matchesCurrentAnalysisBackend());
@@ -172,7 +207,7 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
-  void automaticTensorRtForegroundReuseInvalidatesWhenTheSameEngineObjectChangesCommand()
+  void automaticPrimaryForegroundReuseInvalidatesWhenTheSameEngineObjectChangesCommand()
       throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       Leelaz foreground = reusableForegroundEngine(true);
@@ -186,11 +221,11 @@ class AnalysisEngineRequestTest {
           "purpose",
           AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS);
       setField(AnalysisEngine.class, engine, "sharedForegroundEngine", foreground);
-      setField(AnalysisEngine.class, engine, "automaticTensorRtForegroundReuse", true);
+      setField(AnalysisEngine.class, engine, "automaticPrimaryForegroundReuse", true);
       setField(
           AnalysisEngine.class,
           engine,
-          "automaticTensorRtForegroundCommand",
+          "automaticPrimaryForegroundCommand",
           foreground.engineCommand());
 
       assertTrue(engine.matchesCurrentAnalysisBackend());

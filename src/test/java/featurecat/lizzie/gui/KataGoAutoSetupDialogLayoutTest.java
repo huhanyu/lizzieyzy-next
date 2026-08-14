@@ -8,6 +8,7 @@ import java.awt.CardLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Rectangle;
 import java.nio.file.Path;
 import java.util.List;
@@ -41,6 +42,28 @@ class KataGoAutoSetupDialogLayoutTest {
     assertEquals(14.5f, first.getSize2D());
     assertEquals(first.getSize2D(), second.getSize2D());
     assertEquals(Font.BOLD, second.getStyle());
+  }
+
+  @Test
+  void sidebarExpandsForThaiNavigationWithoutConsumingUnboundedSpace() {
+    JLabel measurementLabel = new JLabel();
+    Font selectedFont =
+        KataGoAutoSetupDialog.deriveSidebarNavFont(
+            new Font(Font.DIALOG, Font.PLAIN, 13), null, true);
+    FontMetrics metrics = measurementLabel.getFontMetrics(selectedFont);
+    String thaiAcceleration = "เร่งความเร็ว NVIDIA GPU";
+
+    int thaiWidth = KataGoAutoSetupDialog.localizedSidebarWidth(metrics, thaiAcceleration);
+
+    assertTrue(thaiWidth > 218, "the Thai acceleration label must expand the fixed-width sidebar");
+    assertTrue(
+        thaiWidth >= metrics.stringWidth(thaiAcceleration) + 100,
+        "the expanded width must include icon, gap, renderer, and sidebar insets");
+    assertEquals(218, KataGoAutoSetupDialog.localizedSidebarWidth(metrics, "概览"));
+    assertEquals(
+        330,
+        KataGoAutoSetupDialog.localizedSidebarWidth(
+            metrics, "A deliberately extreme navigation label that must remain bounded"));
   }
 
   @Test
