@@ -180,9 +180,7 @@ public class Board {
       return Optional.empty();
     }
 
-    if (end - start >= 5
-        && namedCoordinate.charAt(start) == '('
-        && namedCoordinate.charAt(end - 1) == ')') {
+    if (end - start >= 5 && namedCoordinate.charAt(start) == '(' && namedCoordinate.charAt(end - 1) == ')') {
       int comma = namedCoordinate.indexOf(',', start + 1);
       if (comma > start + 1 && comma < end - 2) {
         try {
@@ -230,7 +228,8 @@ public class Board {
     return Optional.of(new int[] {x, boardHeight - row});
   }
 
-  private static boolean regionEqualsIgnoreCase(String value, int start, int end, String expected) {
+  private static boolean regionEqualsIgnoreCase(
+      String value, int start, int end, String expected) {
     return end - start == expected.length()
         && value.regionMatches(true, start, expected, 0, expected.length());
   }
@@ -958,29 +957,21 @@ public class Board {
     }
   }
 
-  /**
-   * Whether the starting-position setup mode is active.
-   *
-   * <p>While active, board clicks are routed through the root setup seam instead of ordinary
-   * placement. The flag itself only controls click routing; the seam enforces root-only invariants.
-   */
+  /** Returns whether starting-position setup mode is active. */
   public boolean isSetupMode() {
     return setupMode;
   }
 
-  /** Toggles the starting-position setup mode flag. */
+  /** Updates the starting-position setup mode used by the UI input router. */
   public void setSetupMode(boolean setupMode) {
     this.setupMode = setupMode;
   }
 
   /**
-   * Returns the root node when the current history is a root-only setup position, or {@code null}
-   * otherwise.
+   * Returns the root node when it can be edited safely as a starting position.
    *
-   * <p>The root must be a SNAPSHOT with no children: mutating it in place is only safe while the
-   * tree has no real moves or variations that would go stale against the edited root. Histories
-   * with real {@code MOVE}/{@code PASS} actions belong to the explicit conversion flow, not to
-   * setup editing.
+   * <p>Setup editing mutates a root snapshot in place, so existing child moves or variations must
+   * first go through the explicit conversion flow.
    */
   private BoardHistoryNode rootSetupNode() {
     if (history == null) {
@@ -993,15 +984,7 @@ public class Board {
     return root;
   }
 
-  /**
-   * Root setup seam: places a black/white setup stone on the root starting position in place.
-   *
-   * <p>Pure board setup: no capture, ko, suicide, move number or branch creation. Placing a stone
-   * of the opposite color on an occupied point replaces that setup stone in place. Never creates
-   * {@code MOVE}/{@code PASS} nodes or variations.
-   *
-   * @return {@code false} when the history is not a root-only setup position
-   */
+  /** Places or replaces a setup stone without applying capture, ko, or suicide rules. */
   public boolean setupPlaceStone(int x, int y, Stone color) {
     synchronized (this) {
       if (!isValid(x, y) || color == null || !(color.isBlack() || color.isWhite())) {
@@ -1029,13 +1012,7 @@ public class Board {
     }
   }
 
-  /**
-   * Root setup seam: erases the setup stone at the selected point on the root starting position.
-   *
-   * <p>Removes only the selected point; all other setup stones stay untouched.
-   *
-   * @return {@code false} when the history is not a root-only setup position
-   */
+  /** Erases only the selected setup stone from the root starting position. */
   public boolean setupEraseStone(int x, int y) {
     synchronized (this) {
       if (!isValid(x, y)) {
@@ -1059,13 +1036,7 @@ public class Board {
     }
   }
 
-  /**
-   * Root setup seam: clears every setup stone on the root starting position.
-   *
-   * <p>Preserves game-level metadata (board size, komi, players, ...) and the chosen side-to-play.
-   *
-   * @return {@code false} when the history is not a root-only setup position
-   */
+  /** Clears all setup stones while preserving game metadata and the selected side to play. */
   public boolean setupClearAll() {
     synchronized (this) {
       BoardHistoryNode root = rootSetupNode();
@@ -1093,13 +1064,7 @@ public class Board {
     }
   }
 
-  /**
-   * Root setup seam: sets the side to play on the root starting position.
-   *
-   * <p>Empty/new setup defaults to Black ({@code true}); the saved SGF exports this as {@code PL}.
-   *
-   * @return {@code false} when the history is not a root-only setup position
-   */
+  /** Sets which color plays first from the edited starting position. */
   public boolean setupSetSideToPlay(boolean blackToPlay) {
     synchronized (this) {
       BoardHistoryNode root = rootSetupNode();
@@ -1140,13 +1105,10 @@ public class Board {
   }
 
   /**
-   * Converts the currently displayed position into a root-only starting position.
+   * Converts the displayed position to a root-only snapshot and discards its move tree.
    *
-   * <p>The displayed stones and side-to-play become a root {@code SNAPSHOT}. All moves, passes and
-   * variations are discarded. GameInfo and non-setup root SGF properties are preserved; current
-   * setup properties are materialized from the converted board when saving.
-   *
-   * @return {@code false} when no current position is available
+   * <p>The UI owns the destructive-operation confirmation. This method preserves game metadata and
+   * non-setup root SGF properties while materializing the displayed stones and side to play.
    */
   public boolean convertCurrentPositionToStartingPosition() {
     synchronized (this) {
@@ -1496,7 +1458,6 @@ public class Board {
       Lizzie.initializeAfterVersionCheck(false, leelaz);
     }
   }
-
   public void resendMoveToEngineFromCurrentRoot(Leelaz leelaz) {
     if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
       return;
@@ -1606,7 +1567,9 @@ public class Board {
 
   private void syncPrimaryEngineKomiToCurrentGame() {
     BoardHistoryList currentHistory = getHistory();
-    if (Lizzie.leelaz == null || currentHistory == null || currentHistory.getGameInfo() == null) {
+    if (Lizzie.leelaz == null
+        || currentHistory == null
+        || currentHistory.getGameInfo() == null) {
       return;
     }
     Lizzie.leelaz.syncKomiForCurrentGame(currentHistory.getGameInfo().getKomi());
@@ -1621,7 +1584,8 @@ public class Board {
     if (engine == null || Float.isNaN(engine.komi)) {
       return Optional.empty();
     }
-    return currentGameKomi.filter(gameKomi -> Double.compare(gameKomi, GameInfo.DEFAULT_KOMI) != 0);
+    return currentGameKomi
+        .filter(gameKomi -> Double.compare(gameKomi, GameInfo.DEFAULT_KOMI) != 0);
   }
 
   private Optional<Double> captureCurrentGameKomi() {
@@ -2056,7 +2020,8 @@ public class Board {
       newState.dummy = dummy;
       history.addOrGoto(newState, newBranch);
       // update leelaz with pass
-      if (!EngineManager.isEngineGame) feedEngineForMainlineMove(color, "pass");
+      if (!Lizzie.leelaz.isInputCommand && !EngineManager.isEngineGame)
+        feedEngineForMainlineMove(color, "pass");
 
       if (Lizzie.frame.isPlayingAgainstLeelaz
           && Lizzie.frame.playerIsBlack != getData().blackToPlay)
@@ -2673,6 +2638,14 @@ public class Board {
     setupMode = false;
   }
 
+  /**
+   * Replaces the current position with a standard 19x19 fixed-handicap root position.
+   *
+   * <p>Handicap stones are setup stones, not a sequence of Black moves. Keeping them on the root
+   * preserves move number zero and guarantees that White is next for every handicap count.
+   *
+   * @return {@code true} when the requested fixed handicap was applied
+   */
   public boolean setupFixedHandicap(int handicap) {
     int[][] points = fixedHandicapPoints(handicap);
     if (boardWidth != 19 || boardHeight != 19 || points.length == 0) {
@@ -2715,18 +2688,33 @@ public class Board {
 
   private static int[][] fixedHandicapPoints(int handicap) {
     switch (handicap) {
-      case 2: return new int[][] {{3, 15}, {15, 3}};
-      case 3: return new int[][] {{3, 3}, {15, 3}, {3, 15}};
-      case 4: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}};
-      case 5: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 9}};
-      case 6: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {3, 9}, {15, 9}};
-      case 7: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {15, 9}, {3, 9}, {9, 9}};
-      case 8: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}};
-      case 9: return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}, {9, 9}};
-      default: return new int[0][];
+      case 2:
+        return new int[][] {{3, 15}, {15, 3}};
+      case 3:
+        return new int[][] {{3, 3}, {15, 3}, {3, 15}};
+      case 4:
+        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}};
+      case 5:
+        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 9}};
+      case 6:
+        return new int[][] {{3, 3}, {3, 15}, {15, 3}, {15, 15}, {3, 9}, {15, 9}};
+      case 7:
+        return new int[][] {
+          {3, 3}, {3, 15}, {15, 3}, {15, 15}, {15, 9}, {3, 9}, {9, 9}
+        };
+      case 8:
+        return new int[][] {
+          {3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9}
+        };
+      case 9:
+        return new int[][] {
+          {3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 3}, {9, 15}, {3, 9}, {15, 9},
+          {9, 9}
+        };
+      default:
+        return new int[0][];
     }
   }
-
 
   public void flattenWithCondition(
       Stone[] stones,
@@ -3688,6 +3676,7 @@ public class Board {
   }
 
   public void setHistory(BoardHistoryList newList) {
+    movelistRefreshGeneration++;
     history = newList;
     setupMode = false;
     syncBoardDimensionsWithHistory(newList);
@@ -3928,7 +3917,8 @@ public class Board {
       boolean isPass = isKnownPass(currentData);
       boolean isHistoryAction = isHistoryAction(currentData);
       boolean needSync =
-          history.getCurrentHistoryNode().hasRemovedStone() || currentData.isSnapshotNode();
+          history.getCurrentHistoryNode().hasRemovedStone()
+              || currentData.isSnapshotNode();
       if (history.getCurrentHistoryNode().next().isPresent())
         updateIsBest(history.getCurrentHistoryNode().next().get());
       if (history.getPrevious().isPresent()) {
@@ -4109,7 +4099,7 @@ public class Board {
   //  }
 
   public double lastWinrateDiff(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && hasPrimaryAnalysisPayload(node.previous().get().previous().get().getData())) {
@@ -4137,7 +4127,7 @@ public class Board {
   }
 
   public double lastWinrateDiff2(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && hasSecondaryAnalysisPayload(node.previous().get().previous().get().getData())) {
@@ -4186,7 +4176,7 @@ public class Board {
   }
 
   public double lastScoreMeanDiff(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && node.previous().get().previous().get().getData().getPlayouts() > 0) {
@@ -4218,7 +4208,7 @@ public class Board {
   }
 
   public double lastScoreMeanDiff2(BoardHistoryNode node) {
-    if (Lizzie.board.isPkBoard) {
+    if (isPkBoard) {
       if (node.previous().isPresent()
           && node.previous().get().previous().isPresent()
           && node.previous().get().previous().get().getData().getPlayouts2() > 0) {
@@ -4251,19 +4241,26 @@ public class Board {
 
   public void setMovelistAll() {
     final int generation = ++movelistRefreshGeneration;
+    final BoardHistoryList refreshHistory = history;
+    if (refreshHistory == null) {
+      return;
+    }
     Thread thread =
         new Thread(
             new Runnable() {
               public void run() {
-                BoardHistoryNode node = Lizzie.board.getHistory().getStart();
+                BoardHistoryNode node = refreshHistory.getStart();
                 Stack<BoardHistoryNode> stack = new Stack<>();
                 stack.push(node);
                 int processed = 0;
                 while (!stack.isEmpty()) {
-                  if (generation != movelistRefreshGeneration) {
+                  if (generation != movelistRefreshGeneration || history != refreshHistory) {
                     return;
                   }
                   if (!pauseMovelistRefreshForRecentNavigation()) {
+                    return;
+                  }
+                  if (generation != movelistRefreshGeneration || history != refreshHistory) {
                     return;
                   }
                   BoardHistoryNode cur = stack.pop();
@@ -4324,7 +4321,7 @@ public class Board {
   }
 
   public void setMovelistAll2() {
-    BoardHistoryNode node = Lizzie.board.getHistory().getStart();
+    BoardHistoryNode node = history.getStart();
     Stack<BoardHistoryNode> stack = new Stack<>();
     stack.push(node);
     while (!stack.isEmpty()) {
@@ -4353,7 +4350,7 @@ public class Board {
             && previousNode.getData().winrate >= 0)
         || previousNode.getData().playoutsChanged) {
       double winrateDiff = lastWinrateDiff(node);
-      if (Lizzie.board.isPkBoard && playouts > 0) {
+      if (isPkBoard && playouts > 0) {
         if (node.isMainTrunk() && node.previous().get().isMainTrunk()) {
           if (node.getData().isMoveNode()
               && previousNode.previous().isPresent()
@@ -4446,7 +4443,7 @@ public class Board {
                 != previousNode.nodeInfo2.previousPlayouts)
         && previousNode.getData().winrate2 >= 0) {
       double winrateDiff = lastWinrateDiff2(node);
-      if (Lizzie.board.isPkBoard) {
+      if (isPkBoard) {
         if (node.getData().isMoveNode()
             && previousNode.previous().isPresent()
             && previousNode.getData().isMoveNode()) {
