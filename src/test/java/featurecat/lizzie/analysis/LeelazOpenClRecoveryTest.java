@@ -7,8 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
+import featurecat.lizzie.EngineStartupStatus;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.gui.Menu;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -38,7 +41,10 @@ class LeelazOpenClRecoveryTest {
     Config previousConfig = Lizzie.config;
     Board previousBoard = Lizzie.board;
     Leelaz previousEngine = Lizzie.leelaz;
+    Leelaz previousSecondEngine = Lizzie.leelaz2;
     LizzieFrame previousFrame = Lizzie.frame;
+    Menu previousMenu = LizzieFrame.menu;
+    BottomToolbar previousToolbar = LizzieFrame.toolbar;
     String previousOsName = System.getProperty("os.name");
     String previousDriver = System.getProperty("lizzie.opencl.nvidiaDriverVersion");
     Path tempRoot = Files.createTempDirectory("leelaz-opencl-prepared-restore");
@@ -50,8 +56,11 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = ConfigTestHelper.createForTests(tempRoot.resolve("runtime-root"));
       Lizzie.board = board;
       Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
       Lizzie.frame = allocate(SilentRecoveryFrame.class);
-      engine.mutateOnReservation = () -> mutateHistory(board.getHistory());
+      LizzieFrame.menu = allocate(SilentRecoveryMenu.class);
+      LizzieFrame.toolbar = allocate(SilentRecoveryToolbar.class);
+      engine.mutateOnAttempt = () -> mutateHistory(board.getHistory());
       engine.mutateOnStart = () -> mutateHistory(board.getHistory());
       Path enginePath = createOpenClEngine(tempRoot);
       Path modelPath = touch(tempRoot.resolve("weights/current.bin.gz"));
@@ -75,18 +84,24 @@ class LeelazOpenClRecoveryTest {
       assertFalse(board.genericRestoreReceived);
       assertTrue(engine.loadedSgf.contains("AB[dd]"));
       assertTrue(engine.loadedSgf.contains("KM[6.5]"));
-      assertNotNull(engine.reservation);
-      engine.reservation.close();
+      assertNotNull(engine.restartAttempt);
+      assertTrue(
+          engine.recoveryCompleted.await(2, TimeUnit.SECONDS),
+          "the successful recovery must settle before the fixture restores global state");
+      engine.restartAttempt.close();
     } finally {
-      if (engine.reservation != null) {
-        engine.reservation.close();
+      if (engine.restartAttempt != null) {
+        engine.restartAttempt.close();
       }
       restoreProperty("os.name", previousOsName);
       restoreProperty("lizzie.opencl.nvidiaDriverVersion", previousDriver);
       Lizzie.config = previousConfig;
       Lizzie.board = previousBoard;
       Lizzie.leelaz = previousEngine;
+      Lizzie.leelaz2 = previousSecondEngine;
       Lizzie.frame = previousFrame;
+      LizzieFrame.menu = previousMenu;
+      LizzieFrame.toolbar = previousToolbar;
     }
   }
 
@@ -101,6 +116,9 @@ class LeelazOpenClRecoveryTest {
   @Test
   void currentOpenClNativeEofStartsAtMostOneAutomaticRecovery() throws Exception {
     Config previousConfig = Lizzie.config;
+    Board previousBoard = Lizzie.board;
+    Leelaz previousEngine = Lizzie.leelaz;
+    Leelaz previousSecondEngine = Lizzie.leelaz2;
     String previousOsName = System.getProperty("os.name");
     String previousDriver = System.getProperty("lizzie.opencl.nvidiaDriverVersion");
     Path tempRoot = Files.createTempDirectory("leelaz-opencl-recovery");
@@ -111,6 +129,9 @@ class LeelazOpenClRecoveryTest {
       Path enginePath = createOpenClEngine(tempRoot);
       Path modelPath = touch(tempRoot.resolve("weights/current.bin.gz"));
       RecordingRecoveryLeelaz engine = new RecordingRecoveryLeelaz();
+      Lizzie.board = preparedRestoreBoard();
+      Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
       ExitedProcess process = new ExitedProcess((int) 0xC0000409L);
       setField(engine, "process", process);
       setField(
@@ -128,6 +149,9 @@ class LeelazOpenClRecoveryTest {
       invokeRead(engine);
       assertTrue(engine.recoveryStarted.await(2, TimeUnit.SECONDS));
       assertFalse(invokeOpenClRecovery(engine));
+      assertTrue(
+          engine.recoverySettled.await(2, TimeUnit.SECONDS),
+          "the failed recovery must settle before the fixture restores global state");
       assertEquals(1, process.destroyCount);
       assertFalse(engine.isStarted());
       assertEquals(1, engine.restartCount);
@@ -135,6 +159,9 @@ class LeelazOpenClRecoveryTest {
       restoreProperty("os.name", previousOsName);
       restoreProperty("lizzie.opencl.nvidiaDriverVersion", previousDriver);
       Lizzie.config = previousConfig;
+      Lizzie.board = previousBoard;
+      Lizzie.leelaz = previousEngine;
+      Lizzie.leelaz2 = previousSecondEngine;
     }
   }
 
@@ -194,6 +221,92 @@ class LeelazOpenClRecoveryTest {
       restoreProperty("os.name", previousOsName);
       restoreProperty("lizzie.opencl.nvidiaDriverVersion", previousDriver);
       Lizzie.config = previousConfig;
+    }
+  }
+
+  @Test
+  void asyncOpenClRecoveryFailureFailsClosedAndReleasesLifecycleAttempt() throws Exception {
+    Config previousConfig = Lizzie.config;
+    Board previousBoard = Lizzie.board;
+    Leelaz previousEngine = Lizzie.leelaz;
+    Leelaz previousSecondEngine = Lizzie.leelaz2;
+    LizzieFrame previousFrame = Lizzie.frame;
+    String previousOsName = System.getProperty("os.name");
+    String previousDriver = System.getProperty("lizzie.opencl.nvidiaDriverVersion");
+    Path tempRoot = Files.createTempDirectory("leelaz-opencl-async-failure");
+    AsyncOpenClRecoveryLeelaz engine = new AsyncOpenClRecoveryLeelaz();
+    Leelaz.AutomaticRestartAttempt afterFailure = null;
+    try {
+      System.setProperty("os.name", "Windows 11");
+      System.setProperty("lizzie.opencl.nvidiaDriverVersion", "566.36");
+      Lizzie.config = ConfigTestHelper.createForTests(tempRoot.resolve("runtime-root"));
+      Lizzie.board = preparedRestoreBoard();
+      Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
+      Lizzie.frame = allocate(SilentRecoveryFrame.class);
+      Path enginePath = createOpenClEngine(tempRoot);
+      Path modelPath = touch(tempRoot.resolve("weights/current.bin.gz"));
+      ExitedProcess process = new ExitedProcess((int) 0xC0000409L);
+      setField(engine, "process", process);
+      setField(
+          engine,
+          "inputStream",
+          new BufferedReader(
+              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)));
+      setField(
+          engine,
+          "commands",
+          List.of(enginePath.toString(), "gtp", "-model", modelPath.toString()));
+      engine.started = true;
+      engine.isLoaded = true;
+
+      assertTrue(
+          invokeOpenClRecovery(engine),
+          "the production OpenCL entry must admit the automatic recovery attempt");
+      assertTrue(
+          engine.diagnosticInvoked.await(3, TimeUnit.SECONDS),
+          "the asynchronous recovery failure must reach the existing diagnostic path");
+
+      assertTrue(engine.isDownWithError, "the async recovery failure must mark the engine down");
+      assertFalse(engine.isLoaded(), "the async recovery failure must fail the engine closed");
+      assertEquals(1, engine.startCount, "the recovery must start the engine exactly once");
+      assertFalse(engine.isPondering(), "no ponder after the async recovery failure");
+      assertTrue(
+          engine.transport.commands().isEmpty(),
+          "no ponder or analyze commands after the async recovery failure");
+      assertFalse(
+          engine.isInitialBoardSynchronizationActive(),
+          "the async recovery failure must release the board synchronization barriers");
+      assertNotNull(
+          engine.diagnosticMessage,
+          "the diagnostic path must receive the OpenCL recovery failure detail");
+      assertTrue(
+          engine.diagnosticMessage.contains(
+              Lizzie.resourceBundle.getString("BundledEngineStartup.openclRecoveryFailed")),
+          "the diagnostic must describe the OpenCL recovery failure");
+      assertEquals(
+          EngineStartupStatus.State.START_FAILED,
+          Lizzie.engineStartupStatus.snapshot().state,
+          "the real diagnostic must publish the startup failure");
+
+      afterFailure = engine.beginAutomaticEngineRestartAttempt();
+      assertNotNull(
+          afterFailure,
+          "the async recovery failure must release the lifecycle attempt for a fresh admission");
+      javax.swing.SwingUtilities.invokeAndWait(() -> {});
+      javax.swing.SwingUtilities.invokeAndWait(() -> {});
+    } finally {
+      if (afterFailure != null) {
+        afterFailure.close();
+      }
+      Lizzie.engineStartupStatus.ready();
+      restoreProperty("os.name", previousOsName);
+      restoreProperty("lizzie.opencl.nvidiaDriverVersion", previousDriver);
+      Lizzie.config = previousConfig;
+      Lizzie.board = previousBoard;
+      Lizzie.leelaz = previousEngine;
+      Lizzie.leelaz2 = previousSecondEngine;
+      Lizzie.frame = previousFrame;
     }
   }
 
@@ -267,10 +380,11 @@ class LeelazOpenClRecoveryTest {
   }
 
   private static final class PreparedRecoveryLeelaz extends Leelaz {
-    private Runnable mutateOnReservation;
+    private Runnable mutateOnAttempt;
     private Runnable mutateOnStart;
-    private Leelaz.ExclusiveGtpLifecycleReservation reservation;
+    private Leelaz.AutomaticRestartAttempt restartAttempt;
     private String loadedSgf = "";
+    private final CountDownLatch recoveryCompleted = new CountDownLatch(1);
 
     private PreparedRecoveryLeelaz() throws Exception {
       super("controlled-engine");
@@ -289,12 +403,12 @@ class LeelazOpenClRecoveryTest {
     }
 
     @Override
-    public ExclusiveGtpLifecycleReservation beginAutomaticEngineRestartReservation() {
-      reservation = super.beginAutomaticEngineRestartReservation();
-      if (reservation != null && mutateOnReservation != null) {
-        mutateOnReservation.run();
+    public Leelaz.AutomaticRestartAttempt beginAutomaticEngineRestartAttempt() {
+      restartAttempt = super.beginAutomaticEngineRestartAttempt();
+      if (restartAttempt != null && mutateOnAttempt != null) {
+        mutateOnAttempt.run();
       }
-      return reservation;
+      return restartAttempt;
     }
 
     @Override
@@ -312,11 +426,37 @@ class LeelazOpenClRecoveryTest {
         throw new IllegalStateException(failure);
       }
     }
+
+    @Override
+    void resumeClosedEngineAfterBoardSynchronization(boolean resumePonder) {
+      recoveryCompleted.countDown();
+    }
   }
 
   private static final class SilentRecoveryFrame extends LizzieFrame {
     @Override
     public void prepareQuickAnalysisForPrimaryOpenClRecovery() {}
+
+    @Override
+    public void reSetLoc() {}
+
+    @Override
+    public boolean resetMovelistFrameandAnalysisFrame() {
+      return false;
+    }
+  }
+
+  private static final class SilentRecoveryMenu extends Menu {
+    @Override
+    public void showPda(boolean show) {}
+
+    @Override
+    public void updateMenuStatusForEngine() {}
+  }
+
+  private static final class SilentRecoveryToolbar extends BottomToolbar {
+    @Override
+    public void reSetButtonLocation() {}
   }
 
   private static final class PreparedRestoreBoard extends Board {
@@ -347,6 +487,7 @@ class LeelazOpenClRecoveryTest {
 
   private static final class RecordingRecoveryLeelaz extends Leelaz {
     private final CountDownLatch recoveryStarted = new CountDownLatch(1);
+    private final CountDownLatch recoverySettled = new CountDownLatch(1);
     private int restartCount;
 
     private RecordingRecoveryLeelaz() throws Exception {
@@ -354,10 +495,62 @@ class LeelazOpenClRecoveryTest {
     }
 
     @Override
-    public void restartClosedEngine(int index, Runnable afterBoardRestore) {
+    public void startEngine(int index) throws IOException {
       restartCount++;
-      afterBoardRestore.run();
       recoveryStarted.countDown();
+    }
+
+    @Override
+    long engineStartupSynchronizationTimeoutMillis() {
+      return 25L;
+    }
+
+    @Override
+    public void tryToDignostic(String message, boolean isModal) {
+      recoverySettled.countDown();
+    }
+  }
+
+  /**
+   * Fixture that starts the engine but never completes startup, so the asynchronous readiness gate
+   * fails after {@code restartClosedEngine} returns and routes the failure through the production
+   * OpenCL failure handler (down-with-error plus the existing diagnostic entry).
+   */
+  private static final class AsyncOpenClRecoveryLeelaz extends Leelaz {
+    private final CountDownLatch diagnosticInvoked = new CountDownLatch(1);
+    private volatile String diagnosticMessage;
+    private volatile int startCount;
+    private volatile ExactSnapshotRestoreProtocolFixture.Transport transport;
+
+    private AsyncOpenClRecoveryLeelaz() throws Exception {
+      super("controlled-engine");
+    }
+
+    @Override
+    long engineStartupSynchronizationTimeoutMillis() {
+      return 25L;
+    }
+
+    @Override
+    public void startEngine(int index) {
+      startCount++;
+      started = true;
+      isCheckingName = false;
+      transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              this, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      // Intentionally never becomes ready: isLoaded and endGetCommandList stay false, so the
+      // asynchronous readiness gate fails after restartClosedEngine returns.
+    }
+
+    @Override
+    public void tryToDignostic(String message, boolean isModal) {
+      diagnosticMessage = message;
+      try {
+        super.tryToDignostic(message, isModal);
+      } finally {
+        diagnosticInvoked.countDown();
+      }
     }
   }
 
