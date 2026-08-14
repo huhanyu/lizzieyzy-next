@@ -41,6 +41,7 @@ class LeelazOpenClRecoveryTest {
     Config previousConfig = Lizzie.config;
     Board previousBoard = Lizzie.board;
     Leelaz previousEngine = Lizzie.leelaz;
+    Leelaz previousSecondEngine = Lizzie.leelaz2;
     LizzieFrame previousFrame = Lizzie.frame;
     Menu previousMenu = LizzieFrame.menu;
     BottomToolbar previousToolbar = LizzieFrame.toolbar;
@@ -55,6 +56,7 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = ConfigTestHelper.createForTests(tempRoot.resolve("runtime-root"));
       Lizzie.board = board;
       Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
       Lizzie.frame = allocate(SilentRecoveryFrame.class);
       LizzieFrame.menu = allocate(SilentRecoveryMenu.class);
       LizzieFrame.toolbar = allocate(SilentRecoveryToolbar.class);
@@ -83,6 +85,9 @@ class LeelazOpenClRecoveryTest {
       assertTrue(engine.loadedSgf.contains("AB[dd]"));
       assertTrue(engine.loadedSgf.contains("KM[6.5]"));
       assertNotNull(engine.restartAttempt);
+      assertTrue(
+          engine.recoveryCompleted.await(2, TimeUnit.SECONDS),
+          "the successful recovery must settle before the fixture restores global state");
       engine.restartAttempt.close();
     } finally {
       if (engine.restartAttempt != null) {
@@ -93,6 +98,7 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = previousConfig;
       Lizzie.board = previousBoard;
       Lizzie.leelaz = previousEngine;
+      Lizzie.leelaz2 = previousSecondEngine;
       Lizzie.frame = previousFrame;
       LizzieFrame.menu = previousMenu;
       LizzieFrame.toolbar = previousToolbar;
@@ -110,6 +116,9 @@ class LeelazOpenClRecoveryTest {
   @Test
   void currentOpenClNativeEofStartsAtMostOneAutomaticRecovery() throws Exception {
     Config previousConfig = Lizzie.config;
+    Board previousBoard = Lizzie.board;
+    Leelaz previousEngine = Lizzie.leelaz;
+    Leelaz previousSecondEngine = Lizzie.leelaz2;
     String previousOsName = System.getProperty("os.name");
     String previousDriver = System.getProperty("lizzie.opencl.nvidiaDriverVersion");
     Path tempRoot = Files.createTempDirectory("leelaz-opencl-recovery");
@@ -120,6 +129,9 @@ class LeelazOpenClRecoveryTest {
       Path enginePath = createOpenClEngine(tempRoot);
       Path modelPath = touch(tempRoot.resolve("weights/current.bin.gz"));
       RecordingRecoveryLeelaz engine = new RecordingRecoveryLeelaz();
+      Lizzie.board = preparedRestoreBoard();
+      Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
       ExitedProcess process = new ExitedProcess((int) 0xC0000409L);
       setField(engine, "process", process);
       setField(
@@ -137,6 +149,9 @@ class LeelazOpenClRecoveryTest {
       invokeRead(engine);
       assertTrue(engine.recoveryStarted.await(2, TimeUnit.SECONDS));
       assertFalse(invokeOpenClRecovery(engine));
+      assertTrue(
+          engine.recoverySettled.await(2, TimeUnit.SECONDS),
+          "the failed recovery must settle before the fixture restores global state");
       assertEquals(1, process.destroyCount);
       assertFalse(engine.isStarted());
       assertEquals(1, engine.restartCount);
@@ -144,6 +159,9 @@ class LeelazOpenClRecoveryTest {
       restoreProperty("os.name", previousOsName);
       restoreProperty("lizzie.opencl.nvidiaDriverVersion", previousDriver);
       Lizzie.config = previousConfig;
+      Lizzie.board = previousBoard;
+      Lizzie.leelaz = previousEngine;
+      Lizzie.leelaz2 = previousSecondEngine;
     }
   }
 
@@ -211,6 +229,7 @@ class LeelazOpenClRecoveryTest {
     Config previousConfig = Lizzie.config;
     Board previousBoard = Lizzie.board;
     Leelaz previousEngine = Lizzie.leelaz;
+    Leelaz previousSecondEngine = Lizzie.leelaz2;
     LizzieFrame previousFrame = Lizzie.frame;
     String previousOsName = System.getProperty("os.name");
     String previousDriver = System.getProperty("lizzie.opencl.nvidiaDriverVersion");
@@ -223,6 +242,7 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = ConfigTestHelper.createForTests(tempRoot.resolve("runtime-root"));
       Lizzie.board = preparedRestoreBoard();
       Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
       Lizzie.frame = allocate(SilentRecoveryFrame.class);
       Path enginePath = createOpenClEngine(tempRoot);
       Path modelPath = touch(tempRoot.resolve("weights/current.bin.gz"));
@@ -261,7 +281,8 @@ class LeelazOpenClRecoveryTest {
           engine.diagnosticMessage,
           "the diagnostic path must receive the OpenCL recovery failure detail");
       assertTrue(
-          engine.diagnosticMessage.contains("NVIDIA OpenCL compatibility recovery failed"),
+          engine.diagnosticMessage.contains(
+              Lizzie.resourceBundle.getString("BundledEngineStartup.openclRecoveryFailed")),
           "the diagnostic must describe the OpenCL recovery failure");
       assertEquals(
           EngineStartupStatus.State.START_FAILED,
@@ -284,6 +305,7 @@ class LeelazOpenClRecoveryTest {
       Lizzie.config = previousConfig;
       Lizzie.board = previousBoard;
       Lizzie.leelaz = previousEngine;
+      Lizzie.leelaz2 = previousSecondEngine;
       Lizzie.frame = previousFrame;
     }
   }
@@ -362,6 +384,7 @@ class LeelazOpenClRecoveryTest {
     private Runnable mutateOnStart;
     private Leelaz.AutomaticRestartAttempt restartAttempt;
     private String loadedSgf = "";
+    private final CountDownLatch recoveryCompleted = new CountDownLatch(1);
 
     private PreparedRecoveryLeelaz() throws Exception {
       super("controlled-engine");
@@ -402,6 +425,11 @@ class LeelazOpenClRecoveryTest {
       } catch (Exception failure) {
         throw new IllegalStateException(failure);
       }
+    }
+
+    @Override
+    void resumeClosedEngineAfterBoardSynchronization(boolean resumePonder) {
+      recoveryCompleted.countDown();
     }
   }
 
@@ -459,6 +487,7 @@ class LeelazOpenClRecoveryTest {
 
   private static final class RecordingRecoveryLeelaz extends Leelaz {
     private final CountDownLatch recoveryStarted = new CountDownLatch(1);
+    private final CountDownLatch recoverySettled = new CountDownLatch(1);
     private int restartCount;
 
     private RecordingRecoveryLeelaz() throws Exception {
@@ -469,6 +498,16 @@ class LeelazOpenClRecoveryTest {
     public void startEngine(int index) throws IOException {
       restartCount++;
       recoveryStarted.countDown();
+    }
+
+    @Override
+    long engineStartupSynchronizationTimeoutMillis() {
+      return 25L;
+    }
+
+    @Override
+    public void tryToDignostic(String message, boolean isModal) {
+      recoverySettled.countDown();
     }
   }
 

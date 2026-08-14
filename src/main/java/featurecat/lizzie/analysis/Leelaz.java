@@ -1301,7 +1301,10 @@ public class Leelaz {
       if (executorErr != null) executorErr.shutdownNow();
     } else {
       try {
-        process.destroyForcibly();
+        Process runningProcess = process;
+        if (runningProcess != null) {
+          runningProcess.destroyForcibly();
+        }
       } catch (Exception e) {
         e.printStackTrace();
       }

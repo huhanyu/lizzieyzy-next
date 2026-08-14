@@ -247,6 +247,7 @@ class EngineManagerLifecycleReservationTest {
     BottomToolbar previousToolbar = LizzieFrame.toolbar;
     Config previousConfig = Lizzie.config;
     JFontMenu previousEngineMenu = Menu.engineMenu;
+    Menu previousMenu = LizzieFrame.menu;
     BoardRenderer previousBoardRenderer = LizzieFrame.boardRenderer;
     EngineManager previousManager = Lizzie.engineManager;
     boolean previousEmpty = EngineManager.isEmpty;
@@ -265,6 +266,7 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.frame = allocate(SilentSwitchFrame.class);
       LizzieFrame.toolbar = allocate(SilentSwitchToolbar.class);
       Menu.engineMenu = new SilentJFontMenu();
+      LizzieFrame.menu = allocate(SilentUpdateMenu.class);
       Lizzie.engineManager = manager;
       LizzieFrame.boardRenderer = new BoardRenderer(false);
       Lizzie.board = preparedRestoreBoard();
@@ -311,6 +313,7 @@ class EngineManagerLifecycleReservationTest {
       LizzieFrame.toolbar = previousToolbar;
       Lizzie.config = previousConfig;
       Menu.engineMenu = previousEngineMenu;
+      LizzieFrame.menu = previousMenu;
       LizzieFrame.boardRenderer = previousBoardRenderer;
       Lizzie.engineManager = previousManager;
       EngineManager.isEmpty = previousEmpty;
@@ -326,6 +329,7 @@ class EngineManagerLifecycleReservationTest {
     BottomToolbar previousToolbar = LizzieFrame.toolbar;
     Config previousConfig = Lizzie.config;
     JFontMenu previousEngineMenu = Menu.engineMenu;
+    Menu previousMenu = LizzieFrame.menu;
     BoardRenderer previousBoardRenderer = LizzieFrame.boardRenderer;
     EngineManager previousManager = Lizzie.engineManager;
     boolean previousEmpty = EngineManager.isEmpty;
@@ -343,6 +347,7 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.frame = allocate(SilentSwitchFrame.class);
       LizzieFrame.toolbar = allocate(SilentSwitchToolbar.class);
       Menu.engineMenu = new SilentJFontMenu();
+      LizzieFrame.menu = allocate(SilentUpdateMenu.class);
       Lizzie.engineManager = manager;
       LizzieFrame.boardRenderer = new BoardRenderer(false);
       Lizzie.board = board;
@@ -373,6 +378,7 @@ class EngineManagerLifecycleReservationTest {
       LizzieFrame.toolbar = previousToolbar;
       Lizzie.config = previousConfig;
       Menu.engineMenu = previousEngineMenu;
+      LizzieFrame.menu = previousMenu;
       LizzieFrame.boardRenderer = previousBoardRenderer;
       Lizzie.engineManager = previousManager;
       EngineManager.isEmpty = previousEmpty;
@@ -4039,6 +4045,9 @@ class EngineManagerLifecycleReservationTest {
     public void refresh() {}
 
     @Override
+    public void requestProblemListRefresh() {}
+
+    @Override
     public void setPdaAndWrn(double pda, double wrn) {}
   }
 
@@ -4260,6 +4269,7 @@ class EngineManagerLifecycleReservationTest {
     private final LizzieFrame previousFrame = Lizzie.frame;
     private final GtpConsolePane previousGtpConsole = Lizzie.gtpConsole;
     private final BottomToolbar previousToolbar = LizzieFrame.toolbar;
+    private final Menu previousMenu = LizzieFrame.menu;
     private final Config previousConfig = Lizzie.config;
     private final JFontMenu previousEngineMenu = Menu.engineMenu;
     private final JFontMenu previousEngineMenu2 = Menu.engineMenu2;
@@ -4421,10 +4431,18 @@ class EngineManagerLifecycleReservationTest {
       if (manager.engineList != null) {
         for (Leelaz engine : manager.engineList) {
           try {
+            Process runningProcess = (Process) getLeelazField(engine, "process");
             engine.forceQuit();
+            if (runningProcess != null) {
+              runningProcess.waitFor(2, TimeUnit.SECONDS);
+            }
           } catch (Exception ignored) {
           }
         }
+      }
+      try {
+        SwingUtilities.invokeAndWait(() -> {});
+      } catch (Exception ignored) {
       }
       try {
         Files.deleteIfExists(commandLog);
@@ -4441,6 +4459,7 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.frame = previousFrame;
       Lizzie.gtpConsole = previousGtpConsole;
       LizzieFrame.toolbar = previousToolbar;
+      LizzieFrame.menu = previousMenu;
       Lizzie.config = previousConfig;
       Menu.engineMenu = previousEngineMenu;
       Menu.engineMenu2 = previousEngineMenu2;
@@ -4570,6 +4589,15 @@ class EngineManagerLifecycleReservationTest {
 
     @Override
     public void changeEngineIcon2(int index, int mode) {}
+
+    @Override
+    public void changeicon(int index) {}
+
+    @Override
+    public void updateMenuStatusForEngine() {}
+
+    @Override
+    public void showPda(boolean show) {}
   }
 
   private static final class LeaseConflictEngineManager extends EngineManager {
@@ -4716,6 +4744,9 @@ class EngineManagerLifecycleReservationTest {
     private final Board previousBoard = Lizzie.board;
     private final LizzieFrame previousFrame = Lizzie.frame;
     private final BottomToolbar previousToolbar = LizzieFrame.toolbar;
+    private final Menu previousMenu = LizzieFrame.menu;
+    private final JFontMenu previousEngineMenu = Menu.engineMenu;
+    private final BoardRenderer previousBoardRenderer = LizzieFrame.boardRenderer;
     private final Config previousConfig = Lizzie.config;
     private final boolean previousEmpty = EngineManager.isEmpty;
     private final int previousEngineNo = EngineManager.currentEngineNo;
@@ -4732,6 +4763,9 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.config = config;
       Lizzie.frame = allocate(CountingRestartGateFrame.class);
       LizzieFrame.toolbar = allocate(SilentSwitchToolbar.class);
+      LizzieFrame.menu = allocate(SilentUpdateMenu.class);
+      Menu.engineMenu = new SilentJFontMenu();
+      LizzieFrame.boardRenderer = new BoardRenderer(false);
       Lizzie.board = preparedRestoreBoard();
       engines.forEach(
           engine -> {
@@ -4762,6 +4796,9 @@ class EngineManagerLifecycleReservationTest {
       Lizzie.board = previousBoard;
       Lizzie.frame = previousFrame;
       LizzieFrame.toolbar = previousToolbar;
+      LizzieFrame.menu = previousMenu;
+      Menu.engineMenu = previousEngineMenu;
+      LizzieFrame.boardRenderer = previousBoardRenderer;
       Lizzie.config = previousConfig;
       EngineManager.isEmpty = previousEmpty;
       EngineManager.currentEngineNo = previousEngineNo;
@@ -4890,6 +4927,12 @@ class EngineManagerLifecycleReservationTest {
     public boolean resetMovelistFrameandAnalysisFrame() {
       return false;
     }
+
+    @Override
+    public void requestProblemListRefresh() {}
+
+    @Override
+    public void refresh() {}
   }
 
   private static final class CountingRestartMenu extends Menu {

@@ -3113,16 +3113,17 @@ public class EngineManager {
 
         Lizzie.board.getHistory().getGameInfo().setKomi(newEng.komi);
         Lizzie.config.leelaversion = newEng.version;
-        Runnable runnable =
-            new Runnable() {
-              public void run() {
-                LizzieFrame.toolbar.reSetButtonLocation();
-                if (Lizzie.frame.resetMovelistFrameandAnalysisFrame())
-                  Lizzie.frame.setVisible(true);
+        var toolbar = LizzieFrame.toolbar;
+        var frame = Lizzie.frame;
+        SwingUtilities.invokeLater(
+            () -> {
+              if (toolbar != null) {
+                toolbar.reSetButtonLocation();
               }
-            };
-        Thread thread = new Thread(runnable);
-        thread.start();
+              if (frame != null && frame.resetMovelistFrameandAnalysisFrame()) {
+                frame.setVisible(true);
+              }
+            });
       }
       newEng.anaGameResignCount = 0;
       if (isMain) {

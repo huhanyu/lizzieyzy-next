@@ -7,11 +7,13 @@ import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.LeelazEngineCommandSink;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.AppleStyleSupport;
+import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.EngineData;
 import featurecat.lizzie.gui.FirstUseSettings;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.LoadEngine;
+import featurecat.lizzie.gui.Menu;
 import featurecat.lizzie.gui.web.WebBoardManager;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryNode;
@@ -946,28 +948,33 @@ public class Lizzie {
 
   public static void initializeAfterVersionCheck(
       boolean isEngineGame, Leelaz engine, boolean startPondering) {
+    Menu currentMenu = LizzieFrame.menu;
+    LizzieFrame currentFrame = frame;
+    BottomToolbar currentToolbar = LizzieFrame.toolbar;
     engine.canRestoreDymPda = true;
     if (EngineManager.isEngineGame()) {
-      if (engineManager.engineList.get(EngineManager.engineGameInfo.firstEngineIndex).isKataGoPda
-          || engineManager.engineList.get(EngineManager.engineGameInfo.secondEngineIndex)
-              .isKataGoPda) LizzieFrame.menu.showPda(true);
-      else LizzieFrame.menu.showPda(false);
+      if (currentMenu != null) {
+        currentMenu.showPda(
+            engineManager.engineList.get(EngineManager.engineGameInfo.firstEngineIndex).isKataGoPda
+                || engineManager.engineList.get(EngineManager.engineGameInfo.secondEngineIndex)
+                    .isKataGoPda);
+      }
     } else {
       boolean readBoardGmaActive =
-          frame != null
-              && frame.readBoard != null
-              && frame.readBoard.isReadBoardGmaAutoPlayActive();
-      if (frame != null
-          && (frame.isPlayingAgainstLeelaz
-              || (frame.isAnaPlayingAgainstLeelaz && !readBoardGmaActive))) {
+          currentFrame != null
+              && currentFrame.readBoard != null
+              && currentFrame.readBoard.isReadBoardGmaAutoPlayActive();
+      if (currentFrame != null
+          && (currentFrame.isPlayingAgainstLeelaz
+              || (currentFrame.isAnaPlayingAgainstLeelaz && !readBoardGmaActive))) {
         LizzieFrame.sendAiTime(false, engine, false);
       }
-      LizzieFrame.menu.showPda(Lizzie.leelaz.isKataGoPda);
+      if (currentMenu != null) currentMenu.showPda(engine.isKataGoPda);
     }
     if (engine != leelaz) return;
     markEngineReady();
 
-    if (!isEngineGame && !frame.isPlayingAgainstLeelaz) {
+    if (!isEngineGame && currentFrame != null && !currentFrame.isPlayingAgainstLeelaz) {
       if (startPondering && !Lizzie.config.notStartPondering) {
         leelaz.ponder();
         leelaz.setResponseUpToDate();
@@ -980,14 +987,15 @@ public class Lizzie {
       }
     }
     SwingUtilities.invokeLater(
-        new Thread() {
-          public void run() {
-            LizzieFrame.menu.updateMenuStatusForEngine();
-            if (!Lizzie.frame.syncBoard) Lizzie.frame.reSetLoc();
-            LizzieFrame.toolbar.reSetButtonLocation();
-            if (!isEngineGame) {
-              if (Lizzie.frame.resetMovelistFrameandAnalysisFrame()) frame.setVisible(true);
-            }
+        () -> {
+          if (engine != leelaz) return;
+          if (currentMenu != null) currentMenu.updateMenuStatusForEngine();
+          if (currentFrame != null && !currentFrame.syncBoard) currentFrame.reSetLoc();
+          if (currentToolbar != null) currentToolbar.reSetButtonLocation();
+          if (!isEngineGame
+              && currentFrame != null
+              && currentFrame.resetMovelistFrameandAnalysisFrame()) {
+            currentFrame.setVisible(true);
           }
         });
   }

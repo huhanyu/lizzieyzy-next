@@ -42,6 +42,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -4638,6 +4639,7 @@ class LeelazReadBoardGmaTest {
     }
 
     private static Harness open() throws Exception {
+      drainEventQueue();
       Harness harness =
           new Harness(
               Lizzie.config,
@@ -4661,7 +4663,8 @@ class LeelazReadBoardGmaTest {
     }
 
     @Override
-    public void close() {
+    public void close() throws Exception {
+      drainEventQueue();
       Lizzie.config = previousConfig;
       Lizzie.frame = previousFrame;
       Lizzie.gtpConsole = previousGtpConsole;
@@ -4670,6 +4673,12 @@ class LeelazReadBoardGmaTest {
       Lizzie.board = previousBoard;
       LizzieFrame.menu = previousMenu;
       EngineManager.isEngineGame = previousEngineGameFlag;
+    }
+
+    private static void drainEventQueue() throws InvocationTargetException, InterruptedException {
+      if (!SwingUtilities.isEventDispatchThread()) {
+        SwingUtilities.invokeAndWait(() -> {});
+      }
     }
   }
 
@@ -4854,6 +4863,14 @@ class LeelazReadBoardGmaTest {
 
     @Override
     public void refresh() {}
+
+    @Override
+    public void reSetLoc() {}
+
+    @Override
+    public boolean resetMovelistFrameandAnalysisFrame() {
+      return false;
+    }
   }
 
   private static final class SilentMenu extends Menu {
@@ -4861,6 +4878,12 @@ class LeelazReadBoardGmaTest {
 
     @Override
     public void toggleEngineMenuStatus(boolean isPondering, boolean isThinking) {}
+
+    @Override
+    public void showPda(boolean show) {}
+
+    @Override
+    public void updateMenuStatusForEngine() {}
   }
 
   private static final class ShortGmaRestoreTimeoutLeelaz extends Leelaz {
