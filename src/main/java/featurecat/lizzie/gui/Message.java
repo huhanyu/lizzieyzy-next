@@ -25,6 +25,7 @@ public class Message extends JDialog {
     setTitle(resourceBundle.getString("Message.title")); // "消息提醒");
     setAlwaysOnTop(true);
     setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+    AccessibilitySupport.installEscapeAction(getRootPane(), this, this::closeAndDispose);
     //  setLocationByPlatform(true);
     lblmessage = new JLabel("", JLabel.CENTER);
     getContentPane().setBackground(MessageTheme.background());

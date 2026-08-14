@@ -156,6 +156,8 @@ public class AnalysisEngine {
   private long remoteGtpStopAckGeneration;
   private long remoteGtpLastCompletionActivityMillis;
   private Leelaz sharedForegroundEngine;
+  private boolean automaticPrimaryForegroundReuse;
+  private String automaticPrimaryForegroundCommand;
   private boolean sharedForegroundLeaseStarting;
   private boolean sharedForegroundLeaseActive;
   private Leelaz.ForegroundAnalysisLease sharedForegroundLease;
@@ -215,15 +217,29 @@ public class AnalysisEngine {
     this.purpose =
         purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
     this.persistentPreload = persistentPreload;
+    String foregroundCommand = Lizzie.leelaz == null ? null : Lizzie.leelaz.engineCommand();
+    boolean lightweightQuickModelRequested =
+        commandOverride != null && !commandOverride.trim().isEmpty();
+    automaticPrimaryForegroundReuse =
+        shouldAutomaticallyReusePrimaryForeground(
+            this.purpose,
+            RemoteComputeConfig.isRemoteComputeEngineCommand(foregroundCommand),
+            KataGoRuntimeHelper.isBundledNvidiaCommand(foregroundCommand),
+            KataGoRuntimeHelper.isBundledTensorRtCommand(foregroundCommand),
+            lightweightQuickModelRequested);
     this.dedicatedLightweightQuickModel =
         this.purpose == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS
-            && commandOverride != null
-            && !commandOverride.trim().isEmpty();
+            && !automaticPrimaryForegroundReuse
+            && lightweightQuickModelRequested;
     this.dedicatedLightweightQuickModelCommand =
         this.dedicatedLightweightQuickModel ? commandOverride.trim() : "";
-    if (Lizzie.config.analysisReuseCurrentEngine) {
+    if (Lizzie.config.analysisReuseCurrentEngine || automaticPrimaryForegroundReuse) {
       useRemoteCompute = true;
       sharedForegroundEngine = Lizzie.leelaz;
+      automaticPrimaryForegroundCommand =
+          automaticPrimaryForegroundReuse && sharedForegroundEngine != null
+              ? sharedForegroundEngine.engineCommand()
+              : null;
       foregroundLeaseAvailability =
           sharedForegroundEngine == null
               ? Leelaz.ExclusiveGtpLeaseAvailability.NO_FOREGROUND_ENGINE
@@ -265,6 +281,18 @@ public class AnalysisEngine {
     return commandOverride == null || commandOverride.trim().isEmpty()
         ? Lizzie.config.analysisEngineCommand
         : commandOverride;
+  }
+
+  static boolean shouldAutomaticallyReusePrimaryForeground(
+      AnalysisResourceCoordinator.Purpose purpose,
+      boolean remotePrimary,
+      boolean bundledNvidiaPrimary,
+      boolean bundledTensorRtPrimary,
+      boolean lightweightQuickModelRequested) {
+    return purpose == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS
+        && ((remotePrimary && !lightweightQuickModelRequested)
+            || (bundledNvidiaPrimary
+                && (bundledTensorRtPrimary || !lightweightQuickModelRequested)));
   }
 
   static boolean shouldShowGeneratedConfigNotice(boolean isPreLoad, boolean generatedConfig) {
@@ -1056,16 +1084,24 @@ public class AnalysisEngine {
   }
 
   public void normalQuit() {
-    // TODO Auto-generated method stub
+    normalQuit(null);
+  }
+
+  /** Stops this worker and runs {@code afterRestore} once any shared foreground lease is restored. */
+  public void normalQuit(Runnable afterRestore) {
     requestShutdown();
     isNormalEnd = true;
     AnalysisResourceCoordinator.processStopped(this, purpose, process);
     shutdownRemoteGtpSetupAckTimeoutExecutor();
     if (sharedForegroundEngine != null) {
       requestDispatchFailed = true;
-      finishFailedRequestDispatch(false);
+      finishFailedRequestDispatch(false, afterRestore);
     } else {
-      releaseSharedForegroundLease();
+      boolean restorePending =
+          releaseSharedForegroundLease(afterRestore, afterRestore);
+      if (!restorePending && afterRestore != null) {
+        afterRestore.run();
+      }
     }
     if (this.useJavaSSH) {
       if (this.javaSSH != null) this.javaSSH.close();
@@ -1301,6 +1337,7 @@ public class AnalysisEngine {
 
   private int startRequestMissingMainlineNow(boolean showProgressDialog) {
     prepareRequestState(showProgressDialog);
+    captureCurrentGameIdentity();
     if (useRemoteCompute) {
       enqueueRemoteGtpMainlineRequests(
           targetAnalysisVisitsForCurrentRequest(showProgressDialog),
@@ -1309,6 +1346,7 @@ public class AnalysisEngine {
       BoardHistoryNode node = firstHistoryActionNode(Lizzie.board.getHistory().getStart());
       while (node != null) {
         if (shouldAnalyzeMissingNode(node)) {
+          captureRequestPosition(node);
           if (!sendRequest(node)) break;
         }
         node = nextHistoryActionNode(node);
@@ -1489,6 +1527,29 @@ public class AnalysisEngine {
     pauseForegroundAnalysisForRequest(showProgressDialog);
   }
 
+  private void captureCurrentGameIdentity() {
+    requestHistoryRoot =
+        Lizzie.board == null || Lizzie.board.getHistory() == null
+            ? null
+            : Lizzie.board.getHistory().getStart();
+    requestBoardWidth = Board.boardWidth;
+    requestBoardHeight = Board.boardHeight;
+    requestKomi =
+        Lizzie.board == null
+                || Lizzie.board.getHistory() == null
+                || Lizzie.board.getHistory().getGameInfo() == null
+            ? Double.NaN
+            : Lizzie.board.getHistory().getGameInfo().getKomi();
+    requestRulesSignature = currentAnalysisRulesSignature();
+  }
+
+  private void captureRequestPosition(BoardHistoryNode node) {
+    if (node != null && node.getData() != null) {
+      requestPositionFingerprints()
+          .put(node, WholeGameAnalysisPlan.PositionFingerprint.capture(node.getData()));
+    }
+  }
+
   static boolean shouldPauseForegroundAnalysisForRequest(
       boolean sharedForegroundEngine, boolean showProgressDialog, boolean automaticBackgroundTask) {
     return !sharedForegroundEngine && (showProgressDialog || automaticBackgroundTask);
@@ -1543,6 +1604,11 @@ public class AnalysisEngine {
   }
 
   private void finishFailedRequestDispatch(boolean showProgressDialog) {
+    finishFailedRequestDispatch(showProgressDialog, null);
+  }
+
+  private void finishFailedRequestDispatch(
+      boolean showProgressDialog, Runnable afterForegroundRestore) {
     Runnable failedRequestCallback = failureCallback;
     analyzeMap.clear();
     remoteGtpQueue().clear();
@@ -1568,7 +1634,8 @@ public class AnalysisEngine {
         failedRequestCallback == null
             ? null
             : () -> javax.swing.SwingUtilities.invokeLater(failedRequestCallback);
-    boolean restorePending = releaseSharedForegroundLease(deliverFailure, deliverFailure);
+    Runnable finishRestore = chainCallbacks(deliverFailure, afterForegroundRestore);
+    boolean restorePending = releaseSharedForegroundLease(finishRestore, finishRestore);
     resumeForegroundAnalysisIfRequested();
     if (Lizzie.frame.isBatchAnalysisMode) Lizzie.frame.isBatchAnalysisMode = false;
     if (waitFrame != null || showProgressDialog) {
@@ -1590,9 +1657,25 @@ public class AnalysisEngine {
             }
           });
     }
-    if (!restorePending && deliverFailure != null) {
-      deliverFailure.run();
+    if (!restorePending && finishRestore != null) {
+      finishRestore.run();
     }
+  }
+
+  private static Runnable chainCallbacks(Runnable first, Runnable second) {
+    if (first == null) {
+      return second;
+    }
+    if (second == null) {
+      return first;
+    }
+    return () -> {
+      try {
+        first.run();
+      } finally {
+        second.run();
+      }
+    };
   }
 
   public boolean sendRequest(BoardHistoryNode analyzeNode) {
@@ -1714,6 +1797,7 @@ public class AnalysisEngine {
       if (commands == null) {
         commands = buildRemoteGtpSetupCommands(selectedNode);
       }
+      captureRequestPosition(selectedNode);
       enqueueRemoteGtpRequest(selectedNode, Math.max(1, targetVisits), commands);
       previousQueuedNode = selectedNode;
     }
@@ -2366,7 +2450,7 @@ public class AnalysisEngine {
 
   private static boolean shouldAnalyzeMissingNode(BoardHistoryNode node) {
     BoardData data = node == null ? null : node.getData();
-    return isRealHistoryAction(data) && !data.hasPrimaryAnalysisPayload();
+    return isRealHistoryAction(data) && !data.hasDisplayablePrimaryAnalysis();
   }
 
   public static int targetAnalysisVisits() {
@@ -2391,7 +2475,13 @@ public class AnalysisEngine {
           .isPresent();
     }
     if (sharedForegroundEngine != null) {
-      return Lizzie.config.analysisReuseCurrentEngine && sharedForegroundEngine == Lizzie.leelaz;
+      boolean automaticReuseStillMatches =
+          automaticPrimaryForegroundReuse
+              && Lizzie.leelaz != null
+              && automaticPrimaryForegroundCommand != null
+              && automaticPrimaryForegroundCommand.equals(Lizzie.leelaz.engineCommand());
+      return (Lizzie.config.analysisReuseCurrentEngine || automaticReuseStillMatches)
+          && sharedForegroundEngine == Lizzie.leelaz;
     }
     if (Lizzie.config.analysisReuseCurrentEngine) {
       return false;
@@ -2403,6 +2493,10 @@ public class AnalysisEngine {
 
   public boolean usesSharedForegroundEngine() {
     return sharedForegroundEngine != null;
+  }
+
+  public boolean usesAutomaticPrimaryForegroundReuse() {
+    return automaticPrimaryForegroundReuse;
   }
 
   public AnalysisResourceCoordinator.Purpose purpose() {
@@ -2538,6 +2632,7 @@ public class AnalysisEngine {
             && Lizzie.board.getHistory() != null
             && Lizzie.board.getHistory().getStart() == historyRoot
             && (kind == ForegroundRequestKind.WHOLE_GAME
+                || kind == ForegroundRequestKind.MISSING_MAINLINE
                 || (Lizzie.board.getHistory().getCurrentHistoryNode() == historyNode
                     && Lizzie.board.getHistory().getZobrist().equals(boardPosition)
                     && Lizzie.board.getHistory().isBlacksTurn() == blackToPlay
@@ -2627,6 +2722,15 @@ public class AnalysisEngine {
 
   public synchronized boolean isAnalysisInProgress() {
     return analyzeMap.size() > 0 && responseCount < analyzeMap.size();
+  }
+
+  /** Includes requests that are still acquiring or restoring a shared foreground-engine lease. */
+  public synchronized boolean hasRequestLifecycleInProgress() {
+    return pendingForegroundRequest != null
+        || sharedForegroundHandoffOwner != null
+        || sharedForegroundLeaseStarting
+        || sharedForegroundLeaseActive
+        || isAnalysisInProgress();
   }
 
   /** Silent analysis is safe to pause and resume when the user explicitly changes engines. */
