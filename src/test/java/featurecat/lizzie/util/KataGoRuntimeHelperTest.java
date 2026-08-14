@@ -223,6 +223,13 @@ public class KataGoRuntimeHelperTest {
           assertTrue(KataGoRuntimeHelper.isBundledTensorRtPath(namedEngine));
           assertTrue(KataGoRuntimeHelper.isBundledTensorRtPath(markedEngine));
           assertTrue(
+              KataGoRuntimeHelper.isBundledNvidiaCommand(
+                  "\""
+                      + markedEngine
+                      + "\" gtp -model \""
+                      + tempRoot.resolve("weight.bin.gz")
+                      + "\""));
+          assertTrue(
               KataGoRuntimeHelper.isBundledTensorRtCommand(
                   "\""
                       + markedEngine
@@ -233,6 +240,7 @@ public class KataGoRuntimeHelperTest {
           Files.writeString(
               markedDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia50-cuda\n");
           assertFalse(KataGoRuntimeHelper.isBundledTensorRtPath(markedEngine));
+          assertTrue(KataGoRuntimeHelper.isBundledNvidiaCommand(markedEngine.toString()));
         });
   }
 

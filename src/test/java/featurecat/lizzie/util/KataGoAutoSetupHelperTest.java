@@ -338,7 +338,9 @@ public class KataGoAutoSetupHelperTest {
       {"opencl", KataGoAutoSetupHelper.PackageFlavor.OPENCL},
       {"nvidia", KataGoAutoSetupHelper.PackageFlavor.NVIDIA},
       {"nvidia50.cuda", KataGoAutoSetupHelper.PackageFlavor.NVIDIA50_CUDA},
+      {"nvidia.tensorrt", KataGoAutoSetupHelper.PackageFlavor.TENSORRT},
       {"nvidia-tensorrt", KataGoAutoSetupHelper.PackageFlavor.TENSORRT},
+      {"NVIDIA TensorRT", KataGoAutoSetupHelper.PackageFlavor.TENSORRT},
       {"cpu", KataGoAutoSetupHelper.PackageFlavor.CPU},
       {"with-katago", KataGoAutoSetupHelper.PackageFlavor.WITH_KATAGO}
     };

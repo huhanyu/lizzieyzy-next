@@ -119,6 +119,9 @@ public class KataGoAutoSetupDialog extends JDialog {
   private static final int GPU_INFO_TEXT_LENGTH = 132;
   private static final int DIALOG_WIDTH = 1200;
   private static final int DIALOG_HEIGHT = 900;
+  private static final int SIDEBAR_MIN_WIDTH = 218;
+  private static final int SIDEBAR_MAX_WIDTH = 330;
+  private static final int SIDEBAR_TEXT_CHROME_WIDTH = 100;
   private static final int VALUE_COLUMN_WIDTH = 390;
   private static final int WEIGHT_CATALOG_ROW_HEIGHT = 34;
   private static final int WEIGHT_CATALOG_VISIBLE_ROWS = 6;
@@ -636,16 +639,15 @@ public class KataGoAutoSetupDialog extends JDialog {
 
   private JPanel createSidebarPanel() {
     JPanel sidebar = new SidebarBackdropPanel();
-    sidebar.setPreferredSize(new Dimension(218, 10));
     sidebar.setBorder(BorderFactory.createEmptyBorder(20, 12, 16, 12));
 
-    sectionNav.setListData(
-        new String[] {
-          text("AutoSetup.navOverview"),
-          text("AutoSetup.navWeights"),
-          text("AutoSetup.navBenchmark"),
-          text("AutoSetup.navAcceleration")
-        });
+    String[] sectionLabels = {
+      text("AutoSetup.navOverview"),
+      text("AutoSetup.navWeights"),
+      text("AutoSetup.navBenchmark"),
+      text("AutoSetup.navAcceleration")
+    };
+    sectionNav.setListData(sectionLabels);
     sectionNav.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     sectionNav.setSelectedIndex(0);
     sectionNav.setFixedCellHeight(58);
@@ -684,6 +686,15 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnRemoteCompute.setText(text("Menu.remoteCompute"));
     btnRemoteCompute.setIcon(new NavIcon(4, false));
     btnRemoteCompute.addActionListener(event -> openRemoteComputeCenter());
+
+    Font sidebarFont = deriveSidebarNavFont(sectionNav.getFont(), null, true);
+    FontMetrics sidebarMetrics = sectionNav.getFontMetrics(sidebarFont);
+    String[] measuredLabels = new String[sectionLabels.length + 1];
+    System.arraycopy(sectionLabels, 0, measuredLabels, 0, sectionLabels.length);
+    measuredLabels[sectionLabels.length] = btnRemoteCompute.getText();
+    int sidebarWidth = localizedSidebarWidth(sidebarMetrics, measuredLabels);
+    sidebar.setPreferredSize(new Dimension(sidebarWidth, 10));
+    btnRemoteCompute.setPreferredSize(new Dimension(sidebarWidth - 24, 54));
 
     JPanel navigation = new JPanel(new GridBagLayout());
     navigation.setOpaque(false);
@@ -5293,6 +5304,20 @@ public class KataGoAutoSetupDialog extends JDialog {
       base = new Font(Font.DIALOG, Font.PLAIN, 12);
     }
     return base.deriveFont(selected ? Font.BOLD : Font.PLAIN, base.getSize2D() + 1.5f);
+  }
+
+  static int localizedSidebarWidth(FontMetrics metrics, String... labels) {
+    int widestText = 0;
+    if (metrics != null && labels != null) {
+      for (String label : labels) {
+        if (label != null) {
+          widestText = Math.max(widestText, metrics.stringWidth(label));
+        }
+      }
+    }
+    return Math.max(
+        SIDEBAR_MIN_WIDTH,
+        Math.min(SIDEBAR_MAX_WIDTH, widestText + SIDEBAR_TEXT_CHROME_WIDTH));
   }
 
   private static final class SidebarNavRenderer extends JPanel implements ListCellRenderer<String> {

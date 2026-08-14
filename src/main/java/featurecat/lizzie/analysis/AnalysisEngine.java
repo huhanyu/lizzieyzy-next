@@ -156,8 +156,8 @@ public class AnalysisEngine {
   private long remoteGtpStopAckGeneration;
   private long remoteGtpLastCompletionActivityMillis;
   private Leelaz sharedForegroundEngine;
-  private boolean automaticTensorRtForegroundReuse;
-  private String automaticTensorRtForegroundCommand;
+  private boolean automaticPrimaryForegroundReuse;
+  private String automaticPrimaryForegroundCommand;
   private boolean sharedForegroundLeaseStarting;
   private boolean sharedForegroundLeaseActive;
   private Leelaz.ForegroundAnalysisLease sharedForegroundLease;
@@ -217,23 +217,27 @@ public class AnalysisEngine {
     this.purpose =
         purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
     this.persistentPreload = persistentPreload;
-    automaticTensorRtForegroundReuse =
-        shouldAutomaticallyReuseTensorRtForeground(
+    String foregroundCommand = Lizzie.leelaz == null ? null : Lizzie.leelaz.engineCommand();
+    boolean lightweightQuickModelRequested =
+        commandOverride != null && !commandOverride.trim().isEmpty();
+    automaticPrimaryForegroundReuse =
+        shouldAutomaticallyReusePrimaryForeground(
             this.purpose,
-            KataGoRuntimeHelper.isBundledTensorRtCommand(
-                Lizzie.leelaz == null ? null : Lizzie.leelaz.engineCommand()));
+            RemoteComputeConfig.isRemoteComputeEngineCommand(foregroundCommand),
+            KataGoRuntimeHelper.isBundledNvidiaCommand(foregroundCommand),
+            KataGoRuntimeHelper.isBundledTensorRtCommand(foregroundCommand),
+            lightweightQuickModelRequested);
     this.dedicatedLightweightQuickModel =
         this.purpose == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS
-            && !automaticTensorRtForegroundReuse
-            && commandOverride != null
-            && !commandOverride.trim().isEmpty();
+            && !automaticPrimaryForegroundReuse
+            && lightweightQuickModelRequested;
     this.dedicatedLightweightQuickModelCommand =
         this.dedicatedLightweightQuickModel ? commandOverride.trim() : "";
-    if (Lizzie.config.analysisReuseCurrentEngine || automaticTensorRtForegroundReuse) {
+    if (Lizzie.config.analysisReuseCurrentEngine || automaticPrimaryForegroundReuse) {
       useRemoteCompute = true;
       sharedForegroundEngine = Lizzie.leelaz;
-      automaticTensorRtForegroundCommand =
-          automaticTensorRtForegroundReuse && sharedForegroundEngine != null
+      automaticPrimaryForegroundCommand =
+          automaticPrimaryForegroundReuse && sharedForegroundEngine != null
               ? sharedForegroundEngine.engineCommand()
               : null;
       foregroundLeaseAvailability =
@@ -279,10 +283,16 @@ public class AnalysisEngine {
         : commandOverride;
   }
 
-  static boolean shouldAutomaticallyReuseTensorRtForeground(
-      AnalysisResourceCoordinator.Purpose purpose, boolean bundledTensorRtPrimary) {
+  static boolean shouldAutomaticallyReusePrimaryForeground(
+      AnalysisResourceCoordinator.Purpose purpose,
+      boolean remotePrimary,
+      boolean bundledNvidiaPrimary,
+      boolean bundledTensorRtPrimary,
+      boolean lightweightQuickModelRequested) {
     return purpose == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS
-        && bundledTensorRtPrimary;
+        && ((remotePrimary && !lightweightQuickModelRequested)
+            || (bundledNvidiaPrimary
+                && (bundledTensorRtPrimary || !lightweightQuickModelRequested)));
   }
 
   static boolean shouldShowGeneratedConfigNotice(boolean isPreLoad, boolean generatedConfig) {
@@ -2466,10 +2476,10 @@ public class AnalysisEngine {
     }
     if (sharedForegroundEngine != null) {
       boolean automaticReuseStillMatches =
-          automaticTensorRtForegroundReuse
+          automaticPrimaryForegroundReuse
               && Lizzie.leelaz != null
-              && automaticTensorRtForegroundCommand != null
-              && automaticTensorRtForegroundCommand.equals(Lizzie.leelaz.engineCommand());
+              && automaticPrimaryForegroundCommand != null
+              && automaticPrimaryForegroundCommand.equals(Lizzie.leelaz.engineCommand());
       return (Lizzie.config.analysisReuseCurrentEngine || automaticReuseStillMatches)
           && sharedForegroundEngine == Lizzie.leelaz;
     }
@@ -2485,8 +2495,8 @@ public class AnalysisEngine {
     return sharedForegroundEngine != null;
   }
 
-  public boolean usesAutomaticTensorRtForegroundReuse() {
-    return automaticTensorRtForegroundReuse;
+  public boolean usesAutomaticPrimaryForegroundReuse() {
+    return automaticPrimaryForegroundReuse;
   }
 
   public AnalysisResourceCoordinator.Purpose purpose() {
