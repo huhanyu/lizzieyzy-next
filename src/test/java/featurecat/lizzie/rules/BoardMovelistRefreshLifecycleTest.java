@@ -14,8 +14,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BoardMovelistRefreshLifecycleTest {
-  private static final int BOARD_SIZE = 3;
-
   @Test
   void refreshUsesItsBoardInstanceWhenTheGlobalBoardIsUnavailable() throws Exception {
     Board previousBoard = Lizzie.board;
@@ -71,12 +69,12 @@ class BoardMovelistRefreshLifecycleTest {
   }
 
   private static BoardHistoryList singleNodeHistory() {
-    return new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+    return new BoardHistoryList(BoardData.empty(Board.boardWidth, Board.boardHeight));
   }
 
   private static BoardHistoryList twoNodeHistory() {
     BoardHistoryList history = singleNodeHistory();
-    history.add(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+    history.add(BoardData.empty(Board.boardWidth, Board.boardHeight));
     return history;
   }
 
