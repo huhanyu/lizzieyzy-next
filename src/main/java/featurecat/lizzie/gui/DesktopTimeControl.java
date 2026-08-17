@@ -13,6 +13,12 @@ public final class DesktopTimeControl {
     KATAGO_ADVANCED
   }
 
+  public enum SideMode {
+    ENGINE_OWNED,
+    FIXED,
+    RAW_ADVANCED
+  }
+
   private DesktopTimeControl() {}
 
   static Mode selectedMode(boolean rawAdvanced, boolean kataGoAdvanced) {
@@ -35,9 +41,18 @@ public final class DesktopTimeControl {
 
   public static boolean rejectsEngineGame(
       List<Leelaz> engines, int blackEngineIndex, int whiteEngineIndex, boolean advancedClock) {
-    return advancedClock
-        && (isWebSocket(engines.get(blackEngineIndex))
-            || isWebSocket(engines.get(whiteEngineIndex)));
+    SideMode mode = advancedClock ? SideMode.RAW_ADVANCED : SideMode.FIXED;
+    return rejectsEngineGame(engines, blackEngineIndex, whiteEngineIndex, mode, mode);
+  }
+
+  public static boolean rejectsEngineGame(
+      List<Leelaz> engines,
+      int blackEngineIndex,
+      int whiteEngineIndex,
+      SideMode black,
+      SideMode white) {
+    return (black == SideMode.RAW_ADVANCED && isWebSocket(engines.get(blackEngineIndex)))
+        || (white == SideMode.RAW_ADVANCED && isWebSocket(engines.get(whiteEngineIndex)));
   }
 
   static boolean submitHumanSelection(
@@ -78,6 +93,44 @@ public final class DesktopTimeControl {
   static void commitEngineGameSelection(Config config, boolean advancedClock) {
     config.pkAdvanceTimeSettings = advancedClock;
     config.uiConfig.put("pk-advance-time-settings", advancedClock);
+  }
+
+  public static void commitEngineGameSelection(Config config, SideMode black, SideMode white) {
+    config.uiConfig.put("pk-black-time-mode", black.name());
+    config.uiConfig.put("pk-white-time-mode", white.name());
+    config.pkAdvanceTimeSettings =
+        black == SideMode.RAW_ADVANCED && white == SideMode.RAW_ADVANCED;
+    config.uiConfig.put("pk-advance-time-settings", config.pkAdvanceTimeSettings);
+  }
+
+
+  static SideMode selectedEngineGameSideMode(boolean advanced, boolean engineOwned) {
+    if (engineOwned) return SideMode.ENGINE_OWNED;
+    if (advanced) return SideMode.RAW_ADVANCED;
+    return SideMode.FIXED;
+  }
+
+  public static SideMode loadEngineGameSideMode(Config config, boolean black) {
+    String key = black ? "pk-black-time-mode" : "pk-white-time-mode";
+    if (config.uiConfig.has(key)) {
+      return SideMode.valueOf(config.uiConfig.getString(key));
+    }
+    return config.pkAdvanceTimeSettings ? SideMode.RAW_ADVANCED : SideMode.FIXED;
+  }
+
+  public static void applyEngineGameTime(
+      Leelaz engine, SideMode mode, int fixedSeconds, String advancedCommand) {
+    if (mode == SideMode.ENGINE_OWNED) return;
+    if (mode == SideMode.FIXED) {
+      sendEngineGameFixedTime(engine, fixedSeconds);
+      return;
+    }
+    engine.sendCommand(advancedCommand);
+  }
+
+  static int fixedSecondsForToolbar(
+      SideMode mode, boolean toolbarTimeSelected, int parsedSeconds) {
+    return mode == SideMode.FIXED && toolbarTimeSelected ? parsedSeconds : -1;
   }
 
   public static void sendEngineGameFixedTime(Leelaz engine, int seconds) {

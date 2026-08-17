@@ -61,7 +61,8 @@ public class NewEngineGameDialog extends JDialog {
   private JComboBox<String> cbxRandomSgf;
 
   private JCheckBox chkDisableWRNInGame;
-  private JCheckBox chkUseAdvanceTime;
+  private JComboBox<String> cmbBlackTimeMode;
+  private JComboBox<String> cmbWhiteTimeMode;
   private JCheckBox chkSGFstart;
   private JFontCheckBox chkContinuePlay;
   private JFontButton btnSGFstart;
@@ -297,6 +298,7 @@ public class NewEngineGameDialog extends JDialog {
     JFontLabel lblTime =
         new JFontLabel(
             Lizzie.resourceBundle.getString("NewEngineGameDialog.lblTime")); // ("每手时间(秒)");
+    LizzieFrame.toolbar.chkenginePkTime.setEnabled(true);
     if (!LizzieFrame.toolbar.chkenginePkTime.isSelected()) {
       LizzieFrame.toolbar.txtenginePkTime.setEnabled(false);
       LizzieFrame.toolbar.txtenginePkTimeWhite.setEnabled(false);
@@ -407,32 +409,8 @@ public class NewEngineGameDialog extends JDialog {
     aboutAdvanceTimeSettings.setPreferredSize(new Dimension(controlHeight(), controlHeight()));
     aboutAdvanceTimeSettings.setFocusable(false);
 
-    chkUseAdvanceTime = new JFontCheckBox(); // $NON-NLS-1$
-    if (!LizzieFrame.toolbar.isGenmoveToolbar) chkUseAdvanceTime.setEnabled(false);
-
-    chkUseAdvanceTime.addActionListener(
-        new ActionListener() {
-          @Override
-          public void actionPerformed(ActionEvent e) {
-            // TODO Auto-generated method stub
-            if (chkUseAdvanceTime.isSelected()) {
-              LizzieFrame.toolbar.chkenginePkTime.setEnabled(false);
-              LizzieFrame.toolbar.txtenginePkTime.setEnabled(false);
-              LizzieFrame.toolbar.txtenginePkTimeWhite.setEnabled(false);
-              txtBlackAdvanceTime.setEnabled(true);
-              txtWhiteAdvanceTime.setEnabled(true);
-            } else {
-              LizzieFrame.toolbar.chkenginePkTime.setEnabled(true);
-              if (LizzieFrame.toolbar.chkenginePkTime.isSelected()) {
-                LizzieFrame.toolbar.txtenginePkTime.setEnabled(true);
-                LizzieFrame.toolbar.txtenginePkTimeWhite.setEnabled(true);
-              }
-              txtBlackAdvanceTime.setEnabled(false);
-              txtWhiteAdvanceTime.setEnabled(false);
-            }
-          }
-        });
-    chkUseAdvanceTime.setSelected(Lizzie.config.pkAdvanceTimeSettings);
+    cmbBlackTimeMode = createEngineGameTimeModeCombo(true);
+    cmbWhiteTimeMode = createEngineGameTimeModeCombo(false);
 
     JCheckBox checkBoxAllowPonder =
         new JFontCheckBox(
@@ -518,6 +496,8 @@ public class NewEngineGameDialog extends JDialog {
     setPreferredControlWidth(enginePkWhite, engineColumnWidth);
     setPreferredControlWidth(LizzieFrame.toolbar.txtenginePkTime, engineColumnWidth);
     setPreferredControlWidth(LizzieFrame.toolbar.txtenginePkTimeWhite, engineColumnWidth);
+    setPreferredControlWidth(cmbBlackTimeMode, engineColumnWidth);
+    setPreferredControlWidth(cmbWhiteTimeMode, engineColumnWidth);
     setPreferredControlWidth(txtBlackAdvanceTime, engineColumnWidth);
     setPreferredControlWidth(txtWhiteAdvanceTime, engineColumnWidth);
     setPreferredControlWidth(LizzieFrame.toolbar.txtenginePkPlayputs, engineColumnWidth);
@@ -538,20 +518,27 @@ public class NewEngineGameDialog extends JDialog {
     addEngineRow(
         enginePanel,
         3,
+        new JFontLabel(""),
+        null,
+        cmbBlackTimeMode,
+        cmbWhiteTimeMode);
+    addEngineRow(
+        enginePanel,
+        4,
         inlinePanel(lblAdvanceTime, aboutAdvanceTimeSettings),
-        chkUseAdvanceTime,
+        null,
         txtBlackAdvanceTime,
         txtWhiteAdvanceTime);
     addEngineRow(
         enginePanel,
-        4,
+        5,
         lblPlayout,
         LizzieFrame.toolbar.chkenginePkPlayouts,
         LizzieFrame.toolbar.txtenginePkPlayputs,
         LizzieFrame.toolbar.txtenginePkPlayputsWhite);
     addEngineRow(
         enginePanel,
-        5,
+        6,
         lblFirstPlayout,
         LizzieFrame.toolbar.chkenginePkFirstPlayputs,
         LizzieFrame.toolbar.txtenginePkFirstPlayputs,
@@ -837,27 +824,48 @@ public class NewEngineGameDialog extends JDialog {
     chkDisableWRNInGame.setVisible(!genmoveMode);
     resignControls.setVisible(!genmoveMode);
     resignThresoldHint.setVisible(genmoveMode);
-    chkUseAdvanceTime.setEnabled(genmoveMode);
-
-    if (genmoveMode && chkUseAdvanceTime.isSelected()) {
-      LizzieFrame.toolbar.chkenginePkTime.setEnabled(false);
-      LizzieFrame.toolbar.txtenginePkTime.setEnabled(false);
-      LizzieFrame.toolbar.txtenginePkTimeWhite.setEnabled(false);
-      txtBlackAdvanceTime.setEnabled(true);
-      txtWhiteAdvanceTime.setEnabled(true);
-    } else {
-      LizzieFrame.toolbar.chkenginePkTime.setEnabled(true);
-      boolean standardTimeEnabled = LizzieFrame.toolbar.chkenginePkTime.isSelected();
-      LizzieFrame.toolbar.txtenginePkTime.setEnabled(standardTimeEnabled);
-      LizzieFrame.toolbar.txtenginePkTimeWhite.setEnabled(standardTimeEnabled);
-      txtBlackAdvanceTime.setEnabled(false);
-      txtWhiteAdvanceTime.setEnabled(false);
-    }
-    if (!genmoveMode) {
-      chkUseAdvanceTime.setEnabled(false);
-    }
+    cmbBlackTimeMode.setEnabled(genmoveMode);
+    cmbWhiteTimeMode.setEnabled(genmoveMode);
+    LizzieFrame.toolbar.chkenginePkTime.setEnabled(true);
+    boolean standardTimeEnabled = LizzieFrame.toolbar.chkenginePkTime.isSelected();
+    LizzieFrame.toolbar.txtenginePkTime.setEnabled(standardTimeEnabled);
+    LizzieFrame.toolbar.txtenginePkTimeWhite.setEnabled(standardTimeEnabled);
+    updateAdvanceTimeFieldEnabled();
     contentPanel.revalidate();
     contentPanel.repaint();
+  }
+
+  private JComboBox<String> createEngineGameTimeModeCombo(boolean black) {
+    JComboBox<String> combo = new JFontComboBox<String>();
+    combo.addItem(Lizzie.resourceBundle.getString("NewGameDialog.engineOwnedTime"));
+    combo.addItem(Lizzie.resourceBundle.getString("NewGameDialog.time"));
+    combo.addItem(Lizzie.resourceBundle.getString("NewEngineGameDialog.lblAdvanceTime"));
+    DesktopTimeControl.SideMode mode =
+        DesktopTimeControl.loadEngineGameSideMode(Lizzie.config, black);
+    int index = 1;
+    if (mode == DesktopTimeControl.SideMode.ENGINE_OWNED) {
+      index = 0;
+    } else if (mode == DesktopTimeControl.SideMode.RAW_ADVANCED) {
+      index = 2;
+    }
+    combo.setSelectedIndex(index);
+    combo.addActionListener(e -> updateAdvanceTimeFieldEnabled());
+    return combo;
+  }
+
+  private DesktopTimeControl.SideMode selectedSideMode(JComboBox<String> combo) {
+    return DesktopTimeControl.selectedEngineGameSideMode(
+        combo.getSelectedIndex() == 2, combo.getSelectedIndex() == 0);
+  }
+
+  private void updateAdvanceTimeFieldEnabled() {
+    boolean genmoveMode = LizzieFrame.toolbar.isGenmoveToolbar;
+    txtBlackAdvanceTime.setEnabled(
+        genmoveMode
+            && selectedSideMode(cmbBlackTimeMode) == DesktopTimeControl.SideMode.RAW_ADVANCED);
+    txtWhiteAdvanceTime.setEnabled(
+        genmoveMode
+            && selectedSideMode(cmbWhiteTimeMode) == DesktopTimeControl.SideMode.RAW_ADVANCED);
   }
 
   private static class ViewportWidthPanel extends JPanel implements Scrollable {
@@ -950,13 +958,15 @@ public class NewEngineGameDialog extends JDialog {
             && !LizzieFrame.toolbar.chkenginePkBatch.isSelected())
           Utils.showMsg(Lizzie.resourceBundle.getString("NewEngineGameDialog.multiSgfNotBatch"));
       }
-      boolean advancedClock = chkUseAdvanceTime.isSelected();
+      DesktopTimeControl.SideMode blackTimeMode = selectedSideMode(cmbBlackTimeMode);
+      DesktopTimeControl.SideMode whiteTimeMode = selectedSideMode(cmbWhiteTimeMode);
       if (LizzieFrame.toolbar.isGenmoveToolbar
           && DesktopTimeControl.rejectsEngineGame(
               Lizzie.engineManager.engineList,
               LizzieFrame.toolbar.engineBlackToolbar,
               LizzieFrame.toolbar.engineWhiteToolbar,
-              advancedClock)) {
+              blackTimeMode,
+              whiteTimeMode)) {
         Lizzie.frame.showUnsupportedWebSocketAdvancedClock();
         return;
       }
@@ -979,7 +989,7 @@ public class NewEngineGameDialog extends JDialog {
           !textFieldHandicap.isEnabled()
               ? 0
               : FORMAT_HANDICAP.parse(textFieldHandicap.getText()).intValue();
-      DesktopTimeControl.commitEngineGameSelection(Lizzie.config, advancedClock);
+      DesktopTimeControl.commitEngineGameSelection(Lizzie.config, blackTimeMode, whiteTimeMode);
       try {
         Lizzie.config.firstEngineResignMoveCounts =
             Integer.parseInt(txtresignSettingBlack.getText());
@@ -1027,10 +1037,12 @@ public class NewEngineGameDialog extends JDialog {
           "second-engine-resign-winrate", Lizzie.config.secondEngineResignWinrate);
       Lizzie.config.uiConfig.put("second-engine-min-move", Lizzie.config.secondEngineMinMove);
 
-      if (Lizzie.config.pkAdvanceTimeSettings) {
+      if (blackTimeMode == DesktopTimeControl.SideMode.RAW_ADVANCED) {
         Lizzie.config.advanceBlackTimeTxt = txtBlackAdvanceTime.getText().trim();
-        Lizzie.config.advanceWhiteTimeTxt = txtWhiteAdvanceTime.getText().trim();
         Lizzie.config.uiConfig.put("advance-black-time-txt", txtBlackAdvanceTime.getText().trim());
+      }
+      if (whiteTimeMode == DesktopTimeControl.SideMode.RAW_ADVANCED) {
+        Lizzie.config.advanceWhiteTimeTxt = txtWhiteAdvanceTime.getText().trim();
         Lizzie.config.uiConfig.put("advance-white-time-txt", txtWhiteAdvanceTime.getText().trim());
       }
       // apply new values
