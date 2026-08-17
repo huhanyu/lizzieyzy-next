@@ -1,5 +1,6 @@
 package featurecat.lizzie.util;
 
+import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.gui.EngineData;
 import java.io.IOException;
@@ -90,6 +91,56 @@ public final class AnalysisEngineCommandHelper {
     return fromDefaultEngine(engines);
   }
 
+  /**
+   * Returns a usable local analysis command for HumanSL without changing the user's saved engine
+   * choice. Release upgrades can relocate the bundled KataGo executable while an older absolute
+   * command remains in the profile. In that case HumanSL should use the current bundle rather than
+   * fail with the stale path. Valid external commands are intentionally left untouched.
+   */
+  public static Result resolveHumanSlCommand(String configuredCommand) {
+    KataGoAutoSetupHelper.SetupSnapshot snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+    return resolveHumanSlCommand(
+        configuredCommand,
+        snapshot == null ? null : snapshot.enginePath,
+        snapshot == null ? null : snapshot.analysisConfigPath,
+        snapshot == null ? null : snapshot.activeWeightPath);
+  }
+
+  static Result resolveHumanSlCommand(
+      String configuredCommand, Path enginePath, Path analysisConfigPath, Path weightPath) {
+    String command = configuredCommand == null ? "" : configuredCommand.trim();
+    if (!needsBundledRecovery(command)) {
+      return command.isEmpty()
+          ? Result.failure(message("AnalysisEngineCommandHelper.noEngineSelected"))
+          : Result.success(command, "", false, null);
+    }
+    if (!isRegularFile(enginePath)
+        || !isRegularFile(analysisConfigPath)
+        || !isRegularFile(weightPath)) {
+      return Result.failure(message("AnalysisEngineCommandHelper.noEngineSelected"));
+    }
+
+    List<String> parts = Utils.splitCommand(command);
+    if (parts.isEmpty()) {
+      parts.add(enginePath.toAbsolutePath().normalize().toString());
+      parts.add("analysis");
+    } else {
+      parts.set(0, enginePath.toAbsolutePath().normalize().toString());
+      int modeIndex = findAnalysisModeIndex(parts);
+      if (modeIndex >= 0) {
+        parts.set(modeIndex, "analysis");
+      } else {
+        parts.add(1, "analysis");
+      }
+    }
+    setOrAppendOption(parts, "-model", "--model", weightPath);
+    setOrAppendOption(parts, "-config", "--config", analysisConfigPath);
+    if (!containsToken(parts, "-quit-without-waiting")) {
+      parts.add("-quit-without-waiting");
+    }
+    return Result.success(buildCommandLine(parts), "", false, analysisConfigPath);
+  }
+
   public static Path ensureAnalysisConfig(Path gtpConfigPath) throws IOException {
     if (gtpConfigPath == null || !Files.isRegularFile(gtpConfigPath)) {
       throw new IOException(message("AnalysisEngineCommandHelper.missingConfig"));
@@ -122,6 +173,74 @@ public final class AnalysisEngineCommandHelper {
       }
     }
     return -1;
+  }
+
+  private static int findAnalysisModeIndex(List<String> command) {
+    for (int i = 1; i < command.size(); i++) {
+      String token = command.get(i);
+      if ("analysis".equalsIgnoreCase(token) || "gtp".equalsIgnoreCase(token)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private static boolean needsBundledRecovery(String command) {
+    if (command == null || command.trim().isEmpty()) {
+      return true;
+    }
+    if (normalizeCommand(command).equals(normalizeCommand(DEFAULT_ANALYSIS_COMMAND))) {
+      return true;
+    }
+    if (!Config.isBundledKataGoCommand(command)) {
+      return false;
+    }
+    List<String> parts = Utils.splitCommand(command);
+    if (parts.isEmpty()) {
+      return true;
+    }
+    Path executable = KataGoRuntimeHelper.resolveCommandExecutable(parts);
+    return !isRegularFile(executable)
+        || !isRegularFile(optionPath(parts, "-model", "--model"))
+        || !isRegularFile(optionPath(parts, "-config", "--config"));
+  }
+
+  private static Path optionPath(List<String> command, String shortOption, String longOption) {
+    for (int i = 0; i < command.size() - 1; i++) {
+      String token = command.get(i);
+      if (shortOption.equals(token) || longOption.equals(token)) {
+        try {
+          Path path = Path.of(command.get(i + 1));
+          return path.isAbsolute()
+              ? path.toAbsolutePath().normalize()
+              : Path.of(System.getProperty("user.dir", "."))
+                  .resolve(path)
+                  .toAbsolutePath()
+                  .normalize();
+        } catch (RuntimeException e) {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  private static void setOrAppendOption(
+      List<String> command, String shortOption, String longOption, Path value) {
+    String normalizedValue = value.toAbsolutePath().normalize().toString();
+    for (int i = 0; i < command.size() - 1; i++) {
+      String token = command.get(i);
+      if (shortOption.equals(token) || longOption.equals(token)) {
+        command.set(i + 1, normalizedValue);
+        return;
+      }
+    }
+    command.add(shortOption);
+    command.add(normalizedValue);
+  }
+
+  private static boolean isRegularFile(Path path) {
+    return path != null && Files.isRegularFile(path);
   }
 
   private static String normalizeCommand(String command) {

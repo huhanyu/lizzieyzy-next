@@ -11,6 +11,7 @@ import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.training.OpponentPreset;
 import featurecat.lizzie.training.TrainingMode;
+import featurecat.lizzie.util.AnalysisEngineCommandHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.DownloadCancelledException;
 import featurecat.lizzie.util.Utils;
@@ -662,11 +663,16 @@ public final class NewHumanSlGameDialog extends JDialog {
         config.fromCurrentPosition
             ? Lizzie.board.getHistory().getCurrentHistoryNode()
             : new BoardHistoryList(BoardData.empty(Board.boardWidth, Board.boardHeight)).root();
-    String command = resolveAnalysisCommand();
-    if (command.trim().isEmpty()) {
-      showInlineError(text("HumanSlGame.error.noEngine", "No analysis engine command is available."));
+    AnalysisEngineCommandHelper.Result commandResult = resolveAnalysisCommand();
+    if (!commandResult.isSuccess()) {
+      String detail = commandResult.getMessage();
+      showInlineError(
+          Utils.isBlank(detail)
+              ? text("HumanSlGame.error.noEngine", "No analysis engine command is available.")
+              : detail);
       return;
     }
+    String command = commandResult.getCommand();
     setFormEnabled(false);
     session.setState(HumanSlTrainingSession.State.PREPARING);
     setStatusText(text("HumanSlTraining.preparing", "Starting the AI coach..."));
@@ -815,11 +821,9 @@ public final class NewHumanSlGameDialog extends JDialog {
             Math.max(12, Config.frameFontSize)));
   }
 
-  private String resolveAnalysisCommand() {
-    if (Lizzie.config == null || Lizzie.config.analysisEngineCommand == null) {
-      return "";
-    }
-    return Lizzie.config.analysisEngineCommand;
+  private AnalysisEngineCommandHelper.Result resolveAnalysisCommand() {
+    String command = Lizzie.config == null ? "" : Lizzie.config.analysisEngineCommand;
+    return AnalysisEngineCommandHelper.resolveHumanSlCommand(command);
   }
 
   private void closeDialog() {
