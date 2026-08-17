@@ -202,37 +202,81 @@ public class SGFParser {
     if (Utils.isBlank(rawKomi)) {
       rawKomi = start.getData().getProperty("KO");
     }
-    return parseSgfKomi(rawKomi);
+    return parseSgfKomi(rawKomi, start.getData().getProperties());
   }
 
   private static Optional<Double> parseSgfKomi(String rawKomi) {
+    return parseSgfKomi(rawKomi, null);
+  }
+
+  private static Optional<Double> parseSgfKomi(String rawKomi, Map<String, String> rootProperties) {
     if (Utils.isBlank(rawKomi)) {
       return Optional.empty();
     }
     try {
       Double komi = Double.parseDouble(rawKomi.trim());
-      return normalizeSgfKomi(komi);
+      return normalizeSgfKomi(komi, rootProperties);
     } catch (NumberFormatException ignored) {
       return Optional.empty();
     }
   }
 
   private static Optional<Double> normalizeSgfKomi(Double komi) {
+    return normalizeSgfKomi(komi, null);
+  }
+
+  private static Optional<Double> normalizeSgfKomi(Double komi, Map<String, String> rootProperties) {
     if (komi == null) {
       return Optional.empty();
     }
+    komi =
+        isFoxSgf(rootProperties)
+            ? normalizeFoxSgfKomi(komi, rootProperties)
+            : normalizeLegacySgfKomi(komi);
+    return Math.abs(komi) < Board.boardWidth * Board.boardHeight
+        ? Optional.of(komi)
+        : Optional.empty();
+  }
+
+  private static double normalizeLegacySgfKomi(double komi) {
     if (komi >= 200) {
       komi = komi / 100;
       if (komi <= 4 && komi >= -4) {
         komi = komi * 2;
       }
     }
-    if (komi.toString().endsWith(".75") || komi.toString().endsWith(".25")) {
+    String komiText = Double.toString(komi);
+    if (komiText.endsWith(".75") || komiText.endsWith(".25")) {
       komi = komi * 2;
     }
-    return Math.abs(komi) < Board.boardWidth * Board.boardHeight
-        ? Optional.of(komi)
-        : Optional.empty();
+    return komi;
+  }
+
+  private static double normalizeFoxSgfKomi(double komi, Map<String, String> rootProperties) {
+    if (Math.abs(komi) >= 50) {
+      komi = komi / 100;
+      if (isChineseRules(rootProperties) && komi <= 4 && komi >= -4) {
+        komi = komi * 2;
+      }
+    }
+    return komi;
+  }
+
+  private static boolean isFoxSgf(Map<String, String> rootProperties) {
+    return rootPropertyContains(rootProperties, "AP", "foxwq");
+  }
+
+  private static boolean isChineseRules(Map<String, String> rootProperties) {
+    return rootPropertyContains(rootProperties, "RU", "chinese");
+  }
+
+  private static boolean rootPropertyContains(
+      Map<String, String> rootProperties, String propertyName, String needle) {
+    if (rootProperties == null) {
+      return false;
+    }
+    String value = rootProperties.get(propertyName);
+    return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
   }
 
   private static void clearImportedAnalysisPayloads(BoardHistoryNode start) {
@@ -768,7 +812,8 @@ public class SGFParser {
       }
     }
     flushPendingSetupMetadataToCurrentNode(Lizzie.board.getHistory(), pendingSetupMetadata);
-    Optional<Double> parsedKomi = parsedKomiTag ? normalizeSgfKomi(komi) : Optional.empty();
+    Optional<Double> parsedKomi =
+        parsedKomiTag ? normalizeSgfKomi(komi, gameProperties) : Optional.empty();
     if (parsedKomi.isPresent()
         && (Lizzie.config.readKomi
             || isSetupOrHandicapGame(Lizzie.board.getHistory())
@@ -3730,8 +3775,8 @@ public class SGFParser {
     }
 
     String blackPlayer = "", whitePlayer = "";
-    Optional<Double> parsedKomi = Optional.empty();
-
+    Double komi = null;
+    boolean parsedKomiTag = false;
     // Support unicode characters (UTF-8)
     for (int i = 0; i < value.length(); i++) {
       char c = value.charAt(i);
@@ -3895,10 +3940,8 @@ public class SGFParser {
             if (firstTime) {
               try {
                 if (!tagContent.trim().isEmpty()) {
-                  parsedKomi = normalizeSgfKomi(Double.parseDouble(tagContent));
-                  if (Lizzie.config.readKomi && parsedKomi.isPresent()) {
-                    history.getGameInfo().setKomiNoMenu(parsedKomi.get());
-                  }
+                  komi = Double.parseDouble(tagContent);
+                  parsedKomiTag = true;
                 }
               } catch (NumberFormatException e) {
                 e.printStackTrace();
@@ -4035,9 +4078,12 @@ public class SGFParser {
         history.getData().addProperties(gameProperties);
       }
       stabilizeRootSetupSideToPlay(history);
-      if (!Lizzie.config.readKomi
-          && parsedKomi.isPresent()
-          && (isSetupOrHandicapGame(history) || parseHandicapProperty(gameProperties.get("HA")) > 0)) {
+      Optional<Double> parsedKomi =
+          parsedKomiTag ? normalizeSgfKomi(komi, gameProperties) : Optional.empty();
+      if (parsedKomi.isPresent()
+          && (Lizzie.config.readKomi
+              || isSetupOrHandicapGame(history)
+              || parseHandicapProperty(gameProperties.get("HA")) > 0)) {
         history.getGameInfo().setKomiNoMenu(parsedKomi.get());
       }
     }

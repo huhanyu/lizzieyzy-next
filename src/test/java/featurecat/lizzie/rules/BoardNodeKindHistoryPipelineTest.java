@@ -20,6 +20,7 @@ import featurecat.lizzie.gui.BoardRenderer;
 import featurecat.lizzie.gui.Input;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.Menu;
+import featurecat.lizzie.gui.SubBoardRenderer;
 import featurecat.lizzie.gui.VariationTree;
 import featurecat.lizzie.gui.VariationTreeBig;
 import featurecat.lizzie.gui.WinrateGraph;
@@ -451,6 +452,53 @@ class BoardNodeKindHistoryPipelineTest {
     } finally {
       env.close();
     }
+  }
+
+  @Test
+  void liveLoadFoxScaledKomiUsesSourceMetadataWithoutChangingStandardSgf() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    BoardRenderer previousBoardRenderer = LizzieFrame.boardRenderer;
+    SubBoardRenderer previousSubBoardRenderer = LizzieFrame.subBoardRenderer;
+    try {
+      LizzieFrame.boardRenderer = new BoardRenderer(false);
+      LizzieFrame.subBoardRenderer = allocate(SubBoardRenderer.class);
+      Lizzie.config.readKomi = true;
+
+      assertLiveLoadedKomi("(;SZ[19]AP[foxwq]RU[Japanese]KM[50]HA[2])", 0.5);
+      assertLiveLoadedKomi("(;SZ[19]AP[foxwq]RU[Chinese]KM[375]HA[0])", 7.5);
+      assertLiveLoadedKomi("(;SZ[19]AP[foxwq]RU[Japanese]KM[650])", 6.5);
+      assertLiveLoadedKomi("(;SZ[19]AP[GNU Go:3.8]RU[Japanese]KM[50])", 50.0);
+    } finally {
+      LizzieFrame.boardRenderer = previousBoardRenderer;
+      LizzieFrame.subBoardRenderer = previousSubBoardRenderer;
+      env.close();
+    }
+  }
+
+  @Test
+  void detachedFoxScaledKomiUsesSourceMetadataWithoutChangingStandardSgf() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    try {
+      Lizzie.config.readKomi = true;
+
+      assertDetachedParsedKomi("(;SZ[19]AP[foxwq]RU[Japanese]KM[50]HA[2])", 0.5);
+      assertDetachedParsedKomi("(;SZ[19]AP[foxwq]RU[Chinese]KM[375]HA[0])", 7.5);
+      assertDetachedParsedKomi("(;SZ[19]AP[foxwq]RU[Japanese]KM[650])", 6.5);
+      assertDetachedParsedKomi("(;SZ[19]AP[GNU Go:3.8]RU[Japanese]KM[50])", 50.0);
+    } finally {
+      env.close();
+    }
+  }
+
+  private static void assertLiveLoadedKomi(String sgf, double expectedKomi) {
+    assertTrue(SGFParser.loadFromString(sgf), "loadFromString should parse SGF: " + sgf);
+    assertEquals(expectedKomi, Lizzie.board.getHistory().getGameInfo().getKomi(), 0.001);
+  }
+
+  private static void assertDetachedParsedKomi(String sgf, double expectedKomi) {
+    BoardHistoryList history = SGFParser.parseSgf(sgf, true);
+    assertTrue(history != null, "parseSgf should parse SGF: " + sgf);
+    assertEquals(expectedKomi, history.getGameInfo().getKomi(), 0.001);
   }
 
   @Test
