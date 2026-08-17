@@ -2,6 +2,7 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.HumanSlAnalysisRunner;
+import featurecat.lizzie.util.AnalysisEngineCommandHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.DownloadCancelledException;
 import featurecat.lizzie.util.Utils;
@@ -222,11 +223,12 @@ public final class NewHumanSlGameDialog extends JDialog {
   }
 
   private boolean startConfiguredGame(Path modelPath) {
-    String command = resolveAnalysisCommand();
-    if (command.trim().isEmpty()) {
+    AnalysisEngineCommandHelper.Result commandResult = resolveAnalysisCommand();
+    if (!commandResult.isSuccess()) {
       Utils.showMsg(resourceBundle.getString("HumanSlGame.error.noEngine"));
       return false;
     }
+    String command = commandResult.getCommand();
     HumanSlAnalysisRunner runner = new HumanSlAnalysisRunner(command, modelPath);
     if (!runner.start()) {
       Utils.showMsg(
@@ -259,12 +261,9 @@ public final class NewHumanSlGameDialog extends JDialog {
     return true;
   }
 
-  private String resolveAnalysisCommand() {
-    if (Lizzie.config == null) {
-      return "";
-    }
-    String command = Lizzie.config.analysisEngineCommand;
-    return command == null ? "" : command;
+  private AnalysisEngineCommandHelper.Result resolveAnalysisCommand() {
+    String command = Lizzie.config == null ? "" : Lizzie.config.analysisEngineCommand;
+    return AnalysisEngineCommandHelper.resolveHumanSlCommand(command);
   }
 
   public boolean isCancelled() {

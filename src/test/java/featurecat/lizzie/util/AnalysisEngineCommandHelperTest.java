@@ -212,6 +212,121 @@ class AnalysisEngineCommandHelperTest {
   }
 
   @Test
+  void humanSlRebasesAStaleBundledCommandToTheCurrentInstallation() throws Exception {
+    Path currentRoot = tempDir.resolve("当前 LizzieYzy Next.app").resolve("Contents").resolve("app");
+    Path engine = writeFile(currentRoot.resolve("engines/katago/macos-arm64/katago"));
+    Path config = writeFile(currentRoot.resolve("engines/katago/configs/analysis.cfg"));
+    Path weight = writeFile(currentRoot.resolve("weights/default.bin.gz"));
+    Path staleRoot = tempDir.resolve("old build").resolve("LizzieYzy Next.app/Contents/app");
+    String staleCommand =
+        quote(staleRoot.resolve("engines/katago/macos-arm64/katago"))
+            + " analysis -model "
+            + quote(staleRoot.resolve("weights/default.bin.gz"))
+            + " -config "
+            + quote(staleRoot.resolve("engines/katago/configs/analysis.cfg"))
+            + " -analysis-threads 3";
+
+    AnalysisEngineCommandHelper.Result result =
+        AnalysisEngineCommandHelper.resolveHumanSlCommand(staleCommand, engine, config, weight);
+
+    assertTrue(result.isSuccess(), result.getMessage());
+    List<String> parts = Utils.splitCommand(result.getCommand());
+    assertEquals(engine.toString(), parts.get(0));
+    assertEquals("analysis", parts.get(1));
+    assertEquals(weight.toString(), parts.get(parts.indexOf("-model") + 1));
+    assertEquals(config.toString(), parts.get(parts.indexOf("-config") + 1));
+    assertTrue(parts.contains("-analysis-threads"));
+    assertTrue(parts.contains("-quit-without-waiting"));
+  }
+
+  @Test
+  void humanSlNeverMixesAStaleEngineAndConfigWithTheCurrentBundledWeight() throws Exception {
+    Path currentRoot = tempDir.resolve("installed app");
+    Path engine = writeFile(currentRoot.resolve("engines/katago/macos-arm64/katago"));
+    Path config = writeFile(currentRoot.resolve("engines/katago/configs/analysis.cfg"));
+    Path weight = writeFile(currentRoot.resolve("weights/default.bin.gz"));
+    Path staleRoot = tempDir.resolve("deleted developer app image");
+    String mixedCommand =
+        quote(staleRoot.resolve("engines/katago/macos-arm64/katago"))
+            + " analysis -model "
+            + quote(weight)
+            + " -config "
+            + quote(staleRoot.resolve("engines/katago/configs/analysis.cfg"))
+            + " -quit-without-waiting";
+
+    AnalysisEngineCommandHelper.Result result =
+        AnalysisEngineCommandHelper.resolveHumanSlCommand(mixedCommand, engine, config, weight);
+
+    assertTrue(result.isSuccess(), result.getMessage());
+    List<String> parts = Utils.splitCommand(result.getCommand());
+    assertEquals(engine.toString(), parts.get(0));
+    assertEquals(weight.toString(), parts.get(parts.indexOf("-model") + 1));
+    assertEquals(config.toString(), parts.get(parts.indexOf("-config") + 1));
+    assertFalse(result.getCommand().contains(staleRoot.toString()));
+  }
+
+  @Test
+  void humanSlKeepsAWorkingExternalAnalysisCommandUntouched() throws Exception {
+    Path engine = writeFile(tempDir.resolve("自定义引擎/katago"));
+    Path config = writeFile(tempDir.resolve("自定义引擎/analysis.cfg"));
+    Path weight = writeFile(tempDir.resolve("自定义权重/model.bin.gz"));
+    String customCommand =
+        quote(engine)
+            + " analysis -model "
+            + quote(weight)
+            + " -config "
+            + quote(config)
+            + " -custom-option enabled";
+
+    AnalysisEngineCommandHelper.Result result =
+        AnalysisEngineCommandHelper.resolveHumanSlCommand(
+            customCommand,
+            tempDir.resolve("unused/engines/katago/katago"),
+            tempDir.resolve("unused/analysis.cfg"),
+            tempDir.resolve("unused/default.bin.gz"));
+
+    assertTrue(result.isSuccess(), result.getMessage());
+    assertEquals(customCommand, result.getCommand());
+  }
+
+  @Test
+  void humanSlDoesNotReplaceAUserExternalCommandThatCannotBeFound() {
+    String customCommand =
+        quote(tempDir.resolve("missing custom/katago"))
+            + " analysis -model missing.bin.gz -config missing.cfg";
+
+    AnalysisEngineCommandHelper.Result result =
+        AnalysisEngineCommandHelper.resolveHumanSlCommand(
+            customCommand,
+            tempDir.resolve("current/engines/katago/katago"),
+            tempDir.resolve("current/analysis.cfg"),
+            tempDir.resolve("current/default.bin.gz"));
+
+    assertTrue(result.isSuccess(), result.getMessage());
+    assertEquals(customCommand, result.getCommand());
+  }
+
+  @Test
+  void humanSlReportsNoEngineWhenBundledRecoveryIsIncomplete() {
+    String staleCommand =
+        quote(tempDir.resolve("old/engines/katago/macos-arm64/katago"))
+            + " analysis -model "
+            + quote(tempDir.resolve("old/weights/default.bin.gz"))
+            + " -config "
+            + quote(tempDir.resolve("old/engines/katago/configs/analysis.cfg"));
+
+    AnalysisEngineCommandHelper.Result result =
+        AnalysisEngineCommandHelper.resolveHumanSlCommand(
+            staleCommand,
+            tempDir.resolve("current/engines/katago/katago"),
+            tempDir.resolve("current/analysis.cfg"),
+            tempDir.resolve("current/default.bin.gz"));
+
+    assertFalse(result.isSuccess());
+    assertTrue(result.getCommand().isEmpty());
+  }
+
+  @Test
   void bundledAnalysisConfigTemplateIsAvailable() throws Exception {
     assertNotNull(
         AnalysisEngineCommandHelperTest.class
@@ -228,5 +343,10 @@ class AnalysisEngineCommandHelperTest {
 
   private static String quote(Path path) {
     return "\"" + path.toString() + "\"";
+  }
+
+  private static Path writeFile(Path path) throws Exception {
+    Files.createDirectories(path.getParent());
+    return Files.write(path, new byte[] {1});
   }
 }
