@@ -6,38 +6,54 @@ import featurecat.lizzie.analysis.HumanSlAnalysisRunner;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.training.HumanMoveDecision;
+import featurecat.lizzie.training.HumanSlTrainingConfig;
+import featurecat.lizzie.training.HumanSlTrainingSession;
+import featurecat.lizzie.training.OpponentPreset;
+import featurecat.lizzie.training.TrainingMode;
+import featurecat.lizzie.training.TrainingMoveAssessment;
+import featurecat.lizzie.training.TrainingSessionReport;
 import featurecat.lizzie.util.Utils;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.text.MessageFormat;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.swing.SwingUtilities;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/**
- * Drives a casual human-vs-AI game where the AI imitates a chosen amateur/professional rank using
- * KataGo's HumanSL policy. The controller owns its own analysis-engine process so it never disturbs
- * the regular analysis engine, and it deliberately keeps move suggestions and the winrate graph
- * hidden until the game is finished.
- */
+/** Runs one HumanSL coaching game and its optional correction/review flow. */
 public final class HumanSlGameController {
-  private static final int AI_MOVE_RETRIES = 3;
-  private static final Duration WARMUP_TIMEOUT = Duration.ofSeconds(180);
+  private static final int AI_MOVE_RETRIES = 2;
+  private static final int QUICK_REVIEW_VISITS = 32;
+  private static final int DEEP_REVIEW_VISITS = 500;
+  private static final Duration REVIEW_TIMEOUT = Duration.ofSeconds(30);
   private static final long MIN_MOVE_DELAY_MILLIS = 800L;
   private static final long MAX_MOVE_DELAY_MILLIS = 4000L;
+  private static final String REPORT_BEGIN = "[[LIZZIEYZY_AI_COACH_REPORT_BEGIN]]";
+  private static final String REPORT_END = "[[LIZZIEYZY_AI_COACH_REPORT_END]]";
 
   private final HumanSlAnalysisRunner runner;
-  private final String profile;
+  private final HumanSlTrainingConfig config;
+  private final HumanSlTrainingSession trainingSession;
   private final boolean humanIsBlack;
-  private final int handicap;
-  private final double komi;
+  private final String profile;
   private final Duration moveTimeout;
-  private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
+  private final ExecutorService gameExecutor = Executors.newSingleThreadExecutor();
+  private final ExecutorService reviewExecutor = Executors.newSingleThreadExecutor();
+  private final AtomicLong requestGeneration = new AtomicLong();
+  private final List<PendingHumanMove> pendingHumanMoves = new ArrayList<PendingHumanMove>();
+  private final Set<Integer> assessedMoveNumbers = new HashSet<Integer>();
 
   private boolean candidatesBlackBefore;
   private boolean candidatesWhiteBefore;
@@ -48,8 +64,29 @@ public final class HumanSlGameController {
   private boolean showingHeatmapBefore;
   private boolean ponderingBefore;
   private volatile boolean finished;
-  private HumanSlGameControlPanel controlPanel;
+  private volatile boolean awaitingCorrection;
+  private volatile boolean aiThinking;
+  private volatile boolean aiFailed;
+  private volatile long humanElapsedMillis;
+  private volatile long aiElapsedMillis;
+  private volatile long turnStartedAt;
+  private volatile String gameResult = "";
+  private BoardHistoryNode trainingStartNode;
+  private HumanSlTrainingReportDialog reportDialog;
 
+  public HumanSlGameController(
+      HumanSlAnalysisRunner runner,
+      HumanSlTrainingConfig config,
+      HumanSlTrainingSession trainingSession) {
+    this.runner = runner;
+    this.config = config;
+    this.trainingSession = trainingSession == null ? new HumanSlTrainingSession() : trainingSession;
+    humanIsBlack = config.resolveHumanIsBlack();
+    profile = config.humanSlProfile();
+    moveTimeout = Duration.ofSeconds(Math.max(2, config.moveTimeSeconds));
+  }
+
+  /** Compatibility constructor for existing integrations and tests. */
   public HumanSlGameController(
       HumanSlAnalysisRunner runner,
       String profile,
@@ -57,12 +94,10 @@ public final class HumanSlGameController {
       int handicap,
       double komi,
       int moveTimeoutSeconds) {
-    this.runner = runner;
-    this.profile = profile;
-    this.humanIsBlack = humanIsBlack;
-    this.handicap = handicap;
-    this.komi = komi;
-    this.moveTimeout = Duration.ofSeconds(Math.max(2, moveTimeoutSeconds));
+    this(
+        runner,
+        legacyConfig(profile, humanIsBlack, handicap, komi, moveTimeoutSeconds),
+        new HumanSlTrainingSession());
   }
 
   public boolean isFinished() {
@@ -73,85 +108,190 @@ public final class HumanSlGameController {
     return Lizzie.board.getHistory().isBlacksTurn() == humanIsBlack;
   }
 
+  public boolean isAiThinking() {
+    return aiThinking;
+  }
+
+  public boolean hasAiFailure() {
+    return aiFailed;
+  }
+
+  public boolean isReviewing() {
+    return trainingSession.state() == HumanSlTrainingSession.State.REVIEWING;
+  }
+
+  public long humanElapsedMillis() {
+    return humanElapsedMillis + liveElapsed(true);
+  }
+
+  public long aiElapsedMillis() {
+    return aiElapsedMillis + liveElapsed(false);
+  }
+
+  public String opponentLabel() {
+    switch (config.opponentPreset) {
+      case MODERN_PRO:
+        return text("HumanSlTraining.pro.modern", "Modern pro style");
+      case ONLINE_9D:
+        return text("HumanSlTraining.pro.online9d", "Online 9 dan");
+      case RANK:
+      default:
+        return rankLabel(config.rank, config.danRank);
+    }
+  }
+
+  public String gameResult() {
+    return gameResult;
+  }
+
   /** Sets up the board and starts the game. Must be called on the EDT. */
   public void start() {
-    Lizzie.board.clear(false);
-    Lizzie.board.getHistory().getGameInfo().setKomi(komi);
-    Lizzie.board.getHistory().getGameInfo().setHandicap(handicap);
-    if (handicap >= 2 && Board.boardWidth == 19 && Board.boardHeight == 19) {
-      Lizzie.board.setupFixedHandicap(handicap);
+    if (config.fromCurrentPosition) {
+      // Keep the original SGF metadata and main line untouched. The first training move is forced
+      // into a variation from this node, including after "retry this move" returns here.
+      trainingStartNode = Lizzie.board.getHistory().getCurrentHistoryNode();
+    } else {
+      Lizzie.board.clear(false);
+      Lizzie.board.getHistory().getGameInfo().setKomi(config.komi);
+      Lizzie.board.getHistory().getGameInfo().setHandicap(config.handicap);
+      if (config.handicap >= 2 && Board.boardWidth == 19 && Board.boardHeight == 19) {
+        Lizzie.board.setupFixedHandicap(config.handicap);
+      }
+      Lizzie.board.getHistory().getGameInfo().setKomi(config.komi);
+      configurePlayerNames();
     }
-    Lizzie.board.getHistory().getGameInfo().setKomi(komi);
-    String me = Lizzie.resourceBundle.getString("HumanSlGame.humanPlayer");
-    String ai = Lizzie.resourceBundle.getString("HumanSlGame.aiPlayer") + " (" + rankLabel() + ")";
-    Lizzie.board.getHistory().getGameInfo().setPlayerBlack(humanIsBlack ? me : ai);
-    Lizzie.board.getHistory().getGameInfo().setPlayerWhite(humanIsBlack ? ai : me);
-
     hideAnalysisVisuals();
     Lizzie.frame.humanSlGame = this;
-
+    trainingSession.setState(HumanSlTrainingSession.State.PLAYING);
+    turnStartedAt = System.currentTimeMillis();
+    Lizzie.frame.showHumanSlTrainingBar(this);
     Lizzie.frame.refresh();
-    showControlPanel();
 
-    warmUpEngine();
     if (!isHumanTurn()) {
       scheduleAiMove();
     }
   }
 
-  /**
-   * Forces the HumanSL engine to load its weights before any timed move so the first real move
-   * respects the configured time budget instead of paying the model-load cost. Runs on the single
-   * AI executor thread, so it always completes before the first scheduled move.
-   */
-  private void warmUpEngine() {
-    aiExecutor.execute(
-        () -> {
-          if (finished) {
-            return;
-          }
-          BoardHistoryNode positionNode = Lizzie.board.getHistory().getCurrentHistoryNode();
-          runner.bestHumanMove(positionNode, profile, WARMUP_TIMEOUT);
-        });
+  private void configurePlayerNames() {
+    String me = text("HumanSlGame.humanPlayer", "You");
+    String ai = text("HumanSlGame.aiPlayer", "HumanSL AI") + " (" + opponentLabel() + ")";
+    Lizzie.board.getHistory().getGameInfo().setPlayerBlack(humanIsBlack ? me : ai);
+    Lizzie.board.getHistory().getGameInfo().setPlayerWhite(humanIsBlack ? ai : me);
   }
 
-  /** Opens the in-game controls (pass/resign/count/save). */
+  /** Brings the integrated controls back into view. */
   public void showControlPanel() {
-    if (finished) {
-      return;
+    if (!finished) {
+      Lizzie.frame.showHumanSlTrainingBar(this);
+      Lizzie.frame.setMainPanelFocus();
+    } else if (reportDialog != null) {
+      reportDialog.showReport();
     }
-    if (controlPanel == null) {
-      controlPanel = new HumanSlGameControlPanel(this);
-    }
-    controlPanel.setVisible(true);
-    controlPanel.toFront();
   }
 
-  /** Called from LizzieFrame.onClicked when a HumanSL game is active. */
+  /** Called from LizzieFrame when a coaching game is active. */
   public void onBoardClicked(int x, int y) {
-    if (finished || !isHumanTurn()) {
-      return;
-    }
-    if (!Board.isValid(x, y)) {
+    if (finished || awaitingCorrection || !isHumanTurn() || !Board.isValid(x, y)) {
       return;
     }
     if (Lizzie.board.getHistory().getStones()[Board.getIndex(x, y)] != Stone.EMPTY) {
       return;
     }
-    Stone humanColor = humanIsBlack ? Stone.BLACK : Stone.WHITE;
-    placeLocal(x, y, humanColor);
-    if (finished) {
+    BoardHistoryNode positionBefore = Lizzie.board.getHistory().getCurrentHistoryNode();
+    String move = Board.convertCoordinatesToName(x, y);
+    if (!placeLocal(x, y, humanIsBlack ? Stone.BLACK : Stone.WHITE)) {
       return;
     }
-    scheduleAiMove();
+    recordTurnElapsed(true);
+    rememberHumanMove(positionBefore, move);
   }
 
   public void humanPass() {
-    if (finished || !isHumanTurn()) {
+    if (finished || awaitingCorrection || !isHumanTurn()) {
       return;
     }
-    Stone humanColor = humanIsBlack ? Stone.BLACK : Stone.WHITE;
-    passLocal(humanColor);
+    BoardHistoryNode positionBefore = Lizzie.board.getHistory().getCurrentHistoryNode();
+    if (!passLocal(humanIsBlack ? Stone.BLACK : Stone.WHITE)) {
+      return;
+    }
+    recordTurnElapsed(true);
+    rememberHumanMove(positionBefore, "pass");
+  }
+
+  private void rememberHumanMove(BoardHistoryNode positionBefore, String move) {
+    synchronized (pendingHumanMoves) {
+      pendingHumanMoves.add(new PendingHumanMove(positionBefore, move));
+    }
+    if (config.mode == TrainingMode.LIVE_CORRECTION) {
+      analyzeForLiveCorrection(positionBefore, move);
+    } else {
+      scheduleAiMove();
+    }
+  }
+
+  private void analyzeForLiveCorrection(BoardHistoryNode positionBefore, String move) {
+    awaitingCorrection = true;
+    long generation = requestGeneration.get();
+    gameExecutor.execute(
+        () -> {
+          Optional<HumanMoveDecision> decision =
+              runner.evaluateHumanMove(
+                  positionBefore,
+                  profile,
+                  move,
+                  config.analysisVisits(),
+                  config.rootSymmetries(),
+                  REVIEW_TIMEOUT);
+          if (finished || generation != requestGeneration.get()) {
+            return;
+          }
+          decision.ifPresent(this::recordDecision);
+          SwingUtilities.invokeLater(
+              () -> {
+                if (finished || generation != requestGeneration.get()) {
+                  return;
+                }
+                if (decision.isPresent() && decision.get().isProblemMove()) {
+                  Lizzie.frame.showHumanSlCorrection(this, decision.get());
+                } else {
+                  awaitingCorrection = false;
+                  scheduleAiMove();
+                }
+              });
+        });
+  }
+
+  public void retryHumanMove(HumanMoveDecision decision) {
+    if (finished || decision == null) {
+      return;
+    }
+    requestGeneration.incrementAndGet();
+    awaitingCorrection = false;
+    discardMoveAssessment(decision.moveNumber);
+    Lizzie.frame.hideHumanSlCorrection(this);
+    Lizzie.board.navigateToNode(decision.positionBeforeMove);
+    turnStartedAt = System.currentTimeMillis();
+    Lizzie.frame.refresh();
+    Lizzie.frame.setMainPanelFocus();
+  }
+
+  private void discardMoveAssessment(int moveNumber) {
+    synchronized (pendingHumanMoves) {
+      pendingHumanMoves.removeIf(
+          move -> move.positionBefore.getData().moveNumber + 1 == moveNumber);
+    }
+    synchronized (assessedMoveNumbers) {
+      assessedMoveNumbers.remove(moveNumber);
+    }
+    trainingSession.removeDecision(moveNumber);
+  }
+
+  public void continueAfterCorrection() {
+    if (finished) {
+      return;
+    }
+    awaitingCorrection = false;
+    Lizzie.frame.hideHumanSlCorrection(this);
     scheduleAiMove();
   }
 
@@ -161,59 +301,104 @@ public final class HumanSlGameController {
     }
     String result =
         humanIsBlack
-            ? Lizzie.resourceBundle.getString("Leelaz.whiteWin")
-            : Lizzie.resourceBundle.getString("Leelaz.blackWin");
-    finishGame(result, Lizzie.resourceBundle.getString("HumanSlGame.humanResigned"));
+            ? text("Leelaz.whiteWin", "White wins")
+            : text("Leelaz.blackWin", "Black wins");
+    beginReview(result, false);
   }
 
-  /** Evaluates the final position and ends the game, showing winrate/score info. */
+  public void finishAndReview() {
+    beginReview(null, true);
+  }
+
+  /** Legacy alias retained for existing menu/control integrations. */
   public void countAndFinish() {
-    if (finished) {
-      return;
-    }
-    aiExecutor.execute(
-        () -> {
-          PositionEvaluation evaluation = evaluateCurrentPosition();
-          SwingUtilities.invokeLater(
-              () -> {
-                String result = describeScoreResult(evaluation);
-                finishGame(result, describeEvaluation(evaluation));
-              });
-        });
+    finishAndReview();
   }
 
   public void saveKifu() {
     LizzieFrame.saveFile(false);
   }
 
-  private void scheduleAiMove() {
-    if (finished) {
+  public void saveTrainingReport() {
+    TrainingSessionReport report = trainingSession.report();
+    if (report == null || report.isEmpty()) {
+      saveKifu();
       return;
     }
-    aiExecutor.execute(
-        () -> {
-          long startedAt = System.currentTimeMillis();
-          BoardHistoryNode positionNode = Lizzie.board.getHistory().getCurrentHistoryNode();
-          Optional<String> move = Optional.empty();
-          for (int attempt = 0; attempt < AI_MOVE_RETRIES && !finished; attempt++) {
-            move = runner.bestHumanMove(positionNode, profile, moveTimeout);
-            if (move.isPresent()) {
-              break;
-            }
-          }
-          waitMinimumThinkTime(startedAt);
-          Optional<String> resolved = move;
-          SwingUtilities.invokeLater(() -> applyAiMove(resolved));
-        });
+    BoardHistoryNode root = Lizzie.board.getHistory().root();
+    String original = root.getData().comment == null ? "" : root.getData().comment;
+    String withoutOld = stripStoredReport(original).trim();
+    String serialized = serializeReport(report);
+    root.getData().comment =
+        (withoutOld.isEmpty() ? "" : withoutOld + "\n\n")
+            + REPORT_BEGIN
+            + "\n"
+            + serialized
+            + "\n"
+            + REPORT_END;
+    saveKifu();
   }
 
-  /**
-   * Keeps the AI from snapping a move down instantly. Raw policy play returns in milliseconds,
-   * which feels unnatural, so we pad short responses up to a small randomized delay similar to
-   * KataGo's delayMoveScale/delayMoveMax pacing.
-   */
-  private void waitMinimumThinkTime(long startedAt) {
-    if (finished) {
+  public void retryReportPosition(HumanMoveDecision decision) {
+    if (decision == null) {
+      return;
+    }
+    Lizzie.board.navigateToNode(decision.positionBeforeMove);
+    Lizzie.frame.refresh();
+    Lizzie.frame.setMainPanelFocus();
+    SwingUtilities.invokeLater(() -> Lizzie.frame.startHumanSlGameDialogAtCurrentPosition());
+  }
+
+  private void scheduleAiMove() {
+    if (finished || awaitingCorrection || isReviewing() || aiThinking) {
+      return;
+    }
+    aiFailed = false;
+    aiThinking = true;
+    Lizzie.frame.updateHumanSlTrainingBar();
+    long generation = requestGeneration.get();
+    try {
+      gameExecutor.execute(
+          () -> {
+            long startedAt = System.currentTimeMillis();
+            BoardHistoryNode positionNode = Lizzie.board.getHistory().getCurrentHistoryNode();
+            Optional<String> move = Optional.empty();
+            for (int attempt = 0;
+                attempt < AI_MOVE_RETRIES
+                    && !Thread.currentThread().isInterrupted()
+                    && !finished
+                    && generation == requestGeneration.get();
+                attempt++) {
+              move =
+                  runner.bestHumanMove(
+                      positionNode,
+                      profile,
+                      config.analysisVisits(),
+                      config.rootSymmetries(),
+                      moveTimeout);
+              if (move.isPresent()) {
+                break;
+              }
+              if (attempt + 1 < AI_MOVE_RETRIES && generation == requestGeneration.get()) {
+                runner.cancelActiveRequests();
+              }
+            }
+            waitMinimumThinkTime(startedAt, generation);
+            Optional<String> resolved = move;
+            SwingUtilities.invokeLater(
+                () -> {
+                  if (generation == requestGeneration.get()) {
+                    applyAiMove(resolved);
+                  }
+                });
+          });
+    } catch (java.util.concurrent.RejectedExecutionException ignored) {
+      aiThinking = false;
+    }
+  }
+
+  private void waitMinimumThinkTime(long startedAt, long generation) {
+    if (finished || generation != requestGeneration.get()) {
       return;
     }
     long target =
@@ -233,17 +418,24 @@ public final class HumanSlGameController {
   }
 
   private void applyAiMove(Optional<String> move) {
-    if (finished) {
+    if (finished || awaitingCorrection) {
       return;
     }
+    aiThinking = false;
+    recordTurnElapsed(false);
     Stone aiColor = humanIsBlack ? Stone.WHITE : Stone.BLACK;
     if (!move.isPresent()) {
-      Utils.showMsg(Lizzie.resourceBundle.getString("HumanSlGame.aiMoveFailed"));
+      aiFailed = true;
+      Utils.showMsgNoModalForTime(text("HumanSlGame.aiMoveFailed", "The AI did not respond."), 4);
+      turnStartedAt = System.currentTimeMillis();
+      Lizzie.frame.updateHumanSlTrainingBar();
       return;
     }
+    aiFailed = false;
     if ("pass".equalsIgnoreCase(move.get().trim())) {
       passLocal(aiColor);
-      Utils.showMsg(Lizzie.resourceBundle.getString("HumanSlGame.aiPassed"));
+      Utils.showMsgNoModalForTime(text("HumanSlGame.aiPassed", "AI passed."), 3);
+      turnStartedAt = System.currentTimeMillis();
       return;
     }
     int[] coords = Board.convertNameToCoordinates(move.get().trim());
@@ -253,37 +445,214 @@ public final class HumanSlGameController {
         || Lizzie.board.getHistory().getStones()[Board.getIndex(coords[0], coords[1])]
             != Stone.EMPTY) {
       passLocal(aiColor);
+    } else if (!placeLocal(coords[0], coords[1], aiColor)) {
+      // A stale or illegal HumanSL result must not leave the game stuck on the AI turn.
+      passLocal(aiColor);
+    }
+    turnStartedAt = System.currentTimeMillis();
+    Lizzie.frame.updateHumanSlTrainingBar();
+  }
+
+  public void retryAiMove() {
+    if (finished || isReviewing() || !aiFailed || isHumanTurn()) {
       return;
     }
-    placeLocal(coords[0], coords[1], aiColor);
+    runner.cancelActiveRequests();
+    scheduleAiMove();
   }
 
-  private void placeLocal(int x, int y, Stone color) {
+  private void beginReview(String result, boolean estimateResult) {
+    if (finished || trainingSession.state() == HumanSlTrainingSession.State.REVIEWING) {
+      return;
+    }
+    long reviewGeneration = requestGeneration.incrementAndGet();
+    awaitingCorrection = false;
+    aiThinking = false;
+    aiFailed = false;
+    gameExecutor.shutdownNow();
+    runner.cancelActiveRequests();
+    Lizzie.frame.hideHumanSlCorrection(this);
+    trainingSession.setState(HumanSlTrainingSession.State.REVIEWING);
+    Lizzie.frame.updateHumanSlTrainingBar();
+    reviewExecutor.execute(
+        () -> {
+          String resolvedResult = result;
+          if (estimateResult) {
+            resolvedResult = describeScoreResult(evaluateCurrentPosition());
+          }
+          if (finished
+              || Thread.currentThread().isInterrupted()
+              || reviewGeneration != requestGeneration.get()) {
+            return;
+          }
+          analyzePendingHumanMoves();
+          if (finished
+              || Thread.currentThread().isInterrupted()
+              || reviewGeneration != requestGeneration.get()) {
+            return;
+          }
+          deepenKeyPositions(trainingSession.buildReport());
+          TrainingSessionReport report = trainingSession.buildReport();
+          String finalResult =
+              resolvedResult == null
+                  ? text("HumanSlGame.resultUnknown", "Result unavailable")
+                  : resolvedResult;
+          SwingUtilities.invokeLater(
+              () -> completeReview(report, finalResult, reviewGeneration));
+        });
+  }
+
+  private void analyzePendingHumanMoves() {
+    List<PendingHumanMove> snapshot;
+    synchronized (pendingHumanMoves) {
+      snapshot = new ArrayList<PendingHumanMove>(pendingHumanMoves);
+    }
+    for (PendingHumanMove move : snapshot) {
+      if (Thread.currentThread().isInterrupted()) {
+        return;
+      }
+      int moveNumber = move.positionBefore.getData().moveNumber + 1;
+      synchronized (assessedMoveNumbers) {
+        if (assessedMoveNumbers.contains(moveNumber)) {
+          continue;
+        }
+      }
+      runner
+          .evaluateHumanMove(
+              move.positionBefore,
+              profile,
+              move.move,
+              QUICK_REVIEW_VISITS,
+              config.rootSymmetries(),
+              REVIEW_TIMEOUT)
+          .ifPresent(this::recordDecision);
+    }
+  }
+
+  private void recordDecision(HumanMoveDecision decision) {
+    synchronized (assessedMoveNumbers) {
+      if (!assessedMoveNumbers.add(decision.moveNumber)) {
+        return;
+      }
+    }
+    trainingSession.addDecision(decision);
+  }
+
+  private void deepenKeyPositions(TrainingSessionReport preliminaryReport) {
+    if (preliminaryReport == null || preliminaryReport.isEmpty()) {
+      return;
+    }
+    for (TrainingMoveAssessment assessment : preliminaryReport.assessments()) {
+      if (Thread.currentThread().isInterrupted()) {
+        return;
+      }
+      HumanMoveDecision quick = assessment.decision;
+      runner
+          .evaluateHumanMove(
+              quick.positionBeforeMove,
+              profile,
+              quick.actualMove,
+              DEEP_REVIEW_VISITS,
+              config.rootSymmetries(),
+              REVIEW_TIMEOUT)
+          .ifPresent(decision -> trainingSession.upsertDecision(decision, true));
+    }
+  }
+
+  private void completeReview(
+      TrainingSessionReport report, String result, long reviewGeneration) {
+    if (finished || reviewGeneration != requestGeneration.get()) {
+      return;
+    }
+    finished = true;
+    gameResult = result;
+    if (!config.fromCurrentPosition) {
+      Lizzie.board.getHistory().getGameInfo().setResult(gameResult);
+    }
+    trainingSession.setState(HumanSlTrainingSession.State.REPORT_READY);
+    restoreAnalysisVisuals();
+    Lizzie.frame.hideHumanSlCorrection(this);
+    Lizzie.frame.hideHumanSlTrainingBar(this);
+    Lizzie.frame.humanSlGame = null;
+    reviewExecutor.shutdown();
+    closeRunnerNow();
+    reportDialog = new HumanSlTrainingReportDialog(Lizzie.frame, this, report);
+    Lizzie.frame.setHumanSlTrainingReport(reportDialog);
+    reportDialog.showReport();
+    Lizzie.frame.refresh();
+  }
+
+  /** Stops the game without producing a report. */
+  public void abort() {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    requestGeneration.incrementAndGet();
+    aiThinking = false;
+    aiFailed = false;
+    gameExecutor.shutdownNow();
+    reviewExecutor.shutdownNow();
+    runner.cancelActiveRequests();
+    trainingSession.setState(HumanSlTrainingSession.State.FINISHED);
+    restoreAnalysisVisuals();
+    Lizzie.frame.hideHumanSlCorrection(this);
+    Lizzie.frame.hideHumanSlTrainingBar(this);
+    Lizzie.frame.humanSlGame = null;
+    closeRunnerNow();
+    Lizzie.frame.refresh();
+  }
+
+  private void closeRunnerNow() {
+    Thread closer =
+        new Thread(
+            () -> {
+              try {
+                runner.close();
+              } catch (Exception ignored) {
+              }
+            },
+            "humansl-coach-close");
+    closer.setDaemon(true);
+    closer.start();
+  }
+
+  private boolean placeLocal(int x, int y, Stone color) {
     boolean previous = Lizzie.leelaz != null && Lizzie.leelaz.isInputCommand;
+    BoardHistoryNode before = Lizzie.board.getHistory().getCurrentHistoryNode();
     if (Lizzie.leelaz != null) {
       Lizzie.leelaz.isInputCommand = true;
     }
     try {
-      Lizzie.board.place(x, y, color);
+      Lizzie.board.place(x, y, color, shouldForceTrainingBranch(before));
     } finally {
       if (Lizzie.leelaz != null) {
         Lizzie.leelaz.isInputCommand = previous;
       }
     }
+    return Lizzie.board.getHistory().getCurrentHistoryNode() != before;
   }
 
-  private void passLocal(Stone color) {
+  private boolean passLocal(Stone color) {
     boolean previous = Lizzie.leelaz != null && Lizzie.leelaz.isInputCommand;
+    BoardHistoryNode before = Lizzie.board.getHistory().getCurrentHistoryNode();
     if (Lizzie.leelaz != null) {
       Lizzie.leelaz.isInputCommand = true;
     }
     try {
-      Lizzie.board.pass(color, false, false, true);
+      Lizzie.board.pass(color, shouldForceTrainingBranch(before), false, true);
     } finally {
       if (Lizzie.leelaz != null) {
         Lizzie.leelaz.isInputCommand = previous;
       }
     }
+    return Lizzie.board.getHistory().getCurrentHistoryNode() != before;
+  }
+
+  private boolean shouldForceTrainingBranch(BoardHistoryNode currentNode) {
+    return config.fromCurrentPosition
+        && trainingStartNode != null
+        && trainingStartNode == currentNode;
   }
 
   private PositionEvaluation evaluateCurrentPosition() {
@@ -309,90 +678,29 @@ public final class HumanSlGameController {
       if (rootInfo == null) {
         return PositionEvaluation.unavailable();
       }
-      double blackWinrate = rootInfo.optDouble("winrate", Double.NaN);
-      double scoreLead = rootInfo.optDouble("scoreLead", Double.NaN);
-      return new PositionEvaluation(blackWinrate, scoreLead);
+      return new PositionEvaluation(
+          rootInfo.optDouble("winrate", Double.NaN),
+          rootInfo.optDouble("scoreLead", Double.NaN));
     } catch (TimeoutException | IOException e) {
+      runner.cancelActiveRequests();
       return PositionEvaluation.unavailable();
     }
   }
 
   private String describeScoreResult(PositionEvaluation evaluation) {
     if (!evaluation.available || Double.isNaN(evaluation.scoreLead)) {
-      return Lizzie.resourceBundle.getString("HumanSlGame.resultUnknown");
+      return text("HumanSlGame.resultUnknown", "Result unavailable");
     }
-    double scoreLead = evaluation.scoreLead;
-    if (Math.abs(scoreLead) < 0.05) {
-      return Lizzie.resourceBundle.getString("HumanSlGame.draw");
+    if (Math.abs(evaluation.scoreLead) < 0.05) {
+      return text("HumanSlGame.draw", "Draw");
     }
-    boolean blackWins = scoreLead > 0;
     String winner =
-        blackWins
-            ? Lizzie.resourceBundle.getString("Menu.Black")
-            : Lizzie.resourceBundle.getString("Menu.White");
-    return winner + " +" + String.format(java.util.Locale.US, "%.1f", Math.abs(scoreLead));
-  }
-
-  private String describeEvaluation(PositionEvaluation evaluation) {
-    if (!evaluation.available) {
-      return Lizzie.resourceBundle.getString("HumanSlGame.evaluationUnavailable");
-    }
-    String blackWinrate =
-        Double.isNaN(evaluation.blackWinrate)
-            ? "-"
-            : String.format(java.util.Locale.US, "%.1f%%", evaluation.blackWinrate * 100.0);
-    String scoreLead =
-        Double.isNaN(evaluation.scoreLead)
-            ? "-"
-            : String.format(java.util.Locale.US, "%+.1f", evaluation.scoreLead);
-    return java.text.MessageFormat.format(
-        Lizzie.resourceBundle.getString("HumanSlGame.evaluationDetail"), blackWinrate, scoreLead);
-  }
-
-  private void finishGame(String result, String detail) {
-    if (finished) {
-      return;
-    }
-    finished = true;
-    Lizzie.board.getHistory().getGameInfo().setResult(result);
-    StringBuilder message = new StringBuilder();
-    message.append(Lizzie.resourceBundle.getString("HumanSlGame.gameOver")).append("\n");
-    message
-        .append(Lizzie.resourceBundle.getString("HumanSlGame.result"))
-        .append(" ")
-        .append(result);
-    if (detail != null && !detail.isEmpty()) {
-      message.append("\n").append(detail);
-    }
-    Utils.showMsg(message.toString());
-    teardown();
-  }
-
-  /** Stops the game without showing a result (used when the dialog is closed early). */
-  public void abort() {
-    if (finished) {
-      return;
-    }
-    finished = true;
-    teardown();
-  }
-
-  private void teardown() {
-    restoreAnalysisVisuals();
-    Lizzie.frame.humanSlGame = null;
-    if (controlPanel != null) {
-      controlPanel.dispose();
-      controlPanel = null;
-    }
-    aiExecutor.execute(
-        () -> {
-          try {
-            runner.close();
-          } catch (Exception ignored) {
-          }
-        });
-    aiExecutor.shutdown();
-    Lizzie.frame.refresh();
+        evaluation.scoreLead > 0
+            ? text("Menu.Black", "Black")
+            : text("Menu.White", "White");
+    return winner
+        + " +"
+        + String.format(java.util.Locale.US, "%.1f", Math.abs(evaluation.scoreLead));
   }
 
   private void hideAnalysisVisuals() {
@@ -435,8 +743,80 @@ public final class HumanSlGameController {
     }
   }
 
-  private String rankLabel() {
-    return profile == null ? "" : profile.replace("rank_", "").toUpperCase(java.util.Locale.ROOT);
+  private void recordTurnElapsed(boolean humanTurn) {
+    long now = System.currentTimeMillis();
+    long elapsed = Math.max(0L, now - turnStartedAt);
+    if (humanTurn) {
+      humanElapsedMillis += elapsed;
+    } else {
+      aiElapsedMillis += elapsed;
+    }
+    turnStartedAt = now;
+  }
+
+  private long liveElapsed(boolean human) {
+    if (finished || turnStartedAt <= 0L || isHumanTurn() != human) {
+      return 0L;
+    }
+    return Math.max(0L, System.currentTimeMillis() - turnStartedAt);
+  }
+
+  private String serializeReport(TrainingSessionReport report) {
+    StringBuilder text = new StringBuilder();
+    text.append("AI Coach report v1").append('\n');
+    text.append("Opponent: ").append(opponentLabel()).append('\n');
+    text.append("Result: ").append(gameResult).append('\n');
+    for (TrainingMoveAssessment assessment : report.assessments()) {
+      HumanMoveDecision decision = assessment.decision;
+      text.append("Move ")
+          .append(decision.moveNumber)
+          .append(": actual=")
+          .append(decision.actualMove)
+          .append(", human=")
+          .append(decision.commonHumanMove)
+          .append(", best=")
+          .append(decision.kataGoBestMove)
+          .append(", scoreLoss=")
+          .append(formatMetric(decision.scoreLoss))
+          .append(", winrateLoss=")
+          .append(formatMetric(decision.winrateLoss))
+          .append('\n');
+    }
+    return text.toString().trim();
+  }
+
+  private static String stripStoredReport(String comment) {
+    if (comment == null) {
+      return "";
+    }
+    int begin = comment.indexOf(REPORT_BEGIN);
+    if (begin < 0) {
+      return comment;
+    }
+    int end = comment.indexOf(REPORT_END, begin);
+    if (end < 0) {
+      return comment.substring(0, begin);
+    }
+    return comment.substring(0, begin) + comment.substring(end + REPORT_END.length());
+  }
+
+  private static String formatMetric(double value) {
+    return Double.isFinite(value) ? String.format(java.util.Locale.US, "%.3f", value) : "-";
+  }
+
+  private String text(String key, String fallback) {
+    try {
+      return Lizzie.resourceBundle.getString(key);
+    } catch (Exception ignored) {
+      return fallback;
+    }
+  }
+
+  private String rankLabel(int rank, boolean danRank) {
+    String key =
+        danRank ? "HumanSlTraining.rank.danValue" : "HumanSlTraining.rank.kyuValue";
+    String fallback = danRank ? "{0} dan" : "{0} kyu";
+    return MessageFormat.format(text(key, fallback), rank);
   }
 
   public static Path resolveDefaultHumanModel() {
@@ -448,21 +828,60 @@ public final class HumanSlGameController {
     return status.modelPath;
   }
 
+  private static HumanSlTrainingConfig legacyConfig(
+      String profile,
+      boolean humanIsBlack,
+      int handicap,
+      double komi,
+      int moveTimeoutSeconds) {
+    String normalized = profile == null ? "rank_3k" : profile.toLowerCase(java.util.Locale.ROOT);
+    boolean dan = normalized.endsWith("d");
+    int rank = 3;
+    try {
+      int underscore = normalized.lastIndexOf('_');
+      rank = Integer.parseInt(normalized.substring(underscore + 1, normalized.length() - 1));
+    } catch (Exception ignored) {
+    }
+    OpponentPreset preset =
+        normalized.startsWith("proyear_") ? OpponentPreset.MODERN_PRO : OpponentPreset.RANK;
+    return HumanSlTrainingConfig.builder()
+        .opponentPreset(preset)
+        .rank(rank, dan)
+        .playerColor(
+            humanIsBlack
+                ? HumanSlTrainingConfig.PlayerColor.BLACK
+                : HumanSlTrainingConfig.PlayerColor.WHITE)
+        .moveTimeSeconds(moveTimeoutSeconds)
+        .handicap(handicap)
+        .komi(komi)
+        .build();
+  }
+
+  private static final class PendingHumanMove {
+    private final BoardHistoryNode positionBefore;
+    private final String move;
+
+    private PendingHumanMove(BoardHistoryNode positionBefore, String move) {
+      this.positionBefore = positionBefore;
+      this.move = move;
+    }
+  }
+
   private static final class PositionEvaluation {
     private final boolean available;
     private final double blackWinrate;
     private final double scoreLead;
 
     private PositionEvaluation(double blackWinrate, double scoreLead) {
-      this.available = true;
+      available = true;
       this.blackWinrate = blackWinrate;
       this.scoreLead = scoreLead;
     }
 
     private PositionEvaluation() {
-      this.available = false;
-      this.blackWinrate = Double.NaN;
-      this.scoreLead = Double.NaN;
+      available = false;
+      blackWinrate = Double.NaN;
+      scoreLead = Double.NaN;
     }
 
     private static PositionEvaluation unavailable() {

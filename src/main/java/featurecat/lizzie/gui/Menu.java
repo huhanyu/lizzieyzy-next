@@ -11,6 +11,7 @@ import featurecat.lizzie.analysis.MoveRankEvaluationMode;
 import featurecat.lizzie.teacher.TeacherDialog;
 import featurecat.lizzie.theme.MorandiPalette;
 import featurecat.lizzie.theme.Theme;
+import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.update.WindowsUpdateController;
 import featurecat.lizzie.util.Utils;
 import java.awt.Color;
@@ -59,6 +60,8 @@ public class Menu extends JMenuBar {
   public static JFontMenu shutdownEngine;
   public static JFontMenu quickLinks;
   private JFontMenu contributeMenu;
+  private JFontButton aiCoachButton;
+  private JFontButton aiCommentaryButton;
   JFontMenuItem shutdownAllEngine;
   JFontMenuItem shutdownCurrentEngine;
   JFontMenuItem restartCurrentEngine;
@@ -5596,19 +5599,26 @@ public class Menu extends JMenuBar {
     // Math.max(Lizzie.config.allFontSize, 12));
     this.add(engineMenu2);
 
-    JFontButton aiCommentaryButton =
-        new JFontButton(resourceBundle.getString("Menu.aiCommentary"));
+    aiCoachButton = new JFontButton(resourceBundle.getString("Menu.aiCoach"));
+    aiCoachButton.setName("aiCoachToolbarButton");
+    aiCoachButton.setFont(baseMenuFont.deriveFont(Font.BOLD));
+    aiCoachButton.setMargin(new Insets(0, 10, 0, 10));
+    aiCoachButton.setIcon(HumanSlTrainingStyle.coachIcon(18, true));
+    aiCoachButton.setIconTextGap(6);
+    HumanSlTrainingStyle.stylePrimary(aiCoachButton);
+    AppleStyleSupport.preserveCustomButtonStyle(aiCoachButton);
+    aiCoachButton.setToolTipText(resourceBundle.getString("Menu.aiCoach.tip"));
+    aiCoachButton
+        .getAccessibleContext()
+        .setAccessibleDescription(resourceBundle.getString("Menu.aiCoach.tip"));
+    aiCoachButton.addActionListener(event -> Lizzie.frame.handleAiCoachToolbarAction());
+
+    aiCommentaryButton = new JFontButton(resourceBundle.getString("Menu.aiCommentary"));
     aiCommentaryButton.setName("aiCommentaryToolbarButton");
     aiCommentaryButton.setFont(baseMenuFont.deriveFont(Font.BOLD));
     aiCommentaryButton.setMargin(new Insets(0, 10, 0, 10));
-    AppleStyleSupport.markPrimary(aiCommentaryButton);
-    Dimension commentarySize = aiCommentaryButton.getPreferredSize();
-    aiCommentaryButton.setPreferredSize(
-        new Dimension(
-            Math.max(
-                Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 5,
-                commentarySize.width + 16),
-            Math.max(24, Config.menuHeight - 2)));
+    HumanSlTrainingStyle.styleSecondary(aiCommentaryButton);
+    AppleStyleSupport.preserveCustomButtonStyle(aiCommentaryButton);
     aiCommentaryButton.setToolTipText(resourceBundle.getString("Menu.aiCommentary"));
     aiCommentaryButton
         .getAccessibleContext()
@@ -5617,8 +5627,19 @@ public class Menu extends JMenuBar {
         .getAccessibleContext()
         .setAccessibleDescription(resourceBundle.getString("Teacher.subtitle"));
     aiCommentaryButton.addActionListener(event -> TeacherDialog.show(Lizzie.frame));
+    configureAiFeatureButton(aiCoachButton);
+    configureAiFeatureButton(aiCommentaryButton);
+    this.add(Box.createHorizontalStrut(6));
+    this.add(aiCoachButton);
     this.add(Box.createHorizontalStrut(6));
     this.add(aiCommentaryButton);
+    this.addComponentListener(
+        new ComponentAdapter() {
+          @Override
+          public void componentResized(ComponentEvent event) {
+            refreshAiFeatureLabels();
+          }
+        });
 
     playing = new ImageIcon();
     try {
@@ -7728,19 +7749,9 @@ public class Menu extends JMenuBar {
             }
           });
 
-      JFontMenuItem humanSlGame =
-          new JFontMenuItem(resourceBundle.getString("Menu.newHumanSlGame"));
-      setToolTipJMenu(humanSlGame);
-      humanSlGame.addActionListener(
-          new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-              Lizzie.frame.startHumanSlGameDialog();
-            }
-          });
       newGamePopup.add(genmoveGame);
       newGamePopup.add(analyzeGame);
       newGamePopup.add(engineGame);
-      newGamePopup.add(humanSlGame);
 
       doubleMenuNewGame.addActionListener(
           new ActionListener() {
@@ -8640,18 +8651,9 @@ public class Menu extends JMenuBar {
           }
         });
 
-    JFontMenuItem humanSlGame = new JFontMenuItem(resourceBundle.getString("Menu.newHumanSlGame"));
-    setToolTipJMenu(humanSlGame);
-    humanSlGame.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            Lizzie.frame.startHumanSlGameDialog();
-          }
-        });
     newGamePopup.add(genmoveGame);
     newGamePopup.add(analyzeGame);
     newGamePopup.add(engineGame);
-    newGamePopup.add(humanSlGame);
 
     doubleMenuNewGame.addActionListener(
         new ActionListener() {
@@ -10326,6 +10328,77 @@ public class Menu extends JMenuBar {
       if (Lizzie.config.allowMoveNumber == 0 && !EngineManager.isEngineGame)
         btnRankMark.setIcon(Lizzie.config.moveRankMarkLastMove < 0 ? rankMarkOff : rankMarkOn);
       else btnRankMark.setIcon(rankMarkOff);
+  }
+
+  private void configureAiFeatureButton(JFontButton button) {
+    Dimension natural = button.getPreferredSize();
+    int minWidth = Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 5;
+    button.setPreferredSize(
+        new Dimension(Math.max(minWidth, natural.width + 14), Math.max(26, Config.menuHeight - 2)));
+    button.setMinimumSize(new Dimension(Math.min(84, button.getPreferredSize().width), 24));
+  }
+
+  private void refreshAiFeatureLabels() {
+    if (aiCoachButton == null || aiCommentaryButton == null) {
+      return;
+    }
+    boolean compact = getWidth() > 0 && getWidth() < 900;
+    if (compact && aiCoachButton.getClientProperty("lizzie.aiCoach.dynamicLabel") == null) {
+      aiCoachButton.setText(resourceBundle.getString("Menu.aiCoach.short"));
+    } else if (!compact
+        && aiCoachButton.getClientProperty("lizzie.aiCoach.dynamicLabel") == null) {
+      aiCoachButton.setText(resourceBundle.getString("Menu.aiCoach"));
+    }
+    aiCommentaryButton.setText(
+        resourceBundle.getString(compact ? "Menu.aiCommentary.short" : "Menu.aiCommentary"));
+  }
+
+  public void updateAiCoachState(HumanSlTrainingSession.State state) {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(() -> updateAiCoachState(state));
+      return;
+    }
+    if (aiCoachButton == null) {
+      return;
+    }
+    String key;
+    switch (state == null ? HumanSlTrainingSession.State.IDLE : state) {
+      case PREPARING:
+        key = "Menu.aiCoach.preparing";
+        break;
+      case PLAYING:
+        key = "Menu.aiCoach.playing";
+        break;
+      case REVIEWING:
+        key = "Menu.aiCoach.reviewing";
+        break;
+      case REPORT_READY:
+        key = "Menu.aiCoach.report";
+        break;
+      case FINISHED:
+      case IDLE:
+      default:
+        key = "Menu.aiCoach";
+        break;
+    }
+    boolean dynamic =
+        state != null
+            && state != HumanSlTrainingSession.State.IDLE
+            && state != HumanSlTrainingSession.State.FINISHED;
+    aiCoachButton.putClientProperty(
+        "lizzie.aiCoach.dynamicLabel", dynamic ? Boolean.TRUE : null);
+    if (dynamic) {
+      aiCoachButton.setText(resourceBundle.getString(key));
+    } else {
+      refreshAiFeatureLabels();
+    }
+    aiCoachButton.setSelected(
+        state == HumanSlTrainingSession.State.PLAYING
+            || state == HumanSlTrainingSession.State.REVIEWING
+            || state == HumanSlTrainingSession.State.REPORT_READY);
+    configureAiFeatureButton(aiCoachButton);
+    revalidate();
+    repaint();
   }
 
   static final class InfoMenuItem extends JFontMenuItem {

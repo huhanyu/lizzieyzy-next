@@ -46,6 +46,8 @@ import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.theme.MorandiPalette;
 import featurecat.lizzie.teacher.CommentDisplayRenderer;
+import featurecat.lizzie.training.HumanMoveDecision;
+import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.util.GraphicsDriverDiagnostics;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
@@ -371,6 +373,12 @@ public class LizzieFrame extends JFrame {
   public boolean isPlayingAgainstLeelaz = false;
   public boolean isAnaPlayingAgainstLeelaz = false;
   public HumanSlGameController humanSlGame = null;
+  private HumanSlTrainingSession humanSlTrainingSession = new HumanSlTrainingSession();
+  private HumanSlTrainingBar humanSlTrainingBar;
+  private HumanSlCorrectionPanel humanSlCorrectionPanel;
+  private NewHumanSlGameDialog humanSlSetupDialog;
+  private HumanSlTrainingReportDialog humanSlTrainingReportDialog;
+  private boolean startHumanSlAtCurrentRequested;
   public boolean playerIsBlack = true;
   public static boolean canGoAfterload = true;
   public int winRateGridLines = 3;
@@ -747,6 +755,8 @@ public class LizzieFrame extends JFrame {
     toolbar = new BottomToolbar();
     topPanel = new TopHeaderPanel();
     menu = new Menu();
+    humanSlTrainingBar = new HumanSlTrainingBar();
+    humanSlCorrectionPanel = new HumanSlCorrectionPanel();
     menuPresentationMode = MenuPresentationMode.detectCurrent();
     windowMenuStrip = new WindowMenuStrip(menu);
     RightClickMenu = new RightClickMenu();
@@ -1820,6 +1830,8 @@ public class LizzieFrame extends JFrame {
           }
         });
     basePanel.add(engineStartupStatusButton, Integer.valueOf(12));
+    basePanel.add(humanSlCorrectionPanel, Integer.valueOf(14));
+    basePanel.add(humanSlTrainingBar, Integer.valueOf(13));
     basePanel.add(commentBlunderControlPane, Integer.valueOf(10));
     basePanel.add(tempGamePanelAll, Integer.valueOf(9));
     basePanel.add(varTreeScrollPane, Integer.valueOf(8));
@@ -1859,6 +1871,7 @@ public class LizzieFrame extends JFrame {
         mainPanel,
         sidebarPanel,
         toolbar,
+        humanSlTrainingBar,
         engineStartupStatusButton);
     Lizzie.engineStartupStatus.addListener(this::updateEngineStartupStatus);
     mainPanel.setVisible(false);
@@ -11243,7 +11256,32 @@ public class LizzieFrame extends JFrame {
   }
 
   public void startHumanSlGameDialog() {
-    runWithForegroundEngineModeReservation(this::startHumanSlGameDialogReserved);
+    // Opening the coach setup must not depend on the foreground engine being ready. The HumanSL
+    // runner is created only after the user confirms the setup, and the controller performs the
+    // actual analysis handoff at that point.
+    startHumanSlGameDialogReserved();
+  }
+
+  public void startHumanSlGameDialogAtCurrentPosition() {
+    startHumanSlAtCurrentRequested = true;
+    startHumanSlGameDialog();
+  }
+
+  public void handleAiCoachToolbarAction() {
+    if (humanSlGame != null && !humanSlGame.isFinished()) {
+      humanSlGame.showControlPanel();
+      return;
+    }
+    if (humanSlSetupDialog != null && humanSlSetupDialog.isDisplayable()) {
+      humanSlSetupDialog.toFront();
+      return;
+    }
+    if (humanSlTrainingSession.state() == HumanSlTrainingSession.State.REPORT_READY
+        && humanSlTrainingReportDialog != null) {
+      humanSlTrainingReportDialog.showReport();
+      return;
+    }
+    startHumanSlGameDialog();
   }
 
   private void startHumanSlGameDialogReserved() {
@@ -11262,9 +11300,50 @@ public class LizzieFrame extends JFrame {
       Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.engineGameStopFirstHint"));
       return;
     }
-    NewHumanSlGameDialog dialog = new NewHumanSlGameDialog(this);
-    dialog.setVisible(true);
-    dialog.dispose();
+    humanSlTrainingSession = new HumanSlTrainingSession();
+    humanSlTrainingSession.addListener(
+        state -> SwingUtilities.invokeLater(() -> menu.updateAiCoachState(state)));
+    menu.updateAiCoachState(HumanSlTrainingSession.State.IDLE);
+    humanSlSetupDialog = new NewHumanSlGameDialog(this, humanSlTrainingSession);
+    if (startHumanSlAtCurrentRequested) {
+      humanSlSetupDialog.selectFromCurrentPosition();
+      startHumanSlAtCurrentRequested = false;
+    }
+    humanSlSetupDialog.setVisible(true);
+    humanSlSetupDialog.dispose();
+    humanSlSetupDialog = null;
+  }
+
+  public void showHumanSlTrainingBar(HumanSlGameController controller) {
+    humanSlTrainingBar.attach(controller);
+    reSetLoc();
+    humanSlTrainingBar.requestPrimaryFocus();
+  }
+
+  public void hideHumanSlTrainingBar(HumanSlGameController controller) {
+    humanSlTrainingBar.detach(controller);
+    reSetLoc();
+  }
+
+  public void updateHumanSlTrainingBar() {
+    if (humanSlTrainingBar != null) {
+      humanSlTrainingBar.repaint();
+    }
+  }
+
+  public void showHumanSlCorrection(
+      HumanSlGameController controller, HumanMoveDecision decision) {
+    humanSlCorrectionPanel.showDecision(controller, decision);
+    reSetLoc();
+  }
+
+  public void hideHumanSlCorrection(HumanSlGameController controller) {
+    humanSlCorrectionPanel.dismiss(controller);
+    repaint();
+  }
+
+  public void setHumanSlTrainingReport(HumanSlTrainingReportDialog dialog) {
+    humanSlTrainingReportDialog = dialog;
   }
 
   public void startEngineGameDialog() {
@@ -12103,6 +12182,7 @@ public class LizzieFrame extends JFrame {
               topPanelHeight = 0;
               topPanel.setVisible(false);
             }
+            int trainingBarHeight = humanSlTrainingBar.isVisible() ? 58 : 0;
             mainPanel.setBounds(
                 0,
                 windowMenuHeight + (Lizzie.config.showDoubleMenu ? topPanelHeight : 0),
@@ -12113,7 +12193,17 @@ public class LizzieFrame extends JFrame {
                         - Lizzie.frame.getInsets().bottom
                         - windowMenuHeight
                         - toolbarHeight
+                        - trainingBarHeight
                         - (Lizzie.config.showDoubleMenu ? topPanelHeight : 0)));
+            humanSlTrainingBar.setBounds(
+                0,
+                Lizzie.frame.getHeight()
+                    - Lizzie.frame.getInsets().top
+                    - Lizzie.frame.getInsets().bottom
+                    - toolbarHeight
+                    - trainingBarHeight,
+                width,
+                trainingBarHeight);
             toolbar.setBounds(
                 0,
                 Lizzie.frame.getHeight()
@@ -12122,6 +12212,7 @@ public class LizzieFrame extends JFrame {
                     - toolbarHeight,
                 width,
                 toolbarHeight);
+            layoutHumanSlCorrection(width, trainingBarHeight);
             layoutEngineStartupStatus(width);
             if (toolbar.showDetail) toolbar.setDetailIcon();
             toolbar.reSetButtonLocation();
@@ -12134,6 +12225,19 @@ public class LizzieFrame extends JFrame {
             }
           }
         });
+  }
+
+  private void layoutHumanSlCorrection(int contentWidth, int trainingBarHeight) {
+    if (humanSlCorrectionPanel == null || !humanSlCorrectionPanel.isVisible()) {
+      return;
+    }
+    int width = Math.min(330, Math.max(270, contentWidth / 4));
+    int height = 205;
+    int x = Math.max(12, contentWidth - width - 22);
+    int contentHeight =
+        getHeight() - getInsets().top - getInsets().bottom - toolbarHeight - trainingBarHeight;
+    int y = Math.max(windowMenuHeight + topPanelHeight + 16, (contentHeight - height) / 2);
+    humanSlCorrectionPanel.setBounds(x, y, width, height);
   }
 
   public void testFilter(Integer txtFieldIntValue) {

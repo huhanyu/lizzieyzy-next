@@ -29,6 +29,7 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
+import javax.swing.event.ChangeListener;
 
 public class WindowMenuStrip extends JPanel {
   private static final long SAME_MENU_REOPEN_SUPPRESS_MS = 250L;
@@ -350,11 +351,13 @@ public class WindowMenuStrip extends JPanel {
   private final class ActionButton extends JButton {
     private final AbstractButton sourceButton;
     private final PropertyChangeListener sourcePropertyListener = this::sourcePropertyChanged;
+    private final ChangeListener sourceChangeListener = event -> syncSelectionFromSource();
 
     private ActionButton(AbstractButton sourceButton) {
       this.sourceButton = sourceButton;
       syncFromSource();
       sourceButton.addPropertyChangeListener(sourcePropertyListener);
+      sourceButton.addChangeListener(sourceChangeListener);
       addActionListener(event -> sourceButton.doClick(0));
     }
 
@@ -374,10 +377,16 @@ public class WindowMenuStrip extends JPanel {
           || "enabled".equals(property)
           || "font".equals(property)
           || "foreground".equals(property)
+          || "background".equals(property)
           || "icon".equals(property)
           || "toolTipText".equals(property)
           || "name".equals(property)
-          || "preferredSize".equals(property)) {
+          || "preferredSize".equals(property)
+          || "margin".equals(property)
+          || "iconTextGap".equals(property)
+          || "horizontalAlignment".equals(property)
+          || "lizzie.apple.button.customStyle".equals(property)
+          || "lizzie.humansl.buttonStyle".equals(property)) {
         syncFromSource();
       }
     }
@@ -388,6 +397,11 @@ public class WindowMenuStrip extends JPanel {
       setEnabled(sourceButton.isEnabled());
       setName(sourceButton.getName());
       setToolTipText(sourceButton.getToolTipText());
+      setIconTextGap(sourceButton.getIconTextGap());
+      setHorizontalAlignment(sourceButton.getHorizontalAlignment());
+      if (sourceButton.getMargin() != null) {
+        setMargin(sourceButton.getMargin());
+      }
       if (sourceButton.getFont() != null) {
         setFont(sourceButton.getFont());
       }
@@ -406,12 +420,23 @@ public class WindowMenuStrip extends JPanel {
                     : accessibleName);
         getAccessibleContext().setAccessibleDescription(accessibleDescription);
       }
+      syncSelectionFromSource();
+      installStyle();
       revalidate();
+      repaint();
+    }
+
+    private void syncSelectionFromSource() {
+      if (isSelected() != sourceButton.isSelected()) {
+        setSelected(sourceButton.isSelected());
+      }
+      setEnabled(sourceButton.isEnabled());
       repaint();
     }
 
     private void detach() {
       sourceButton.removePropertyChangeListener(sourcePropertyListener);
+      sourceButton.removeChangeListener(sourceChangeListener);
     }
   }
 }
