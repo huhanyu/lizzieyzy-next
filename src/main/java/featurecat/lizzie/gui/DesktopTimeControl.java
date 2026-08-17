@@ -7,6 +7,7 @@ import java.util.List;
 
 public final class DesktopTimeControl {
   public enum Mode {
+    ENGINE_OWNED,
     FIXED,
     RAW_ADVANCED,
     KATAGO_ADVANCED
@@ -15,13 +16,21 @@ public final class DesktopTimeControl {
   private DesktopTimeControl() {}
 
   static Mode selectedMode(boolean rawAdvanced, boolean kataGoAdvanced) {
+    return selectedMode(rawAdvanced, kataGoAdvanced, false);
+  }
+
+  static Mode selectedMode(boolean rawAdvanced, boolean kataGoAdvanced, boolean engineOwned) {
+    if (engineOwned) return Mode.ENGINE_OWNED;
     if (rawAdvanced) return Mode.RAW_ADVANCED;
     if (kataGoAdvanced) return Mode.KATAGO_ADVANCED;
     return Mode.FIXED;
   }
 
   static boolean rejectsHumanGame(Leelaz engine, Mode mode, boolean noClock) {
-    return !noClock && mode != Mode.FIXED && isWebSocket(engine);
+    return !noClock
+        && mode != Mode.ENGINE_OWNED
+        && mode != Mode.FIXED
+        && isWebSocket(engine);
   }
 
   public static boolean rejectsEngineGame(
@@ -49,10 +58,21 @@ public final class DesktopTimeControl {
   static void commitHumanSelection(Config config, Mode mode, int kataTimeType) {
     config.advanceTimeSettings = mode == Mode.RAW_ADVANCED;
     config.kataTimeSettings = mode == Mode.KATAGO_ADVANCED;
+    config.genmoveGameNoTime = mode == Mode.ENGINE_OWNED;
     config.kataTimeType = kataTimeType;
     config.uiConfig.put("advance-time-settings", config.advanceTimeSettings);
     config.uiConfig.put("kata-time-settings", config.kataTimeSettings);
+    config.uiConfig.put("genmove-game-notime", config.genmoveGameNoTime);
     config.uiConfig.put("kata-time-type", config.kataTimeType);
+  }
+
+  public static boolean shouldEmitClientTimeOverride(Mode mode) {
+    return mode != Mode.ENGINE_OWNED;
+  }
+
+  public static boolean shouldSendHumanTimeOnEngineReady(
+      boolean genmovePlaying, boolean analysisPlaying) {
+    return genmovePlaying && !analysisPlaying;
   }
 
   static void commitEngineGameSelection(Config config, boolean advancedClock) {

@@ -71,6 +71,49 @@ class LizzieFrameAiTimeControlTest {
     }
   }
 
+  @Test
+  void engineOwnedAiTimeSendsNoClientTimeOverrideForKataGo() throws Exception {
+    Config previousConfig = Lizzie.config;
+    try {
+      Lizzie.config =
+          ConfigTestHelper.createForTests(Files.createTempDirectory("lizzie-ai-time-owned-kata"));
+      Lizzie.config.advanceTimeSettings = false;
+      Lizzie.config.kataTimeSettings = false;
+      Lizzie.config.genmoveGameNoTime = true;
+      Lizzie.config.maxGameThinkingTimeSeconds = 4;
+      RecordingLeelaz engine = new RecordingLeelaz();
+      engine.isKatago = true;
+
+      LizzieFrame.sendAiTime(false, engine, false);
+
+      assertEquals(List.of(), engine.commands);
+    } finally {
+      Lizzie.config = previousConfig;
+    }
+  }
+
+  @Test
+  void engineOwnedAiTimeSendsNoClientTimeOverrideForOrdinaryGtp() throws Exception {
+    Config previousConfig = Lizzie.config;
+    try {
+      Lizzie.config =
+          ConfigTestHelper.createForTests(Files.createTempDirectory("lizzie-ai-time-owned-gtp"));
+      Lizzie.config.advanceTimeSettings = false;
+      Lizzie.config.kataTimeSettings = false;
+      Lizzie.config.genmoveGameNoTime = true;
+      Lizzie.config.maxGameThinkingTimeSeconds = 4;
+      RecordingLeelaz engine = new RecordingLeelaz();
+      engine.isKatago = false;
+
+      LizzieFrame.sendAiTime(false, engine, false);
+
+      assertEquals(List.of(), engine.commands);
+    } finally {
+      Lizzie.config = previousConfig;
+    }
+  }
+
+
   private static final class RecordingLeelaz extends Leelaz {
     private final List<String> commands = new ArrayList<>();
 

@@ -25,15 +25,15 @@ class LizzieInitializationTimeControlTest {
   }
 
   @Test
-  void automaticGameInitializationKeepsGameMoveTime() throws Exception {
+  void automaticGameInitializationDoesNotInstallGameMoveTime() throws Exception {
     try (Harness harness = Harness.open()) {
       harness.frame.isAnaPlayingAgainstLeelaz = true;
       harness.initialize(false);
 
-      assertEquals(
-          List.of("kata-time_settings none", "kata-set-param maxTime 2"), harness.engine.commands);
+      assertEquals(List.of(), harness.engine.commands);
     }
   }
+
 
   @Test
   void readBoardGmaInitializationDoesNotOverwriteGmaTime() throws Exception {
@@ -56,6 +56,18 @@ class LizzieInitializationTimeControlTest {
           List.of("kata-time_settings none", "kata-set-param maxTime 2"), harness.engine.commands);
     }
   }
+
+  @Test
+  void humanEngineOwnedInitializationSendsNoClientTimeOverride() throws Exception {
+    try (Harness harness = Harness.open()) {
+      Lizzie.config.genmoveGameNoTime = true;
+      harness.frame.isPlayingAgainstLeelaz = true;
+      harness.initialize(false);
+
+      assertEquals(List.of(), harness.engine.commands);
+    }
+  }
+
 
   private static final class Harness implements AutoCloseable {
     private final Config previousConfig;

@@ -152,6 +152,62 @@ class DesktopTimeControlTest {
     assertEquals(List.of(), websocket.commands);
   }
 
+  @Test
+  void engineOwnedModeWinsOverOtherHumanClockFlags() {
+    assertEquals(
+        DesktopTimeControl.Mode.ENGINE_OWNED,
+        DesktopTimeControl.selectedMode(true, true, true));
+    assertEquals(
+        DesktopTimeControl.Mode.FIXED, DesktopTimeControl.selectedMode(false, false, false));
+  }
+
+  @Test
+  void commitHumanEngineOwnedPersistsNoTimeFlagAndClearsClientClockModes() throws Exception {
+    Config config =
+        ConfigTestHelper.createForTests(Files.createTempDirectory("lizzie-time-engine-owned"));
+    config.uiConfig = new JSONObject();
+    config.advanceTimeSettings = true;
+    config.kataTimeSettings = true;
+
+    DesktopTimeControl.commitHumanSelection(config, DesktopTimeControl.Mode.ENGINE_OWNED, 1);
+
+    assertTrue(config.genmoveGameNoTime);
+    assertFalse(config.advanceTimeSettings);
+    assertFalse(config.kataTimeSettings);
+    assertTrue(config.uiConfig.getBoolean("genmove-game-notime"));
+    assertFalse(config.uiConfig.getBoolean("advance-time-settings"));
+    assertFalse(config.uiConfig.getBoolean("kata-time-settings"));
+  }
+
+  @Test
+  void websocketAllowsHumanEngineOwnedTime() throws Exception {
+    Leelaz websocket = new Leelaz(RemoteComputeConfig.COMMAND_CUSTOM_WS);
+
+    assertFalse(
+        DesktopTimeControl.rejectsHumanGame(
+            websocket, DesktopTimeControl.Mode.ENGINE_OWNED, false));
+  }
+
+  @Test
+  void engineOwnedModeDoesNotEmitClientTimeOverride() {
+    assertFalse(
+        DesktopTimeControl.shouldEmitClientTimeOverride(DesktopTimeControl.Mode.ENGINE_OWNED));
+    assertTrue(DesktopTimeControl.shouldEmitClientTimeOverride(DesktopTimeControl.Mode.FIXED));
+    assertTrue(
+        DesktopTimeControl.shouldEmitClientTimeOverride(DesktopTimeControl.Mode.RAW_ADVANCED));
+    assertTrue(
+        DesktopTimeControl.shouldEmitClientTimeOverride(DesktopTimeControl.Mode.KATAGO_ADVANCED));
+  }
+
+  @Test
+  void automaticEngineReadySendsHumanTimeOnlyForGenmoveGames() {
+    assertTrue(DesktopTimeControl.shouldSendHumanTimeOnEngineReady(true, false));
+    assertFalse(DesktopTimeControl.shouldSendHumanTimeOnEngineReady(false, true));
+    assertFalse(DesktopTimeControl.shouldSendHumanTimeOnEngineReady(false, false));
+    assertFalse(DesktopTimeControl.shouldSendHumanTimeOnEngineReady(true, true));
+  }
+
+
   private static final class RecordingLeelaz extends Leelaz {
     private final List<String> commands = new ArrayList<>();
 
