@@ -1085,6 +1085,80 @@ class ReadBoardEngineResumeTest {
   }
 
   @Test
+  void readBoardGmaPlayLineColorSwitchUpdatesAuthorizationWhenAlreadyArmed() throws Exception {
+    try (EngineResumeHarness harness =
+        EngineResumeHarness.create(rootHistory(emptyStones(), true))) {
+      RecordingLifecycleLeelaz foreground = new RecordingLifecycleLeelaz();
+      Lizzie.leelaz = foreground;
+
+      harness.readBoard.parseLine("play>white>5 12 34 gma");
+
+      assertTrue(harness.readBoard.isReadBoardGmaAutoPlayActive());
+      assertEquals(Stone.WHITE, getField(harness.readBoard, "readBoardGmaAutoPlayColor"));
+      assertTrue(LizzieFrame.toolbar.chkAutoPlayWhite.isSelected());
+      assertFalse(LizzieFrame.toolbar.chkAutoPlayBlack.isSelected());
+
+      foreground.allowArm = false;
+      harness.readBoard.parseLine("play>black>5 12 34 gma");
+
+      assertTrue(
+          harness.readBoard.isReadBoardGmaAutoPlayActive(),
+          "color switch must keep the existing GMA autoplay authorization");
+      assertEquals(
+          Stone.BLACK,
+          getField(harness.readBoard, "readBoardGmaAutoPlayColor"),
+          "already-armed GMA must accept play> color changes instead of treating itself as a foreign exclusive task");
+      assertTrue(getBooleanField(harness.readBoard, "readBoardGmaAwaitingSyncedBoard"));
+      assertTrue(LizzieFrame.toolbar.chkAutoPlayBlack.isSelected());
+      assertFalse(LizzieFrame.toolbar.chkAutoPlayWhite.isSelected());
+      assertEquals(5, getIntField(harness.readBoard, "readBoardGmaTimeSeconds"));
+      assertEquals(12, getIntField(harness.readBoard, "readBoardGmaMaxVisits"));
+    }
+  }
+
+  @Test
+  void readBoardGmaPlayLineColorSwitchInvalidatesInFlightWhiteResult() throws Exception {
+    try (EngineResumeHarness harness =
+        EngineResumeHarness.create(rootHistory(emptyStones(), true))) {
+      RecordingLifecycleLeelaz foreground = new RecordingLifecycleLeelaz();
+      Lizzie.leelaz = foreground;
+
+      harness.readBoard.parseLine("play>white>5 12 34 gma");
+      Object helperIdentity = new Object();
+      long generation = ((Number) getField(harness.readBoard, "readBoardGmaSessionGeneration")).longValue();
+      setField(harness.readBoard, "readBoardGmaPending", true);
+      setField(harness.readBoard, "readBoardGmaPendingIdentity", helperIdentity);
+      setField(harness.readBoard, "readBoardGmaPendingGeneration", generation);
+      setField(harness.readBoard, "trackingEligibilityIdentity", helperIdentity);
+
+      foreground.allowArm = false;
+      harness.readBoard.parseLine("play>black>5 12 34 gma");
+
+      assertEquals(Stone.BLACK, getField(harness.readBoard, "readBoardGmaAutoPlayColor"));
+      assertTrue(getBooleanField(harness.readBoard, "readBoardGmaPendingLogicallyInvalid"));
+
+      boolean consumed =
+          harness.readBoard.handleReadBoardGmaEnginePlay(helperIdentity, generation, "A1");
+
+      assertTrue(consumed, "stale white GMA must be consumed as an invalidated result");
+      assertFalse(
+          getBooleanField(harness.readBoard, "readBoardGmaPending"),
+          "invalidated white GMA must not stay pending after its late result");
+      int occupied = 0;
+      for (Stone stone : harness.board.getHistory().getStones()) {
+        if (!stone.isEmpty()) {
+          occupied++;
+        }
+      }
+      assertEquals(
+          0,
+          occupied,
+          "a late white GMA play must not be placed after switching to black");
+    }
+  }
+
+
+  @Test
   void activatedReadBoardGmaBlocksForegroundAnalysisLease() throws Exception {
     try (EngineResumeHarness harness =
         EngineResumeHarness.create(rootHistory(emptyStones(), true))) {

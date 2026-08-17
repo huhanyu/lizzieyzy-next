@@ -882,10 +882,19 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
         int firstPlayouts = Integer.parseInt(playParams[2]);
         int time = Integer.parseInt(playParams[0]);
         boolean useGma = isReadBoardGmaPlayMode(playParams);
+        boolean alreadyArmedGma = useGma && readBoardGmaAutoPlayActive;
         Leelaz currentForegroundEngine = useGma ? Lizzie.leelaz : null;
-        if (currentForegroundEngine != null && !currentForegroundEngine.canArmReadBoardGma()) {
+        if (!alreadyArmedGma
+            && currentForegroundEngine != null
+            && !currentForegroundEngine.canArmReadBoardGma()) {
           showForegroundEngineLeaseConflict();
           return;
+        }
+        if (alreadyArmedGma
+            && autoPlayColor != null
+            && !autoPlayColor.isEmpty()
+            && autoPlayColor != readBoardGmaAutoPlayColor) {
+          invalidateReadBoardGmaPhysicalRequestIfPending("play-color-switch");
         }
         clearFailedLocalMoveStateIfAutoPlaySideChanged(autoPlayColor);
         if (hasFailedLocalMoveStateToPreserve()) {
