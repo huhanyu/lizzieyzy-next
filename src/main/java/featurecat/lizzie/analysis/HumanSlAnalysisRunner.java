@@ -5,6 +5,7 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.training.HumanMoveDecision;
 import featurecat.lizzie.util.CommandLaunchHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
@@ -38,6 +39,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   private final List<String> commandParts;
   private final ProcessStarter processStarter;
   private final AtomicInteger nextRequestId = new AtomicInteger(1);
+  private final AtomicInteger processGeneration = new AtomicInteger();
   private final ConcurrentMap<String, CompletableFuture<JSONObject>> pendingResponses =
       new ConcurrentHashMap<String, CompletableFuture<JSONObject>>();
 
@@ -48,6 +50,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   private volatile boolean started;
   private volatile boolean closed;
   private volatile String unavailableReason;
+  private volatile int activeProcessGeneration;
 
   public HumanSlAnalysisRunner(String analysisCommand, Path humanModelPath) {
     this(buildHumanSlCommand(analysisCommand, humanModelPath), ProcessBuilder::start);
@@ -59,6 +62,10 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   }
 
   public synchronized boolean start() {
+    if (closed) {
+      unavailableReason = "HumanSL analysis runner is closed.";
+      return false;
+    }
     if (started && process != null && process.isAlive()) {
       return true;
     }
@@ -91,24 +98,66 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, engineExecutable);
     processBuilder.redirectErrorStream(true);
     try {
-      process = processStarter.start(processBuilder);
-      inputStream =
+      Process launchedProcess = processStarter.start(processBuilder);
+      BufferedReader launchedInput =
           new BufferedReader(
-              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-      outputStream = new BufferedOutputStream(process.getOutputStream());
-      readerExecutor = Executors.newSingleThreadScheduledExecutor();
-      readerExecutor.execute(this::readLoop);
+              new InputStreamReader(launchedProcess.getInputStream(), StandardCharsets.UTF_8));
+      BufferedOutputStream launchedOutput =
+          new BufferedOutputStream(launchedProcess.getOutputStream());
+      ScheduledExecutorService launchedReader = Executors.newSingleThreadScheduledExecutor();
+      int generation = processGeneration.incrementAndGet();
+      process = launchedProcess;
+      inputStream = launchedInput;
+      outputStream = launchedOutput;
+      readerExecutor = launchedReader;
+      activeProcessGeneration = generation;
+      started = true;
+      launchedReader.execute(() -> readLoop(generation, launchedInput));
       AnalysisResourceCoordinator.processStarted(
           this,
           AnalysisResourceCoordinator.Purpose.OTHER,
           String.join(" ", launchCommands),
-          process);
-      started = true;
+          launchedProcess);
       unavailableReason = null;
       return true;
     } catch (IOException e) {
       unavailableReason = e.getLocalizedMessage();
-      close();
+      stopActiveProcess(false, unavailableReason);
+      return false;
+    }
+  }
+
+  /**
+   * Starts the process and proves that the HumanSL model can answer a real request. Process
+   * creation alone is insufficient because KataGo can fail later while loading models or GPU
+   * libraries.
+   */
+  public boolean verifyReady(
+      BoardHistoryNode positionNode, String profile, Duration timeout) {
+    if (positionNode == null || profile == null || profile.trim().isEmpty()) {
+      unavailableReason = "HumanSL readiness position or profile is missing.";
+      return false;
+    }
+    if (!ensureStarted()) {
+      return false;
+    }
+    int generation = activeProcessGeneration;
+    String requestId = "humansl-ready-" + nextRequestId.getAndIncrement();
+    JSONObject readinessRequest =
+        buildHumanSlRequest(requestId, positionNode, profile, 1, 1);
+    try {
+      JSONObject response =
+          request(readinessRequest, timeout == null ? Duration.ofSeconds(180) : timeout);
+      if (response == null || !requestId.equals(response.optString("id", ""))) {
+        stopActiveProcess(
+            generation, false, "HumanSL engine returned an invalid readiness response.");
+        return false;
+      }
+      unavailableReason = null;
+      return true;
+    } catch (TimeoutException | IOException e) {
+      stopActiveProcess(
+          generation, false, usefulMessage(e, "HumanSL engine did not become ready."));
       return false;
     }
   }
@@ -116,16 +165,27 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   /** Selects a plausible move from the HumanSL policy for the requested profile. */
   public Optional<String> bestHumanMove(
       BoardHistoryNode positionNode, String profile, Duration timeout) {
+    return bestHumanMove(positionNode, profile, HUMAN_LIKE_PLAY_VISITS, 1, timeout);
+  }
+
+  /** Selects a plausible move with a caller-defined search and root-symmetry budget. */
+  public Optional<String> bestHumanMove(
+      BoardHistoryNode positionNode,
+      String profile,
+      int maxVisits,
+      int rootSymmetries,
+      Duration timeout) {
     if (positionNode == null || profile == null) {
       return Optional.empty();
     }
     if (!ensureStarted()) {
       return Optional.empty();
     }
+    int generation = activeProcessGeneration;
     String requestId = "humansl-genmove-" + nextRequestId.getAndIncrement();
     boolean allowPass = shouldAllowPass(positionNode);
     JSONObject request =
-        buildHumanSlRequest(requestId, positionNode, profile, HUMAN_LIKE_PLAY_VISITS);
+        buildHumanSlRequest(requestId, positionNode, profile, maxVisits, rootSymmetries);
     try {
       JSONObject response = request(request, timeout == null ? Duration.ofSeconds(30) : timeout);
       if (allowPass && isSearchTopMovePass(response)) {
@@ -146,6 +206,52 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
               profile,
               ThreadLocalRandom.current().nextDouble()));
     } catch (TimeoutException | IOException e) {
+      stopActiveProcess(
+          generation, false, usefulMessage(e, "HumanSL move request failed."));
+      return Optional.empty();
+    }
+  }
+
+  /** Evaluates the player's actual move against human preference and KataGo quality. */
+  public Optional<HumanMoveDecision> evaluateHumanMove(
+      BoardHistoryNode positionNode,
+      String profile,
+      String actualMove,
+      int maxVisits,
+      int rootSymmetries,
+      Duration timeout) {
+    if (positionNode == null || profile == null || actualMove == null || !ensureStarted()) {
+      return Optional.empty();
+    }
+    int generation = activeProcessGeneration;
+    String requestId = "humansl-review-" + nextRequestId.getAndIncrement();
+    JSONObject request =
+        buildHumanSlRequest(requestId, positionNode, profile, maxVisits, rootSymmetries);
+    try {
+      JSONObject response = request(request, timeout == null ? Duration.ofSeconds(30) : timeout);
+      Object policy = extractHumanPolicy(response);
+      JSONArray moveInfos = response.optJSONArray("moveInfos");
+      String commonMove = argmaxPolicyMove(policy, Board.boardWidth, Board.boardHeight);
+      JSONObject bestInfo = orderedMoveInfo(moveInfos, 0);
+      JSONObject actualInfo = findMoveInfo(moveInfos, actualMove);
+      String bestMove = bestInfo == null ? commonMove : bestInfo.optString("move", commonMove);
+      double scoreLoss = qualityLoss(bestInfo, actualInfo, "scoreLead", "scoreMean");
+      double winrateLoss = qualityLoss(bestInfo, actualInfo, "winrate", null);
+      double humanProbability =
+          policyProbability(policy, actualMove, Board.boardWidth, Board.boardHeight);
+      return Optional.of(
+          new HumanMoveDecision(
+              positionNode.getData().moveNumber + 1,
+              positionNode,
+              actualMove,
+              commonMove,
+              bestMove,
+              humanProbability,
+              scoreLoss,
+              winrateLoss));
+    } catch (TimeoutException | IOException e) {
+      stopActiveProcess(
+          generation, false, usefulMessage(e, "HumanSL review request failed."));
       return Optional.empty();
     }
   }
@@ -248,8 +354,11 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
 
   public JSONObject request(JSONObject request, Duration timeout)
       throws IOException, TimeoutException {
-    if (!started || outputStream == null) {
-      throw new IOException("HumanSL analysis engine is not started.");
+    if (!ensureStarted()) {
+      throw new IOException(
+          unavailableReason == null
+              ? "HumanSL analysis engine is not started."
+              : unavailableReason);
     }
     String id = request.optString("id", "");
     if (id.isEmpty()) {
@@ -258,8 +367,22 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     CompletableFuture<JSONObject> future = new CompletableFuture<JSONObject>();
     pendingResponses.put(id, future);
     try {
-      outputStream.write((request.toString() + "\n").getBytes(StandardCharsets.UTF_8));
-      outputStream.flush();
+      BufferedOutputStream activeOutput;
+      int generation;
+      synchronized (this) {
+        if (!started || outputStream == null || process == null || !process.isAlive()) {
+          throw new IOException("HumanSL analysis engine stopped before the request was sent.");
+        }
+        activeOutput = outputStream;
+        generation = activeProcessGeneration;
+      }
+      synchronized (activeOutput) {
+        if (!started || generation != activeProcessGeneration) {
+          throw new IOException("HumanSL analysis engine restarted before the request was sent.");
+        }
+        activeOutput.write((request.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+        activeOutput.flush();
+      }
       long timeoutMillis = Math.max(1L, timeout.toMillis());
       return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
     } catch (java.util.concurrent.TimeoutException e) {
@@ -283,38 +406,80 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   }
 
   public boolean isStarted() {
-    return started;
+    Process active = process;
+    return started && active != null && active.isAlive();
+  }
+
+  /**
+   * Cancels the current request and process without permanently closing the runner. A later
+   * request starts a clean process, so user actions such as "finish" never queue behind a stuck
+   * engine request.
+   */
+  public void cancelActiveRequests() {
+    stopActiveProcess(false, "HumanSL request cancelled.");
   }
 
   @Override
-  public synchronized void close() {
-    closed = true;
-    started = false;
-    IOException closeError = new IOException("HumanSL analysis runner closed.");
+  public void close() {
+    stopActiveProcess(true, "HumanSL analysis runner closed.");
+  }
+
+  private void stopActiveProcess(boolean permanently, String reason) {
+    stopActiveProcess(-1, permanently, reason);
+  }
+
+  private void stopActiveProcess(int expectedGeneration, boolean permanently, String reason) {
+    Process stoppedProcess;
+    BufferedReader stoppedInput;
+    BufferedOutputStream stoppedOutput;
+    ScheduledExecutorService stoppedReader;
+    synchronized (this) {
+      if (expectedGeneration >= 0 && expectedGeneration != activeProcessGeneration) {
+        return;
+      }
+      if (permanently) {
+        closed = true;
+      }
+      started = false;
+      activeProcessGeneration = processGeneration.incrementAndGet();
+      stoppedProcess = process;
+      stoppedInput = inputStream;
+      stoppedOutput = outputStream;
+      stoppedReader = readerExecutor;
+      process = null;
+      inputStream = null;
+      outputStream = null;
+      readerExecutor = null;
+      if (reason != null && !reason.trim().isEmpty()) {
+        unavailableReason = reason;
+      }
+    }
+    IOException closeError =
+        new IOException(reason == null ? "HumanSL analysis runner stopped." : reason);
     for (CompletableFuture<JSONObject> future : pendingResponses.values()) {
       future.completeExceptionally(closeError);
     }
     pendingResponses.clear();
-    if (readerExecutor != null) {
-      readerExecutor.shutdownNow();
+    if (stoppedReader != null) {
+      stoppedReader.shutdownNow();
+    }
+    if (stoppedProcess != null && stoppedProcess.isAlive()) {
+      stoppedProcess.destroyForcibly();
     }
     try {
-      if (outputStream != null) {
-        outputStream.close();
+      if (stoppedOutput != null) {
+        stoppedOutput.close();
       }
     } catch (IOException ignored) {
     }
     try {
-      if (inputStream != null) {
-        inputStream.close();
+      if (stoppedInput != null) {
+        stoppedInput.close();
       }
     } catch (IOException ignored) {
-    }
-    if (process != null && process.isAlive()) {
-      process.destroyForcibly();
     }
     AnalysisResourceCoordinator.processStopped(
-        this, AnalysisResourceCoordinator.Purpose.OTHER, process);
+        this, AnalysisResourceCoordinator.Purpose.OTHER, stoppedProcess);
   }
 
   static List<String> buildHumanSlCommand(String analysisCommand, Path humanModelPath) {
@@ -339,6 +504,15 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
 
   static JSONObject buildHumanSlRequest(
       String id, BoardHistoryNode positionNode, String profile, int maxVisits) {
+    return buildHumanSlRequest(id, positionNode, profile, maxVisits, 1);
+  }
+
+  static JSONObject buildHumanSlRequest(
+      String id,
+      BoardHistoryNode positionNode,
+      String profile,
+      int maxVisits,
+      int rootSymmetries) {
     JSONObject request =
         AnalysisRequestBuilder.buildRequest(
             id, positionNode, Math.max(1, maxVisits), false, false, false);
@@ -351,8 +525,119 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     overrideSettings.put("humanSLProfile", profile);
     overrideSettings.put("ignorePreRootHistory", false);
     overrideSettings.put("humanSLRootExploreProbWeightless", 0.5);
+    overrideSettings.put("rootNumSymmetriesToSample", Math.max(1, Math.min(8, rootSymmetries)));
     request.put("overrideSettings", overrideSettings);
     return request;
+  }
+
+  private static JSONObject orderedMoveInfo(JSONArray moveInfos, int order) {
+    if (moveInfos == null) {
+      return null;
+    }
+    for (int index = 0; index < moveInfos.length(); index++) {
+      JSONObject info = moveInfos.optJSONObject(index);
+      if (info != null && info.optInt("order", index) == order) {
+        return info;
+      }
+    }
+    return order >= 0 && order < moveInfos.length() ? moveInfos.optJSONObject(order) : null;
+  }
+
+  private static JSONObject findMoveInfo(JSONArray moveInfos, String move) {
+    if (moveInfos == null || move == null) {
+      return null;
+    }
+    String normalized = normalizeMove(move);
+    for (int index = 0; index < moveInfos.length(); index++) {
+      JSONObject info = moveInfos.optJSONObject(index);
+      if (info != null && normalized.equals(normalizeMove(info.optString("move", "")))) {
+        return info;
+      }
+    }
+    return null;
+  }
+
+  private static double qualityLoss(
+      JSONObject bestInfo, JSONObject actualInfo, String primaryKey, String fallbackKey) {
+    Double best = numericValue(bestInfo, primaryKey, fallbackKey);
+    Double actual = numericValue(actualInfo, primaryKey, fallbackKey);
+    if (best == null || actual == null) {
+      return Double.NaN;
+    }
+    double loss = best.doubleValue() - actual.doubleValue();
+    if ("winrate".equals(primaryKey)
+        && (Math.abs(best.doubleValue()) > 1.0 || Math.abs(actual.doubleValue()) > 1.0)) {
+      loss /= 100.0;
+    }
+    return Math.max(0.0, loss);
+  }
+
+  private static Double numericValue(JSONObject object, String primaryKey, String fallbackKey) {
+    if (object == null) {
+      return null;
+    }
+    Object raw = object.opt(primaryKey);
+    if (!(raw instanceof Number) && fallbackKey != null) {
+      raw = object.opt(fallbackKey);
+    }
+    if (!(raw instanceof Number)) {
+      return null;
+    }
+    double value = ((Number) raw).doubleValue();
+    return Double.isFinite(value) ? Double.valueOf(value) : null;
+  }
+
+  static double policyProbability(Object policy, String move, int boardWidth, int boardHeight) {
+    if (policy == null || move == null) {
+      return Double.NaN;
+    }
+    String normalized = normalizeMove(move);
+    if (policy instanceof JSONObject) {
+      JSONObject object = (JSONObject) policy;
+      for (String key : object.keySet()) {
+        if (normalized.equals(normalizeMove(key))) {
+          Double probability = coerceProbability(object.opt(key));
+          return probability == null ? Double.NaN : probability.doubleValue();
+        }
+      }
+      return Double.NaN;
+    }
+    if (!(policy instanceof JSONArray)) {
+      return Double.NaN;
+    }
+    JSONArray array = (JSONArray) policy;
+    if (!isNumericPolicy(array)) {
+      for (int index = 0; index < array.length(); index++) {
+        JSONArray pair = array.optJSONArray(index);
+        if (pair != null && normalized.equals(normalizeMove(pair.optString(0, "")))) {
+          Double probability = coerceProbability(pair.opt(1));
+          return probability == null ? Double.NaN : probability.doubleValue();
+        }
+      }
+      return Double.NaN;
+    }
+    int policyIndex;
+    if ("pass".equals(normalized)) {
+      policyIndex = boardWidth * boardHeight;
+    } else {
+      int[] coords = Board.convertNameToCoordinates(normalized);
+      if (coords == null || coords == featurecat.lizzie.gui.LizzieFrame.outOfBoundCoordinate) {
+        return Double.NaN;
+      }
+      policyIndex = coords[1] * boardWidth + coords[0];
+    }
+    Double probability = coerceProbability(array.opt(policyIndex));
+    return probability == null ? Double.NaN : probability.doubleValue();
+  }
+
+  private static String normalizeMove(String move) {
+    if (move == null) {
+      return "";
+    }
+    String normalized = move.trim();
+    return "pass".equalsIgnoreCase(normalized)
+        ? "pass"
+        : normalized.toUpperCase(java.util.Locale.ROOT);
   }
 
   private static boolean isSearchTopMovePass(JSONObject response) {
@@ -462,14 +747,20 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   }
 
   private boolean ensureStarted() {
-    return started || start();
+    return isStarted() || start();
   }
 
-  private void readLoop() {
+  private void readLoop(int generation, BufferedReader reader) {
+    IOException failure = null;
     try {
       String line;
-      while (!closed && (line = inputStream.readLine()) != null) {
+      while (!closed
+          && generation == activeProcessGeneration
+          && (line = reader.readLine()) != null) {
         if (!line.trim().startsWith("{")) {
+          if (!line.trim().isEmpty()) {
+            unavailableReason = line.trim();
+          }
           continue;
         }
         JSONObject response = new JSONObject(line);
@@ -480,13 +771,29 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
         }
       }
     } catch (Exception e) {
-      IOException ioException = new IOException("HumanSL analysis reader stopped.", e);
-      for (CompletableFuture<JSONObject> future : pendingResponses.values()) {
-        future.completeExceptionally(ioException);
-      }
+      failure = new IOException("HumanSL analysis reader stopped.", e);
     } finally {
-      started = false;
+      boolean activeGeneration = generation == activeProcessGeneration;
+      if (activeGeneration && !closed) {
+        IOException ioException =
+            failure == null
+                ? new IOException(
+                    unavailableReason == null
+                        ? "HumanSL analysis engine stopped unexpectedly."
+                        : unavailableReason)
+                : failure;
+        String reason = usefulMessage(ioException, "HumanSL analysis engine stopped.");
+        stopActiveProcess(generation, false, reason);
+      }
     }
+  }
+
+  private static String usefulMessage(Exception exception, String fallback) {
+    if (exception == null || exception.getLocalizedMessage() == null) {
+      return fallback;
+    }
+    String message = exception.getLocalizedMessage().trim();
+    return message.isEmpty() ? fallback : message;
   }
 
   private static int findHumanModelValueIndex(List<String> parts) {

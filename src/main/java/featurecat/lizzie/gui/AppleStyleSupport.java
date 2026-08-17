@@ -90,6 +90,8 @@ public final class AppleStyleSupport {
       return;
     }
     target.putClientProperty(BUTTON_ROLE, source.getClientProperty(BUTTON_ROLE));
+    target.putClientProperty(CUSTOM_BUTTON_STYLE, source.getClientProperty(CUSTOM_BUTTON_STYLE));
+    HumanSlTrainingStyle.copyCustomButtonStyle(source, target);
   }
 
   /** Keeps a purpose-built button renderer from being replaced by global theme refreshes. */
@@ -180,6 +182,7 @@ public final class AppleStyleSupport {
       return;
     }
     if (Boolean.TRUE.equals(button.getClientProperty(CUSTOM_BUTTON_STYLE))) {
+      HumanSlTrainingStyle.restoreCustomButtonStyle(button);
       return;
     }
     // Preserve manually set sizes (e.g. BottomToolbar buttons sized before styling)

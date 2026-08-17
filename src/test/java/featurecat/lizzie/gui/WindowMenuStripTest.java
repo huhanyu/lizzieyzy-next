@@ -2,6 +2,7 @@ package featurecat.lizzie.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
@@ -45,6 +46,29 @@ class WindowMenuStripTest {
     mirroredButton.doClick(0);
 
     assertEquals(1, invocationCount.get());
+  }
+
+  @Test
+  void mirrorsAiCoachVisualRoleAndDynamicSelectionState() {
+    JMenuBar menuBar = new JMenuBar();
+    JButton sourceButton = new JButton("AI 陪练");
+    HumanSlTrainingStyle.stylePrimary(sourceButton);
+    AppleStyleSupport.preserveCustomButtonStyle(sourceButton);
+    menuBar.add(sourceButton);
+
+    WindowMenuStrip strip = new WindowMenuStrip(menuBar);
+    JButton mirroredButton = (JButton) strip.getComponent(0);
+
+    assertEquals(HumanSlTrainingStyle.ACCENT, mirroredButton.getBackground());
+    assertEquals(java.awt.Color.WHITE, mirroredButton.getForeground());
+    assertNotNull(mirroredButton.getUI());
+    assertTrue(mirroredButton.getUI().getClass().getName().contains("RoundedButtonUI"));
+
+    sourceButton.setText("陪练中");
+    sourceButton.setSelected(true);
+
+    assertEquals("陪练中", mirroredButton.getText());
+    assertTrue(mirroredButton.isSelected());
   }
 
   @Test

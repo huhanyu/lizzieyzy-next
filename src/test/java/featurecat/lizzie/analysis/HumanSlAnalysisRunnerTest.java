@@ -24,6 +24,12 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
@@ -65,6 +71,25 @@ class HumanSlAnalysisRunnerTest {
           0.0001);
       assertEquals(BOARD_SIZE, request.getInt("boardXSize"));
       assertEquals(BOARD_SIZE, request.getInt("boardYSize"));
+    }
+  }
+
+  @Test
+  void buildHumanSlRequest_appliesConfiguredRootSymmetryBudget() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+
+      JSONObject request =
+          HumanSlAnalysisRunner.buildHumanSlRequest(
+              "humansl-pro", history.getCurrentHistoryNode(), "proyear_2023", 128, 2);
+
+      assertEquals(128, request.getInt("maxVisits"));
+      assertEquals(
+          2,
+          request
+              .getJSONObject("overrideSettings")
+              .getInt("rootNumSymmetriesToSample"));
     }
   }
 
@@ -263,6 +288,193 @@ class HumanSlAnalysisRunnerTest {
     }
   }
 
+  @Test
+  void verifyReady_requiresARealHumanSlResponse() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  new JSONObject()
+                      .put("id", request.getString("id"))
+                      .put("humanPolicy", new JSONObject().put("A3", 1.0)));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      assertTrue(
+          runner.verifyReady(
+              history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1)));
+      assertEquals(1, process.sentRequests.size());
+      assertEquals(1, process.sentRequests.get(0).getInt("maxVisits"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void verifyReady_rejectsAProcessThatNeverAnswers() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      FakeProcess process = new FakeProcess(request -> null);
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      assertFalse(
+          runner.verifyReady(
+              history.getCurrentHistoryNode(), "rank_3k", Duration.ofMillis(40)));
+      assertFalse(runner.isStarted());
+      assertTrue(runner.getUnavailableReason().contains("Timed out"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void cancelActiveRequests_unblocksAndAllowsCleanRestart() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      FakeProcess stalled = new FakeProcess(request -> null);
+      FakeProcess recovered =
+          new FakeProcess(
+              request ->
+                  new JSONObject()
+                      .put("id", request.getString("id"))
+                      .put("humanPolicy", new JSONObject().put("B2", 1.0))
+                      .put(
+                          "moveInfos",
+                          new JSONArray()
+                              .put(new JSONObject().put("move", "B2").put("order", 0))));
+      AtomicInteger launches = new AtomicInteger();
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(
+              List.of("katago", "analysis"),
+              ignored -> launches.getAndIncrement() == 0 ? stalled : recovered);
+      ExecutorService worker = Executors.newSingleThreadExecutor();
+      try {
+        Future<java.util.Optional<String>> blocked =
+            worker.submit(
+                () ->
+                    runner.bestHumanMove(
+                        history.getCurrentHistoryNode(),
+                        "rank_3k",
+                        Duration.ofSeconds(30)));
+        waitForRequest(stalled, 1, 1, TimeUnit.SECONDS);
+
+        runner.cancelActiveRequests();
+
+        assertTrue(blocked.get(1, TimeUnit.SECONDS).isEmpty());
+        assertEquals(
+            java.util.Optional.of("B2"),
+            runner.bestHumanMove(
+                history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1)));
+        assertEquals(2, launches.get());
+      } finally {
+        worker.shutdownNow();
+        runner.close();
+      }
+    }
+  }
+
+  @Test
+  void staleCancelledRequestCannotStopReplacementEngine() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      CountDownLatch oldRequestEntered = new CountDownLatch(1);
+      CountDownLatch releaseOldRequest = new CountDownLatch(1);
+      FakeProcess stalled =
+          new FakeProcess(
+              request -> {
+                oldRequestEntered.countDown();
+                try {
+                  releaseOldRequest.await(2, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                  throw new IOException("Interrupted stale HumanSL request.", e);
+                }
+                return null;
+              });
+      FakeProcess recovered =
+          new FakeProcess(
+              request ->
+                  new JSONObject()
+                      .put("id", request.getString("id"))
+                      .put("humanPolicy", new JSONObject().put("B2", 1.0))
+                      .put(
+                          "moveInfos",
+                          new JSONArray()
+                              .put(new JSONObject().put("move", "B2").put("order", 0))));
+      AtomicInteger launches = new AtomicInteger();
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(
+              List.of("katago", "analysis"),
+              ignored -> launches.getAndIncrement() == 0 ? stalled : recovered);
+      ExecutorService worker = Executors.newSingleThreadExecutor();
+      try {
+        Future<java.util.Optional<String>> staleRequest =
+            worker.submit(
+                () ->
+                    runner.bestHumanMove(
+                        history.getCurrentHistoryNode(),
+                        "rank_3k",
+                        Duration.ofSeconds(30)));
+        assertTrue(oldRequestEntered.await(1, TimeUnit.SECONDS));
+
+        runner.cancelActiveRequests();
+        assertEquals(
+            java.util.Optional.of("B2"),
+            runner.bestHumanMove(
+                history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1)));
+
+        releaseOldRequest.countDown();
+        assertTrue(staleRequest.get(1, TimeUnit.SECONDS).isEmpty());
+        assertTrue(runner.isStarted());
+        assertEquals(
+            java.util.Optional.of("B2"),
+            runner.bestHumanMove(
+                history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1)));
+        assertEquals(2, launches.get());
+      } finally {
+        releaseOldRequest.countDown();
+        worker.shutdownNow();
+        runner.close();
+      }
+    }
+  }
+
+  @Test
+  void close_isPermanentAndDoesNotRelaunchTheEngine() throws Exception {
+    AtomicInteger launches = new AtomicInteger();
+    HumanSlAnalysisRunner runner =
+        new HumanSlAnalysisRunner(
+            List.of("katago", "analysis"),
+            ignored -> {
+              launches.incrementAndGet();
+              return new FakeProcess(request -> null);
+            });
+
+    assertTrue(runner.start());
+    runner.close();
+
+    assertFalse(runner.start());
+    assertEquals(1, launches.get());
+  }
+
+  private static void waitForRequest(
+      FakeProcess process, int expected, long timeout, TimeUnit unit) throws Exception {
+    long deadline = System.nanoTime() + unit.toNanos(timeout);
+    while (System.nanoTime() < deadline) {
+      synchronized (process.sentRequests) {
+        if (process.sentRequests.size() >= expected) {
+          return;
+        }
+      }
+      Thread.sleep(5L);
+    }
+    throw new AssertionError("HumanSL request was not sent before timeout.");
+  }
+
   private static Board boardWithHistory(BoardHistoryList history) throws Exception {
     Board board = allocate(Board.class);
     board.startStonelist = new ArrayList<>();
@@ -336,7 +548,8 @@ class HumanSlAnalysisRunnerTest {
     private final PipedInputStream stdout;
     private final PipedOutputStream stdoutWriter;
     private final OutputStream stdin;
-    private final List<JSONObject> sentRequests = new ArrayList<>();
+    private final List<JSONObject> sentRequests =
+        java.util.Collections.synchronizedList(new ArrayList<JSONObject>());
     private volatile boolean alive = true;
 
     private FakeProcess(ResponseFactory responseFactory) throws IOException {
