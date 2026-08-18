@@ -13051,8 +13051,9 @@ public class Leelaz {
   }
 
   /**
-   * Attaches the shared startup admission and begins one public barrier on this engine. Target and
-   * mirror receive the same admission instance. The owner activates and deactivates that instance.
+   * Attaches the shared startup admission and begins one board-synchronization barrier on this
+   * engine. Target and mirror receive the same admission instance. The owner activates and
+   * deactivates that instance.
    */
   void attachAndBeginInitialEngineSyncAdmission(
       EngineManager.InitialEngineSyncAdmission admission) {
@@ -13086,8 +13087,7 @@ public class Leelaz {
 
   /**
    * Captures ordinary forwarding occupancy at mutation time. Occupied when the startup admission
-   * is active or the existing public board-synchronization barrier is still held (restart fence
-   * until that surface is retired).
+   * is active or a lifecycle board-synchronization barrier is still held.
    */
   public EngineManager.OrdinaryLiveBoardForwardingIntent captureOrdinaryLiveBoardForwarding(
       Supplier<Boolean> action) {
@@ -13126,7 +13126,7 @@ public class Leelaz {
     return (admission != null && admission.isActive()) || initialBoardSynchronizationDepth > 0;
   }
 
-  public boolean isInitialBoardSynchronizationActive() {
+  private boolean isInitialBoardSynchronizationActive() {
     return initialBoardSynchronizationDepth > 0;
   }
 

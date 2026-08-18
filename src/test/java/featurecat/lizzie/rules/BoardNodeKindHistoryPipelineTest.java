@@ -4350,7 +4350,6 @@ class BoardNodeKindHistoryPipelineTest {
       activatePrimaryEngine(replacement);
       Lizzie.setPrimaryEngine(replacement);
       board.releaseBlockedHistoryNavigationRestoreExecution();
-      original.releaseBlockedInitialBoardSynchronizationCheck();
       awaitHistoryNavigationIdle(Lizzie.board);
       List<String> staleCommands =
           new ArrayList<>(
@@ -4367,7 +4366,6 @@ class BoardNodeKindHistoryPipelineTest {
       assertFalse(frame.failureHandlingWasRequested());
     } finally {
       ((TrackingBoard) Lizzie.board).releaseBlockedHistoryNavigationRestoreExecution();
-      original.releaseBlockedInitialBoardSynchronizationCheck();
       Lizzie.setPrimaryEngine(original);
       awaitHistoryNavigationIdle(Lizzie.board);
       env.close();
@@ -6036,8 +6034,6 @@ class BoardNodeKindHistoryPipelineTest {
     private volatile CountDownLatch blockedNotPonderingRelease;
     private volatile CountDownLatch blockedFrozenClearStarted;
     private volatile CountDownLatch blockedFrozenClearRelease;
-    private volatile CountDownLatch blockedInitialBoardSynchronizationCheckStarted;
-    private volatile CountDownLatch blockedInitialBoardSynchronizationCheckRelease;
     private List<Stone[]> undoStones;
     private List<Boolean> undoBlackToPlay;
     private String lastLoadedSgfContent = "";
@@ -6082,13 +6078,6 @@ class BoardNodeKindHistoryPipelineTest {
       super.notPondering();
     }
 
-    @Override
-    public boolean isInitialBoardSynchronizationActive() {
-      if (Thread.currentThread().getName().equals("lizzie-history-restore")) {
-        waitForBlockedInitialBoardSynchronizationCheckRelease();
-      }
-      return super.isInitialBoardSynchronizationActive();
-    }
     @Override
     public void ponder() {
       if (trackPonderCalls) {
@@ -6202,47 +6191,6 @@ class BoardNodeKindHistoryPipelineTest {
     }
     private int notPonderingCallCount() {
       return notPonderingCallCount;
-    }
-
-    private void blockNextInitialBoardSynchronizationCheck() {
-      blockedInitialBoardSynchronizationCheckStarted = new CountDownLatch(1);
-      blockedInitialBoardSynchronizationCheckRelease = new CountDownLatch(1);
-    }
-
-    private boolean awaitBlockedInitialBoardSynchronizationCheck() throws InterruptedException {
-      CountDownLatch started = blockedInitialBoardSynchronizationCheckStarted;
-      return started != null && started.await(2, TimeUnit.SECONDS);
-    }
-
-    private void releaseBlockedInitialBoardSynchronizationCheck() {
-      CountDownLatch release = blockedInitialBoardSynchronizationCheckRelease;
-      if (release != null) {
-        release.countDown();
-      }
-    }
-
-    private void waitForBlockedInitialBoardSynchronizationCheckRelease() {
-      CountDownLatch started = blockedInitialBoardSynchronizationCheckStarted;
-      CountDownLatch release = blockedInitialBoardSynchronizationCheckRelease;
-      if (started == null || release == null) {
-        return;
-      }
-      started.countDown();
-      try {
-        if (!release.await(2, TimeUnit.SECONDS)) {
-          throw new IllegalStateException(
-              "Timed out waiting to release blocked initial synchronization check");
-        }
-      } catch (InterruptedException failure) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException(
-            "Interrupted while blocking initial synchronization check", failure);
-      } finally {
-        if (blockedInitialBoardSynchronizationCheckStarted == started) {
-          blockedInitialBoardSynchronizationCheckStarted = null;
-          blockedInitialBoardSynchronizationCheckRelease = null;
-        }
-      }
     }
 
     private void blockNextPonder() {
