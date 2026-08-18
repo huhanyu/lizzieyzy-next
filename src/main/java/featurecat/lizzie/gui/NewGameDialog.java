@@ -932,10 +932,11 @@ public class NewGameDialog extends JDialog {
         Lizzie.board.tempmovelistForGenMoveGame = null;
       } else Lizzie.board.tempmovelistForGenMoveGame = Lizzie.board.getMoveList();
       Lizzie.config.playponder = chkPonder.isSelected();
-      Lizzie.config.maxGameThinkingTimeSeconds =
-          FORMAT_HANDICAP.parse(textTime.getText().trim()).intValue();
-      Lizzie.config.leelazConfig.putOpt(
-          "max-game-thinking-time-seconds", FORMAT_HANDICAP.parse(textTime.getText()).intValue());
+      if (DesktopTimeControl.usesFixedMoveSeconds(timeMode)) {
+        int fixedMoveSeconds = FORMAT_HANDICAP.parse(textTime.getText().trim()).intValue();
+        Lizzie.config.maxGameThinkingTimeSeconds = fixedMoveSeconds;
+        Lizzie.config.leelazConfig.putOpt("max-game-thinking-time-seconds", fixedMoveSeconds);
+      }
       Lizzie.config.leelazConfig.putOpt("play-ponder", Lizzie.config.playponder);
 
       Lizzie.config.advanceTimeTxt = txtAdvanceTime.getText();

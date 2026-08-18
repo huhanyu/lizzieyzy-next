@@ -85,6 +85,10 @@ public final class DesktopTimeControl {
     return mode != Mode.ENGINE_OWNED;
   }
 
+  static boolean usesFixedMoveSeconds(Mode mode) {
+    return mode == Mode.FIXED;
+  }
+
   public static boolean shouldSendHumanTimeOnEngineReady(
       boolean genmovePlaying, boolean analysisPlaying) {
     return genmovePlaying && !analysisPlaying;
@@ -103,7 +107,6 @@ public final class DesktopTimeControl {
     config.uiConfig.put("pk-advance-time-settings", config.pkAdvanceTimeSettings);
   }
 
-
   static SideMode selectedEngineGameSideMode(boolean advanced, boolean engineOwned) {
     if (engineOwned) return SideMode.ENGINE_OWNED;
     if (advanced) return SideMode.RAW_ADVANCED;
@@ -112,8 +115,9 @@ public final class DesktopTimeControl {
 
   public static SideMode loadEngineGameSideMode(Config config, boolean black) {
     String key = black ? "pk-black-time-mode" : "pk-white-time-mode";
-    if (config.uiConfig.has(key)) {
-      return SideMode.valueOf(config.uiConfig.getString(key));
+    String savedMode = config.uiConfig.optString(key, "").trim();
+    for (SideMode mode : SideMode.values()) {
+      if (mode.name().equalsIgnoreCase(savedMode)) return mode;
     }
     return config.pkAdvanceTimeSettings ? SideMode.RAW_ADVANCED : SideMode.FIXED;
   }
@@ -128,7 +132,7 @@ public final class DesktopTimeControl {
     engine.sendCommand(advancedCommand);
   }
 
-  static int fixedSecondsForToolbar(
+  public static int fixedSecondsForToolbar(
       SideMode mode, boolean toolbarTimeSelected, int parsedSeconds) {
     return mode == SideMode.FIXED && toolbarTimeSelected ? parsedSeconds : -1;
   }

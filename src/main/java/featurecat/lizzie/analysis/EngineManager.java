@@ -281,6 +281,12 @@ public class EngineManager {
     engineGameInfo.whiteEngineIndex = engineWhite;
     engineGameInfo.firstEngineIndex = engineBlack;
     engineGameInfo.secondEngineIndex = engineWhite;
+    if (isGenmove) {
+      timeBlack =
+          DesktopTimeControl.fixedSecondsForToolbar(blackTimeMode, timeBlack > 0, timeBlack);
+      timeWhite =
+          DesktopTimeControl.fixedSecondsForToolbar(whiteTimeMode, timeWhite > 0, timeWhite);
+    }
     engineGameInfo.timeBlack = timeBlack;
     engineGameInfo.timeWhite = timeWhite;
     engineGameInfo.timeFirstEngine = timeBlack;
@@ -289,14 +295,6 @@ public class EngineManager {
     engineGameInfo.whiteTimeMode = whiteTimeMode;
     engineGameInfo.advanceBlackTimeCmd = Lizzie.config.advanceBlackTimeTxt;
     engineGameInfo.advanceWhiteTimeCmd = Lizzie.config.advanceWhiteTimeTxt;
-    if (isGenmove) {
-      if (blackTimeMode != DesktopTimeControl.SideMode.FIXED) {
-        engineGameInfo.timeBlack = -1;
-      }
-      if (whiteTimeMode != DesktopTimeControl.SideMode.FIXED) {
-        engineGameInfo.timeWhite = -1;
-      }
-    }
     engineGameInfo.playoutsBlack = playoutsBlack;
     engineGameInfo.playoutsWhite = playoutsWhite;
     engineGameInfo.playoutsFirstEngine = playoutsBlack;

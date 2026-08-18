@@ -200,6 +200,14 @@ class DesktopTimeControlTest {
   }
 
   @Test
+  void onlyFixedModeConsumesThePerMoveSecondsField() {
+    assertTrue(DesktopTimeControl.usesFixedMoveSeconds(DesktopTimeControl.Mode.FIXED));
+    assertFalse(DesktopTimeControl.usesFixedMoveSeconds(DesktopTimeControl.Mode.ENGINE_OWNED));
+    assertFalse(DesktopTimeControl.usesFixedMoveSeconds(DesktopTimeControl.Mode.RAW_ADVANCED));
+    assertFalse(DesktopTimeControl.usesFixedMoveSeconds(DesktopTimeControl.Mode.KATAGO_ADVANCED));
+  }
+
+  @Test
   void automaticEngineReadySendsHumanTimeOnlyForGenmoveGames() {
     assertTrue(DesktopTimeControl.shouldSendHumanTimeOnEngineReady(true, false));
     assertFalse(DesktopTimeControl.shouldSendHumanTimeOnEngineReady(false, true));
@@ -244,7 +252,40 @@ class DesktopTimeControlTest {
         DesktopTimeControl.loadEngineGameSideMode(config, false));
     assertFalse(config.pkAdvanceTimeSettings);
     assertFalse(config.uiConfig.getBoolean("pk-advance-time-settings"));
+  }
 
+  @Test
+  void engineGameSideModeAcceptsCaseInsensitiveSavedValues() throws Exception {
+    Config config =
+        ConfigTestHelper.createForTests(Files.createTempDirectory("lizzie-pk-side-mode-case"));
+    config.uiConfig = new JSONObject();
+    config.uiConfig.put("pk-black-time-mode", " engine_owned ");
+
+    assertEquals(
+        DesktopTimeControl.SideMode.ENGINE_OWNED,
+        DesktopTimeControl.loadEngineGameSideMode(config, true));
+  }
+
+  @Test
+  void invalidEngineGameSideModeFallsBackToLegacySelection() throws Exception {
+    Config config =
+        ConfigTestHelper.createForTests(Files.createTempDirectory("lizzie-pk-side-mode-invalid"));
+    config.uiConfig = new JSONObject();
+    config.uiConfig.put("pk-black-time-mode", "UNKNOWN_MODE");
+    config.uiConfig.put("pk-white-time-mode", 42);
+    config.pkAdvanceTimeSettings = true;
+
+    assertEquals(
+        DesktopTimeControl.SideMode.RAW_ADVANCED,
+        DesktopTimeControl.loadEngineGameSideMode(config, true));
+    assertEquals(
+        DesktopTimeControl.SideMode.RAW_ADVANCED,
+        DesktopTimeControl.loadEngineGameSideMode(config, false));
+
+    config.pkAdvanceTimeSettings = false;
+    assertEquals(
+        DesktopTimeControl.SideMode.FIXED,
+        DesktopTimeControl.loadEngineGameSideMode(config, true));
   }
 
   @Test
