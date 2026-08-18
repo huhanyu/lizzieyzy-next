@@ -13085,8 +13085,28 @@ public class Leelaz {
   }
 
   /**
+   * Captures ordinary forwarding occupancy at mutation time. Occupied when the startup admission
+   * is active or the existing public board-synchronization barrier is still held (restart fence
+   * until that surface is retired).
+   */
+  public EngineManager.OrdinaryLiveBoardForwardingIntent captureOrdinaryLiveBoardForwarding(
+      Supplier<Boolean> action) {
+    synchronized (initialBoardSynchronizationLock()) {
+      return EngineManager.OrdinaryLiveBoardForwardingIntent.capturedAtMutation(
+          isOrdinaryForwardingOccupied(), action);
+    }
+  }
+
+  public EngineManager.OrdinaryLiveBoardForwardingIntent captureOrdinaryLiveBoardForwarding(
+      EngineManager.OrdinaryLiveBoardForwardingIntent occupancySource, Supplier<Boolean> action) {
+    boolean occupied = occupancySource != null && occupancySource.occupiedAtMutation();
+    return EngineManager.OrdinaryLiveBoardForwardingIntent.capturedAtMutation(occupied, action);
+  }
+
+  /**
    * Submits an ordinary live-board forwarding intent. Returns false without running the action
-   * while the attached startup admission is active; enqueue races stay with the command queue.
+   * when the plan was occupied at mutation or the engine is occupied now; enqueue races stay
+   * with the command queue.
    */
   public boolean submitOrdinaryLiveBoardForwarding(
       EngineManager.OrdinaryLiveBoardForwardingIntent intent) {
@@ -13094,12 +13114,16 @@ public class Leelaz {
       throw new IllegalArgumentException("intent");
     }
     synchronized (initialBoardSynchronizationLock()) {
-      EngineManager.InitialEngineSyncAdmission admission = initialEngineSyncAdmission;
-      if (admission != null && admission.isActive()) {
+      if (intent.occupiedAtMutation() || isOrdinaryForwardingOccupied()) {
         return false;
       }
     }
     return intent.execute();
+  }
+
+  private boolean isOrdinaryForwardingOccupied() {
+    EngineManager.InitialEngineSyncAdmission admission = initialEngineSyncAdmission;
+    return (admission != null && admission.isActive()) || initialBoardSynchronizationDepth > 0;
   }
 
   public boolean isInitialBoardSynchronizationActive() {

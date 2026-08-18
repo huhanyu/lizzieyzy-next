@@ -24,6 +24,7 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.rules.extraMoveForTsumego;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
@@ -1616,6 +1617,308 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
+  void historyOverwriteOccupiedAtMutationDoesNotReplayAfterHandoff() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch reachedForward = new CountDownLatch(1);
+      CountDownLatch handoffFinished = new CountDownLatch(1);
+      AtomicInteger commandsWhenForwardReached = new AtomicInteger();
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      Board.beforeHistoryOverwriteEngineForward =
+          () -> {
+            commandsWhenForwardReached.set(engine.commands.size());
+            reachedForward.countDown();
+            awaitLatch(handoffFinished);
+          };
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      Thread mutationThread =
+          new Thread(
+              () -> {
+                try {
+                  board.clear(false);
+                } catch (Throwable failure) {
+                  mutationFailure.set(failure);
+                }
+              },
+              "ticket03-occupied-overwrite-forward");
+      try {
+        mutationThread.start();
+        assertTrue(reachedForward.await(5, TimeUnit.SECONDS), "mutation must reach forwarding");
+
+        runStartupInThread(startup, engine);
+        int commandsAfterHandoff = engine.commands.size();
+        handoffFinished.countDown();
+        mutationThread.join(5_000L);
+
+        assertFalse(mutationThread.isAlive(), "delayed overwrite forwarding must settle");
+        assertNull(mutationFailure.get(), "occupied overwrite must not throw");
+        assertEquals(
+            commandsAfterHandoff,
+            engine.commands.size(),
+            "stale clear/komi captured while the owner occupied must not replay after handoff");
+        assertTrue(
+            commandsWhenForwardReached.get() <= commandsAfterHandoff,
+            "catch-up may enqueue while the occupied plan is held");
+        assertEquals(
+            (float) board.getHistory().getGameInfo().getKomi(),
+            engine.komi,
+            0.001f,
+            "engine komi must converge from catch-up, not the stale plan");
+        assertEquals(0, engine.analyzePosition(), "analysis starts on the overwritten board");
+        assertEquals(1, engine.ponderCount);
+        assertLifecycleReservationReleased(engine);
+      } finally {
+        handoffFinished.countDown();
+        Board.beforeHistoryOverwriteEngineForward = null;
+      }
+    }
+  }
+
+  @Test
+  void historyOverwriteAfterMutationLosesRaceToAdmissionStart() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch reachedForward = new CountDownLatch(1);
+      CountDownLatch admissionStarted = new CountDownLatch(1);
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      Board.beforeHistoryOverwriteEngineForward =
+          () -> {
+            reachedForward.countDown();
+            awaitLatch(admissionStarted);
+          };
+
+      Thread mutationThread =
+          new Thread(
+              () -> {
+                try {
+                  board.clear(false);
+                } catch (Throwable failure) {
+                  mutationFailure.set(failure);
+                }
+              },
+              "ticket03-stale-overwrite-enqueue");
+      EngineManager.InitialEngineStartupSynchronization startup = null;
+      try {
+        mutationThread.start();
+        assertTrue(
+            reachedForward.await(5, TimeUnit.SECONDS),
+            "mutation must finish before ordinary forwarding enqueues");
+
+        startup = captureStartup(engine, board);
+        admissionStarted.countDown();
+        mutationThread.join(5_000L);
+
+        assertFalse(mutationThread.isAlive(), "stale overwrite forwarding must settle");
+        assertNull(mutationFailure.get(), "raced overwrite must not throw");
+        assertFalse(
+            engine.commands.contains("clear_board"),
+            "stale ordinary clear must not enter the queue after admission starts");
+        assertFalse(
+            engine.commands.stream().anyMatch(command -> command.startsWith("komi ")),
+            "stale ordinary komi must not enter the queue after admission starts");
+
+        runStartupInThread(startup, engine);
+
+        assertEquals(
+            (float) board.getHistory().getGameInfo().getKomi(),
+            engine.komi,
+            0.001f,
+            "final komi must converge from the startup route");
+        assertEquals(0, engine.analyzePosition(), "analysis starts on the overwritten board");
+        assertEquals(1, engine.ponderCount);
+        assertLifecycleReservationReleased(engine);
+      } finally {
+        admissionStarted.countDown();
+        Board.beforeHistoryOverwriteEngineForward = null;
+        if (startup != null) {
+          startup.close();
+        }
+      }
+    }
+  }
+
+  @Test
+  void historyOverwriteHonorsDepthOnlyBoardBarrierWithoutAdmission() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      engine.beginInitialBoardSynchronization();
+      try {
+        int before = engine.commands.size();
+        board.clear(false);
+        board.reopen(9, 9);
+        flattenWithExtraStones(board, true);
+        assertEquals(
+            before,
+            engine.commands.size(),
+            "a depth-only restart/startup barrier must suppress ordinary overwrite");
+      } finally {
+        engine.endInitialBoardSynchronization();
+      }
+
+      board.clear(false);
+      assertTrue(
+          engine.commands.contains("clear_board"),
+          "ordinary clear must forward after the depth-only barrier ends");
+    }
+  }
+
+  @Test
+  void depthOnlyBarrierOccupancyDoesNotReplayAfterBarrierEnds() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch reachedForward = new CountDownLatch(1);
+      CountDownLatch barrierEnded = new CountDownLatch(1);
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      Board.beforeHistoryOverwriteEngineForward =
+          () -> {
+            reachedForward.countDown();
+            awaitLatch(barrierEnded);
+          };
+
+      engine.beginInitialBoardSynchronization();
+      Thread mutationThread =
+          new Thread(
+              () -> {
+                try {
+                  board.clear(false);
+                } catch (Throwable failure) {
+                  mutationFailure.set(failure);
+                }
+              },
+              "ticket03-depth-only-occupied-forward");
+      try {
+        mutationThread.start();
+        assertTrue(reachedForward.await(5, TimeUnit.SECONDS), "mutation must reach forwarding");
+        int commandsBeforeRelease = engine.commands.size();
+        engine.endInitialBoardSynchronization();
+        barrierEnded.countDown();
+        mutationThread.join(5_000L);
+
+        assertFalse(mutationThread.isAlive(), "delayed depth-only overwrite must settle");
+        assertNull(mutationFailure.get(), "depth-only occupied overwrite must not throw");
+        assertEquals(
+            commandsBeforeRelease,
+            engine.commands.size(),
+            "stale overwrite captured under a depth-only barrier must not replay after it ends");
+      } finally {
+        barrierEnded.countDown();
+        Board.beforeHistoryOverwriteEngineForward = null;
+        if (engine.isInitialBoardSynchronizationActive()) {
+          engine.endInitialBoardSynchronization();
+        }
+      }
+    }
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("historyOverwriteMutations")
+  void historyOverwriteDuringAdmissionStaysOutOfQueueAndConverges(
+      String name, HistoryOverwriteMutation mutation) throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicInteger rounds = new AtomicInteger();
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      startup.beforeRestore =
+          () -> {
+            if (rounds.getAndIncrement() != 0) {
+              return;
+            }
+            int before = engine.commands.size();
+            try {
+              mutation.apply(board);
+            } catch (Throwable failure) {
+              mutationFailure.set(failure);
+              return;
+            }
+            assertEquals(
+                before,
+                engine.commands.size(),
+                name + " must not enqueue ordinary overwrite commands while admission is active");
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertNull(mutationFailure.get(), name + " must not throw");
+      assertEquals(1, engine.ponderCount, name + " must wait for READY/ponder");
+      assertEquals(
+          (float) board.getHistory().getGameInfo().getKomi(),
+          engine.komi,
+          0.001f,
+          name + " must converge komi");
+      assertEquals(
+          Board.boardWidth,
+          engine.engineBoardWidth,
+          name + " must converge board width");
+      assertEquals(
+          Board.boardHeight,
+          engine.engineBoardHeight,
+          name + " must converge board height");
+      assertEquals(
+          0,
+          engine.analyzePosition(),
+          name + " must analyze the overwritten position");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void historyOverwriteForwardsWhenAdmissionIsInactive() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      board.clear(false);
+      assertTrue(engine.commands.contains("clear_board"), "clear must forward when idle");
+      assertTrue(
+          engine.commands.stream().anyMatch(command -> command.startsWith("komi ")),
+          "clear must forward komi when idle");
+
+      board.reopen(13, 13);
+      assertTrue(
+          engine.commands.contains("boardsize 13"),
+          "reopen must forward boardsize when idle");
+
+      flattenWithExtraStones(board, true);
+      assertTrue(
+          engine.containsCommand(play("B", 3, 3)),
+          "flatten extra-stone feeds must reach the engine when idle");
+      assertTrue(
+          engine.commands.stream().anyMatch(command -> command.startsWith("komi ")),
+          "flatten must forward komi when idle");
+
+      board.reopen(13, 13);
+      long boardSizeCount =
+          engine.commands.stream().filter(command -> command.equals("boardsize 13")).count();
+      assertEquals(1, boardSizeCount, "same-size reopen must be a no-op");
+    }
+  }
+
+
+  @Test
   void catchUpReservationReacquisitionFailureFailsClosed() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz();
@@ -2084,6 +2387,50 @@ class EngineManagerInitialStartupSynchronizationTest {
     Field field = Leelaz.class.getDeclaredField(name);
     field.setAccessible(true);
     field.set(engine, value);
+  }
+
+  private static void awaitLatch(CountDownLatch latch) {
+    try {
+      if (!latch.await(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("timed out waiting for overwrite forwarding latch");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("overwrite forwarding latch interrupted", interrupted);
+    }
+  }
+
+  @FunctionalInterface
+  private interface HistoryOverwriteMutation {
+    void apply(Board board);
+  }
+
+  private static Stream<Arguments> historyOverwriteMutations() {
+    return Stream.of(
+        Arguments.of("clear", (HistoryOverwriteMutation) board -> board.clear(false)),
+        Arguments.of("clearForOnline", (HistoryOverwriteMutation) Board::clearForOnline),
+        Arguments.of("clearforedit", (HistoryOverwriteMutation) Board::clearforedit),
+        Arguments.of("reopen", (HistoryOverwriteMutation) board -> board.reopen(9, 9)),
+        Arguments.of(
+            "flattenWithKomi",
+            (HistoryOverwriteMutation) board -> flattenWithExtraStones(board, true)),
+        Arguments.of(
+            "flattenExtraStones",
+            (HistoryOverwriteMutation) board -> flattenWithExtraStones(board, false)));
+  }
+
+  private static void flattenWithExtraStones(Board board, boolean withKomi) {
+    Stone[] stones = board.getHistory().getStones().clone();
+    Zobrist zobrist = board.getHistory().getZobrist().clone();
+    extraMoveForTsumego extra = new extraMoveForTsumego();
+    extra.x = 3;
+    extra.y = 3;
+    extra.color = Stone.BLACK;
+    if (withKomi) {
+      board.flattenWithCondition(stones, zobrist, true, List.of(extra), 7.5);
+    } else {
+      board.flattenWithCondition(stones, zobrist, true, List.of(extra));
+    }
   }
 
   private static void sendFailOnErrorCommand(Leelaz engine, String command) throws Exception {
@@ -2699,6 +3046,7 @@ class EngineManagerInitialStartupSynchronizationTest {
     protected void showContributingEngineSwitchUnavailable() {}
   }
 
+
   private static final class StartupTestEnvironment implements AutoCloseable {
     private final Leelaz previousPrimary = Lizzie.leelaz;
     private final Leelaz previousSecondary = Lizzie.leelaz2;
@@ -2730,6 +3078,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       Lizzie.frame = allocate(SilentStartupFrame.class);
       LizzieFrame.toolbar = allocate(SilentStartupToolbar.class);
       LizzieFrame.menu = allocate(SilentStartupMenu.class);
+      LizzieFrame.menu.txtKomi = new javax.swing.JTextField();
       Menu.engineMenu = allocate(SilentStartupEngineMenu.class);
       Menu.engineMenu2 = allocate(SilentStartupEngineMenu.class);
       LizzieFrame.boardRenderer2 = new BoardRenderer(true);

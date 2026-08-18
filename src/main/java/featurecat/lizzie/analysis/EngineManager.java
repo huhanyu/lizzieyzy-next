@@ -3892,19 +3892,33 @@ public class EngineManager {
   /**
    * Ordinary live-board forwarding submitted by Board. The startup owner decides whether the
    * action runs; Leelaz still enforces enqueue races on the command queue.
+   *
+   * <p>History-overwrite plans capture occupancy at mutation time. If the startup owner already
+   * occupied the engine then, the action stays suppressed even after handoff.
    */
   public static final class OrdinaryLiveBoardForwardingIntent {
     private final Supplier<Boolean> action;
+    private final boolean occupiedAtMutation;
 
-    private OrdinaryLiveBoardForwardingIntent(Supplier<Boolean> action) {
+    private OrdinaryLiveBoardForwardingIntent(Supplier<Boolean> action, boolean occupiedAtMutation) {
       this.action = action;
+      this.occupiedAtMutation = occupiedAtMutation;
     }
 
     public static OrdinaryLiveBoardForwardingIntent of(Supplier<Boolean> action) {
+      return capturedAtMutation(false, action);
+    }
+
+    public static OrdinaryLiveBoardForwardingIntent capturedAtMutation(
+        boolean occupiedAtMutation, Supplier<Boolean> action) {
       if (action == null) {
         throw new IllegalArgumentException("action");
       }
-      return new OrdinaryLiveBoardForwardingIntent(action);
+      return new OrdinaryLiveBoardForwardingIntent(action, occupiedAtMutation);
+    }
+
+    boolean occupiedAtMutation() {
+      return occupiedAtMutation;
     }
 
     boolean execute() {

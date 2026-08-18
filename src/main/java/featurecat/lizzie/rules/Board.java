@@ -89,6 +89,8 @@ public class Board {
   private volatile int movelistRefreshGeneration = 0;
   private volatile long lastMoveNavigationAt = 0L;
   private volatile long contextRevision = 0L;
+  /** Test seam: after history-overwrite mutation, before engine forwarding. */
+  public static volatile Runnable beforeHistoryOverwriteEngineForward;
 
   public boolean isMouseOnStone = false;
   private boolean preMouseOnStone = false;
@@ -823,13 +825,8 @@ public class Board {
       forceRefresh2 = true;
     }
     // Engine forwarding and render work run outside the board monitor (no board -> engine lock
-    // nesting); the board-size resync is deferred while the initial startup barrier is active.
-    forwarding.forward();
-    if (!forwarding.barrierActiveAtMutation()
-        && !Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-      Lizzie.leelaz.boardSizeForEngine(boardWidth, boardHeight);
-      Lizzie.leelaz.ponder();
-    }
+    // nesting); resize stays on the mutation-captured occupancy plan.
+    forwarding.withEngineResize(boardWidth, boardHeight).forward();
     Lizzie.frame.redrawBoardrendererBackground();
     Lizzie.frame.refresh();
   }
@@ -2811,7 +2808,7 @@ public class Board {
       List<extraMoveForTsumego> extraStones,
       double komi) {
     List<extraMoveForTsumego> collectedExtraStones;
-    boolean barrierActiveAtMutation;
+    EngineManager.OrdinaryLiveBoardForwardingIntent flattenIntent;
     synchronized (this) {
       history =
           new BoardHistoryList(
@@ -2849,18 +2846,9 @@ public class Board {
       }
       history.getGameInfo().setKomi(komi);
       history.getGameInfo().changeKomi();
-      barrierActiveAtMutation = Lizzie.leelaz.isInitialBoardSynchronizationActive();
+      flattenIntent = captureFlattenEngineForwarding(collectedExtraStones, komi, true);
     }
-    // Engine feeds run after the board monitor; when the initial startup restore barrier owned
-    // the board at mutation time they stay suppressed permanently (the catch-up route reconciles
-    // the engine), and the live flag is re-checked for a barrier that began afterwards.
-    if (!barrierActiveAtMutation && !Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-      for (extraMoveForTsumego stone : collectedExtraStones) {
-        feedEngineForMainlineMove(stone.color, convertCoordinatesToName(stone.x, stone.y));
-      }
-      Lizzie.leelaz.sendCommand("komi " + komi);
-      Lizzie.leelaz.ponder();
-    }
+    submitFlattenEngineForwarding(flattenIntent);
   }
 
   public void flattenWithCondition(
@@ -2869,7 +2857,7 @@ public class Board {
     //	    Stone[] stones = history.getStones();
     //	    boolean blackToPlay = history.isBlacksTurn();
     List<extraMoveForTsumego> collectedExtraStones;
-    boolean barrierActiveAtMutation;
+    EngineManager.OrdinaryLiveBoardForwardingIntent flattenIntent;
     synchronized (this) {
       history =
           new BoardHistoryList(
@@ -2905,17 +2893,9 @@ public class Board {
           moveNum++;
         }
       }
-      barrierActiveAtMutation = Lizzie.leelaz.isInitialBoardSynchronizationActive();
+      flattenIntent = captureFlattenEngineForwarding(collectedExtraStones, 0, false);
     }
-    // Engine feeds run after the board monitor; suppressed permanently when the initial startup
-    // restore barrier owned the board at mutation time, with a live re-check for a barrier that
-    // began afterwards.
-    if (!barrierActiveAtMutation && !Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-      for (extraMoveForTsumego stone : collectedExtraStones) {
-        feedEngineForMainlineMove(stone.color, convertCoordinatesToName(stone.x, stone.y));
-      }
-      Lizzie.leelaz.ponder();
-    }
+    submitFlattenEngineForwarding(flattenIntent);
   }
 
   //  private void addExtraStoneNow(int x, int y, Stone color) {
@@ -4608,7 +4588,6 @@ public class Board {
     movelistwr.clear();
     initialize(isEngineGame);
     isKataBoard = false;
-    boolean barrierActive = Lizzie.leelaz.isInitialBoardSynchronizationActive();
     if (!isEngineGame) {
       cleanedittemp();
       isPkBoard = false;
@@ -4620,7 +4599,7 @@ public class Board {
         komi = Lizzie.leelaz.orikomi;
         Lizzie.board.getHistory().getGameInfo().resetAllNoKomi();
       }
-      return EngineForwardingPlan.clearEngine(komi, barrierActive)
+      return EngineForwardingPlan.clearEngine(komi)
           .defer(this::notifyReadBoardHistoryOverwritten)
           .defer(() -> Lizzie.frame.clearKataEstimate())
           .defer(urlSgfStopSyncAction());
@@ -4645,9 +4624,8 @@ public class Board {
   /**
    * Engine/external forwarding work deferred until after the board monitor is released, so no
    * board -> engine (Leelaz monitor) / ReadBoard lock nesting is introduced by
-   * history-overwrite entries. The barrier-active state is recorded at mutation time: if the
-   * initial startup barrier owned the engine then, the forwarding stays suppressed even if the
-   * barrier ends before the plan executes (the catch-up route reconciles the engine).
+   * history-overwrite entries. The plan records startup occupancy at mutation time: if the owner
+   * already occupied the engine then, this forwarding stays suppressed even after handoff.
    */
   private static final class EngineForwardingPlan {
     private final List<Runnable> deferredActions = new ArrayList<>();
@@ -4655,35 +4633,47 @@ public class Board {
     private String komiCommand;
     private double komi;
     private boolean applyKomiSideEffects;
-    private boolean barrierActiveAtMutation;
+    private boolean resizeEngine;
+    private int resizeWidth;
+    private int resizeHeight;
+
+    private EngineManager.OrdinaryLiveBoardForwardingIntent capturedIntent;
+    private EngineManager.OrdinaryLiveBoardForwardingIntent resizeIntent;
 
     private EngineForwardingPlan() {}
 
-    private static EngineForwardingPlan clearEngine(double komi, boolean barrierActiveAtMutation) {
+    private void captureForwardingIntent() {
+      if (Lizzie.leelaz == null) {
+        return;
+      }
+      capturedIntent =
+          Lizzie.leelaz.captureOrdinaryLiveBoardForwarding(this::forwardClearOnly);
+    }
+
+    private static EngineForwardingPlan clearEngine(double komi) {
       EngineForwardingPlan plan = new EngineForwardingPlan();
       plan.forwardClear = true;
       plan.komiCommand = "komi " + (komi == 0.0 ? "0" : komi);
       plan.komi = komi;
       plan.applyKomiSideEffects = true;
-      plan.barrierActiveAtMutation = barrierActiveAtMutation;
+      plan.captureForwardingIntent();
       return plan;
     }
 
     /** Clear variant for online resync preserving the original float komi serialization. */
-    private static EngineForwardingPlan clearEngineWithPlainKomi(
-        float komi, boolean barrierActiveAtMutation) {
-      EngineForwardingPlan plan = clearEngine(komi, barrierActiveAtMutation);
+    private static EngineForwardingPlan clearEngineWithPlainKomi(float komi) {
+      EngineForwardingPlan plan = clearEngine(komi);
       plan.komiCommand = "komi " + komi;
       plan.applyKomiSideEffects = false;
       return plan;
     }
 
     /** Clear-only variant (SGF editor path): clear_board with no komi forwarding. */
-    private static EngineForwardingPlan clearEngineOnly(boolean barrierActiveAtMutation) {
+    private static EngineForwardingPlan clearEngineOnly() {
       EngineForwardingPlan plan = new EngineForwardingPlan();
       plan.forwardClear = true;
       plan.komiCommand = null;
-      plan.barrierActiveAtMutation = barrierActiveAtMutation;
+      plan.captureForwardingIntent();
       return plan;
     }
 
@@ -4698,26 +4688,78 @@ public class Board {
       return this;
     }
 
-    private boolean barrierActiveAtMutation() {
-      return barrierActiveAtMutation;
+    private EngineForwardingPlan withEngineResize(int width, int height) {
+      resizeEngine = true;
+      resizeWidth = width;
+      resizeHeight = height;
+      if (Lizzie.leelaz != null) {
+        resizeIntent =
+            Lizzie.leelaz.captureOrdinaryLiveBoardForwarding(
+                capturedIntent, this::forwardEngineResize);
+      }
+      return this;
     }
 
     private void forward() {
+      runBeforeHistoryOverwriteEngineForward();
       // Engine reset runs first (outside the board monitor) so a failing callback can never
       // skip the required engine clear; board-overwrite notifications follow.
-      if (forwardClear && Lizzie.leelaz != null) {
-        if (!barrierActiveAtMutation && !Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-          Lizzie.leelaz.forwardBoardClearWithKomi(
-              komiCommand, komi, applyKomiSideEffects);
-        } else {
-          // The initial startup restore barrier owned the engine when the board changed (or
-          // began afterwards); the catch-up route reconciles komi and size after it settles.
+      if (Lizzie.leelaz != null) {
+        if (capturedIntent != null) {
+          Lizzie.leelaz.submitOrdinaryLiveBoardForwarding(capturedIntent);
+        }
+        if (resizeIntent != null) {
+          Lizzie.leelaz.submitOrdinaryLiveBoardForwarding(resizeIntent);
         }
       }
       for (Runnable action : deferredActions) {
         action.run();
       }
     }
+
+    private boolean forwardClearOnly() {
+      return Lizzie.leelaz.forwardBoardClearWithKomi(komiCommand, komi, applyKomiSideEffects);
+    }
+
+    private boolean forwardEngineResize() {
+      Lizzie.leelaz.boardSizeForEngine(resizeWidth, resizeHeight);
+      Lizzie.leelaz.ponder();
+      return true;
+    }
+  }
+
+  private static void runBeforeHistoryOverwriteEngineForward() {
+    Runnable hook = beforeHistoryOverwriteEngineForward;
+    if (hook != null) {
+      hook.run();
+    }
+  }
+
+  private EngineManager.OrdinaryLiveBoardForwardingIntent captureFlattenEngineForwarding(
+      List<extraMoveForTsumego> collectedExtraStones, double komi, boolean forwardKomi) {
+    if (Lizzie.leelaz == null) {
+      return null;
+    }
+    return Lizzie.leelaz.captureOrdinaryLiveBoardForwarding(
+        () -> {
+          for (extraMoveForTsumego stone : collectedExtraStones) {
+            feedEngineForMainlineMove(stone.color, convertCoordinatesToName(stone.x, stone.y));
+          }
+          if (forwardKomi) {
+            Lizzie.leelaz.sendCommand("komi " + komi);
+          }
+          Lizzie.leelaz.ponder();
+          return true;
+        });
+  }
+
+  private void submitFlattenEngineForwarding(
+      EngineManager.OrdinaryLiveBoardForwardingIntent intent) {
+    runBeforeHistoryOverwriteEngineForward();
+    if (intent == null || Lizzie.leelaz == null) {
+      return;
+    }
+    Lizzie.leelaz.submitOrdinaryLiveBoardForwarding(intent);
   }
 
   public void clearForOnline() {
@@ -4741,8 +4783,7 @@ public class Board {
       Lizzie.board.getHistory().getGameInfo().resetAllNoKomi();
       Lizzie.board.getHistory().getGameInfo().setKomi(Lizzie.leelaz.orikomi);
       forwarding =
-          EngineForwardingPlan.clearEngineWithPlainKomi(
-                  Lizzie.leelaz.orikomi, Lizzie.leelaz.isInitialBoardSynchronizationActive())
+          EngineForwardingPlan.clearEngineWithPlainKomi(Lizzie.leelaz.orikomi)
               .defer(() -> Lizzie.frame.clearKataEstimate())
               .defer(this::notifyReadBoardHistoryOverwritten);
     }
@@ -4755,8 +4796,7 @@ public class Board {
     synchronized (this) {
       initialize(false);
       forwarding =
-          EngineForwardingPlan.clearEngineOnly(
-                  Lizzie.leelaz.isInitialBoardSynchronizationActive())
+          EngineForwardingPlan.clearEngineOnly()
               .defer(this::notifyReadBoardHistoryOverwritten);
     }
     forwarding.forward();
