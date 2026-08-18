@@ -1570,11 +1570,15 @@ public class Board {
   }
 
   public boolean resendCurrentPositionToPrimaryEngine() {
-    if (Lizzie.leelaz != null && Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-      // The initial engine startup restore barrier owns the primary engine; a live resync must
-      // not interleave komi/boardsize/play commands with the frozen or catch-up restore route.
+    if (Lizzie.leelaz == null) {
       return false;
     }
+    return Lizzie.leelaz.submitOrdinaryLiveBoardForwarding(
+        EngineManager.OrdinaryLiveBoardForwardingIntent.of(
+            this::forwardCurrentPositionToPrimaryEngine));
+  }
+
+  private boolean forwardCurrentPositionToPrimaryEngine() {
     if (!isPrimaryEngineReady()) {
       return false;
     }

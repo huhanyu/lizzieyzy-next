@@ -331,6 +331,7 @@ public class Leelaz {
   public volatile boolean isDownWithError = false;
   public volatile boolean isLoaded = false;
   private volatile int initialBoardSynchronizationDepth = 0;
+  private volatile EngineManager.InitialEngineSyncAdmission initialEngineSyncAdmission;
   private volatile Object initialBoardSynchronizationLock = new Object();
   private volatile long bundledStartupToken = 0L;
   private volatile boolean openClFp32CompatibilityActive = false;
@@ -13047,6 +13048,58 @@ public class Leelaz {
         initialBoardSynchronizationDepth--;
       }
     }
+  }
+
+  /**
+   * Attaches the shared startup admission and begins one public barrier on this engine. Target and
+   * mirror receive the same admission instance. The owner activates and deactivates that instance.
+   */
+  void attachAndBeginInitialEngineSyncAdmission(
+      EngineManager.InitialEngineSyncAdmission admission) {
+    if (admission == null) {
+      throw new IllegalArgumentException("admission");
+    }
+    synchronized (initialBoardSynchronizationLock()) {
+      initialEngineSyncAdmission = admission;
+      initialBoardSynchronizationDepth++;
+    }
+  }
+
+  void endInitialEngineSyncAdmission(EngineManager.InitialEngineSyncAdmission admission) {
+    synchronized (initialBoardSynchronizationLock()) {
+      if (admission != null && initialEngineSyncAdmission != admission) {
+        return;
+      }
+      if (initialBoardSynchronizationDepth > 0) {
+        initialBoardSynchronizationDepth--;
+      }
+    }
+  }
+
+  void detachInitialEngineSyncAdmission(EngineManager.InitialEngineSyncAdmission admission) {
+    synchronized (initialBoardSynchronizationLock()) {
+      if (initialEngineSyncAdmission == admission) {
+        initialEngineSyncAdmission = null;
+      }
+    }
+  }
+
+  /**
+   * Submits an ordinary live-board forwarding intent. Returns false without running the action
+   * while the attached startup admission is active; enqueue races stay with the command queue.
+   */
+  public boolean submitOrdinaryLiveBoardForwarding(
+      EngineManager.OrdinaryLiveBoardForwardingIntent intent) {
+    if (intent == null) {
+      throw new IllegalArgumentException("intent");
+    }
+    synchronized (initialBoardSynchronizationLock()) {
+      EngineManager.InitialEngineSyncAdmission admission = initialEngineSyncAdmission;
+      if (admission != null && admission.isActive()) {
+        return false;
+      }
+    }
+    return intent.execute();
   }
 
   public boolean isInitialBoardSynchronizationActive() {

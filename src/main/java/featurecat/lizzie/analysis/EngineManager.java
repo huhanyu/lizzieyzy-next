@@ -37,6 +37,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import org.json.JSONException;
@@ -3868,13 +3869,58 @@ public class EngineManager {
   }
 
   /**
-   * Engine lifecycle board restore barrier (Issue #223).
+   * Owner-scoped 初始引擎同步准入. One instance is created at capture, shared by the captured
+   * target and mirror, and stays active across the frozen route, catch-up routes and final
+   * handoff. It is not {@link Leelaz.ExactSnapshotRestoreAdmission}.
+   */
+  static final class InitialEngineSyncAdmission {
+    private final AtomicBoolean active = new AtomicBoolean(false);
+
+    boolean isActive() {
+      return active.get();
+    }
+
+    void activate() {
+      active.set(true);
+    }
+
+    void deactivate() {
+      active.set(false);
+    }
+  }
+
+  /**
+   * Ordinary live-board forwarding submitted by Board. The startup owner decides whether the
+   * action runs; Leelaz still enforces enqueue races on the command queue.
+   */
+  public static final class OrdinaryLiveBoardForwardingIntent {
+    private final Supplier<Boolean> action;
+
+    private OrdinaryLiveBoardForwardingIntent(Supplier<Boolean> action) {
+      this.action = action;
+    }
+
+    public static OrdinaryLiveBoardForwardingIntent of(Supplier<Boolean> action) {
+      if (action == null) {
+        throw new IllegalArgumentException("action");
+      }
+      return new OrdinaryLiveBoardForwardingIntent(action);
+    }
+
+    boolean execute() {
+      return Boolean.TRUE.equals(action.get());
+    }
+  }
+
+  /**
+   * Engine lifecycle board restore barrier (Issue #223) and the sole owner of 初始引擎同步准入.
    *
-   * <p>Owns one lifecycle owner identity, owner-local previous/target reservations, captured
-   * target/mirror gates and immutable restore routes. Navigation remains available while ordinary
-   * live-board updates are suppressed on the captured targets. Each completed route releases its
-   * reservations before comparing a new Board frame and, when stale, captures and reserves a new
-   * catch-up route under the same owner.
+   * <p>Owns one lifecycle owner identity, the shared startup admission, owner-local
+   * previous/target reservations, captured target/mirror gates and immutable restore routes.
+   * Navigation remains available while ordinary live-board updates are suppressed on the captured
+   * targets. Each completed route releases its reservations before comparing a new Board frame
+   * and, when stale, captures and reserves a new catch-up route under the same owner and
+   * admission.
    */
   static final class InitialEngineStartupSynchronization implements AutoCloseable {
     private final Leelaz previousEngine;
@@ -3895,6 +3941,7 @@ public class EngineManager {
     private final AtomicBoolean barriersEnded = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean initialized = new AtomicBoolean(false);
+    private final InitialEngineSyncAdmission admission = new InitialEngineSyncAdmission();
 
     /** Test seam: runs outside the board lock before each restore route execution. */
     Runnable beforeRestore;
@@ -4138,9 +4185,10 @@ public class EngineManager {
     }
 
     private void beginSynchronizationBarriers() {
-      targetEngine.beginInitialBoardSynchronization();
+      admission.activate();
+      targetEngine.attachAndBeginInitialEngineSyncAdmission(admission);
       if (mirrorEngine != null) {
-        mirrorEngine.beginInitialBoardSynchronization();
+        mirrorEngine.attachAndBeginInitialEngineSyncAdmission(admission);
       }
     }
 
@@ -4166,12 +4214,23 @@ public class EngineManager {
     private void endSynchronizationBarriers() {
       if (barriersEnded.compareAndSet(false, true)) {
         try {
-          targetEngine.endInitialBoardSynchronization();
+          targetEngine.endInitialEngineSyncAdmission(admission);
         } finally {
-          if (mirrorEngine != null) {
-            mirrorEngine.endInitialBoardSynchronization();
+          try {
+            if (mirrorEngine != null) {
+              mirrorEngine.endInitialEngineSyncAdmission(admission);
+            }
+          } finally {
+            admission.deactivate();
           }
         }
+      }
+    }
+
+    private void detachSynchronizationAdmission() {
+      targetEngine.detachInitialEngineSyncAdmission(admission);
+      if (mirrorEngine != null) {
+        mirrorEngine.detachInitialEngineSyncAdmission(admission);
       }
     }
 
@@ -4322,10 +4381,14 @@ public class EngineManager {
               interactionGate.close();
             }
           } finally {
-            endSynchronizationBarriers();
-            Leelaz.LifecycleCompletionClaim claim = completionClaim;
-            if (claim != null) {
-              claim.abandonBeforeFence();
+            try {
+              endSynchronizationBarriers();
+            } finally {
+              detachSynchronizationAdmission();
+              Leelaz.LifecycleCompletionClaim claim = completionClaim;
+              if (claim != null) {
+                claim.abandonBeforeFence();
+              }
             }
           }
         }

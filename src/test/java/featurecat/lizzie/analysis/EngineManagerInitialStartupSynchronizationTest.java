@@ -42,8 +42,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Focused tests for the initial engine startup restore barrier (Issue #223): frozen immutable
@@ -130,6 +134,208 @@ class EngineManagerInitialStartupSynchronizationTest {
           "a live update crossing barrier start must not enter the command queue");
       engine.endInitialBoardSynchronization();
     }
+  }
+
+  @ParameterizedTest
+  @MethodSource("ordinaryCommandsRejectedDuringStartupAdmission")
+  void startupAdmissionRejectsOrdinaryLiveBoardCommand(String command) throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicBoolean probed = new AtomicBoolean();
+      startup.beforeRestore =
+          () -> {
+            int commandsBefore = engine.commands.size();
+            engine.sendCommand(command);
+            assertFalse(
+                engine.commands.subList(commandsBefore, engine.commands.size()).contains(command),
+                command + " must not enter the queue while startup admission is active");
+            probed.set(true);
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertTrue(probed.get(), "admission probe must run during the frozen route");
+      assertEquals(1, engine.ponderCount, "ponder waits for the stable restore point");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @ParameterizedTest
+  @MethodSource("handshakeAndSizeCommandsAllowedDuringStartupAdmission")
+  void startupAdmissionAllowsHandshakeAndSizeConvergenceCommand(String command) throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicBoolean probed = new AtomicBoolean();
+      startup.beforeRestore =
+          () -> {
+            engine.sendCommand(command);
+            assertTrue(
+                engine.commands.contains(command),
+                command + " must keep flowing while startup admission is active");
+            probed.set(true);
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertTrue(probed.get(), "admission probe must run during the frozen route");
+      assertEquals(1, engine.ponderCount, "ponder waits for the stable restore point");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void startupAdmissionAllowsExactRestoreRoutePlayWhileRejectingOrdinaryPlay() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      startup.beforeRestore = () -> engine.sendCommand("play B Q4");
+
+      runStartupInThread(startup, engine);
+
+      assertFalse(engine.containsCommand("play B Q4"), "ordinary play must stay out of the queue");
+      assertTrue(
+          engine.containsCommand(play("B", 4, 3)),
+          "exact restore route play must still reach the engine");
+      assertEquals(1, engine.enginePosition.get(), "engine must converge on the restored move");
+      assertEquals(1, engine.ponderCount, "ponder waits for the stable restore point");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void capturedTargetAndMirrorShareStartupAdmission() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz target = new StartupSyncLeelaz();
+      StartupSyncLeelaz mirror = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(target, board);
+      target.startEngine(0);
+      mirror.startEngine(1);
+      int readyBaseline = env.readyTransitions.get();
+
+      EngineManager.InitialEngineStartupSynchronization startup =
+          EngineManager.InitialEngineStartupSynchronization.capture(
+              null, target, mirror, board, false, false);
+      AtomicInteger readyDuringAdmission = new AtomicInteger(-1);
+      startup.beforeRestore =
+          () -> {
+            target.sendCommand("play B Q4");
+            mirror.sendCommand("play B Q4");
+            target.sendCommand("name");
+            mirror.sendCommand("name");
+            assertFalse(target.containsCommand("play B Q4"));
+            assertFalse(mirror.containsCommand("play B Q4"));
+            assertTrue(target.containsCommand("name"), "handshake must flow on the target");
+            assertTrue(mirror.containsCommand("name"), "handshake must flow on the mirror");
+            assertEquals(0, target.ponderCount, "target must not ponder before stable handoff");
+            assertEquals(0, mirror.ponderCount, "mirror must not ponder before stable handoff");
+            readyDuringAdmission.set(env.readyTransitions.get());
+          };
+
+      runStartupInThread(startup, target);
+
+      assertEquals(
+          readyBaseline,
+          readyDuringAdmission.get(),
+          "READY must wait for the shared admission handoff");
+      assertEquals(1, env.readyTransitions.get() - readyBaseline, "READY publishes once");
+      assertEquals(1, target.ponderCount, "target ponders only after the shared handoff");
+      target.sendCommand("play B Q16");
+      mirror.sendCommand("play B Q16");
+      assertTrue(target.containsCommand("play B Q16"), "target admission must reopen");
+      assertTrue(mirror.containsCommand("play B Q16"), "mirror admission must reopen");
+      assertLifecycleReservationReleased(target);
+      assertLifecycleReservationReleased(mirror);
+    }
+  }
+
+  @Test
+  void representativeLiveBoardResyncLosesRaceToAdmissionStart() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      BlockingStartupConfig config = allocate(BlockingStartupConfig.class);
+      config.doubleEngineQueryEntered = new CountDownLatch(1);
+      config.allowDoubleEngineQuery = new CountDownLatch(1);
+      Lizzie.config = config;
+      AtomicReference<Throwable> resyncFailure = new AtomicReference<>();
+      Thread resyncThread =
+          new Thread(
+              () -> {
+                try {
+                  board.resendCurrentPositionToPrimaryEngine();
+                } catch (Throwable failure) {
+                  resyncFailure.set(failure);
+                }
+              },
+              "startup-admission-representative-resync-race");
+      resyncThread.start();
+
+      assertTrue(
+          config.doubleEngineQueryEntered.await(2, TimeUnit.SECONDS),
+          "the representative resync must pass precheck before admission starts");
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      try {
+        config.allowDoubleEngineQuery.countDown();
+        resyncThread.join(2_000L);
+
+        assertFalse(resyncThread.isAlive(), "the representative resync race must settle");
+        assertNull(resyncFailure.get(), "the representative resync must not throw");
+        assertFalse(engine.containsCommand("play B Q4"));
+        assertFalse(engine.containsCommand("undo"));
+        assertFalse(
+            engine.commands.contains("clear_board"),
+            "ordinary clear from the raced resync must not enter the queue");
+        engine.sendCommand("name");
+        assertTrue(engine.commands.contains("name"), "handshake must still flow");
+      } finally {
+        startup.close();
+      }
+
+      engine.sendCommand("play B Q16");
+      assertTrue(
+          engine.containsCommand("play B Q16"),
+          "ordinary play must enter after admission reopens");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  private static Stream<Arguments> ordinaryCommandsRejectedDuringStartupAdmission() {
+    return Stream.of(
+        Arguments.of("play B Q4"),
+        Arguments.of("undo"),
+        Arguments.of("clear_board"),
+        Arguments.of("lz-analyze 99"),
+        Arguments.of("kata-analyze 99"),
+        Arguments.of("analyze 99"),
+        Arguments.of("kata-raw-nn 0"),
+        Arguments.of("heat"));
+  }
+
+  private static Stream<Arguments> handshakeAndSizeCommandsAllowedDuringStartupAdmission() {
+    return Stream.of(
+        Arguments.of("name"),
+        Arguments.of("version"),
+        Arguments.of("list_commands"),
+        Arguments.of("komi 6.5"),
+        Arguments.of("boardsize 19"));
   }
 
   @Test
