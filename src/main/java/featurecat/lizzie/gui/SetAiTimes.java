@@ -48,6 +48,7 @@ public class SetAiTimes extends JDialog {
   JCheckBox chkUseNormal;
   JCheckBox chkUseAdvTime;
   JCheckBox chkUseKataTime;
+  JCheckBox chkUseEngineOwned;
   JComboBox<String> kataTimeComboBox;
   private JTextField txtKataTimeSaveMins;
   private JTextField txtKataTimeByoyomiSecs;
@@ -156,6 +157,15 @@ public class SetAiTimes extends JDialog {
         21,
         23);
     buttonPane.add(chkUseAdvTime);
+
+    JFontLabel lblEngineOwnedTime =
+        new JFontLabel(resourceBundle.getString("NewGameDialog.engineOwnedTime"));
+    lblEngineOwnedTime.setBounds(31, 75, 112, 20);
+    buttonPane.add(lblEngineOwnedTime);
+
+    chkUseEngineOwned = new JCheckBox();
+    chkUseEngineOwned.setBounds(10, 75, 21, 23);
+    buttonPane.add(chkUseEngineOwned);
 
     JFontLabel lblKataTimes = new JFontLabel(resourceBundle.getString("SetAiTimes.lblKataTime"));
     lblKataTimes.setBounds(165, 103, 227, 20);
@@ -412,14 +422,28 @@ public class SetAiTimes extends JDialog {
             chkTimeChanged();
           }
         });
-    chkUseAdvTime.setSelected(Lizzie.config.advanceTimeSettings);
-    chkUseKataTime.setSelected(Lizzie.config.kataTimeSettings);
-    chkUseNormal.setSelected(!Lizzie.config.advanceTimeSettings && !Lizzie.config.kataTimeSettings);
-    chkTimeChanged();
+    chkUseEngineOwned.addActionListener(
+        new ActionListener() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            chkTimeChanged();
+          }
+        });
     ButtonGroup chkTimeGroup = new ButtonGroup();
     chkTimeGroup.add(chkUseNormal);
     chkTimeGroup.add(chkUseKataTime);
     chkTimeGroup.add(chkUseAdvTime);
+    chkTimeGroup.add(chkUseEngineOwned);
+    if (Lizzie.config.genmoveGameNoTime) {
+      chkUseEngineOwned.setSelected(true);
+    } else if (Lizzie.config.advanceTimeSettings) {
+      chkUseAdvTime.setSelected(true);
+    } else if (Lizzie.config.kataTimeSettings) {
+      chkUseKataTime.setSelected(true);
+    } else {
+      chkUseNormal.setSelected(true);
+    }
+    chkTimeChanged();
 
     try {
       this.setIconImage(ImageIO.read(MoreEngines.class.getResourceAsStream("/assets/logo.png")));
@@ -430,6 +454,7 @@ public class SetAiTimes extends JDialog {
   }
 
   private void chkTimeChanged() {
+    boolean engineOwnedSelected = chkUseEngineOwned.isSelected();
     boolean kataTimeSelected = chkUseKataTime.isSelected();
     boolean advancedTimeSelected = chkUseAdvTime.isSelected();
     kataTimeComboBox.setEnabled(kataTimeSelected);
@@ -438,11 +463,7 @@ public class SetAiTimes extends JDialog {
     txtKataTimeByoyomiTimes.setEnabled(kataTimeSelected);
     txtKataTimeFisherIncrementSecs.setEnabled(kataTimeSelected);
     txtAdvanceTime.setEnabled(advancedTimeSelected);
-    if (kataTimeSelected || advancedTimeSelected) {
-      txtSetTime.setEnabled(false);
-    } else {
-      txtSetTime.setEnabled(true);
-    }
+    txtSetTime.setEnabled(!kataTimeSelected && !advancedTimeSelected && !engineOwnedSelected);
   }
 
   private class DigitOnlyFilter extends DocumentFilter {
@@ -469,13 +490,15 @@ public class SetAiTimes extends JDialog {
   private boolean applyChange() {
     DesktopTimeControl.Mode timeMode =
         DesktopTimeControl.selectedMode(
-            chkUseAdvTime.isSelected(), chkUseKataTime.isSelected());
+            chkUseAdvTime.isSelected(),
+            chkUseKataTime.isSelected(),
+            chkUseEngineOwned.isSelected());
     if (!DesktopTimeControl.submitHumanSelection(
         Lizzie.config,
         Lizzie.leelaz,
         timeMode,
         kataTimeComboBox.getSelectedIndex(),
-        false,
+        timeMode == DesktopTimeControl.Mode.ENGINE_OWNED,
         Lizzie.frame::showUnsupportedWebSocketAdvancedClock)) {
       return false;
     }

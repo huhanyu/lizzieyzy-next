@@ -8,6 +8,7 @@ import featurecat.lizzie.analysis.LeelazEngineCommandSink;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.AppleStyleSupport;
 import featurecat.lizzie.gui.BottomToolbar;
+import featurecat.lizzie.gui.DesktopTimeControl;
 import featurecat.lizzie.gui.EngineData;
 import featurecat.lizzie.gui.FirstUseSettings;
 import featurecat.lizzie.gui.GtpConsolePane;
@@ -965,8 +966,9 @@ public class Lizzie {
               && currentFrame.readBoard != null
               && currentFrame.readBoard.isReadBoardGmaAutoPlayActive();
       if (currentFrame != null
-          && (currentFrame.isPlayingAgainstLeelaz
-              || (currentFrame.isAnaPlayingAgainstLeelaz && !readBoardGmaActive))) {
+          && DesktopTimeControl.shouldSendHumanTimeOnEngineReady(
+              currentFrame.isPlayingAgainstLeelaz,
+              currentFrame.isAnaPlayingAgainstLeelaz && !readBoardGmaActive)) {
         LizzieFrame.sendAiTime(false, engine, false);
       }
       if (currentMenu != null) currentMenu.showPda(engine.isKataGoPda);

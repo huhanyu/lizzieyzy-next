@@ -1,5 +1,6 @@
 package featurecat.lizzie.analysis;
 
+import featurecat.lizzie.gui.DesktopTimeControl;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.SgfWinLossList;
 import featurecat.lizzie.rules.Board;
@@ -34,6 +35,11 @@ public class EngineGameInfo {
 
   public int timeBlack;
   public int timeWhite;
+  public DesktopTimeControl.SideMode blackTimeMode;
+  public DesktopTimeControl.SideMode whiteTimeMode;
+  public String advanceBlackTimeCmd;
+  public String advanceWhiteTimeCmd;
+
   public int playoutsBlack;
   public int playoutsWhite;
   public int firstPlayoutsBlack;
@@ -135,6 +141,16 @@ public class EngineGameInfo {
 
   public boolean isFirstEnginePlayBlack() {
     return firstEngineIndex == blackEngineIndex;
+  }
+
+  public void applyCapturedTime(Leelaz engine, int engineIndex) {
+    if (engineIndex == blackEngineIndex) {
+      DesktopTimeControl.applyEngineGameTime(
+          engine, blackTimeMode, timeBlack, advanceBlackTimeCmd);
+    } else if (engineIndex == whiteEngineIndex) {
+      DesktopTimeControl.applyEngineGameTime(
+          engine, whiteTimeMode, timeWhite, advanceWhiteTimeCmd);
+    }
   }
 
   public int getMaxGameMoves() {

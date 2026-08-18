@@ -3891,7 +3891,9 @@ public class LizzieFrame extends JFrame {
 
   private static DesktopTimeControl.Mode configuredTimeControlMode() {
     return DesktopTimeControl.selectedMode(
-        Lizzie.config.advanceTimeSettings, Lizzie.config.kataTimeSettings);
+        Lizzie.config.advanceTimeSettings,
+        Lizzie.config.kataTimeSettings,
+        Lizzie.config.genmoveGameNoTime);
   }
 
   private static void installPlayingAgainstHumanCountDown(
@@ -3910,6 +3912,12 @@ public class LizzieFrame extends JFrame {
   }
 
   public static void sendAiTime(boolean needCountDown, Leelaz engine, boolean showTimeMsg) {
+    if (!DesktopTimeControl.shouldEmitClientTimeOverride(configuredTimeControlMode())) {
+      if (needCountDown) {
+        Lizzie.engineManager.clearPlayingAgainstHumanEngineCountDown();
+      }
+      return;
+    }
     if (Lizzie.config.advanceTimeSettings) {
       engine.sendCommand(Lizzie.config.advanceTimeTxt);
       installPlayingAgainstHumanCountDown(Lizzie.config.advanceTimeTxt, engine, needCountDown);
