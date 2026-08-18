@@ -90,12 +90,6 @@ class LeelazAutomaticRestartConvergenceTest {
       assertTrue(
           firstLoadSgfReceived.await(2, TimeUnit.SECONDS),
           "the frozen restore route must reach the engine first");
-      assertTrue(
-          engine.isInitialBoardSynchronizationActive(),
-          "the restart board fence must stay active while the frozen route is in flight");
-      assertTrue(
-          mirror.isInitialBoardSynchronizationActive(),
-          "the captured mirror must share the automatic restart barrier");
       engine.sendCommand("play B Q4");
       assertFalse(
           engine.transport.commands().contains("play B Q4"),
@@ -128,12 +122,6 @@ class LeelazAutomaticRestartConvergenceTest {
           engine.beginEngineModeReservation(),
           "the completion gate must reject unrelated engine-mode owners while the fences are"
               + " pending");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the board fence must end the barrier at the stable restore point");
-      assertFalse(
-          mirror.isInitialBoardSynchronizationActive(),
-          "the captured mirror barrier must close at the same stable point");
       engine.sendCommand("play W D4");
       assertFalse(
           engine.transport.commands().contains("play W D4"),
@@ -207,9 +195,6 @@ class LeelazAutomaticRestartConvergenceTest {
           engine.beginEngineModeReservation(),
           "the completion gate must reject unrelated engine-mode owners while the remote fence is"
               + " pending");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the board fence must end the remote barrier at the stable restore point");
 
       history.getCurrentHistoryNode().clearAndSyncBoard(true);
       assertEquals(
@@ -398,7 +383,6 @@ class LeelazAutomaticRestartConvergenceTest {
 
       assertTrue(waitForCount(engine.readyCount, 1, 1, TimeUnit.SECONDS));
       assertTrue(engine.isLoaded(), "the recovered engine must stay available");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertEngineMatchesBoard(engine, board, 19, 19);
       Leelaz.EngineModeReservation afterFence = engine.beginEngineModeReservation();
       assertNotNull(afterFence, "the OpenCL reservation must be released after the fence");
@@ -453,12 +437,6 @@ class LeelazAutomaticRestartConvergenceTest {
           "a failed catch-up must release the reservation and settle the callback");
       assertFalse(engine.isLoaded(), "the failed catch-up target must remain unavailable");
       assertFalse(mirror.isLoaded(), "the captured mirror must fail closed with the authority");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "a failed catch-up must end the board fence");
-      assertFalse(
-          mirror.isInitialBoardSynchronizationActive(),
-          "a failed catch-up must end the captured mirror barrier");
       assertEquals(0, engine.analyzeCount.get(), "no analyze after catch-up failure");
       assertEquals(0, engine.resumeCount.get(), "no ponder resume after catch-up failure");
       assertEquals(
@@ -473,6 +451,9 @@ class LeelazAutomaticRestartConvergenceTest {
           afterFailure,
           "a failed catch-up must clear the completion gate and release the lifecycle reservation");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -507,9 +488,6 @@ class LeelazAutomaticRestartConvergenceTest {
       assertEquals(
           1, engine.loadSgfCount.get(), "the frozen route fails before any catch-up route");
       assertFalse(engine.isLoaded(), "the failed frozen restore must leave the engine unavailable");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "a frozen restore failure must end the board fence");
       assertEquals(0, engine.readyCount.get(), "no ready after a frozen restore failure");
       assertEquals(0, engine.resumeCount.get(), "no ponder resume after a frozen restore failure");
       assertEquals(0, engine.analyzeCount.get(), "no analysis after a frozen restore failure");
@@ -521,6 +499,8 @@ class LeelazAutomaticRestartConvergenceTest {
           afterFailure,
           "a frozen restore failure must clear the completion claim and reopen admission");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -546,11 +526,12 @@ class LeelazAutomaticRestartConvergenceTest {
       assertTrue(completed.await(2, TimeUnit.SECONDS));
       assertFalse(engine.isLoaded(), "the authority must fail closed after readiness timeout");
       assertFalse(mirror.isLoaded(), "the captured mirror must fail closed after readiness timeout");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
-      assertFalse(mirror.isInitialBoardSynchronizationActive());
       Leelaz.EngineModeReservation afterFailure = engine.beginEngineModeReservation();
       assertNotNull(afterFailure, "readiness failure must release the completion claim");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -602,12 +583,6 @@ class LeelazAutomaticRestartConvergenceTest {
           "only the frozen route executes before the rejected reacquire");
       assertFalse(engine.isLoaded(), "the rejected reacquire must fail closed");
       assertFalse(mirror.isLoaded(), "a rejected reacquire must fail the captured mirror closed");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "a rejected reacquire must end the board fence");
-      assertFalse(
-          mirror.isInitialBoardSynchronizationActive(),
-          "a rejected reacquire must end the captured mirror barrier");
       assertEquals(0, engine.readyCount.get(), "no ready after a rejected reacquire");
       assertEquals(0, engine.resumeCount.get(), "no ponder resume after a rejected reacquire");
       assertEquals(0, engine.analyzeCount.get(), "no analysis after a rejected reacquire");
@@ -622,6 +597,9 @@ class LeelazAutomaticRestartConvergenceTest {
           afterFailure,
           "a rejected reacquire must clear the completion claim and reopen admission");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     } finally {
       Lizzie.webBoardManager = previousWebBoardManager;
     }
@@ -683,9 +661,6 @@ class LeelazAutomaticRestartConvergenceTest {
       assertNull(
           engine.beginEngineModeReservation(),
           "the completion gate must reject unrelated owners while the fence is pending");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the barrier must close at the stable restore point");
 
       invokeFenceResponse(engine);
 
@@ -844,12 +819,6 @@ class LeelazAutomaticRestartConvergenceTest {
       assertFalse(
           mirror.isLoaded(),
           "the failed mirror fence must not leave the captured mirror loaded");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "a mirror fence failure must end the board barrier");
-      assertFalse(
-          mirror.isInitialBoardSynchronizationActive(),
-          "a mirror fence failure must end the mirror barrier");
 
       // Late responses to the retired fence legs must be isolated.
       invokeFenceResponse(engine);
@@ -864,6 +833,9 @@ class LeelazAutomaticRestartConvergenceTest {
           afterFailure,
           "a mirror fence failure must clear the completion gate and release reservations");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -1013,23 +985,11 @@ class LeelazAutomaticRestartConvergenceTest {
       assertTrue(
           firstLoadSgfReceived.await(2, TimeUnit.SECONDS),
           "the frozen restore route must reach the engine first");
-      assertTrue(
-          engine.isInitialBoardSynchronizationActive(),
-          "the first restart must hold the authority barrier while the frozen route is in flight");
-      assertTrue(
-          mirror.isInitialBoardSynchronizationActive(),
-          "the first restart must hold the mirror barrier while the frozen route is in flight");
 
       assertThrows(
           IllegalStateException.class,
           () -> engine.restartClosedEngine(0),
           "a duplicate restart during the blocked restore must be rejected");
-      assertTrue(
-          engine.isInitialBoardSynchronizationActive(),
-          "a rejected duplicate restart must not close the first owner's authority barrier");
-      assertTrue(
-          mirror.isInitialBoardSynchronizationActive(),
-          "a rejected duplicate restart must not close the first owner's mirror barrier");
       engine.sendCommand("play B Q4");
       assertFalse(
           engine.transport.commands().contains("play B Q4"),
@@ -1052,9 +1012,6 @@ class LeelazAutomaticRestartConvergenceTest {
       assertTrue(
           waitForRawCommandPrefix(mirror.transport, "name", 2, TimeUnit.SECONDS),
           "the captured mirror must receive the final board fence");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the first owner must close the barrier at the stable restore point");
       invokeFenceResponse(engine);
       assertEquals(
           0,
@@ -1198,17 +1155,14 @@ class LeelazAutomaticRestartConvergenceTest {
       assertFalse(
           mirror.isLoaded(),
           "the unconfirmed captured mirror must fail closed with the authority");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "an authority fence error must end the board barrier");
-      assertFalse(
-          mirror.isInitialBoardSynchronizationActive(),
-          "an authority fence error must end the mirror barrier");
       Leelaz.EngineModeReservation afterFailure = engine.beginEngineModeReservation();
       assertNotNull(
           afterFailure,
           "an authority fence error must clear the completion gate and release reservations");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -1233,11 +1187,12 @@ class LeelazAutomaticRestartConvergenceTest {
       assertTrue(completed.await(2, TimeUnit.SECONDS));
       assertFalse(engine.isLoaded());
       assertFalse(mirror.isLoaded());
-      assertFalse(engine.isInitialBoardSynchronizationActive());
-      assertFalse(mirror.isInitialBoardSynchronizationActive());
       Leelaz.EngineModeReservation afterFailure = engine.beginEngineModeReservation();
       assertNotNull(afterFailure, "a synchronous fence start failure must release the claim");
       afterFailure.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -1316,12 +1271,6 @@ class LeelazAutomaticRestartConvergenceTest {
       assertFalse(
           mirror.isLoaded(),
           "the unconfirmed captured mirror must be unavailable after the fence timeout");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the fence timeout must end the board barrier");
-      assertFalse(
-          mirror.isInitialBoardSynchronizationActive(),
-          "the fence timeout must end the mirror barrier");
 
       // Late responses to the retired fence legs must be isolated.
       invokeFenceResponse(engine);
@@ -1336,6 +1285,9 @@ class LeelazAutomaticRestartConvergenceTest {
           afterTimeout,
           "the fence timeout must clear the completion gate and release reservations");
       afterTimeout.close();
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      assertAutomaticRestartRetryAvailable(engine);
     }
   }
 
@@ -1583,6 +1535,19 @@ class LeelazAutomaticRestartConvergenceTest {
     board.hasStartStone = false;
     board.setHistory(history);
     return board;
+  }
+
+  private static void assertOrdinaryForwardingReopened(Leelaz engine) {
+    assertTrue(
+        engine.submitOrdinaryLiveBoardForwarding(
+            EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+        "ordinary live-board forwarding must reopen after the barrier ends");
+  }
+
+  private static void assertAutomaticRestartRetryAvailable(ConvergingRestartLeelaz engine) {
+    Leelaz.AutomaticRestartAttempt retry = engine.beginAutomaticEngineRestartAttempt();
+    assertNotNull(retry, "a later automatic restart must be admissible after fail-closed");
+    retry.close();
   }
 
   private static void assertEngineMatchesBoard(

@@ -253,6 +253,9 @@ public class Leelaz {
       exactSnapshotRestoreAdmissionContext = new ThreadLocal<>();
   private static final ThreadLocal<LifecycleCompletionClaim> lifecycleCompletionCommandContext =
       new ThreadLocal<>();
+  private static final ThreadLocal<OrdinaryLiveBoardForwardingExecution>
+      ordinaryLiveBoardForwardingContext = new ThreadLocal<>();
+
   private final ThreadLocal<AtomicReference<RuntimeException>> deferredDefaultMirrorFailure =
       new ThreadLocal<>();
   private volatile boolean foregroundRestoreInProgress;
@@ -331,6 +334,7 @@ public class Leelaz {
   public volatile boolean isDownWithError = false;
   public volatile boolean isLoaded = false;
   private volatile int initialBoardSynchronizationDepth = 0;
+  private volatile EngineManager.InitialEngineSyncAdmission initialEngineSyncAdmission;
   private volatile Object initialBoardSynchronizationLock = new Object();
   private volatile long bundledStartupToken = 0L;
   private volatile boolean openClFp32CompatibilityActive = false;
@@ -5508,13 +5512,21 @@ public class Leelaz {
   }
 
   private boolean shouldDropCommandDuringInitialBoardSynchronization(String command) {
+    if (isExactSnapshotRestoreAdmissionContextActive()) {
+      return false;
+    }
+    OrdinaryLiveBoardForwardingExecution execution = ordinaryLiveBoardForwardingContext.get();
+    if (execution != null && isOrdinaryForwardingOccupied()) {
+      execution.rejectedByStartupAdmission = true;
+      return true;
+    }
     return isInitialBoardSynchronizationActive()
-        && !isExactSnapshotRestoreAdmissionContextActive()
         && isInitialBoardSynchronizationLiveUpdateCommand(command);
   }
 
   private boolean shouldDropCommandDuringInitialBoardSynchronizationAtAdmission(String command) {
-    if (!isInitialBoardSynchronizationLiveUpdateCommand(command)) {
+    if (!isInitialBoardSynchronizationLiveUpdateCommand(command)
+        && ordinaryLiveBoardForwardingContext.get() == null) {
       return false;
     }
     synchronized (initialBoardSynchronizationLock()) {
@@ -13049,7 +13061,116 @@ public class Leelaz {
     }
   }
 
-  public boolean isInitialBoardSynchronizationActive() {
+  /**
+   * Attaches the shared startup admission and begins one board-synchronization barrier on this
+   * engine. Target and mirror receive the same admission instance. The owner activates and
+   * deactivates that instance. Returns false without writing the binding or increasing depth when
+   * another active admission already occupies this endpoint. The same admission may reattach.
+   */
+  boolean attachAndBeginInitialEngineSyncAdmission(
+      EngineManager.InitialEngineSyncAdmission admission) {
+    if (admission == null) {
+      throw new IllegalArgumentException("admission");
+    }
+    synchronized (initialBoardSynchronizationLock()) {
+      EngineManager.InitialEngineSyncAdmission current = initialEngineSyncAdmission;
+      if (current != null && current != admission && current.isActive()) {
+        return false;
+      }
+      initialEngineSyncAdmission = admission;
+      initialBoardSynchronizationDepth++;
+      return true;
+    }
+  }
+
+  void endInitialEngineSyncAdmission(EngineManager.InitialEngineSyncAdmission admission) {
+    synchronized (initialBoardSynchronizationLock()) {
+      if (admission != null && initialEngineSyncAdmission != admission) {
+        return;
+      }
+      if (initialBoardSynchronizationDepth > 0) {
+        initialBoardSynchronizationDepth--;
+      }
+    }
+  }
+
+  void detachInitialEngineSyncAdmission(EngineManager.InitialEngineSyncAdmission admission) {
+    synchronized (initialBoardSynchronizationLock()) {
+      if (initialEngineSyncAdmission == admission) {
+        initialEngineSyncAdmission = null;
+      }
+    }
+  }
+
+  /**
+   * Captures ordinary forwarding occupancy at mutation time. Occupied when the startup admission
+   * is active or a lifecycle board-synchronization barrier is still held.
+   */
+  public EngineManager.OrdinaryLiveBoardForwardingIntent captureOrdinaryLiveBoardForwarding(
+      Supplier<Boolean> action) {
+    synchronized (initialBoardSynchronizationLock()) {
+      return EngineManager.OrdinaryLiveBoardForwardingIntent.capturedAtMutation(
+          isOrdinaryForwardingOccupied(), action);
+    }
+  }
+
+  public EngineManager.OrdinaryLiveBoardForwardingIntent captureOrdinaryLiveBoardForwarding(
+      EngineManager.OrdinaryLiveBoardForwardingIntent occupancySource, Supplier<Boolean> action) {
+    boolean occupied = occupancySource != null && occupancySource.occupiedAtMutation();
+    return EngineManager.OrdinaryLiveBoardForwardingIntent.capturedAtMutation(occupied, action);
+  }
+
+  /**
+   * Submits an ordinary live-board forwarding intent. Returns false without running the action
+   * when the plan was occupied at mutation or the engine is occupied now. The current thread is
+   * marked as this intent's execution for the synchronous action; startup occupancy then rejects
+   * every command from that context instead of handshake-whitelisting komi/boardsize. Returns
+   * false if startup rejects a command or still occupies the engine when the action ends;
+   * otherwise returns the action result.
+   */
+  public boolean submitOrdinaryLiveBoardForwarding(
+      EngineManager.OrdinaryLiveBoardForwardingIntent intent) {
+    if (intent == null) {
+      throw new IllegalArgumentException("intent");
+    }
+    synchronized (initialBoardSynchronizationLock()) {
+      if (intent.occupiedAtMutation() || isOrdinaryForwardingOccupied()) {
+        return false;
+      }
+    }
+    OrdinaryLiveBoardForwardingExecution previous = ordinaryLiveBoardForwardingContext.get();
+    OrdinaryLiveBoardForwardingExecution execution = new OrdinaryLiveBoardForwardingExecution();
+    ordinaryLiveBoardForwardingContext.set(execution);
+    try {
+      boolean result = intent.execute();
+      if (execution.rejectedByStartupAdmission) {
+        return false;
+      }
+      synchronized (initialBoardSynchronizationLock()) {
+        if (isOrdinaryForwardingOccupied()) {
+          return false;
+        }
+      }
+      return result;
+    } finally {
+      if (previous == null) {
+        ordinaryLiveBoardForwardingContext.remove();
+      } else {
+        ordinaryLiveBoardForwardingContext.set(previous);
+      }
+    }
+  }
+
+  private static final class OrdinaryLiveBoardForwardingExecution {
+    private boolean rejectedByStartupAdmission;
+  }
+
+  private boolean isOrdinaryForwardingOccupied() {
+    EngineManager.InitialEngineSyncAdmission admission = initialEngineSyncAdmission;
+    return (admission != null && admission.isActive()) || initialBoardSynchronizationDepth > 0;
+  }
+
+  private boolean isInitialBoardSynchronizationActive() {
     return initialBoardSynchronizationDepth > 0;
   }
 

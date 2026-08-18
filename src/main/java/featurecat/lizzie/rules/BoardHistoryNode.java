@@ -768,12 +768,19 @@ public class BoardHistoryNode {
   }
 
   public void clearAndSyncBoard(boolean stepIn) {
-    if (Lizzie.leelaz != null && Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-      // The initial engine startup restore barrier owns the engine; skip the ordinary
-      // board-following resync. The startup coordination's catch-up restore converges on the
-      // current position before the barrier ends.
+    if (Lizzie.leelaz != null) {
+      Lizzie.leelaz.submitOrdinaryLiveBoardForwarding(
+          EngineManager.OrdinaryLiveBoardForwardingIntent.of(
+              () -> {
+                performClearAndSyncBoard(stepIn);
+                return true;
+              }));
       return;
     }
+    performClearAndSyncBoard(stepIn);
+  }
+
+  private void performClearAndSyncBoard(boolean stepIn) {
     if (stepIn) {
       Leelaz engine = Lizzie.leelaz;
       boolean resumePonder = engine.isPonderingOrWasPonderingBeforeTracking();
@@ -784,7 +791,6 @@ public class BoardHistoryNode {
       engine.notPondering();
       executePreparedRestore(engine, preparedRestore, resumePonder);
     } else {
-      //  System.out.println("out");
       Lizzie.board.resendMoveToEngine(Lizzie.leelaz, false);
     }
   }

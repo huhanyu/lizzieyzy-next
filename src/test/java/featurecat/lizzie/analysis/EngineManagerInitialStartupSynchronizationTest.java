@@ -24,6 +24,7 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.rules.extraMoveForTsumego;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
@@ -42,8 +43,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Focused tests for the initial engine startup restore barrier (Issue #223): frozen immutable
@@ -83,9 +88,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, engine.ponderCount, "ponder must run exactly once");
       assertEquals(1, engine.responseFreshenedCount, "response freshening must run exactly once");
       assertEquals(1, env.readyTransitions.get() - readyBaseline, "markEngineReady exactly once");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "barrier must be ended after the stable restore point");
       assertTrue(engine.isLoaded, "engine must stay available on success");
       assertLifecycleReservationReleased(engine);
     }
@@ -130,6 +132,336 @@ class EngineManagerInitialStartupSynchronizationTest {
           "a live update crossing barrier start must not enter the command queue");
       engine.endInitialBoardSynchronization();
     }
+  }
+
+  @ParameterizedTest
+  @MethodSource("ordinaryCommandsRejectedDuringStartupAdmission")
+  void startupAdmissionRejectsOrdinaryLiveBoardCommand(String command) throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicBoolean probed = new AtomicBoolean();
+      startup.beforeRestore =
+          () -> {
+            int commandsBefore = engine.commands.size();
+            engine.sendCommand(command);
+            assertFalse(
+                engine.commands.subList(commandsBefore, engine.commands.size()).contains(command),
+                command + " must not enter the queue while startup admission is active");
+            probed.set(true);
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertTrue(probed.get(), "admission probe must run during the frozen route");
+      assertEquals(1, engine.ponderCount, "ponder waits for the stable restore point");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @ParameterizedTest
+  @MethodSource("handshakeAndSizeCommandsAllowedDuringStartupAdmission")
+  void startupAdmissionAllowsHandshakeAndSizeConvergenceCommand(String command) throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicBoolean probed = new AtomicBoolean();
+      startup.beforeRestore =
+          () -> {
+            engine.sendCommand(command);
+            assertTrue(
+                engine.commands.contains(command),
+                command + " must keep flowing while startup admission is active");
+            probed.set(true);
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertTrue(probed.get(), "admission probe must run during the frozen route");
+      assertEquals(1, engine.ponderCount, "ponder waits for the stable restore point");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void startupAdmissionAllowsExactRestoreRoutePlayWhileRejectingOrdinaryPlay() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      startup.beforeRestore = () -> engine.sendCommand("play B Q4");
+
+      runStartupInThread(startup, engine);
+
+      assertFalse(engine.containsCommand("play B Q4"), "ordinary play must stay out of the queue");
+      assertTrue(
+          engine.containsCommand(play("B", 4, 3)),
+          "exact restore route play must still reach the engine");
+      assertEquals(1, engine.enginePosition.get(), "engine must converge on the restored move");
+      assertEquals(1, engine.ponderCount, "ponder waits for the stable restore point");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void capturedTargetAndMirrorShareStartupAdmission() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz target = new StartupSyncLeelaz();
+      StartupSyncLeelaz mirror = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(target, board);
+      target.startEngine(0);
+      mirror.startEngine(1);
+      int readyBaseline = env.readyTransitions.get();
+
+      EngineManager.InitialEngineStartupSynchronization startup =
+          EngineManager.InitialEngineStartupSynchronization.capture(
+              null, target, mirror, board, false, false);
+      AtomicInteger readyDuringAdmission = new AtomicInteger(-1);
+      startup.beforeRestore =
+          () -> {
+            target.sendCommand("play B Q4");
+            mirror.sendCommand("play B Q4");
+            target.sendCommand("name");
+            mirror.sendCommand("name");
+            assertFalse(target.containsCommand("play B Q4"));
+            assertFalse(mirror.containsCommand("play B Q4"));
+            assertTrue(target.containsCommand("name"), "handshake must flow on the target");
+            assertTrue(mirror.containsCommand("name"), "handshake must flow on the mirror");
+            assertEquals(0, target.ponderCount, "target must not ponder before stable handoff");
+            assertEquals(0, mirror.ponderCount, "mirror must not ponder before stable handoff");
+            readyDuringAdmission.set(env.readyTransitions.get());
+          };
+
+      runStartupInThread(startup, target);
+
+      assertEquals(
+          readyBaseline,
+          readyDuringAdmission.get(),
+          "READY must wait for the shared admission handoff");
+      assertEquals(1, env.readyTransitions.get() - readyBaseline, "READY publishes once");
+      assertEquals(1, target.ponderCount, "target ponders only after the shared handoff");
+      target.sendCommand("play B Q16");
+      mirror.sendCommand("play B Q16");
+      assertTrue(target.containsCommand("play B Q16"), "target admission must reopen");
+      assertTrue(mirror.containsCommand("play B Q16"), "mirror admission must reopen");
+      assertLifecycleReservationReleased(target);
+      assertLifecycleReservationReleased(mirror);
+    }
+  }
+
+  @Test
+  void representativeLiveBoardResyncLosesRaceToAdmissionStart() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      BlockingStartupConfig config = allocate(BlockingStartupConfig.class);
+      config.doubleEngineQueryEntered = new CountDownLatch(1);
+      config.allowDoubleEngineQuery = new CountDownLatch(1);
+      Lizzie.config = config;
+      AtomicReference<Throwable> resyncFailure = new AtomicReference<>();
+      Thread resyncThread =
+          new Thread(
+              () -> {
+                try {
+                  board.resendCurrentPositionToPrimaryEngine();
+                } catch (Throwable failure) {
+                  resyncFailure.set(failure);
+                }
+              },
+              "startup-admission-representative-resync-race");
+      resyncThread.start();
+
+      assertTrue(
+          config.doubleEngineQueryEntered.await(2, TimeUnit.SECONDS),
+          "the representative resync must pass precheck before admission starts");
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      try {
+        config.allowDoubleEngineQuery.countDown();
+        resyncThread.join(2_000L);
+
+        assertFalse(resyncThread.isAlive(), "the representative resync race must settle");
+        assertNull(resyncFailure.get(), "the representative resync must not throw");
+        assertFalse(engine.containsCommand("play B Q4"));
+        assertFalse(engine.containsCommand("undo"));
+        assertFalse(
+            engine.commands.contains("clear_board"),
+            "ordinary clear from the raced resync must not enter the queue");
+        engine.sendCommand("name");
+        assertTrue(engine.commands.contains("name"), "handshake must still flow");
+      } finally {
+        startup.close();
+      }
+
+      engine.sendCommand("play B Q16");
+      assertTrue(
+          engine.containsCommand("play B Q16"),
+          "ordinary play must enter after admission reopens");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void rejectedOverlappingStartupOwnerLeavesNoAdmissionOccupancy() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization first = captureStartup(engine, board);
+      try {
+        assertThrows(
+            IllegalStateException.class,
+            () -> captureStartup(engine, board),
+            "the overlapping owner must lose the existing lifecycle reservation");
+      } finally {
+        first.close();
+      }
+
+      assertLifecycleReservationReleased(engine);
+      engine.sendCommand("play B Q16");
+      assertTrue(
+          engine.containsCommand("play B Q16"),
+          "the rejected owner must not leave command admission occupied");
+    }
+  }
+
+  @Test
+  void rejectedMirrorAdmissionRollsBackAcceptedTargetAdmission() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz target = new StartupSyncLeelaz();
+      StartupSyncLeelaz occupiedMirror = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(target, board);
+      target.startEngine(0);
+      occupiedMirror.startEngine(1);
+
+      EngineManager.InitialEngineStartupSynchronization existingMirrorOwner =
+          captureStartup(occupiedMirror, board);
+      try {
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                EngineManager.InitialEngineStartupSynchronization.capture(
+                    null, target, occupiedMirror, board, false, false),
+            "the occupied mirror must reject the second startup owner");
+
+        assertTrue(
+            target.submitOrdinaryLiveBoardForwarding(
+                EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+            "a mirror rejection must roll back the target admission accepted earlier");
+
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                EngineManager.InitialEngineStartupSynchronization.capturePrepared(
+                    null, target, occupiedMirror, board, false, false),
+            "the occupied mirror must also reject a prepared startup owner");
+        assertTrue(
+            target.submitOrdinaryLiveBoardForwarding(
+                EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+            "a prepared mirror rejection must also roll back its accepted target admission");
+      } finally {
+        existingMirrorOwner.close();
+      }
+
+      assertLifecycleReservationReleased(target);
+      assertLifecycleReservationReleased(occupiedMirror);
+    }
+  }
+
+  @Test
+  void admissionStartingAfterSubmitPrecheckRejectsAllOrdinaryForwardingCommands()
+      throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch actionEntered = new CountDownLatch(1);
+      CountDownLatch continueAction = new CountDownLatch(1);
+      AtomicReference<Boolean> submitResult = new AtomicReference<>();
+      AtomicReference<Throwable> submitFailure = new AtomicReference<>();
+      Thread forwardingThread =
+          new Thread(
+              () -> {
+                try {
+                  submitResult.set(
+                      engine.submitOrdinaryLiveBoardForwarding(
+                          EngineManager.OrdinaryLiveBoardForwardingIntent.of(
+                              () -> {
+                                actionEntered.countDown();
+                                awaitLatch(continueAction);
+                                engine.sendCommand("komi 9.5");
+                                engine.sendCommand("boardsize 13");
+                                engine.sendCommand("clear_board");
+                                return true;
+                              })));
+                } catch (Throwable failure) {
+                  submitFailure.set(failure);
+                }
+              },
+              "startup-admission-submit-execute-race");
+      forwardingThread.start();
+
+      assertTrue(
+          actionEntered.await(2, TimeUnit.SECONDS),
+          "ordinary forwarding must pass submit precheck before startup begins");
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      try {
+        continueAction.countDown();
+        forwardingThread.join(2_000L);
+
+        assertFalse(forwardingThread.isAlive(), "ordinary forwarding race must settle");
+        assertNull(submitFailure.get(), "ordinary forwarding rejection must not throw");
+        assertEquals(Boolean.FALSE, submitResult.get(), "raced ordinary forwarding is rejected");
+        assertFalse(engine.containsCommand("komi 9.5"));
+        assertFalse(engine.containsCommand("boardsize 13"));
+        assertFalse(engine.containsCommand("clear_board"));
+      } finally {
+        continueAction.countDown();
+        startup.close();
+      }
+
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  private static Stream<Arguments> ordinaryCommandsRejectedDuringStartupAdmission() {
+    return Stream.of(
+        Arguments.of("play B Q4"),
+        Arguments.of("undo"),
+        Arguments.of("clear_board"),
+        Arguments.of("lz-analyze 99"),
+        Arguments.of("kata-analyze 99"),
+        Arguments.of("analyze 99"),
+        Arguments.of("kata-raw-nn 0"),
+        Arguments.of("heat"));
+  }
+
+  private static Stream<Arguments> handshakeAndSizeCommandsAllowedDuringStartupAdmission() {
+    return Stream.of(
+        Arguments.of("name"),
+        Arguments.of("version"),
+        Arguments.of("list_commands"),
+        Arguments.of("komi 6.5"),
+        Arguments.of("boardsize 19"));
   }
 
   @Test
@@ -202,7 +534,6 @@ class EngineManagerInitialStartupSynchronizationTest {
           "catch-up replay must rebuild the full position from the root");
       assertEquals(1, engine.ponderCount, "analysis must start only at the stable point");
       assertSame(board.getHistory().getCurrentHistoryNode(), board.getHistory().getEnd());
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -310,7 +641,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(8, engine.analyzePosition(), "analysis position");
       assertEquals(1, engine.ponderCount, "analysis starts once at the stable position");
       assertEngineMatchesBoardWithoutKomi(engine, board, 19, 19);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -353,7 +683,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFenceBeforeAnalyze(engine);
       assertEquals(1, engine.ponderCount, "analysis starts once at the stable position");
       assertEngineMatchesBoardWithoutKomi(engine, board, 19, 19);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -398,7 +727,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, target.boardSynchronizationConfirmations, "switch target fence");
       assertFenceBeforeAnalyze(target);
       assertEngineMatchesBoard(target, board, 19, 19);
-      assertFalse(target.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
     }
@@ -452,8 +780,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, targetSecondary.boardSynchronizationConfirmations, "secondary target fence");
       assertEngineMatchesBoard(primary, board, 19, 19);
       assertEngineMatchesBoard(targetSecondary, board, 19, 19);
-      assertFalse(primary.isInitialBoardSynchronizationActive());
-      assertFalse(targetSecondary.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(currentSecondary);
       assertLifecycleReservationReleased(targetSecondary);
     }
@@ -503,8 +829,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFenceBeforeAnalyze(primary);
       assertEngineMatchesBoard(primary, board, 19, 19);
       assertEngineMatchesBoard(secondary, board, 19, 19);
-      assertFalse(primary.isInitialBoardSynchronizationActive());
-      assertFalse(secondary.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(secondary);
     }
   }
@@ -533,7 +857,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(manager.firstSynchronizationCompleted.await(2, TimeUnit.SECONDS));
       assertFalse(target.isLoaded(), "timed-out switch target remains unavailable");
       assertEquals(0, target.ponderCount, "no analysis after readiness timeout");
-      assertFalse(target.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
     }
@@ -558,7 +881,6 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertEquals(1, manager.leaseConflictCount);
       assertEquals(0, engine.ponderCount);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -599,7 +921,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(target.isLoaded(), "failed catch-up target remains unavailable");
       assertEquals(0, target.ponderCount, "no analysis after catch-up failure");
       assertEquals(0, target.analyzeCount(), "no analyze command after catch-up failure");
-      assertFalse(target.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
     }
@@ -629,7 +950,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertSame(current, Lizzie.leelaz, "rejected switch keeps the current engine");
       assertEquals(0, target.boardSynchronizationConfirmations, "no success fence on abort");
       assertEquals(0, target.ponderCount, "aborted target never starts analysis");
-      assertFalse(target.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
     }
@@ -738,7 +1058,6 @@ class EngineManagerInitialStartupSynchronizationTest {
           engine.containsCommand("play W " + Board.convertCoordinatesToName(4, 4)),
           "snapshot static stones must not be faked as MOVE commands");
       assertEngineMatchesBoard(engine, board, 19, 19);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -813,9 +1132,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, engine.ponderCount, "analysis starts once after the stable restore point");
       assertEquals(Stone.EMPTY, engine.stoneAt(3, 3), "removed stone stays removed on the engine");
       assertEngineMatchesBoard(engine, board, 19, 19);
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the Board fence must end the barrier at the stable restore point");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -832,33 +1148,33 @@ class EngineManagerInitialStartupSynchronizationTest {
       engine.startEngine(0);
 
       EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
-      AtomicBoolean fenceActiveWhenTailCommitted = new AtomicBoolean();
       AtomicReference<String> lastCommandBeforeFence = new AtomicReference<>();
+      AtomicBoolean ordinaryPlayDroppedAtTail = new AtomicBoolean();
       startup.beforeReservationRelease =
           () -> {
-            // The exact route (loadsgf + real tail) has just been committed; the Board fence must
-            // still be active and the last committed command must be the final tail action.
-            fenceActiveWhenTailCommitted.set(engine.isInitialBoardSynchronizationActive());
+            // The exact route (loadsgf + real tail) has just been committed; ordinary live-board
+            // play must still be dropped and the last committed command must be the final tail.
             List<String> commands = engine.commands;
             if (!commands.isEmpty()) {
               lastCommandBeforeFence.set(commands.get(commands.size() - 1));
             }
+            int before = commands.size();
+            engine.sendCommand("play B Q16");
+            ordinaryPlayDroppedAtTail.set(
+                engine.commands.size() == before && !engine.commands.contains("play B Q16"));
           };
 
       runStartupInThread(startup, engine);
 
       assertTrue(
-          fenceActiveWhenTailCommitted.get(),
-          "the tail must be committed before the Board fence ends the barrier");
+          ordinaryPlayDroppedAtTail.get(),
+          "ordinary play must stay dropped after the tail and before reservation release");
       assertEquals(
           "play B pass",
           lastCommandBeforeFence.get(),
           "the final tail action must be the last command before the fence");
       assertEquals(4, engine.analyzePosition(), "analyze must start after the fence");
       assertEquals(1, engine.ponderCount, "ponder must run exactly once after the fence");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the fence must end the barrier only after the tail");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -898,6 +1214,8 @@ class EngineManagerInitialStartupSynchronizationTest {
                 tailMove.addOrGoto(
                     moveNode(tailMove.getData(), 8, 8, Stone.WHITE, true, 4), true, false, false);
                 assertTrue(board.nextVariation(1));
+                assertTrue(board.goToMoveNumber(3), "jump must return to the tail MOVE");
+                assertTrue(board.goToMoveNumber(4), "jump must reach the main-line tail PASS");
                 // Ordinary live-board sync must be refused by the barrier, not admitted.
                 assertFalse(board.resendCurrentPositionToPrimaryEngine());
                 assertFalse(
@@ -919,10 +1237,11 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertNull(
           navigationFailure.get(),
           "snapshot navigation and ordinary sync during the barrier must never throw");
-      assertEquals(4, engine.analyzePosition(), "engine must converge on the branch child");
+      assertEquals(4, board.getHistory().getMoveNumber(), "history cursor at the tail PASS");
+      assertSame(admissionHistory.getEnd(), board.getHistory().getCurrentHistoryNode());
+      assertEquals(4, engine.analyzePosition(), "engine must converge on the main-line tail PASS");
       assertEquals(1, engine.ponderCount, "analysis waits for the stable restore point");
       assertEngineMatchesBoard(engine, board, 19, 19);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -956,7 +1275,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(EngineManager.isEmpty, "failed snapshot restore must remain an empty owner");
       assertEquals(-1, EngineManager.currentEngineNo);
       assertFalse(failingEngine.isLoaded);
-      assertFalse(failingEngine.isInitialBoardSynchronizationActive());
       assertEquals(1, failingEngine.loadSgfCount.get(), "only the failed loadsgf attempt");
       assertEquals(0, failingEngine.ponderCount, "no analysis after a failed snapshot restore");
       assertEquals(0, failingEngine.analyzeCount(), "no analyze command after a failed restore");
@@ -973,7 +1291,6 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertFalse(EngineManager.isEmpty);
       assertEquals(1, EngineManager.currentEngineNo);
-      assertFalse(recoveryEngine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(recoveryEngine);
     }
   }
@@ -1013,7 +1330,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(EngineManager.isEmpty, "failed snapshot catch-up must remain an empty owner");
       assertEquals(-1, EngineManager.currentEngineNo);
       assertFalse(engine.isLoaded);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertEquals(0, engine.ponderCount, "no analysis after a failed catch-up restore");
       assertEquals(0, engine.analyzeCount(), "no analyze command after a failed catch-up");
       assertEquals(
@@ -1063,7 +1379,6 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertNotNull(failure, "rejected snapshot catch-up reservation must fail closed");
       assertFalse(engine.isLoaded);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertEquals(0, engine.ponderCount);
       assertEquals(0, engine.analyzeCount());
       assertEquals(0, env.readyTransitions.get() - readyBaseline);
@@ -1093,7 +1408,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(engine.isLoaded);
       assertTrue(EngineManager.isEmpty);
       assertEquals(-1, EngineManager.currentEngineNo);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -1125,7 +1439,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(EngineManager.isEmpty, "failed first activation must remain an empty owner");
       assertEquals(-1, EngineManager.currentEngineNo);
       assertFalse(timedOutEngine.isLoaded);
-      assertFalse(timedOutEngine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(timedOutEngine);
 
       assertTrue(manager.switchEngineIfAvailable(1, true), "a later activation must retry startup");
@@ -1136,7 +1449,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(EngineManager.isEmpty);
       assertEquals(1, EngineManager.currentEngineNo);
       assertEquals(0, recoveryEngine.enginePosition.get());
-      assertFalse(recoveryEngine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(recoveryEngine);
     }
   }
@@ -1167,7 +1479,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(engine.isLoaded);
       assertEquals(1, engine.ponderCount);
       assertEquals(0, engine.analyzeCount());
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -1204,7 +1515,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(2, engine.analyzePosition(), "engine must converge on the final node (2)");
       assertEquals(1, engine.ponderCount);
       assertSame(expectedFinalNode, board.getHistory().getCurrentHistoryNode());
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -1242,7 +1552,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(2, engine.analyzePosition(), "analysis must start from the snapshot position");
       assertEquals(1, engine.ponderCount);
       assertSame(history.getCurrentHistoryNode(), history.getStart());
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -1277,7 +1586,6 @@ class EngineManagerInitialStartupSynchronizationTest {
           "catch-up replay must select the branch child, not the same-number main-line node");
       assertEngineMatchesBoard(engine, board, 19, 19);
       assertEquals(1, engine.ponderCount);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -1326,7 +1634,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(0, engine.analyzePosition(), "converged on the resized empty board");
       assertEquals(1, engine.ponderCount);
       assertEquals(9, Board.boardWidth, "board resize itself must remain effective");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -1362,7 +1669,6 @@ class EngineManagerInitialStartupSynchronizationTest {
           0.001f,
           "engine komi must converge to the cleared game komi");
       assertEquals(0, engine.analyzePosition(), "converged on the cleared empty board");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -1376,21 +1682,23 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
       AtomicInteger handoffs = new AtomicInteger();
-      AtomicReference<Boolean> barrierActiveAfterRelease = new AtomicReference<>();
+      AtomicBoolean ordinaryPlayDroppedAfterRelease = new AtomicBoolean();
       startup.afterReservationRelease =
           () -> {
             if (handoffs.getAndIncrement() == 0) {
-              barrierActiveAfterRelease.set(engine.isInitialBoardSynchronizationActive());
+              int before = engine.commands.size();
+              engine.sendCommand("play B Q16");
+              ordinaryPlayDroppedAfterRelease.set(
+                  engine.commands.size() == before && !engine.commands.contains("play B Q16"));
               board.clear(false);
             }
           };
 
       runStartupInThread(startup, engine);
 
-      assertEquals(
-          Boolean.TRUE,
-          barrierActiveAfterRelease.get(),
-          "the initial-sync barrier must stay active until the post-release frame judgment");
+      assertTrue(
+          ordinaryPlayDroppedAfterRelease.get(),
+          "ordinary play must stay dropped after reservation release until frame judgment");
       assertEquals(
           2,
           engine.clearBoardCount.get(),
@@ -1400,10 +1708,309 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(0, engine.analyzePosition(), "analysis must start on the cleared board");
       assertEquals(0, board.getHistory().getData().moveNumber);
       assertEquals(1, engine.ponderCount);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
+
+  @Test
+  void historyOverwriteOccupiedAtMutationDoesNotReplayAfterHandoff() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch reachedForward = new CountDownLatch(1);
+      CountDownLatch handoffFinished = new CountDownLatch(1);
+      AtomicInteger commandsWhenForwardReached = new AtomicInteger();
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      Board.beforeHistoryOverwriteEngineForward =
+          () -> {
+            commandsWhenForwardReached.set(engine.commands.size());
+            reachedForward.countDown();
+            awaitLatch(handoffFinished);
+          };
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      Thread mutationThread =
+          new Thread(
+              () -> {
+                try {
+                  board.clear(false);
+                } catch (Throwable failure) {
+                  mutationFailure.set(failure);
+                }
+              },
+              "ticket03-occupied-overwrite-forward");
+      try {
+        mutationThread.start();
+        assertTrue(reachedForward.await(5, TimeUnit.SECONDS), "mutation must reach forwarding");
+
+        runStartupInThread(startup, engine);
+        int commandsAfterHandoff = engine.commands.size();
+        handoffFinished.countDown();
+        mutationThread.join(5_000L);
+
+        assertFalse(mutationThread.isAlive(), "delayed overwrite forwarding must settle");
+        assertNull(mutationFailure.get(), "occupied overwrite must not throw");
+        assertEquals(
+            commandsAfterHandoff,
+            engine.commands.size(),
+            "stale clear/komi captured while the owner occupied must not replay after handoff");
+        assertTrue(
+            commandsWhenForwardReached.get() <= commandsAfterHandoff,
+            "catch-up may enqueue while the occupied plan is held");
+        assertEquals(
+            (float) board.getHistory().getGameInfo().getKomi(),
+            engine.komi,
+            0.001f,
+            "engine komi must converge from catch-up, not the stale plan");
+        assertEquals(0, engine.analyzePosition(), "analysis starts on the overwritten board");
+        assertEquals(1, engine.ponderCount);
+        assertLifecycleReservationReleased(engine);
+      } finally {
+        handoffFinished.countDown();
+        Board.beforeHistoryOverwriteEngineForward = null;
+      }
+    }
+  }
+
+  @Test
+  void historyOverwriteAfterMutationLosesRaceToAdmissionStart() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch reachedForward = new CountDownLatch(1);
+      CountDownLatch admissionStarted = new CountDownLatch(1);
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      Board.beforeHistoryOverwriteEngineForward =
+          () -> {
+            reachedForward.countDown();
+            awaitLatch(admissionStarted);
+          };
+
+      Thread mutationThread =
+          new Thread(
+              () -> {
+                try {
+                  board.clear(false);
+                } catch (Throwable failure) {
+                  mutationFailure.set(failure);
+                }
+              },
+              "ticket03-stale-overwrite-enqueue");
+      EngineManager.InitialEngineStartupSynchronization startup = null;
+      try {
+        mutationThread.start();
+        assertTrue(
+            reachedForward.await(5, TimeUnit.SECONDS),
+            "mutation must finish before ordinary forwarding enqueues");
+
+        startup = captureStartup(engine, board);
+        admissionStarted.countDown();
+        mutationThread.join(5_000L);
+
+        assertFalse(mutationThread.isAlive(), "stale overwrite forwarding must settle");
+        assertNull(mutationFailure.get(), "raced overwrite must not throw");
+        assertFalse(
+            engine.commands.contains("clear_board"),
+            "stale ordinary clear must not enter the queue after admission starts");
+        assertFalse(
+            engine.commands.stream().anyMatch(command -> command.startsWith("komi ")),
+            "stale ordinary komi must not enter the queue after admission starts");
+
+        runStartupInThread(startup, engine);
+
+        assertEquals(
+            (float) board.getHistory().getGameInfo().getKomi(),
+            engine.komi,
+            0.001f,
+            "final komi must converge from the startup route");
+        assertEquals(0, engine.analyzePosition(), "analysis starts on the overwritten board");
+        assertEquals(1, engine.ponderCount);
+        assertLifecycleReservationReleased(engine);
+      } finally {
+        admissionStarted.countDown();
+        Board.beforeHistoryOverwriteEngineForward = null;
+        if (startup != null) {
+          startup.close();
+        }
+      }
+    }
+  }
+
+  @Test
+  void historyOverwriteHonorsDepthOnlyBoardBarrierWithoutAdmission() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      engine.beginInitialBoardSynchronization();
+      try {
+        int before = engine.commands.size();
+        board.clear(false);
+        board.reopen(9, 9);
+        flattenWithExtraStones(board, true);
+        assertEquals(
+            before,
+            engine.commands.size(),
+            "a depth-only restart/startup barrier must suppress ordinary overwrite");
+      } finally {
+        engine.endInitialBoardSynchronization();
+      }
+
+      board.clear(false);
+      assertTrue(
+          engine.commands.contains("clear_board"),
+          "ordinary clear must forward after the depth-only barrier ends");
+    }
+  }
+
+  @Test
+  void depthOnlyBarrierOccupancyDoesNotReplayAfterBarrierEnds() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch reachedForward = new CountDownLatch(1);
+      CountDownLatch barrierEnded = new CountDownLatch(1);
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      Board.beforeHistoryOverwriteEngineForward =
+          () -> {
+            reachedForward.countDown();
+            awaitLatch(barrierEnded);
+          };
+
+      engine.beginInitialBoardSynchronization();
+      Thread mutationThread =
+          new Thread(
+              () -> {
+                try {
+                  board.clear(false);
+                } catch (Throwable failure) {
+                  mutationFailure.set(failure);
+                }
+              },
+              "ticket03-depth-only-occupied-forward");
+      try {
+        mutationThread.start();
+        assertTrue(reachedForward.await(5, TimeUnit.SECONDS), "mutation must reach forwarding");
+        int commandsBeforeRelease = engine.commands.size();
+        engine.endInitialBoardSynchronization();
+        barrierEnded.countDown();
+        mutationThread.join(5_000L);
+
+        assertFalse(mutationThread.isAlive(), "delayed depth-only overwrite must settle");
+        assertNull(mutationFailure.get(), "depth-only occupied overwrite must not throw");
+        assertEquals(
+            commandsBeforeRelease,
+            engine.commands.size(),
+            "stale overwrite captured under a depth-only barrier must not replay after it ends");
+      } finally {
+        barrierEnded.countDown();
+        Board.beforeHistoryOverwriteEngineForward = null;
+        engine.endInitialBoardSynchronization();
+      }
+    }
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("historyOverwriteMutations")
+  void historyOverwriteDuringAdmissionStaysOutOfQueueAndConverges(
+      String name, HistoryOverwriteMutation mutation) throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicInteger rounds = new AtomicInteger();
+      AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+      startup.beforeRestore =
+          () -> {
+            if (rounds.getAndIncrement() != 0) {
+              return;
+            }
+            int before = engine.commands.size();
+            try {
+              mutation.apply(board);
+            } catch (Throwable failure) {
+              mutationFailure.set(failure);
+              return;
+            }
+            assertEquals(
+                before,
+                engine.commands.size(),
+                name + " must not enqueue ordinary overwrite commands while admission is active");
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertNull(mutationFailure.get(), name + " must not throw");
+      assertEquals(1, engine.ponderCount, name + " must wait for READY/ponder");
+      assertEquals(
+          (float) board.getHistory().getGameInfo().getKomi(),
+          engine.komi,
+          0.001f,
+          name + " must converge komi");
+      assertEquals(
+          Board.boardWidth,
+          engine.engineBoardWidth,
+          name + " must converge board width");
+      assertEquals(
+          Board.boardHeight,
+          engine.engineBoardHeight,
+          name + " must converge board height");
+      assertEquals(
+          0,
+          engine.analyzePosition(),
+          name + " must analyze the overwritten position");
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
+  @Test
+  void historyOverwriteForwardsWhenAdmissionIsInactive() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(1));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      board.clear(false);
+      assertTrue(engine.commands.contains("clear_board"), "clear must forward when idle");
+      assertTrue(
+          engine.commands.stream().anyMatch(command -> command.startsWith("komi ")),
+          "clear must forward komi when idle");
+
+      board.reopen(13, 13);
+      assertTrue(
+          engine.commands.contains("boardsize 13"),
+          "reopen must forward boardsize when idle");
+
+      flattenWithExtraStones(board, true);
+      assertTrue(
+          engine.containsCommand(play("B", 3, 3)),
+          "flatten extra-stone feeds must reach the engine when idle");
+      assertTrue(
+          engine.commands.stream().anyMatch(command -> command.startsWith("komi ")),
+          "flatten must forward komi when idle");
+
+      board.reopen(13, 13);
+      long boardSizeCount =
+          engine.commands.stream().filter(command -> command.equals("boardsize 13")).count();
+      assertEquals(1, boardSizeCount, "same-size reopen must be a no-op");
+    }
+  }
+
 
   @Test
   void catchUpReservationReacquisitionFailureFailsClosed() throws Exception {
@@ -1438,7 +2045,6 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertNotNull(failure, "rejected catch-up reservation must fail closed");
       assertFalse(engine.isLoaded);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertEquals(0, engine.ponderCount);
       assertEquals(0, engine.analyzeCount());
       assertEquals(0, env.readyTransitions.get() - readyBaseline);
@@ -1481,7 +2087,71 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertEquals(1, engine.loadSgfCount.get(), "only the frozen route executes");
       assertEquals(1, engine.ponderCount);
-      assertFalse(engine.isInitialBoardSynchronizationActive());
+    }
+  }
+
+  @Test
+  void ordinaryMoveNavigationDuringAdmissionConvergesWithoutOrdinaryCommandsOrException()
+      throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      BoardHistoryList history = emptyRootHistory(3);
+      history.toStart();
+      Board board = boardWithHistory(history);
+      env.publish(engine, board);
+      BoardHistoryNode node1 = history.getCurrentHistoryNode().next().orElseThrow();
+      node1.addOrGoto(moveNode(node1.getData(), 6, 3, Stone.WHITE, true, 2), true, false, false);
+      engine.startEngine(0);
+      assertTrue(engine.isLoaded, "fixture must keep the primary engine ready during admission");
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicInteger rounds = new AtomicInteger();
+      AtomicReference<Throwable> navigationFailure = new AtomicReference<>();
+      startup.beforeRestore =
+          () -> {
+            if (rounds.getAndIncrement() == 0) {
+              try {
+                int commandsBefore = engine.commands.size();
+                assertTrue(board.nextMove(false), "next must reach move 1");
+                assertTrue(board.nextMove(false), "next must reach move 2");
+                assertTrue(board.previousMove(false), "previous must return to move 1");
+                assertTrue(board.nextVariation(1), "variation must enter the branch child");
+                assertTrue(board.goToMoveNumber(1), "jump must return to move 1");
+                assertTrue(board.goToMoveNumber(3), "jump must reach the main-line tail");
+                assertFalse(
+                    board.resendCurrentPositionToPrimaryEngine(),
+                    "full current-position resync must stay refused during admission");
+                assertFalse(
+                    board.trySyncCurrentPositionToPrimaryEngineIncrementally(
+                        board.getHistory().getData(), 19, 19),
+                    "incremental current-position sync must stay refused during admission");
+                board.resendMoveToEngine(engine, false);
+                board.getHistory().getCurrentHistoryNode().clearAndSyncBoard(false);
+                assertEquals(
+                    commandsBefore,
+                    engine.commands.size(),
+                    "ordinary MOVE navigation must not inject live-board commands during admission");
+              } catch (Throwable failure) {
+                navigationFailure.set(failure);
+              }
+            }
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertNull(
+          navigationFailure.get(),
+          "ordinary MOVE navigation and sync during admission must not throw");
+      assertEquals(3, board.getHistory().getMoveNumber(), "history cursor at the main-line tail");
+      assertSame(history.getEnd(), board.getHistory().getCurrentHistoryNode());
+      assertEquals(3, engine.analyzePosition(), "catch-up must converge on the final MOVE");
+      assertEquals(
+          List.of(play("B", 4, 3), play("W", 5, 3), play("B", 6, 3)),
+          engine.playsAfterLastClear(),
+          "catch-up replay must rebuild the main-line tail from the root");
+      assertEquals(1, engine.ponderCount, "analysis waits for the stable restore point");
+      assertEngineMatchesBoard(engine, board, 19, 19);
+      assertLifecycleReservationReleased(engine);
     }
   }
 
@@ -1502,9 +2172,6 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertNotNull(failure, "initial restore failure must surface");
       assertFalse(engine.isLoaded, "target engine must be marked unavailable");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "initial synchronization state must end on failure");
       assertEquals(0, engine.ponderCount, "no analysis after failure");
       assertEquals(0, engine.analyzeCount(), "no analysis command after failure");
       assertEquals(0, env.readyTransitions.get() - readyBaseline, "never marked ready");
@@ -1551,15 +2218,19 @@ class EngineManagerInitialStartupSynchronizationTest {
             Thread.State.BLOCKED,
             cleanupThread.getState(),
             "failure cleanup must reach the blocked reservation-release phase");
-        assertTrue(
-            engine.isInitialBoardSynchronizationActive(),
-            "the barrier must remain active while failure cleanup still holds the reservation");
+        assertFalse(
+            engine.submitOrdinaryLiveBoardForwarding(
+                EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+            "ordinary forwarding must stay occupied while failure cleanup still holds the reservation");
       }
 
       cleanupThread.join(2_000L);
       assertFalse(cleanupThread.isAlive(), "failure cleanup must settle after reservation release");
       assertNotNull(failure.get(), "controlled startup failure must surface");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
+      assertTrue(
+          engine.submitOrdinaryLiveBoardForwarding(
+              EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+          "ordinary forwarding must reopen after failure cleanup releases the reservation");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -1582,9 +2253,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(
           failure.getMessage().contains("Failed to send GTP command"),
           "reservation release failure must propagate");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "cleanup must end the startup barrier even when reservation release fails");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -1618,7 +2286,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(
           failure.getSuppressed()[0].getMessage().contains("Failed to send GTP command"),
           "reservation cleanup failure must remain diagnosable");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -1647,7 +2314,6 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertNotNull(failure, "catch-up restore failure must surface");
       assertFalse(engine.isLoaded, "target engine must be marked unavailable");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertEquals(0, engine.ponderCount);
       assertEquals(0, env.readyTransitions.get() - readyBaseline);
       assertEquals(2, engine.loadSgfCount.get(), "frozen route then failed catch-up route");
@@ -1682,7 +2348,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(3, engine.clearBoardCount.get(), "frozen route plus two catch-up rounds");
       assertEquals(2, engine.analyzePosition(), "final convergence at node 2");
       assertEquals(1, engine.ponderCount, "analysis must wait for the final stable point");
-      assertFalse(engine.isInitialBoardSynchronizationActive());
     }
   }
 
@@ -1736,7 +2401,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       } finally {
         startup.close();
       }
-      assertFalse(engine.isInitialBoardSynchronizationActive());
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -1787,6 +2451,10 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   private static void assertLifecycleReservationReleased(StartupSyncLeelaz engine) {
+    assertTrue(
+        engine.submitOrdinaryLiveBoardForwarding(
+            EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+        "ordinary live-board forwarding must reopen after the barrier ends");
     Leelaz.ExclusiveGtpLifecycleReservation reservation =
         engine.beginExclusiveGtpLifecycleReservation();
     assertNotNull(reservation, "lifecycle reservation must be released after the barrier");
@@ -1809,6 +2477,50 @@ class EngineManagerInitialStartupSynchronizationTest {
     Field field = Leelaz.class.getDeclaredField(name);
     field.setAccessible(true);
     field.set(engine, value);
+  }
+
+  private static void awaitLatch(CountDownLatch latch) {
+    try {
+      if (!latch.await(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("timed out waiting for overwrite forwarding latch");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("overwrite forwarding latch interrupted", interrupted);
+    }
+  }
+
+  @FunctionalInterface
+  private interface HistoryOverwriteMutation {
+    void apply(Board board);
+  }
+
+  private static Stream<Arguments> historyOverwriteMutations() {
+    return Stream.of(
+        Arguments.of("clear", (HistoryOverwriteMutation) board -> board.clear(false)),
+        Arguments.of("clearForOnline", (HistoryOverwriteMutation) Board::clearForOnline),
+        Arguments.of("clearforedit", (HistoryOverwriteMutation) Board::clearforedit),
+        Arguments.of("reopen", (HistoryOverwriteMutation) board -> board.reopen(9, 9)),
+        Arguments.of(
+            "flattenWithKomi",
+            (HistoryOverwriteMutation) board -> flattenWithExtraStones(board, true)),
+        Arguments.of(
+            "flattenExtraStones",
+            (HistoryOverwriteMutation) board -> flattenWithExtraStones(board, false)));
+  }
+
+  private static void flattenWithExtraStones(Board board, boolean withKomi) {
+    Stone[] stones = board.getHistory().getStones().clone();
+    Zobrist zobrist = board.getHistory().getZobrist().clone();
+    extraMoveForTsumego extra = new extraMoveForTsumego();
+    extra.x = 3;
+    extra.y = 3;
+    extra.color = Stone.BLACK;
+    if (withKomi) {
+      board.flattenWithCondition(stones, zobrist, true, List.of(extra), 7.5);
+    } else {
+      board.flattenWithCondition(stones, zobrist, true, List.of(extra));
+    }
   }
 
   private static void sendFailOnErrorCommand(Leelaz engine, String command) throws Exception {
@@ -2424,6 +3136,7 @@ class EngineManagerInitialStartupSynchronizationTest {
     protected void showContributingEngineSwitchUnavailable() {}
   }
 
+
   private static final class StartupTestEnvironment implements AutoCloseable {
     private final Leelaz previousPrimary = Lizzie.leelaz;
     private final Leelaz previousSecondary = Lizzie.leelaz2;
@@ -2455,6 +3168,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       Lizzie.frame = allocate(SilentStartupFrame.class);
       LizzieFrame.toolbar = allocate(SilentStartupToolbar.class);
       LizzieFrame.menu = allocate(SilentStartupMenu.class);
+      LizzieFrame.menu.txtKomi = new javax.swing.JTextField();
       Menu.engineMenu = allocate(SilentStartupEngineMenu.class);
       Menu.engineMenu2 = allocate(SilentStartupEngineMenu.class);
       LizzieFrame.boardRenderer2 = new BoardRenderer(true);

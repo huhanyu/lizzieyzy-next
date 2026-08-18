@@ -274,9 +274,6 @@ class LeelazOpenClRecoveryTest {
       assertTrue(
           engine.transport.commands().isEmpty(),
           "no ponder or analyze commands after the async recovery failure");
-      assertFalse(
-          engine.isInitialBoardSynchronizationActive(),
-          "the async recovery failure must release the board synchronization barriers");
       assertNotNull(
           engine.diagnosticMessage,
           "the diagnostic path must receive the OpenCL recovery failure detail");
