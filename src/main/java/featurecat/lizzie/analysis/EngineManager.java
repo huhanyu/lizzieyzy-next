@@ -4200,9 +4200,14 @@ public class EngineManager {
 
     private void beginSynchronizationBarriers() {
       admission.activate();
-      targetEngine.attachAndBeginInitialEngineSyncAdmission(admission);
-      if (mirrorEngine != null) {
-        mirrorEngine.attachAndBeginInitialEngineSyncAdmission(admission);
+      if (!targetEngine.attachAndBeginInitialEngineSyncAdmission(admission)) {
+        throw new InitialStartupReservationException(
+            "Engine lifecycle target admission was rejected");
+      }
+      if (mirrorEngine != null
+          && !mirrorEngine.attachAndBeginInitialEngineSyncAdmission(admission)) {
+        throw new InitialStartupReservationException(
+            "Engine lifecycle mirror admission was rejected");
       }
     }
 

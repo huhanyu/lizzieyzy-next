@@ -315,6 +315,90 @@ class EngineManagerInitialStartupSynchronizationTest {
     }
   }
 
+  @Test
+  void rejectedOverlappingStartupOwnerLeavesNoAdmissionOccupancy() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      EngineManager.InitialEngineStartupSynchronization first = captureStartup(engine, board);
+      try {
+        assertThrows(
+            IllegalStateException.class,
+            () -> captureStartup(engine, board),
+            "the overlapping owner must lose the existing lifecycle reservation");
+      } finally {
+        first.close();
+      }
+
+      assertLifecycleReservationReleased(engine);
+      engine.sendCommand("play B Q16");
+      assertTrue(
+          engine.containsCommand("play B Q16"),
+          "the rejected owner must not leave command admission occupied");
+    }
+  }
+
+  @Test
+  void admissionStartingAfterSubmitPrecheckRejectsAllOrdinaryForwardingCommands()
+      throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(engine, board);
+      engine.startEngine(0);
+
+      CountDownLatch actionEntered = new CountDownLatch(1);
+      CountDownLatch continueAction = new CountDownLatch(1);
+      AtomicReference<Boolean> submitResult = new AtomicReference<>();
+      AtomicReference<Throwable> submitFailure = new AtomicReference<>();
+      Thread forwardingThread =
+          new Thread(
+              () -> {
+                try {
+                  submitResult.set(
+                      engine.submitOrdinaryLiveBoardForwarding(
+                          EngineManager.OrdinaryLiveBoardForwardingIntent.of(
+                              () -> {
+                                actionEntered.countDown();
+                                awaitLatch(continueAction);
+                                engine.sendCommand("komi 9.5");
+                                engine.sendCommand("boardsize 13");
+                                engine.sendCommand("clear_board");
+                                return true;
+                              })));
+                } catch (Throwable failure) {
+                  submitFailure.set(failure);
+                }
+              },
+              "startup-admission-submit-execute-race");
+      forwardingThread.start();
+
+      assertTrue(
+          actionEntered.await(2, TimeUnit.SECONDS),
+          "ordinary forwarding must pass submit precheck before startup begins");
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      try {
+        continueAction.countDown();
+        forwardingThread.join(2_000L);
+
+        assertFalse(forwardingThread.isAlive(), "ordinary forwarding race must settle");
+        assertNull(submitFailure.get(), "ordinary forwarding rejection must not throw");
+        assertEquals(Boolean.FALSE, submitResult.get(), "raced ordinary forwarding is rejected");
+        assertFalse(engine.containsCommand("komi 9.5"));
+        assertFalse(engine.containsCommand("boardsize 13"));
+        assertFalse(engine.containsCommand("clear_board"));
+      } finally {
+        continueAction.countDown();
+        startup.close();
+      }
+
+      assertLifecycleReservationReleased(engine);
+    }
+  }
+
   private static Stream<Arguments> ordinaryCommandsRejectedDuringStartupAdmission() {
     return Stream.of(
         Arguments.of("play B Q4"),
