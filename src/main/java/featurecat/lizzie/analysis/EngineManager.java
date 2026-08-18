@@ -471,14 +471,18 @@ public class EngineManager {
 
     Lizzie.config.isAutoAna = false;
     Lizzie.board.isPkBoard = true;
+    startNewEngineGame(true);
+    if (!isEngineGame && !isPreEngineGame) {
+      Lizzie.board.isPkBoard = false;
+      Lizzie.frame.addInput(true);
+      return false;
+    }
     LizzieFrame.toolbar.lblenginePkResult.setText("0:0");
     Menu.engineMenu.setText(resourceBundle.getString("EngineManager.engineGamePlaying")); // 对战中
     LizzieFrame.menu.toggleEngineMenuStatus(true, false);
-    // 禁用某些按钮
     LizzieFrame.toolbar.enableDisabelForEngineGame(false);
-    // 开始新的一局
-    startNewEngineGame(true);
     return true;
+
   }
 
   public ArrayList<Movelist> getStartListForEnginePk() {
@@ -936,7 +940,11 @@ public class EngineManager {
   public void stopEngineGame(int resgnEngineIndex, boolean mannul) {
     SGFParser.appendComment();
     isPreEngineGame = false;
-    if (!isEngineGame) return;
+    if (!isEngineGame) {
+      restoreUiAfterEngineGameStartAbort();
+      return;
+    }
+
     isEngineGame = false;
     isSaveingEngineSGF = true;
     stopCountDown();
@@ -1300,6 +1308,7 @@ public class EngineManager {
     if (rejectForegroundEngineStartDuringSetup(true)) return;
     Leelaz currentForegroundEngine = Lizzie.leelaz;
     if (currentForegroundEngine != null) {
+      currentForegroundEngine.notPondering();
       if (!currentForegroundEngine.beginExclusiveGtpLifecycleTransition()) {
         showForegroundEngineLeaseInUse();
         return;
@@ -1312,6 +1321,7 @@ public class EngineManager {
     } else {
       isPreEngineGame = true;
     }
+
     // engineGameInfo
     Lizzie.frame.setResult("");
     if (firstTime) {
@@ -2635,6 +2645,19 @@ public class EngineManager {
       LizzieFrame.toolbar.isPkStop = false;
     }
   }
+
+  private void restoreUiAfterEngineGameStartAbort() {
+    if (Lizzie.frame != null) {
+      Lizzie.frame.addInput(true);
+    }
+    if (LizzieFrame.toolbar != null) {
+      LizzieFrame.toolbar.enableDisabelForEngineGame(true);
+    }
+    if (Menu.engineMenu != null) {
+      Menu.engineMenu.setEnabled(true);
+    }
+  }
+
 
   public void restartEngineForPk(int index) {
     if (rejectForegroundEngineStartDuringSetup(true)) return;
