@@ -29,6 +29,7 @@ import java.util.Stack;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.swing.*;
@@ -1590,13 +1591,25 @@ public class Board {
     return true;
   }
 
-  public boolean trySyncCurrentPositionToPrimaryEngineIncrementally(
-      BoardData previousPosition, int previousBoardWidth, int previousBoardHeight) {
-    if (Lizzie.leelaz != null && Lizzie.leelaz.isInitialBoardSynchronizationActive()) {
-      // The initial engine startup restore barrier owns the primary engine; a live resync must
-      // not interleave komi/play commands with the frozen or catch-up restore route.
+  private boolean submitOrdinaryEngineForwarding(Leelaz engine, Supplier<Boolean> action) {
+    if (engine == null) {
       return false;
     }
+    return engine.submitOrdinaryLiveBoardForwarding(
+        EngineManager.OrdinaryLiveBoardForwardingIntent.of(action));
+  }
+
+  public boolean trySyncCurrentPositionToPrimaryEngineIncrementally(
+      BoardData previousPosition, int previousBoardWidth, int previousBoardHeight) {
+    return submitOrdinaryEngineForwarding(
+        Lizzie.leelaz,
+        () ->
+            forwardCurrentPositionToPrimaryEngineIncrementally(
+                previousPosition, previousBoardWidth, previousBoardHeight));
+  }
+
+  private boolean forwardCurrentPositionToPrimaryEngineIncrementally(
+      BoardData previousPosition, int previousBoardWidth, int previousBoardHeight) {
     if (previousPosition == null || !isPrimaryEngineReady()) {
       return false;
     }
@@ -3293,6 +3306,7 @@ public class Board {
     private final Runnable restore;
     private final Runnable discard;
     private final Runnable successfulDisposition;
+    private boolean skipSuccessfulDisposition;
 
     private HistoryNavigationRestore(
         Board owner,
@@ -3319,15 +3333,26 @@ public class Board {
         discard.run();
         return true;
       }
-      restore.run();
+      boolean submitted =
+          owner.submitOrdinaryEngineForwarding(
+              primaryEngine,
+              () -> {
+                restore.run();
+                return true;
+              });
+      if (!submitted) {
+        discard.run();
+        skipSuccessfulDisposition = true;
+        return false;
+      }
       return false;
     }
 
     private void applySuccessfulDisposition() {
-      if (successfulDisposition != null) {
-        Lizzie.runIfPrimaryEngine(
-            primaryEngine, primaryEngineGeneration, successfulDisposition);
+      if (skipSuccessfulDisposition || successfulDisposition == null) {
+        return;
       }
+      Lizzie.runIfPrimaryEngine(primaryEngine, primaryEngineGeneration, successfulDisposition);
     }
   }
   void beforeHistoryNavigationRestoreExecution() {}
@@ -3653,16 +3678,15 @@ public class Board {
   }
 
   private boolean isCapturedPrimaryReady(Leelaz engine) {
-    return engine != null
-        && Lizzie.leelaz == engine
-        && isPrimaryEngineReady()
-        && !engine.isInitialBoardSynchronizationActive();
+    return engine != null && Lizzie.leelaz == engine && isPrimaryEngineReady();
   }
 
   private HistoryNavigationRestore prepareHistoryNavigationRestore(boolean stepIn) {
     Leelaz engine = Lizzie.leelaz;
     long primaryEngineGeneration = Lizzie.capturePrimaryEngineGeneration(engine);
-    if (primaryEngineGeneration < 0 || !isCapturedPrimaryReady(engine)) {
+    if (primaryEngineGeneration < 0
+        || !isCapturedPrimaryReady(engine)
+        || !submitOrdinaryEngineForwarding(engine, () -> true)) {
       return null;
     }
     if (!stepIn && KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
@@ -3766,9 +3790,19 @@ public class Board {
       if (isPrimaryEngineReady() && data.get().isMoveNode()) {
         int[] lastMove = data.get().lastMove.get();
         String name = convertCoordinatesToName(lastMove[0], lastMove[1]);
-        Lizzie.leelaz.playMove(data.get().lastMoveColor, name, true, data.get().blackToPlay);
+        submitOrdinaryEngineForwarding(
+            Lizzie.leelaz,
+            () -> {
+              Lizzie.leelaz.playMove(data.get().lastMoveColor, name, true, data.get().blackToPlay);
+              return true;
+            });
       } else if (isPrimaryEngineReady() && isKnownPass(data.get())) {
-        Lizzie.leelaz.playMove(data.get().lastMoveColor, "pass", true, data.get().blackToPlay);
+        submitOrdinaryEngineForwarding(
+            Lizzie.leelaz,
+            () -> {
+              Lizzie.leelaz.playMove(data.get().lastMoveColor, "pass", true, data.get().blackToPlay);
+              return true;
+            });
       }
       if (expectedChild == null) {
         history.next();
@@ -3846,13 +3880,16 @@ public class Board {
   }
 
   private void restoreEnginePosition(Leelaz engine, ArrayList<Movelist> fallbackMoves) {
-    if (engine != null && engine.isInitialBoardSynchronizationActive()) {
-      // The initial engine startup restore barrier owns this engine; ordinary board-following
-      // restores must not interleave with the frozen startup route. The startup coordination
-      // performs an immutable catch-up restore for the current position before releasing the
-      // barrier.
-      return;
-    }
+    submitOrdinaryEngineForwarding(
+        engine,
+        () -> {
+          forwardOrdinaryEnginePositionRestore(engine, fallbackMoves);
+          return true;
+        });
+  }
+
+  private void forwardOrdinaryEnginePositionRestore(
+      Leelaz engine, ArrayList<Movelist> fallbackMoves) {
     boolean wasPondering = engine.isPonderingOrWasPonderingBeforeTracking();
     BoardHistoryNode currentNode = getHistory().getCurrentHistoryNode();
     Leelaz.ExactSnapshotRestoreAdmission admission =
@@ -4075,9 +4112,19 @@ public class Board {
         } else if (currentData.isMoveNode()) {
           int[] lastMove = currentData.lastMove.get();
           String name = convertCoordinatesToName(lastMove[0], lastMove[1]);
-          feedEngineForMainlineMove(currentData.lastMoveColor, name);
+          submitOrdinaryEngineForwarding(
+              Lizzie.leelaz,
+              () -> {
+                feedEngineForMainlineMove(currentData.lastMoveColor, name);
+                return true;
+              });
         } else if (isKnownPass(currentData)) {
-          feedEngineForMainlineMove(currentData.lastMoveColor, "pass");
+          submitOrdinaryEngineForwarding(
+              Lizzie.leelaz,
+              () -> {
+                feedEngineForMainlineMove(currentData.lastMoveColor, "pass");
+                return true;
+              });
         }
         modifyEnd();
         Lizzie.frame.refresh();
@@ -4759,7 +4806,14 @@ public class Board {
         if (!Lizzie.leelaz.isKatago || Lizzie.leelaz.isSai) {
           if (isPass && history.getCurrentHistoryNode().previous().isPresent()) nopass = true;
         }
-        if (!nopass) Lizzie.leelaz.undo(true, history.getPrevious().get().blackToPlay);
+        if (!nopass) {
+          submitOrdinaryEngineForwarding(
+              Lizzie.leelaz,
+              () -> {
+                Lizzie.leelaz.undo(true, history.getPrevious().get().blackToPlay);
+                return true;
+              });
+        }
         else modifyEnd();
       }
       if (!needSync && isPrimaryEngineReady()) {

@@ -1104,6 +1104,8 @@ class EngineManagerInitialStartupSynchronizationTest {
                 tailMove.addOrGoto(
                     moveNode(tailMove.getData(), 8, 8, Stone.WHITE, true, 4), true, false, false);
                 assertTrue(board.nextVariation(1));
+                assertTrue(board.goToMoveNumber(3), "jump must return to the tail MOVE");
+                assertTrue(board.goToMoveNumber(4), "jump must reach the main-line tail PASS");
                 // Ordinary live-board sync must be refused by the barrier, not admitted.
                 assertFalse(board.resendCurrentPositionToPrimaryEngine());
                 assertFalse(
@@ -1125,7 +1127,9 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertNull(
           navigationFailure.get(),
           "snapshot navigation and ordinary sync during the barrier must never throw");
-      assertEquals(4, engine.analyzePosition(), "engine must converge on the branch child");
+      assertEquals(4, board.getHistory().getMoveNumber(), "history cursor at the tail PASS");
+      assertSame(admissionHistory.getEnd(), board.getHistory().getCurrentHistoryNode());
+      assertEquals(4, engine.analyzePosition(), "engine must converge on the main-line tail PASS");
       assertEquals(1, engine.ponderCount, "analysis waits for the stable restore point");
       assertEngineMatchesBoard(engine, board, 19, 19);
       assertFalse(engine.isInitialBoardSynchronizationActive());
@@ -1688,6 +1692,71 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, engine.loadSgfCount.get(), "only the frozen route executes");
       assertEquals(1, engine.ponderCount);
       assertFalse(engine.isInitialBoardSynchronizationActive());
+    }
+  }
+
+  @Test
+  void ordinaryMoveNavigationDuringAdmissionConvergesWithoutOrdinaryCommandsOrException()
+      throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz engine = new StartupSyncLeelaz();
+      BoardHistoryList history = emptyRootHistory(3);
+      history.toStart();
+      Board board = boardWithHistory(history);
+      env.publish(engine, board);
+      BoardHistoryNode node1 = history.getCurrentHistoryNode().next().orElseThrow();
+      node1.addOrGoto(moveNode(node1.getData(), 6, 3, Stone.WHITE, true, 2), true, false, false);
+      engine.startEngine(0);
+      assertTrue(engine.isLoaded, "fixture must keep the primary engine ready during admission");
+
+      EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
+      AtomicInteger rounds = new AtomicInteger();
+      AtomicReference<Throwable> navigationFailure = new AtomicReference<>();
+      startup.beforeRestore =
+          () -> {
+            if (rounds.getAndIncrement() == 0) {
+              try {
+                int commandsBefore = engine.commands.size();
+                assertTrue(board.nextMove(false), "next must reach move 1");
+                assertTrue(board.nextMove(false), "next must reach move 2");
+                assertTrue(board.previousMove(false), "previous must return to move 1");
+                assertTrue(board.nextVariation(1), "variation must enter the branch child");
+                assertTrue(board.goToMoveNumber(1), "jump must return to move 1");
+                assertTrue(board.goToMoveNumber(3), "jump must reach the main-line tail");
+                assertFalse(
+                    board.resendCurrentPositionToPrimaryEngine(),
+                    "full current-position resync must stay refused during admission");
+                assertFalse(
+                    board.trySyncCurrentPositionToPrimaryEngineIncrementally(
+                        board.getHistory().getData(), 19, 19),
+                    "incremental current-position sync must stay refused during admission");
+                board.resendMoveToEngine(engine, false);
+                board.getHistory().getCurrentHistoryNode().clearAndSyncBoard(false);
+                assertEquals(
+                    commandsBefore,
+                    engine.commands.size(),
+                    "ordinary MOVE navigation must not inject live-board commands during admission");
+              } catch (Throwable failure) {
+                navigationFailure.set(failure);
+              }
+            }
+          };
+
+      runStartupInThread(startup, engine);
+
+      assertNull(
+          navigationFailure.get(),
+          "ordinary MOVE navigation and sync during admission must not throw");
+      assertEquals(3, board.getHistory().getMoveNumber(), "history cursor at the main-line tail");
+      assertSame(history.getEnd(), board.getHistory().getCurrentHistoryNode());
+      assertEquals(3, engine.analyzePosition(), "catch-up must converge on the final MOVE");
+      assertEquals(
+          List.of(play("B", 4, 3), play("W", 5, 3), play("B", 6, 3)),
+          engine.playsAfterLastClear(),
+          "catch-up replay must rebuild the main-line tail from the root");
+      assertEquals(1, engine.ponderCount, "analysis waits for the stable restore point");
+      assertEngineMatchesBoard(engine, board, 19, 19);
+      assertLifecycleReservationReleased(engine);
     }
   }
 
