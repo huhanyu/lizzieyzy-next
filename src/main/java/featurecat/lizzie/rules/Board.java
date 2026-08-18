@@ -4629,11 +4629,9 @@ public class Board {
    */
   private static final class EngineForwardingPlan {
     private final List<Runnable> deferredActions = new ArrayList<>();
-    private boolean forwardClear;
     private String komiCommand;
     private double komi;
     private boolean applyKomiSideEffects;
-    private boolean resizeEngine;
     private int resizeWidth;
     private int resizeHeight;
 
@@ -4652,7 +4650,6 @@ public class Board {
 
     private static EngineForwardingPlan clearEngine(double komi) {
       EngineForwardingPlan plan = new EngineForwardingPlan();
-      plan.forwardClear = true;
       plan.komiCommand = "komi " + (komi == 0.0 ? "0" : komi);
       plan.komi = komi;
       plan.applyKomiSideEffects = true;
@@ -4671,7 +4668,6 @@ public class Board {
     /** Clear-only variant (SGF editor path): clear_board with no komi forwarding. */
     private static EngineForwardingPlan clearEngineOnly() {
       EngineForwardingPlan plan = new EngineForwardingPlan();
-      plan.forwardClear = true;
       plan.komiCommand = null;
       plan.captureForwardingIntent();
       return plan;
@@ -4689,7 +4685,6 @@ public class Board {
     }
 
     private EngineForwardingPlan withEngineResize(int width, int height) {
-      resizeEngine = true;
       resizeWidth = width;
       resizeHeight = height;
       if (Lizzie.leelaz != null) {

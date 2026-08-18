@@ -342,6 +342,50 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
+  void rejectedMirrorAdmissionRollsBackAcceptedTargetAdmission() throws Exception {
+    try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
+      StartupSyncLeelaz target = new StartupSyncLeelaz();
+      StartupSyncLeelaz occupiedMirror = new StartupSyncLeelaz();
+      Board board = boardWithHistory(emptyRootHistory(0));
+      env.publish(target, board);
+      target.startEngine(0);
+      occupiedMirror.startEngine(1);
+
+      EngineManager.InitialEngineStartupSynchronization existingMirrorOwner =
+          captureStartup(occupiedMirror, board);
+      try {
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                EngineManager.InitialEngineStartupSynchronization.capture(
+                    null, target, occupiedMirror, board, false, false),
+            "the occupied mirror must reject the second startup owner");
+
+        assertTrue(
+            target.submitOrdinaryLiveBoardForwarding(
+                EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+            "a mirror rejection must roll back the target admission accepted earlier");
+
+        assertThrows(
+            IllegalStateException.class,
+            () ->
+                EngineManager.InitialEngineStartupSynchronization.capturePrepared(
+                    null, target, occupiedMirror, board, false, false),
+            "the occupied mirror must also reject a prepared startup owner");
+        assertTrue(
+            target.submitOrdinaryLiveBoardForwarding(
+                EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
+            "a prepared mirror rejection must also roll back its accepted target admission");
+      } finally {
+        existingMirrorOwner.close();
+      }
+
+      assertLifecycleReservationReleased(target);
+      assertLifecycleReservationReleased(occupiedMirror);
+    }
+  }
+
+  @Test
   void admissionStartingAfterSubmitPrecheckRejectsAllOrdinaryForwardingCommands()
       throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {

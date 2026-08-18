@@ -4008,8 +4008,8 @@ public class EngineManager {
       InitialEngineStartupSynchronization coordination =
           new InitialEngineStartupSynchronization(
               previousEngine, targetEngine, mirrorEngine, board, resumePonder, false, null);
-      coordination.beginSynchronizationBarriers();
       try {
+        coordination.beginSynchronizationBarriers();
         coordination.acquireReservation();
         synchronized (board) {
           coordination.pendingRoute = coordination.captureRoute(forceRootReplay);
@@ -4066,15 +4066,19 @@ public class EngineManager {
               resumePonder,
               true,
               retainedLifecycleOwner);
-      coordination.beginSynchronizationBarriers();
       try {
+        coordination.beginSynchronizationBarriers();
         synchronized (board) {
           coordination.pendingRoute = coordination.captureRoute(forceRootReplay);
           coordination.capturedFrame = BoardFrame.capture(board);
         }
         return coordination;
       } catch (RuntimeException failure) {
-        coordination.close();
+        try {
+          coordination.close();
+        } catch (RuntimeException cleanupFailure) {
+          failure.addSuppressed(cleanupFailure);
+        }
         throw failure;
       }
     }
