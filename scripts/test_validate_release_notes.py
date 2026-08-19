@@ -61,7 +61,11 @@ class GeneratedReleaseNotesValidationTest(unittest.TestCase):
         self.validate()
 
     def test_refuses_to_overwrite_the_manually_audited_current_release(self) -> None:
-        for protected in ("next-2026-08-19.1", "next-2026-08-19.2"):
+        for protected in (
+            "next-2026-08-19.1",
+            "next-2026-08-19.2",
+            "next-2026-08-19.3",
+        ):
             with self.subTest(protected=protected):
                 body = (
                     complete_notes()

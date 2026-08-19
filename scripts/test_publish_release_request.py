@@ -524,9 +524,13 @@ class GitHubClientTagAliasTest(unittest.TestCase):
                 self.assertEqual(2, request.call_count)
                 self.assertEqual(1, len(delays))
 
-    def test_cross_host_artifact_redirect_does_not_forward_token(self) -> None:
+    def test_artifact_download_uses_json_api_accept_and_strips_token_on_redirect(
+        self,
+    ) -> None:
         token = "dummy-artifact-token"
         first_hop_authorization: list[str | None] = []
+        first_hop_accept: list[str | None] = []
+        first_hop_path: list[str] = []
         second_hop_authorization: list[str | None] = []
 
         class ArchiveHandler(BaseHTTPRequestHandler):
@@ -570,6 +574,23 @@ class GitHubClientTagAliasTest(unittest.TestCase):
                     first_hop_authorization.append(
                         self.headers.get("Authorization")
                     )
+                    first_hop_accept.append(self.headers.get("Accept"))
+                    first_hop_path.append(self.path)
+                    if self.headers.get("Accept") != "application/vnd.github+json":
+                        payload = json.dumps(
+                            {
+                                "message": (
+                                    "Unsupported 'Accept' header. Must accept "
+                                    "'application/json'."
+                                )
+                            }
+                        ).encode("utf-8")
+                        self.send_response(415)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(payload)))
+                        self.end_headers()
+                        self.wfile.write(payload)
+                        return
                     self.send_response(302)
                     self.send_header(
                         "Location",
@@ -599,9 +620,14 @@ class GitHubClientTagAliasTest(unittest.TestCase):
 
             diagnostics = io.StringIO()
             with mock.patch.object(PUBLISH.sys, "stderr", diagnostics):
-                payload = client._request_bytes("/artifact.zip", max_bytes=1024)
+                payload = client.download_artifact_zip(123)
 
             self.assertEqual(b"provenance archive", payload)
+            self.assertEqual(
+                ["/repos/owner/repository/actions/artifacts/123/zip"],
+                first_hop_path,
+            )
+            self.assertEqual(["application/vnd.github+json"], first_hop_accept)
             self.assertTrue(
                 len(first_hop_authorization) == 1
                 and first_hop_authorization[0] == f"Bearer {token}",
