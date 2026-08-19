@@ -61,10 +61,17 @@ class GeneratedReleaseNotesValidationTest(unittest.TestCase):
         self.validate()
 
     def test_refuses_to_overwrite_the_manually_audited_current_release(self) -> None:
-        protected = "next-2026-08-19.1"
-        body = complete_notes().replace(RELEASE_TAG, protected).replace(DATE_TAG, "2026-08-19")
-        with self.assertRaisesRegex(validator.NotesValidationError, "manually audited"):
-            self.validate(body, date_tag="2026-08-19", release_tag=protected)
+        for protected in ("next-2026-08-19.1", "next-2026-08-19.2"):
+            with self.subTest(protected=protected):
+                body = (
+                    complete_notes()
+                    .replace(RELEASE_TAG, protected)
+                    .replace(DATE_TAG, "2026-08-19")
+                )
+                with self.assertRaisesRegex(
+                    validator.NotesValidationError, "manually audited"
+                ):
+                    self.validate(body, date_tag="2026-08-19", release_tag=protected)
 
     def test_rejects_unresolved_markers(self) -> None:
         with self.assertRaisesRegex(validator.NotesValidationError, "FULL_TEST_COUNT"):

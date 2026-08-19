@@ -16,7 +16,9 @@ except ModuleNotFoundError:  # Direct execution: python scripts/validate_release
 
 
 MAX_NOTES_BYTES = 2 * 1024 * 1024
-PROTECTED_AUDITED_TAGS = frozenset({"next-2026-08-19.1"})
+PROTECTED_AUDITED_TAGS = frozenset(
+    {"next-2026-08-19.1", "next-2026-08-19.2"}
+)
 
 
 class NotesValidationError(RuntimeError):
