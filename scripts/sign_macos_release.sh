@@ -180,6 +180,8 @@ create_dmg_with_retry() {
   local output_dmg="$3"
   local architecture_label="$4"
   local attempt
+  local helper_status
+  local unsafe_detach_status=70
 
   rm -f "$output_dmg"
   for attempt in 1 2 3 4 5; do
@@ -189,8 +191,14 @@ create_dmg_with_retry() {
       "$output_dmg" \
       "$architecture_label"; then
       return 0
+    else
+      helper_status=$?
     fi
     rm -f "$output_dmg"
+    if [[ "$helper_status" -eq "$unsafe_detach_status" ]]; then
+      echo "DMG helper could not safely detach its writable image; refusing to retry." >&2
+      return "$helper_status"
+    fi
     echo "DMG creation failed for $output_dmg; retrying in ${attempt}s..." >&2
     sleep "$attempt"
   done

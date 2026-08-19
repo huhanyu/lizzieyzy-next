@@ -65,6 +65,7 @@ class GeneratedReleaseNotesValidationTest(unittest.TestCase):
             "next-2026-08-19.1",
             "next-2026-08-19.2",
             "next-2026-08-19.3",
+            "next-2026-08-19.4",
         ):
             with self.subTest(protected=protected):
                 body = (

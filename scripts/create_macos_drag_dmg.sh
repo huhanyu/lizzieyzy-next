@@ -60,27 +60,238 @@ MOUNT_POINT="$WORK_DIR/mount"
 BACKGROUND_SVG="$WORK_DIR/install-background.svg"
 BACKGROUND_1X="$WORK_DIR/install-background.png"
 BACKGROUND_2X="$WORK_DIR/install-background@2x.png"
+MOUNT_POINT_REAL=""
+MOUNT_DEVICE=""
+MOUNT_PARENT_DEVICE=""
+MOUNTED_AT=""
+MOUNT_PARENT_FILESYSTEM=""
 MOUNTED=0
+UNSAFE_DETACH_EXIT=70
+
+load_mount_metadata() {
+  local plist_path="$1"
+  local expected_mount="$2"
+  local metadata
+  local parsed_device
+  local parsed_parent
+  local parsed_mount
+
+  if ! metadata="$(
+    python3 - "$plist_path" "$expected_mount" <<'PY'
+import os
+import plistlib
+import re
+import sys
+
+plist_path, expected_mount = sys.argv[1:]
+try:
+    with open(plist_path, "rb") as stream:
+        payload = plistlib.load(stream)
+except Exception:
+    raise SystemExit(2)
+
+mounted_entities = []
+
+
+def visit(value):
+    if isinstance(value, dict):
+        device = value.get("dev-entry")
+        mount_point = value.get("mount-point")
+        if isinstance(device, str) and isinstance(mount_point, str):
+            mounted_entities.append((device, mount_point))
+        for child in value.values():
+            visit(child)
+    elif isinstance(value, list):
+        for child in value:
+            visit(child)
+
+
+visit(payload)
+expected_real = os.path.realpath(expected_mount)
+matches = [
+    (device, mount_point)
+    for device, mount_point in mounted_entities
+    if os.path.realpath(mount_point) == expected_real
+]
+if len(matches) != 1:
+    raise SystemExit(3)
+
+device, mount_point = matches[0]
+match = re.fullmatch(r"(/dev/disk[0-9]+)(?:s[0-9]+)*", device)
+if match is None:
+    raise SystemExit(4)
+print("\t".join((device, match.group(1), os.path.realpath(mount_point))))
+PY
+  )"; then
+    return 1
+  fi
+  IFS=$'\t' read -r parsed_device parsed_parent parsed_mount <<<"$metadata"
+  if [[ -z "$parsed_device" || -z "$parsed_parent" || "$parsed_mount" != "$MOUNT_POINT_REAL" ]]; then
+    return 1
+  fi
+  MOUNT_DEVICE="$parsed_device"
+  MOUNT_PARENT_DEVICE="$parsed_parent"
+  MOUNTED_AT="$parsed_mount"
+  return 0
+}
+
+discover_mount_metadata() {
+  local info_plist="$WORK_DIR/hdiutil-discovery.plist"
+  local info_log="$WORK_DIR/hdiutil-discovery.log"
+
+  rm -f "$info_plist" "$info_log"
+  if ! hdiutil info -plist >"$info_plist" 2>"$info_log"; then
+    return 1
+  fi
+  load_mount_metadata "$info_plist" "$MOUNT_POINT_REAL"
+}
+
+device_is_active() {
+  local info_plist="$WORK_DIR/hdiutil-info.plist"
+  local info_log="$WORK_DIR/hdiutil-info.log"
+  local info_status
+  local current_filesystem
+
+  if [[ -z "$MOUNT_DEVICE" || -z "$MOUNT_PARENT_DEVICE" \
+    || -z "$MOUNT_PARENT_FILESYSTEM" ]]; then
+    return 0
+  fi
+  rm -f "$info_plist" "$info_log"
+  if ! hdiutil info -plist >"$info_plist" 2>"$info_log"; then
+    return 0
+  fi
+  if python3 - "$info_plist" "$MOUNT_DEVICE" "$MOUNT_PARENT_DEVICE" <<'PY'
+import plistlib
+import sys
+
+plist_path = sys.argv[1]
+targets = set(sys.argv[2:])
+try:
+    with open(plist_path, "rb") as stream:
+        payload = plistlib.load(stream)
+except Exception:
+    raise SystemExit(2)
+
+devices = set()
+
+
+def visit(value):
+    if isinstance(value, dict):
+        device = value.get("dev-entry")
+        if isinstance(device, str):
+            devices.add(device)
+        for child in value.values():
+            visit(child)
+    elif isinstance(value, list):
+        for child in value:
+            visit(child)
+
+
+visit(payload)
+raise SystemExit(0 if devices.intersection(targets) else 1)
+PY
+  then
+    return 0
+  else
+    info_status=$?
+  fi
+  if [[ "$info_status" -ne 1 ]]; then
+    return 0
+  fi
+  if stat "$MOUNT_DEVICE" >/dev/null 2>&1 \
+    || stat "$MOUNT_PARENT_DEVICE" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! current_filesystem="$(stat -f '%d' "$MOUNT_POINT" 2>/dev/null)" \
+    || [[ -z "$current_filesystem" \
+      || "$current_filesystem" != "$MOUNT_PARENT_FILESYSTEM" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+wait_for_detach() {
+  local check
+
+  for check in 1 2 3 4 5; do
+    if ! device_is_active; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
 
 detach_mount() {
   local attempt
+  local detach_log="$WORK_DIR/hdiutil-detach.log"
+  local detach_target
+
   if [[ "$MOUNTED" -ne 1 ]]; then
     return 0
   fi
+  if [[ -z "$MOUNT_DEVICE" || -z "$MOUNT_PARENT_DEVICE" ]]; then
+    echo "Mounted DMG has no exact device identity; refusing an ambiguous detach." >&2
+    return 1
+  fi
+  detach_target="$MOUNT_DEVICE"
   for attempt in 1 2 3 4 5; do
-    if hdiutil detach "$MOUNT_POINT" -quiet >/dev/null 2>&1; then
+    rm -f "$detach_log"
+    echo "Detaching writable DMG $detach_target (attempt $attempt/5)..." >&2
+    if hdiutil detach "$detach_target" >"$detach_log" 2>&1; then
+      if wait_for_detach; then
+        MOUNTED=0
+        return 0
+      fi
+      echo "Writable DMG detach reported success but the mount remained active." >&2
+    else
+      if ! device_is_active; then
+        MOUNTED=0
+        return 0
+      fi
+      echo "Writable DMG detach attempt $attempt/5 failed:" >&2
+    fi
+    cat "$detach_log" >&2
+    sleep "$attempt"
+  done
+
+  rm -f "$detach_log"
+  echo "Forcing writable DMG detach for $detach_target after normal attempts were exhausted..." >&2
+  if hdiutil detach "$detach_target" -force >"$detach_log" 2>&1; then
+    if wait_for_detach; then
       MOUNTED=0
       return 0
     fi
-    sleep "$attempt"
-  done
-  hdiutil detach "$MOUNT_POINT" -force -quiet >/dev/null 2>&1 || true
-  MOUNTED=0
+    echo "Forced writable DMG detach reported success but the mount remained active." >&2
+  else
+    if ! device_is_active; then
+      MOUNTED=0
+      return 0
+    fi
+    echo "Forced writable DMG detach failed:" >&2
+  fi
+  cat "$detach_log" >&2
+  echo "Unable to detach the writable DMG; refusing to continue." >&2
+  return 1
 }
 
 cleanup() {
-  detach_mount
-  rm -rf "$WORK_DIR"
+  local status=$?
+
+  trap - EXIT
+  if ! detach_mount; then
+    echo "DMG cleanup could not detach $MOUNT_POINT; retaining $WORK_DIR." >&2
+    status="$UNSAFE_DETACH_EXIT"
+  fi
+  if [[ "$MOUNTED" -eq 0 ]]; then
+    if ! rm -rf "$WORK_DIR"; then
+      echo "Unable to remove temporary DMG work directory: $WORK_DIR" >&2
+      if [[ "$status" -eq 0 ]]; then
+        status=1
+      fi
+    fi
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -107,12 +318,25 @@ create_writable_dmg() {
 
 attach_writable_dmg() {
   local attempt
+  local attach_plist="$WORK_DIR/hdiutil-attach.plist"
   local attach_log="$WORK_DIR/hdiutil-attach.log"
 
   for attempt in 1 2 3; do
-    rm -f "$attach_log"
-    rm -rf "$MOUNT_POINT"
+    rm -f "$attach_plist" "$attach_log"
+    if [[ -d "$MOUNT_POINT" ]] && ! rmdir "$MOUNT_POINT" 2>/dev/null; then
+      echo "Unable to reset the DMG mount point safely: $MOUNT_POINT" >&2
+      return 1
+    fi
     mkdir -p "$MOUNT_POINT"
+    MOUNT_POINT_REAL="$(cd "$MOUNT_POINT" && pwd -P)"
+    if ! MOUNT_PARENT_FILESYSTEM="$(stat -f '%d' "$MOUNT_POINT" 2>/dev/null)" \
+      || [[ -z "$MOUNT_PARENT_FILESYSTEM" ]]; then
+      echo "Unable to record the mount point's parent filesystem before attach." >&2
+      return 1
+    fi
+    MOUNT_DEVICE=""
+    MOUNT_PARENT_DEVICE=""
+    MOUNTED_AT=""
     echo "Attaching writable DMG (attempt $attempt/3)..." >&2
     if hdiutil attach "$RW_DMG" \
       -mountpoint "$MOUNT_POINT" \
@@ -120,15 +344,42 @@ attach_writable_dmg() {
       -noverify \
       -noautoopen \
       -nobrowse \
-      >"$attach_log" 2>&1; then
-      cat "$attach_log" >&2
+      -plist \
+      >"$attach_plist" 2>"$attach_log"; then
+      if ! load_mount_metadata "$attach_plist" "$MOUNT_POINT_REAL" \
+        && ! discover_mount_metadata; then
+        MOUNTED=1
+        echo "Attached DMG metadata did not identify the exact mounted device." >&2
+        cat "$attach_log" >&2
+        return 1
+      fi
       MOUNTED=1
+      echo "Attached $MOUNT_DEVICE at $MOUNTED_AT (parent $MOUNT_PARENT_DEVICE)." >&2
       return 0
     fi
 
     echo "Writable DMG attach attempt $attempt/3 failed:" >&2
     cat "$attach_log" >&2
-    hdiutil detach "$MOUNT_POINT" -force -quiet >/dev/null 2>&1 || true
+    if load_mount_metadata "$attach_plist" "$MOUNT_POINT_REAL" \
+      || discover_mount_metadata; then
+      MOUNTED=1
+      if ! detach_mount; then
+        return 1
+      fi
+    else
+      if [[ -d "$MOUNT_POINT" ]] && ! rmdir "$MOUNT_POINT" 2>/dev/null; then
+        MOUNTED=1
+        echo "Unable to prove that the failed attach left no mounted image; refusing unsafe cleanup." >&2
+        return 1
+      fi
+      if [[ -e "$MOUNT_POINT" ]]; then
+        MOUNTED=1
+        echo "The failed attach left an unexpected mount-point entry; refusing unsafe cleanup." >&2
+        return 1
+      fi
+      mkdir -p "$MOUNT_POINT"
+      MOUNT_POINT_REAL="$(cd "$MOUNT_POINT" && pwd -P)"
+    fi
     sleep "$attempt"
   done
 
@@ -137,6 +388,7 @@ attach_writable_dmg() {
 }
 
 mkdir -p "$STAGING_DIR" "$MOUNT_POINT"
+MOUNT_POINT_REAL="$(cd "$MOUNT_POINT" && pwd -P)"
 ditto "$SOURCE_FOLDER" "$STAGING_DIR"
 rm -f "$STAGING_DIR/.DS_Store"
 rm -rf "$STAGING_DIR/Applications"
@@ -209,6 +461,7 @@ attach_writable_dmg
 
 LAYOUT_CREATED=0
 for attempt in 1 2 3; do
+  echo "Applying Finder layout (attempt $attempt/3)..." >&2
   if osascript >/dev/null <<OSA
 tell application "Finder"
   set dmgRoot to POSIX file "$MOUNT_POINT" as alias
@@ -239,12 +492,15 @@ tell application "Finder"
 end tell
 OSA
   then
-    sync
-    sleep 1
-    DS_STORE_STRINGS="$(strings -a "$MOUNT_POINT/.DS_Store" 2>/dev/null || true)"
-    if grep -q "install-background.tiff" <<<"$DS_STORE_STRINGS"; then
-      LAYOUT_CREATED=1
-      break
+    if sync; then
+      sleep 1
+      DS_STORE_STRINGS="$(strings -a "$MOUNT_POINT/.DS_Store" 2>/dev/null || true)"
+      if grep -q "install-background.tiff" <<<"$DS_STORE_STRINGS"; then
+        LAYOUT_CREATED=1
+        break
+      fi
+    else
+      echo "Filesystem sync failed after Finder layout attempt $attempt/3." >&2
     fi
   fi
   echo "Finder layout attempt $attempt/3 did not persist the branded background; retrying..." >&2
@@ -264,17 +520,63 @@ if [[ ! -s "$MOUNT_POINT/.background/install-background.tiff" ]]; then
   exit 1
 fi
 
-diskutil rename "$MOUNT_POINT" "$VOLUME_NAME" >/dev/null
-sync
-detach_mount
+RENAME_LOG="$WORK_DIR/diskutil-rename.log"
+echo "Renaming mounted DMG volume to $VOLUME_NAME..." >&2
+if ! diskutil rename "$MOUNT_POINT" "$VOLUME_NAME" >"$RENAME_LOG" 2>&1; then
+  echo "Unable to rename the mounted DMG volume:" >&2
+  cat "$RENAME_LOG" >&2
+  exit 1
+fi
+
+echo "Flushing mounted DMG changes before detach..." >&2
+if ! sync; then
+  echo "Filesystem sync failed before writable DMG detach." >&2
+  exit 1
+fi
+if ! detach_mount; then
+  exit 1
+fi
 
 TMP_OUTPUT="$WORK_DIR/$(basename "$OUTPUT_DMG")"
+
+convert_release_dmg() {
+  local attempt
+  local convert_log
+
+  for attempt in 1 2 3; do
+    convert_log="$WORK_DIR/hdiutil-convert-$attempt.log"
+    rm -f "$TMP_OUTPUT" "$convert_log"
+    echo "Converting writable DMG (attempt $attempt/3)..." >&2
+    if hdiutil convert "$RW_DMG" \
+      -format UDZO \
+      -imagekey zlib-level=9 \
+      -o "$TMP_OUTPUT" \
+      >"$convert_log" 2>&1; then
+      if [[ -s "$TMP_OUTPUT" ]]; then
+        return 0
+      fi
+      echo "DMG conversion attempt $attempt/3 returned success without a non-empty image." >&2
+    else
+      echo "DMG conversion attempt $attempt/3 failed:" >&2
+    fi
+    cat "$convert_log" >&2
+    rm -f "$TMP_OUTPUT"
+    if [[ "$attempt" -lt 3 ]]; then
+      sleep "$attempt"
+    fi
+  done
+
+  echo "Unable to convert the writable DMG after 3 attempts." >&2
+  return 1
+}
+
 rm -f "$OUTPUT_DMG" "$TMP_OUTPUT"
-hdiutil convert "$RW_DMG" \
-  -quiet \
-  -format UDZO \
-  -imagekey zlib-level=9 \
-  -o "$TMP_OUTPUT"
-mv "$TMP_OUTPUT" "$OUTPUT_DMG"
+if ! convert_release_dmg; then
+  exit 1
+fi
+if ! mv "$TMP_OUTPUT" "$OUTPUT_DMG"; then
+  echo "Unable to move the completed DMG to $OUTPUT_DMG." >&2
+  exit 1
+fi
 
 echo "Created drag-install DMG: $OUTPUT_DMG"
