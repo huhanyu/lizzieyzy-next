@@ -81,6 +81,7 @@ fi
 keychain=""
 keychain_dir=""
 keychain_password=""
+cert_dir=""
 cert_path=""
 sign_identity=""
 work_dir=""
@@ -94,6 +95,10 @@ cleanup() {
   local path
   trap - EXIT HUP INT TERM
   set +e
+  # Bash 3.2 treats an empty array expansion as unbound under `set -u`.
+  # Cleanup must remain best-effort even when failure happens before either
+  # array receives its first entry.
+  set +u
 
   if [[ -n "$mounted_target" ]] && command -v hdiutil >/dev/null 2>&1; then
     hdiutil detach "$mounted_target" -force -quiet >/dev/null 2>&1 || true
@@ -106,6 +111,10 @@ cleanup() {
   if [[ -n "$cert_path" ]]; then
     rm -f -- "$cert_path"
     cert_path=""
+  fi
+  if [[ -n "$cert_dir" ]]; then
+    rm -rf -- "$cert_dir"
+    cert_dir=""
   fi
   for path in "${temporary_paths[@]}"; do
     [[ -z "$path" ]] || rm -rf -- "$path"
@@ -388,7 +397,10 @@ security create-keychain -p "$keychain_password" "$keychain" >/dev/null
 security set-keychain-settings -lut 21600 "$keychain" >/dev/null
 security unlock-keychain -p "$keychain_password" "$keychain" >/dev/null
 
-cert_path="$(mktemp "$temp_root/lizzieyzy-cert.XXXXXXXX")"
+cert_dir="$(mktemp -d "$temp_root/lizzieyzy-cert.XXXXXXXX")"
+chmod 700 "$cert_dir"
+cert_path="$cert_dir/certificate.p12"
+: > "$cert_path"
 chmod 600 "$cert_path"
 if ! printf '%s' "$APPLE_CERT_P12" | base64 -D > "$cert_path"; then
   : > "$cert_path"
@@ -401,11 +413,14 @@ if [[ ! -s "$cert_path" ]]; then
   echo "APPLE_CERT_P12 decoded to an empty certificate." >&2
   exit 1
 fi
-security import "$cert_path" -k "$keychain" -P "${APPLE_CERT_PASSWORD:-}" -T /usr/bin/codesign >/dev/null
-security list-keychains -d user -s "$keychain" "${original_keychains[@]}" >/dev/null
+security import "$cert_path" -f pkcs12 -k "$keychain" -P "${APPLE_CERT_PASSWORD:-}" -T /usr/bin/codesign >/dev/null
+security list-keychains -d user -s "$keychain" \
+  "${original_keychains[@]+"${original_keychains[@]}"}" >/dev/null
 security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
 rm -f -- "$cert_path"
 cert_path=""
+rm -rf -- "$cert_dir"
+cert_dir=""
 
 sign_identity="${APPLE_SIGN_IDENTITY:-}"
 if [[ -z "$sign_identity" ]]; then

@@ -33,7 +33,7 @@
 
 `build-macos-arm64-release.yml` 和 `build-macos-amd64-release.yml` 在 jpackage 生成 DMG 之后，如果 `APPLE_CERT_P12`、`APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID` 四个必需 secret 都已配置，会调用 `scripts/sign_macos_release.sh`：
 
-- 在导入证书前安装清理 trap，创建仅本次运行使用的随机临时 keychain 和权限为 `0600` 的证书临时文件
+- 在导入证书前安装清理 trap；证书写入随机 `0700` 临时目录中的 `certificate.p12`（文件权限 `0600`），并通过 `security import -f pkcs12` 显式按 PKCS#12 格式导入；同时创建仅本次运行使用的随机临时 keychain
 - 把 DMG 里的 `.app` 解出，按“内层原生库/辅助程序 → framework → 主程序 → 外层 `.app`”逐层执行 `codesign --options runtime --timestamp`；`--deep` 只用于签名后的递归验证，不用于签名
 - 重新打包成 DMG，再次签名 DMG
 - 用 `xcrun notarytool submit --wait` 提交公证
@@ -57,7 +57,7 @@ spctl --assess --type open --context context:primary-signature -vvv path/to/Lizz
 
 ## 失败兜底
 
-如果证书导入、逐层签名、公证、票据附着、布局校验或最终 `spctl` Gatekeeper 评估失败，workflow 会在替换原始 DMG 和上传 Release asset 之前终止，因此不会把本次未通过完整校验的 DMG 上传到 GitHub Release。清理 trap 会在任何早期失败时删除 P12 临时文件、随机 keychain、挂载点和工作目录。只有全部校验成功后，工作目录中的已签名 DMG 才会替换原文件并进入 provenance 与 Release 上传步骤。
+如果证书导入、逐层签名、公证、票据附着、布局校验或最终 `spctl` Gatekeeper 评估失败，workflow 会在替换原始 DMG 和上传 Release asset 之前终止，因此不会把本次未通过完整校验的 DMG 上传到 GitHub Release。清理 trap 会在任何早期失败时删除 `certificate.p12` 及其随机临时目录、随机 keychain、挂载点和工作目录；即使失败发生在临时路径或原 keychain 列表尚为空时也会安全完成清理。只有全部校验成功后，工作目录中的已签名 DMG 才会替换原文件并进入 provenance 与 Release 上传步骤。
 
 常见问题：
 - `notarytool` 超时 → 重跑 workflow 即可
