@@ -12,6 +12,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.Objects;
 import javax.swing.AbstractButton;
@@ -91,20 +92,7 @@ final class KomiHoldSession {
           stopHold();
         }
       };
-  private final PropertyChangeListener focusedWindowListener =
-      event -> {
-        if (!holding) {
-          return;
-        }
-        Window ancestor = SwingUtilities.getWindowAncestor(control);
-        if (ancestor == null) {
-          return;
-        }
-        Window focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow();
-        if (focused == null || focused != ancestor) {
-          stopHold();
-        }
-      };
+  private final PropertyChangeListener focusedWindowListener = this::onFocusedWindowChanged;
 
   static KomiHoldSession attach(AbstractButton control, Runnable holdStep) {
     return attach(control, holdStep, INITIAL_DELAY_MS, REPEAT_DELAY_MS);
@@ -227,6 +215,20 @@ final class KomiHoldSession {
       trackedWindow.addPropertyChangeListener("enabled", windowEnabledListener);
       trackedWindow.addWindowListener(windowFocusAdapter);
       trackedWindow.addWindowFocusListener(windowFocusAdapter);
+    }
+  }
+
+  private void onFocusedWindowChanged(PropertyChangeEvent event) {
+    if (!holding) {
+      return;
+    }
+    Window ancestor = SwingUtilities.getWindowAncestor(control);
+    if (ancestor == null) {
+      return;
+    }
+    Window focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow();
+    if (focused == null || focused != ancestor) {
+      stopHold();
     }
   }
 

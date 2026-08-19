@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.MouseEvent;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
@@ -28,6 +29,7 @@ class KomiHoldSessionTest {
         () -> {
           button.dispatchEvent(mouse(button, MouseEvent.MOUSE_PRESSED));
           button.dispatchEvent(mouse(button, MouseEvent.MOUSE_RELEASED));
+          button.doClick(0);
         });
     Thread.sleep(INITIAL_DELAY_MS + REPEAT_DELAY_MS * 3L);
     flushEdt();
@@ -100,7 +102,12 @@ class KomiHoldSessionTest {
     awaitAtLeast(holdSteps, 1);
 
     SwingUtilities.invokeAndWait(
-        () -> button.dispatchEvent(new FocusEvent(button, FocusEvent.FOCUS_LOST)));
+        () -> {
+          FocusEvent lost = new FocusEvent(button, FocusEvent.FOCUS_LOST);
+          for (FocusListener listener : button.getFocusListeners()) {
+            listener.focusLost(lost);
+          }
+        });
     flushEdt();
     int frozen = holdSteps.get();
     assertFalse(session.isHolding());
