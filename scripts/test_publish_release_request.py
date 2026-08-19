@@ -1155,6 +1155,95 @@ class ReleasePublisherTest(unittest.TestCase):
         self.assertTrue(client.release["draft"])
         self.assertTrue(client.release["prerelease"])
 
+    def test_wait_for_runs_allows_initial_identity_metadata_to_converge(self) -> None:
+        client = FakeClient()
+        spec = PUBLISH.WORKFLOWS[0]
+        run_id = client.seed_workflow_run(spec.workflow_file)
+        expected = client.get_workflow_run(run_id)
+        snapshots = [
+            {**expected, "head_sha": "b" * 40},
+            {**expected, "display_title": "temporarily stale run title"},
+            expected,
+        ]
+        calls = 0
+
+        def get_workflow_run(_run_id: int) -> dict[str, object]:
+            nonlocal calls
+            self.assertEqual(run_id, _run_id)
+            calls += 1
+            return dict(snapshots.pop(0))
+
+        client.get_workflow_run = get_workflow_run  # type: ignore[method-assign]
+        publisher = self.publisher(client)
+
+        publisher._wait_for_runs({spec.platform: run_id})
+
+        self.assertEqual(3, calls)
+        self.assertEqual(expected["html_url"], publisher.run_urls[spec.platform])
+
+    def test_wait_for_runs_fails_when_identity_never_converges(self) -> None:
+        client = FakeClient()
+        spec = PUBLISH.WORKFLOWS[0]
+        run_id = client.seed_workflow_run(spec.workflow_file)
+        stale = client.get_workflow_run(run_id)
+        stale["display_title"] = "permanently stale run title"
+        now = [0.0]
+        calls = 0
+
+        def get_workflow_run(_run_id: int) -> dict[str, object]:
+            nonlocal calls
+            self.assertEqual(run_id, _run_id)
+            calls += 1
+            return dict(stale)
+
+        def advance(seconds: float) -> None:
+            now[0] += seconds
+
+        client.get_workflow_run = get_workflow_run  # type: ignore[method-assign]
+        publisher = PUBLISH.ReleasePublisher(
+            client,
+            self.request(),
+            TARGET_SHA,
+            self.release_notes(),
+            sleep=advance,
+            poll_seconds=2,
+            run_timeout_seconds=30,
+        )
+
+        with (
+            mock.patch.object(PUBLISH, "WORKFLOW_IDENTITY_CONVERGENCE_SECONDS", 5),
+            mock.patch.object(PUBLISH.time, "monotonic", side_effect=lambda: now[0]),
+            self.assertRaisesRegex(PUBLISH.PublishError, "identity did not converge"),
+        ):
+            publisher._wait_for_runs({spec.platform: run_id})
+
+        self.assertEqual(4, calls)
+        self.assertEqual(6.0, now[0])
+        self.assertNotIn(spec.platform, publisher.run_urls)
+
+    def test_wait_for_runs_fails_if_confirmed_identity_changes(self) -> None:
+        client = FakeClient()
+        spec = PUBLISH.WORKFLOWS[0]
+        run_id = client.seed_workflow_run(spec.workflow_file, status="in_progress")
+        expected = client.get_workflow_run(run_id)
+        snapshots = [expected, {**expected, "head_sha": "b" * 40}]
+        calls = 0
+
+        def get_workflow_run(_run_id: int) -> dict[str, object]:
+            nonlocal calls
+            self.assertEqual(run_id, _run_id)
+            calls += 1
+            return dict(snapshots.pop(0))
+
+        client.get_workflow_run = get_workflow_run  # type: ignore[method-assign]
+
+        with self.assertRaisesRegex(
+            PUBLISH.PublishError, "changed identity after initial verification"
+        ):
+            self.publisher(client)._wait_for_runs({spec.platform: run_id})
+
+        self.assertEqual(2, calls)
+
     def test_waits_for_target_ci_before_creating_release(self) -> None:
         client = FakeClient()
         client.ci_run_snapshots = [

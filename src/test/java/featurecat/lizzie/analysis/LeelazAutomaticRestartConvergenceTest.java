@@ -1,5 +1,6 @@
 package featurecat.lizzie.analysis;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -22,6 +23,7 @@ import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.util.KataGoRuntimeHelper;
 import java.awt.Window;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -310,6 +312,80 @@ class LeelazAutomaticRestartConvergenceTest {
   }
 
   @Test
+  void completionObserverFailureCannotRetireSuccessfulRestart() throws Exception {
+    try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
+      ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
+      Board board = boardWithHistory(snapshotHistoryWithTail(false));
+      env.publish(engine, board);
+
+      Leelaz.AutomaticRestartAttempt attempt = engine.beginAutomaticEngineRestartAttempt();
+      assertNotNull(attempt);
+      AtomicInteger completionCount = new AtomicInteger();
+      attempt.restartClosedEngine(
+          0,
+          () -> {
+            completionCount.incrementAndGet();
+            throw new IllegalStateException("controlled completion observer failure");
+          });
+
+      assertTrue(waitForRawCommandPrefix(engine.transport, "name", 5, TimeUnit.SECONDS));
+      assertDoesNotThrow(() -> invokeFenceResponse(engine));
+      assertEquals(1, completionCount.get(), "the failing observer must remain one-shot");
+      assertTrue(engine.isLoaded(), "an observer failure must not retire a ready engine");
+      assertTrue(
+          engineModeAdmissionOpen(engine),
+          "an observer failure must not re-block engine-mode admission");
+      assertAutomaticRestartRetryAvailable(engine);
+    }
+  }
+
+  @Test
+  void benchmarkSuppressedRestartCompletionObservesReleasedClaimWithoutFence() throws Exception {
+    try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
+      try {
+        ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
+        Board board = boardWithHistory(snapshotHistoryWithTail(false));
+        env.publish(engine, board);
+        KataGoRuntimeHelper.BenchmarkPauseResult pause =
+            KataGoRuntimeHelper.pauseCurrentAnalysisForBenchmark();
+        assertTrue(pause.accepted(), "the controlled benchmark pause must be admitted");
+
+        Leelaz.AutomaticRestartAttempt attempt = engine.beginAutomaticEngineRestartAttempt();
+        assertNotNull(attempt);
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicInteger completionCount = new AtomicInteger();
+        AtomicInteger failureCount = new AtomicInteger();
+        AtomicBoolean admissionOpenInCompletion = new AtomicBoolean(false);
+        attempt.restartClosedEngine(
+            0,
+            () -> {
+              completionCount.incrementAndGet();
+              admissionOpenInCompletion.set(engineModeAdmissionOpen(engine));
+              completed.countDown();
+            },
+            detail -> failureCount.incrementAndGet());
+
+        assertTrue(completed.await(5, TimeUnit.SECONDS));
+        assertEquals(1, completionCount.get(), "the no-fence completion must remain one-shot");
+        assertEquals(0, failureCount.get(), "the no-fence restart must complete successfully");
+        assertTrue(engine.isLoaded(), "the no-fence restart must leave the engine loaded");
+        assertTrue(
+            admissionOpenInCompletion.get(),
+            "the no-fence completion must observe endpoint admission reopened");
+        assertFalse(
+            waitForNumberedRawCommandPrefix(engine.transport, "name", 200, TimeUnit.MILLISECONDS),
+            "benchmark suppression must bypass the final board fence");
+        assertEquals(
+            0, engine.readyCount.get(), "the no-fence branch must not publish fence ready");
+      } finally {
+        if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
+          KataGoRuntimeHelper.restoreAnalysisAfterBenchmark(false);
+        }
+      }
+    }
+  }
+
+  @Test
   void openClRecoveryConvergesWithNavigationDuringRestore() throws Exception {
     Config previousConfig = Lizzie.config;
     Board previousBoard = Lizzie.board;
@@ -525,7 +601,8 @@ class LeelazAutomaticRestartConvergenceTest {
 
       assertTrue(completed.await(2, TimeUnit.SECONDS));
       assertFalse(engine.isLoaded(), "the authority must fail closed after readiness timeout");
-      assertFalse(mirror.isLoaded(), "the captured mirror must fail closed after readiness timeout");
+      assertFalse(
+          mirror.isLoaded(), "the captured mirror must fail closed after readiness timeout");
       Leelaz.EngineModeReservation afterFailure = engine.beginEngineModeReservation();
       assertNotNull(afterFailure, "readiness failure must release the completion claim");
       afterFailure.close();
@@ -980,7 +1057,14 @@ class LeelazAutomaticRestartConvergenceTest {
       Leelaz.AutomaticRestartAttempt attempt = engine.beginAutomaticEngineRestartAttempt();
       assertNotNull(attempt);
       CountDownLatch completed = new CountDownLatch(1);
-      attempt.restartClosedEngine(0, completed::countDown);
+      AtomicBoolean admissionOpenInCompletion = new AtomicBoolean(false);
+      attempt.restartClosedEngine(
+          0,
+          () -> {
+            admissionOpenInCompletion.set(
+                engineModeAdmissionOpen(engine) && engineModeAdmissionOpen(mirror));
+            completed.countDown();
+          });
 
       assertTrue(
           firstLoadSgfReceived.await(2, TimeUnit.SECONDS),
@@ -1026,9 +1110,9 @@ class LeelazAutomaticRestartConvergenceTest {
       assertEquals(1, engine.resumeCount.get(), "ponder must resume exactly once");
       assertEquals(1, engine.analyzeCount.get(), "one analysis starts after the convergence");
       assertTrue(engine.isLoaded());
-      Leelaz.EngineModeReservation afterFence = engine.beginEngineModeReservation();
-      assertNotNull(afterFence, "admission must reopen after the first owner completes");
-      afterFence.close();
+      assertTrue(
+          admissionOpenInCompletion.get(),
+          "the completion callback must observe both endpoints reopened after release");
     }
   }
 
@@ -1182,14 +1266,21 @@ class LeelazAutomaticRestartConvergenceTest {
       Leelaz.AutomaticRestartAttempt attempt = engine.beginAutomaticEngineRestartAttempt();
       assertNotNull(attempt);
       CountDownLatch completed = new CountDownLatch(1);
-      attempt.restartClosedEngine(0, completed::countDown);
+      AtomicBoolean admissionOpenInCompletion = new AtomicBoolean(false);
+      attempt.restartClosedEngine(
+          0,
+          () -> {
+            admissionOpenInCompletion.set(
+                engineModeAdmissionOpen(engine) && engineModeAdmissionOpen(mirror));
+            completed.countDown();
+          });
 
-      assertTrue(completed.await(2, TimeUnit.SECONDS));
+      assertTrue(completed.await(5, TimeUnit.SECONDS));
       assertFalse(engine.isLoaded());
       assertFalse(mirror.isLoaded());
-      Leelaz.EngineModeReservation afterFailure = engine.beginEngineModeReservation();
-      assertNotNull(afterFailure, "a synchronous fence start failure must release the claim");
-      afterFailure.close();
+      assertTrue(
+          admissionOpenInCompletion.get(),
+          "a synchronous fence start failure must release the claim before completion");
       assertOrdinaryForwardingReopened(engine);
       assertOrdinaryForwardingReopened(mirror);
       assertAutomaticRestartRetryAvailable(engine);
@@ -1260,7 +1351,8 @@ class LeelazAutomaticRestartConvergenceTest {
           "a fence timeout must settle the completion callback");
       assertTrue(
           handlersRetiredInCallback.get(),
-          "the failure callback must observe every dispatched fence handler already retired; authority="
+          "the failure callback must observe every dispatched fence handler already retired;"
+              + " authority="
               + pendingBoardSynchronizationHandlerCount(engine)
               + ", mirror="
               + pendingBoardSynchronizationHandlerCount(mirror));
@@ -1542,6 +1634,12 @@ class LeelazAutomaticRestartConvergenceTest {
         engine.submitOrdinaryLiveBoardForwarding(
             EngineManager.OrdinaryLiveBoardForwardingIntent.of(() -> true)),
         "ordinary live-board forwarding must reopen after the barrier ends");
+  }
+
+  private static boolean engineModeAdmissionOpen(Leelaz engine) {
+    try (Leelaz.EngineModeReservation reservation = engine.beginEngineModeReservation()) {
+      return reservation != null;
+    }
   }
 
   private static void assertAutomaticRestartRetryAvailable(ConvergingRestartLeelaz engine) {

@@ -244,7 +244,8 @@ class LeelazReadBoardGmaTest {
           Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_STATE_UNRESTORED,
           engine.previewForegroundAnalysisLeaseAvailability());
       assertFalse(
-          output.commands().stream().anyMatch(command -> command.startsWith("kata-genmove_analyze")));
+          output.commands().stream()
+              .anyMatch(command -> command.startsWith("kata-genmove_analyze")));
 
       invokeProcessCommandResponseLine(
           engine, successResponseFor(output.rawCommands(), "maxTime"));
@@ -493,7 +494,8 @@ class LeelazReadBoardGmaTest {
           engine, successResponseFor(output.rawCommands(), "maxVisits"));
 
       assertFalse(
-          output.commands().stream().anyMatch(command -> command.startsWith("kata-genmove_analyze")));
+          output.commands().stream()
+              .anyMatch(command -> command.startsWith("kata-genmove_analyze")));
       assertTrue(output.commands().contains("kata-set-param maxTime 2"));
       assertTrue(output.commands().contains("kata-set-param maxVisits 800"));
       assertEquals(
@@ -562,7 +564,8 @@ class LeelazReadBoardGmaTest {
           output.commands(),
           "the acknowledged preparation must send one command at a time");
       assertFalse(
-          output.commands().stream().anyMatch(command -> command.startsWith("kata-genmove_analyze")),
+          output.commands().stream()
+              .anyMatch(command -> command.startsWith("kata-genmove_analyze")),
           "the genmove must not be sent before every required get/set ACK");
 
       invokeProcessCommandResponseLine(
@@ -740,7 +743,8 @@ class LeelazReadBoardGmaTest {
               "kata-set-param ponderingEnabled false",
               "kata-set-param maxTime 2"),
           output.commands(),
-          "a zero limit must restore the previously acknowledged override instead of re-snapshotting");
+          "a zero limit must restore the previously acknowledged override instead of"
+              + " re-snapshotting");
       invokeProcessCommandResponseLine(
           engine, successResponseFor(output.rawCommands(), "maxTime"));
       assertEquals(
@@ -786,7 +790,8 @@ class LeelazReadBoardGmaTest {
           Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_STATE_UNRESTORED,
           engine.previewForegroundAnalysisLeaseAvailability());
       assertFalse(
-          output.commands().stream().anyMatch(command -> command.startsWith("kata-genmove_analyze")),
+          output.commands().stream()
+              .anyMatch(command -> command.startsWith("kata-genmove_analyze")),
           "a preparation restore failure must never admit the session or send the genmove");
     }
   }
@@ -2007,7 +2012,8 @@ class LeelazReadBoardGmaTest {
       assertThrows(
           IllegalStateException.class,
           () -> engine.restartClosedEngine(0),
-          "a second restart caller must not fall back to a generic root replay while the first attempt is live");
+          "a second restart caller must not fall back to a generic root replay while the first"
+              + " attempt is live");
       assertEquals(
           1,
           output.commands().stream().filter("name"::equals).count(),
@@ -2048,7 +2054,8 @@ class LeelazReadBoardGmaTest {
       attempt.restartClosedEngine(0, completed::countDown);
 
       assertTrue(waitForRawCommand(output, "name", 1, TimeUnit.SECONDS));
-      assertFalse(output.commands().stream().anyMatch(command -> command.startsWith("kata-analyze")));
+      assertFalse(
+          output.commands().stream().anyMatch(command -> command.startsWith("kata-analyze")));
       invokeProcessCommandResponseLine(engine, numberedResponseFor(output.rawCommands(), "name"));
       assertTrue(completed.await(1, TimeUnit.SECONDS));
       invokeProcessCommandResponseLine(engine, "=");
@@ -2473,7 +2480,8 @@ class LeelazReadBoardGmaTest {
       assertTrue(
           readBoard.failReadBoardGmaSessionForEngineTermination(engine, "engine transport closed"));
       assertFalse(
-          readBoard.failReadBoardGmaSessionForEngineTermination(engine, "duplicate transport close"));
+          readBoard.failReadBoardGmaSessionForEngineTermination(
+              engine, "duplicate transport close"));
 
       ReadBoardGmaSession.Terminal terminal =
           assertInstanceOf(ReadBoardGmaSession.Terminal.class, session.state());
@@ -2794,7 +2802,8 @@ class LeelazReadBoardGmaTest {
           boundReadBoardGmaSession(readBoard),
           "the session must not be admitted before every matching get/set ACK");
       assertFalse(
-          output.commands().stream().anyMatch(command -> command.startsWith("kata-genmove_analyze")),
+          output.commands().stream()
+              .anyMatch(command -> command.startsWith("kata-genmove_analyze")),
           "the genmove must not be sent before every required get/set ACK");
 
       // Pre-admission deferred restore: the helper owes one engine restore for the current node
@@ -2814,7 +2823,8 @@ class LeelazReadBoardGmaTest {
       assertTrue(
           output.commands().stream()
               .anyMatch(command -> command.startsWith("kata-genmove_analyze ")),
-          "the admitted session must send the genmove only after the acknowledged preparation; commands="
+          "the admitted session must send the genmove only after the acknowledged preparation;"
+              + " commands="
               + output.commands());
       AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
       ExactSnapshotRestoreProtocolFixture.Transport transport =
@@ -3354,7 +3364,8 @@ class LeelazReadBoardGmaTest {
       invokeParseLine(engine, "play pass");
 
       assertTrue(
-          waitForFixtureCommandPrefix(transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS),
+          waitForFixtureCommandPrefix(
+              transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS),
           "the runtime participant must dispatch every captured parameter restore");
       assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, sessionRef.get().state());
       assertNotNull(
@@ -3411,7 +3422,8 @@ class LeelazReadBoardGmaTest {
       invokeParseLine(engine, "play pass");
 
       assertTrue(
-          waitForFixtureCommandPrefix(transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS));
+          waitForFixtureCommandPrefix(
+              transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS));
       assertInstanceOf(ReadBoardGmaSession.RestoringRuntime.class, sessionRef.get().state());
       String staleAck = successResponseFor(transport.rawCommands(), "maxTime");
       Object staleBinding = replaceReaderStreamBinding(engine);
@@ -3746,7 +3758,8 @@ class LeelazReadBoardGmaTest {
       invokeParseLine(engine, "play pass");
 
       assertTrue(
-          waitForFixtureCommandPrefix(transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS),
+          waitForFixtureCommandPrefix(
+              transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS),
           "the runtime participant must dispatch its restore commands");
 
       ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
@@ -4010,17 +4023,20 @@ class LeelazReadBoardGmaTest {
     Class<?> bindingClass = current.getClass();
     Field stdout = bindingClass.getDeclaredField("stdout");
     Field stderr = bindingClass.getDeclaredField("stderr");
+    Field output = bindingClass.getDeclaredField("output");
     Field process = bindingClass.getDeclaredField("process");
     Field remoteTransport = bindingClass.getDeclaredField("remoteTransport");
     Field javaSSH = bindingClass.getDeclaredField("javaSSH");
     Field incarnation = bindingClass.getDeclaredField("incarnation");
-    for (Field field : List.of(stdout, stderr, process, remoteTransport, javaSSH, incarnation)) {
+    for (Field field :
+        List.of(stdout, stderr, output, process, remoteTransport, javaSSH, incarnation)) {
       field.setAccessible(true);
     }
     java.lang.reflect.Constructor<?> constructor =
         bindingClass.getDeclaredConstructor(
             stdout.getType(),
             stderr.getType(),
+            output.getType(),
             process.getType(),
             remoteTransport.getType(),
             javaSSH.getType(),
@@ -4030,6 +4046,7 @@ class LeelazReadBoardGmaTest {
         constructor.newInstance(
             stdout.get(current),
             stderr.get(current),
+            output.get(current),
             process.get(current),
             remoteTransport.get(current),
             javaSSH.get(current),
@@ -4528,7 +4545,8 @@ class LeelazReadBoardGmaTest {
             + output.commands());
     assertTrue(
         output.commands().stream().anyMatch(command -> command.startsWith("kata-genmove_analyze ")),
-        "the admitted session must send the genmove only after the acknowledged preparation; commands="
+        "the admitted session must send the genmove only after the acknowledged preparation;"
+            + " commands="
             + output.commands());
     return session;
   }
@@ -4547,11 +4565,14 @@ class LeelazReadBoardGmaTest {
     assertTrue(
         waitForFixtureCommandPrefix(transport, "kata-set-param maxTime 2", 1, TimeUnit.SECONDS));
     assertTrue(
-        waitForFixtureCommandPrefix(transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS));
+        waitForFixtureCommandPrefix(
+            transport, "kata-set-param maxVisits 800", 1, TimeUnit.SECONDS));
     invokeProcessCommandResponseLine(
         engine, successResponseFor(transport.rawCommands(), "ponderingEnabled"));
-    invokeProcessCommandResponseLine(engine, successResponseFor(transport.rawCommands(), "maxTime"));
-    invokeProcessCommandResponseLine(engine, successResponseFor(transport.rawCommands(), "maxVisits"));
+    invokeProcessCommandResponseLine(
+        engine, successResponseFor(transport.rawCommands(), "maxTime"));
+    invokeProcessCommandResponseLine(
+        engine, successResponseFor(transport.rawCommands(), "maxVisits"));
   }
 
   private static ReadBoardGmaSession.Terminal awaitGmaSessionTerminal(

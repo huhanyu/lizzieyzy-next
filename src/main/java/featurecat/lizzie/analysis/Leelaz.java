@@ -939,12 +939,11 @@ public class Leelaz {
     // new Thread(this::read).start();
     // can stop engine for switching weights
     ReaderStreamBinding startedReaderStreamBinding = currentReaderStreamBinding();
-    started = true;
-    executor = Executors.newSingleThreadScheduledExecutor();
-    isNormalEnd = false;
-    executor.execute(() -> read(startedReaderStreamBinding));
-    executorErr = Executors.newSingleThreadScheduledExecutor();
-    executorErr.execute(() -> readError(startedReaderStreamBinding));
+    ScheduledExecutorService stdoutExecutor = Executors.newSingleThreadScheduledExecutor();
+    ScheduledExecutorService stderrExecutor = Executors.newSingleThreadScheduledExecutor();
+    if (!startReaderExecutors(startedReaderStreamBinding, stdoutExecutor, stderrExecutor)) {
+      return;
+    }
 
     if (Lizzie.leelaz2 != null && this == Lizzie.leelaz2) {
       if (index > 19) LizzieFrame.menu.changeEngineIcon2(20, 1);
@@ -955,6 +954,55 @@ public class Leelaz {
     }
     if (Lizzie.frame.isShowingHeatmap) Lizzie.frame.isShowingHeatmap = false;
     if (Lizzie.frame.isShowingPolicy) Lizzie.frame.isShowingPolicy = false;
+  }
+
+  private boolean startReaderExecutors(
+      ReaderStreamBinding startedReaderStreamBinding,
+      ScheduledExecutorService stdoutExecutor,
+      ScheduledExecutorService stderrExecutor) {
+    CountDownLatch readerStartGate = new CountDownLatch(1);
+    boolean readersSubmitted = false;
+    synchronized (engineArbitrationLock()) {
+      synchronized (startedReaderStreamBinding.readerExecutorLock) {
+        if (readerStreamBinding != startedReaderStreamBinding
+            || startedReaderStreamBinding.terminated
+            || startedReaderStreamBinding.readerShutdownRequested) {
+          startedReaderStreamBinding.readerShutdownRequested = true;
+          stdoutExecutor.shutdown();
+          stderrExecutor.shutdown();
+          return false;
+        }
+        started = true;
+        isNormalEnd = false;
+        startedReaderStreamBinding.stdoutExecutor = stdoutExecutor;
+        startedReaderStreamBinding.stderrExecutor = stderrExecutor;
+        executor = stdoutExecutor;
+        executorErr = stderrExecutor;
+        try {
+          stdoutExecutor.execute(
+              () -> {
+                if (awaitReaderStart(readerStartGate)) read(startedReaderStreamBinding);
+              });
+          stderrExecutor.execute(
+              () -> {
+                if (awaitReaderStart(readerStartGate)) readError(startedReaderStreamBinding);
+              });
+          readersSubmitted = true;
+        } finally {
+          if (!readersSubmitted) {
+            startedReaderStreamBinding.readerShutdownRequested = true;
+            stdoutExecutor.shutdownNow();
+            stderrExecutor.shutdownNow();
+            if (readerStreamBinding == startedReaderStreamBinding) {
+              started = false;
+              isNormalEnd = true;
+            }
+          }
+          readerStartGate.countDown();
+        }
+      }
+    }
+    return true;
   }
 
   //	public void restartEngine(int index) throws IOException {
@@ -1236,30 +1284,77 @@ public class Leelaz {
   }
 
   public void normalQuit() {
+    ReaderStreamBinding binding = currentReaderStreamBinding();
     closeBundledStartupDialog();
-    isNormalEnd = true;
     leela0110StopPonder();
-    if (Lizzie.leelaz2 != null && this == Lizzie.leelaz2) {
-      if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon2(20, 0);
-      else LizzieFrame.menu.changeEngineIcon2(currentEngineN, 0);
-    } else {
-      if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon(20, 0);
-      else LizzieFrame.menu.changeEngineIcon(currentEngineN, 0);
+    ReaderExecutorSnapshot executors = requestReaderShutdown(binding, true);
+    if (markReaderBindingNormalExitIfCurrent(binding)) {
+      if (Lizzie.leelaz2 != null && this == Lizzie.leelaz2) {
+        if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon2(20, 0);
+        else LizzieFrame.menu.changeEngineIcon2(currentEngineN, 0);
+      } else {
+        if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon(20, 0);
+        else LizzieFrame.menu.changeEngineIcon(currentEngineN, 0);
+      }
     }
 
     //		if(isScreen)
     //			sendCommand("name");
-    sendCommand("quit");
-    if (this.useJavaSSH) {
-      javaSSH.close();
-    } else {
-      if (this.useRemoteCompute && remoteTransport != null) remoteTransport.close();
-      shutdownExecutor(executor);
-      shutdownExecutor(executorErr);
-      shutdown();
+    if (executors.ownsTransportClose) {
+      sendQuitToBinding(binding);
     }
-    started = false;
-    isLoaded = false;
+    if (binding.javaSSH != null || binding.remoteTransport != null) {
+      try {
+        shutdown(binding, executors);
+      } finally {
+        shutdownExecutor(executors.stdoutExecutor);
+        shutdownExecutor(executors.stderrExecutor);
+      }
+    } else {
+      shutdownExecutor(executors.stdoutExecutor);
+      shutdownExecutor(executors.stderrExecutor);
+      shutdown(binding, executors);
+    }
+    markReaderBindingStoppedIfCurrent(binding);
+  }
+
+  private void sendQuitToBinding(ReaderStreamBinding binding) {
+    BufferedOutputStream bindingOutput = binding.output;
+    if (bindingOutput == null) {
+      return;
+    }
+    try {
+      synchronized (bindingOutput) {
+        bindingOutput.write("quit\n".getBytes());
+        bindingOutput.flush();
+      }
+    } catch (IOException failure) {
+      String detail = failure.getLocalizedMessage();
+      if (detail == null || detail.trim().isEmpty()) {
+        detail = failure.getClass().getSimpleName();
+      }
+      rememberRecentLine(recentStderrLines, "Failed to send GTP command 'quit': " + detail);
+      System.err.println("Failed to send GTP command 'quit': " + detail);
+    }
+  }
+
+  private boolean markReaderBindingNormalExitIfCurrent(ReaderStreamBinding binding) {
+    synchronized (engineArbitrationLock()) {
+      if (readerStreamBinding != binding) {
+        return false;
+      }
+      isNormalEnd = true;
+      return true;
+    }
+  }
+
+  private void markReaderBindingStoppedIfCurrent(ReaderStreamBinding binding) {
+    synchronized (engineArbitrationLock()) {
+      if (readerStreamBinding == binding) {
+        started = false;
+        isLoaded = false;
+      }
+    }
   }
 
   private void shutdownExecutor(ScheduledExecutorService service) {
@@ -1277,44 +1372,106 @@ public class Leelaz {
     }
   }
 
+  private static void shutdownReaderExecutors(
+      ScheduledExecutorService stdoutExecutor, ScheduledExecutorService stderrExecutor) {
+    if (stdoutExecutor != null) stdoutExecutor.shutdown();
+    if (stderrExecutor != null) stderrExecutor.shutdown();
+  }
+
+  private static boolean awaitReaderStart(CountDownLatch readerStartGate) {
+    try {
+      readerStartGate.await();
+      return true;
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+  }
+
+  private static ReaderExecutorSnapshot requestReaderShutdown(ReaderStreamBinding binding) {
+    return requestReaderShutdown(binding, false);
+  }
+
+  private static ReaderExecutorSnapshot requestReaderShutdown(
+      ReaderStreamBinding binding, boolean normalExitRequested) {
+    synchronized (binding.readerExecutorLock) {
+      binding.readerShutdownRequested = true;
+      binding.normalExitRequested |= normalExitRequested;
+      boolean ownsTransportClose = !binding.transportCloseClaimed;
+      binding.transportCloseClaimed = true;
+      return new ReaderExecutorSnapshot(
+          binding.stdoutExecutor, binding.stderrExecutor, ownsTransportClose);
+    }
+  }
+
+  private static void shutdownReaderExecutors(ReaderExecutorSnapshot executors) {
+    shutdownReaderExecutors(executors.stdoutExecutor, executors.stderrExecutor);
+  }
+
+  private static final class ReaderExecutorSnapshot {
+    private final ScheduledExecutorService stdoutExecutor;
+    private final ScheduledExecutorService stderrExecutor;
+    private final boolean ownsTransportClose;
+
+    private ReaderExecutorSnapshot(
+        ScheduledExecutorService stdoutExecutor,
+        ScheduledExecutorService stderrExecutor,
+        boolean ownsTransportClose) {
+      this.stdoutExecutor = stdoutExecutor;
+      this.stderrExecutor = stderrExecutor;
+      this.ownsTransportClose = ownsTransportClose;
+    }
+  }
+
   public void forceQuit() {
-    AnalysisResourceCoordinator.processStopped(
-        this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, process);
-    isNormalEnd = true;
-    started = false;
-    isLoaded = false;
+    ReaderStreamBinding binding = currentReaderStreamBinding();
     try {
       leela0110StopPonder();
-      sendCommand("quit");
     } catch (Exception e) {
       e.printStackTrace();
     }
+    ReaderExecutorSnapshot executors = requestReaderShutdown(binding, true);
+    AnalysisResourceCoordinator.processStopped(
+        this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, binding.process);
+    boolean currentBinding = markReaderBindingNormalExitIfCurrent(binding);
+    markReaderBindingStoppedIfCurrent(binding);
     //		if(isScreen)
     //			sendCommand("name");
-    if (Lizzie.leelaz2 != null && this == Lizzie.leelaz2) {
-      if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon2(20, 0);
-      else LizzieFrame.menu.changeEngineIcon2(currentEngineN, 0);
-    } else {
-      if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon(20, 0);
-      else LizzieFrame.menu.changeEngineIcon(currentEngineN, 0);
-    }
-    if (this.useJavaSSH) {
-      javaSSH.close();
-    } else if (this.useRemoteCompute) {
-      if (remoteTransport != null) remoteTransport.close();
-      if (executor != null) executor.shutdownNow();
-      if (executorErr != null) executorErr.shutdownNow();
-    } else {
-      try {
-        Process runningProcess = process;
-        if (runningProcess != null) {
-          runningProcess.destroyForcibly();
-        }
-      } catch (Exception e) {
-        e.printStackTrace();
+    if (currentBinding) {
+      if (Lizzie.leelaz2 != null && this == Lizzie.leelaz2) {
+        if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon2(20, 0);
+        else LizzieFrame.menu.changeEngineIcon2(currentEngineN, 0);
+      } else {
+        if (currentEngineN > 20) LizzieFrame.menu.changeEngineIcon(20, 0);
+        else LizzieFrame.menu.changeEngineIcon(currentEngineN, 0);
       }
     }
-    outputStream = null;
+    try {
+      if (binding.javaSSH != null) {
+        if (executors.ownsTransportClose) {
+          binding.javaSSH.close();
+        }
+      } else if (binding.remoteTransport != null) {
+        if (executors.ownsTransportClose) {
+          binding.remoteTransport.close();
+        }
+      } else {
+        try {
+          if (binding.process != null) binding.process.destroyForcibly();
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+      }
+    } finally {
+      shutdownReaderExecutors(executors);
+      clearOutputStreamIfCurrent(binding);
+    }
+  }
+
+  private void clearOutputStreamIfCurrent(ReaderStreamBinding binding) {
+    synchronized (engineArbitrationLock()) {
+      if (readerStreamBinding == binding) outputStream = null;
+    }
   }
 
   /** Initializes the input and output streams */
@@ -1423,17 +1580,18 @@ public class Leelaz {
         outputStream = nextOutputStream;
         errorStream = nextErrorStream;
         loadSgfResponseQuarantined = false;
-          readerStreamBinding =
+        readerStreamBinding =
             new ReaderStreamBinding(
                 nextInputStream,
                 nextErrorStream,
+                nextOutputStream,
                 process,
                 useRemoteCompute ? remoteTransport : null,
                 useJavaSSH ? javaSSH : null,
                 processIncarnationIds.incrementAndGet());
-          synchronized (commandQueue()) {
-            publishRestartBootstrapReceiptLocked(readerStreamBinding, nextOutputStream);
-          }
+        synchronized (commandQueue()) {
+          publishRestartBootstrapReceiptLocked(readerStreamBinding, nextOutputStream);
+        }
         if (ownsRebindGateAfterTrackingCleanup) {
           readerStreamRebindInProgress = false;
           engineArbitrationLock().notifyAll();
@@ -1468,6 +1626,7 @@ public class Leelaz {
               new ReaderStreamBinding(
                   nextInputStream,
                   nextErrorStream,
+                  nextOutputStream,
                   process,
                   useRemoteCompute ? remoteTransport : null,
                   useJavaSSH ? javaSSH : null,
@@ -1520,6 +1679,7 @@ public class Leelaz {
             new ReaderStreamBinding(
                 inputStream,
                 errorStream,
+                outputStream,
                 process,
                 useRemoteCompute ? remoteTransport : null,
                 useJavaSSH ? javaSSH : null,
@@ -1722,10 +1882,17 @@ public class Leelaz {
   private static final class ReaderStreamBinding {
     private final BufferedReader stdout;
     private final BufferedReader stderr;
+    private final BufferedOutputStream output;
     private final Process process;
     private final EngineTransport remoteTransport;
     private final SSHController javaSSH;
     private final long incarnation;
+    private final Object readerExecutorLock = new Object();
+    private ScheduledExecutorService stdoutExecutor;
+    private ScheduledExecutorService stderrExecutor;
+    private boolean readerShutdownRequested;
+    private boolean transportCloseClaimed;
+    private volatile boolean normalExitRequested;
     private RestartBootstrapReceipt restartBootstrapReceipt;
     private int linesInProgress;
     private Throwable terminalFailure;
@@ -1735,12 +1902,14 @@ public class Leelaz {
     private ReaderStreamBinding(
         BufferedReader stdout,
         BufferedReader stderr,
+        BufferedOutputStream output,
         Process process,
         EngineTransport remoteTransport,
         SSHController javaSSH,
         long incarnation) {
       this.stdout = stdout;
       this.stderr = stderr;
+      this.output = output;
       this.process = process;
       this.remoteTransport = remoteTransport;
       this.javaSSH = javaSSH;
@@ -4196,10 +4365,7 @@ public class Leelaz {
       } catch (RuntimeException shutdownFailure) {
         shutdownFailure.printStackTrace();
       }
-      if (binding.javaSSH != null) {
-        javaSSHClosed = true;
-      }
-      started = false;
+      markReaderBindingTerminatedIfCurrent(binding);
       deferredNonModalDiagnostic = finishTerminatedReaderIncarnation(binding);
     } finally {
       synchronized (engineArbitrationLock()) {
@@ -4267,7 +4433,7 @@ public class Leelaz {
       }
       return null;
     }
-    if (!isNormalEnd && !tryRecoverBundledOpenClNativeExit(binding.process)) {
+    if (!binding.normalExitRequested && !tryRecoverBundledOpenClNativeExit(binding.process)) {
       isDownWithError = true;
       // isLoaded=false;
       return buildEngineExitDiagnostic(
@@ -4279,14 +4445,34 @@ public class Leelaz {
   }
 
   private void shutdownReaderTransport(ReaderStreamBinding binding) {
+    ReaderExecutorSnapshot executors = requestReaderShutdown(binding);
     cancelPositionEstimateRequest();
     leela0110StopPonder();
-    if (binding.javaSSH != null) {
-      binding.javaSSH.close();
-    } else if (binding.remoteTransport != null) {
-      binding.remoteTransport.close();
-    } else if (binding.process != null) {
-      binding.process.destroy();
+    try {
+      if (executors.ownsTransportClose) {
+        if (binding.javaSSH != null) {
+          binding.javaSSH.close();
+        } else {
+          if (binding.remoteTransport != null) {
+            binding.remoteTransport.close();
+          } else if (binding.process != null) {
+            binding.process.destroy();
+          }
+        }
+      }
+    } finally {
+      shutdownReaderExecutors(executors);
+    }
+  }
+
+  private void markReaderBindingTerminatedIfCurrent(ReaderStreamBinding binding) {
+    synchronized (engineArbitrationLock()) {
+      if (readerStreamBinding == binding) {
+        if (binding.javaSSH != null) {
+          javaSSHClosed = true;
+        }
+        started = false;
+      }
     }
   }
 
@@ -5117,7 +5303,8 @@ public class Leelaz {
         },
         failure -> {
           if (onFailure != null) {
-            onFailure.accept(failure == null ? "Failed to send configuration" : failure.getMessage());
+            onFailure.accept(
+                failure == null ? "Failed to send configuration" : failure.getMessage());
           }
         },
         true,
@@ -9443,7 +9630,9 @@ public class Leelaz {
         synchronization.start();
       } catch (IOException | RuntimeException failure) {
         failBeforeFence(
-            failure.getMessage() == null ? "automatic engine restart failed" : failure.getMessage());
+            failure.getMessage() == null
+                ? "automatic engine restart failed"
+                : failure.getMessage());
         throw failure;
       }
     }
@@ -9553,30 +9742,22 @@ public class Leelaz {
         completeReadBoardGmaRecoveryAfterBoardSync();
       }
       resumeClosedEngineAfterBoardSynchronization(resumePonder);
-      notifyCompletion();
-      state.compareAndSet(AutomaticRestartState.FENCE_PENDING, AutomaticRestartState.COMPLETED);
+      if (state.compareAndSet(
+          AutomaticRestartState.FENCE_PENDING, AutomaticRestartState.COMPLETED)) {
+        notifyCompletionAfterEndpointRelease();
+      }
     }
 
     private void completeWithoutFence() {
-      if (state.get() != AutomaticRestartState.CONVERGING) {
+      if (!state.compareAndSet(AutomaticRestartState.CONVERGING, AutomaticRestartState.COMPLETED)) {
         return;
       }
-      try {
-        notifyCompletion();
-        state.compareAndSet(AutomaticRestartState.CONVERGING, AutomaticRestartState.COMPLETED);
-      } catch (RuntimeException failure) {
-        failBeforeFence(
-            failure.getMessage() == null
-                ? "automatic engine restart completion failed"
-                : failure.getMessage());
-      } finally {
-        completionClaim.abandonBeforeFence();
-      }
+      notifyCompletionAfterEndpointRelease();
+      completionClaim.abandonBeforeFence();
     }
 
     private void failAfterFence(String detail) {
-      if (!state.compareAndSet(
-          AutomaticRestartState.FENCE_PENDING, AutomaticRestartState.FAILED)) {
+      if (!state.compareAndSet(AutomaticRestartState.FENCE_PENDING, AutomaticRestartState.FAILED)) {
         return;
       }
       failCapturedEndpointsClosed();
@@ -9584,7 +9765,7 @@ public class Leelaz {
           detail, preserveUnrestoredState || engineStateUnrestored);
       endBoardSynchronization();
       notifyFailure(detail);
-      notifyCompletion();
+      notifyCompletionAfterEndpointRelease();
     }
 
     private void failBeforeFence(String detail) {
@@ -9640,18 +9821,34 @@ public class Leelaz {
       }
     }
 
+    private void notifyCompletionAfterEndpointRelease() {
+      // Public completion means both endpoints are fully reopened; owner-internal state changes
+      // above still execute while the lifecycle claim excludes unrelated engine work.
+      completionClaim.runAfterEndpointRelease(this::notifyCompletion);
+    }
+
     private void notifyCompletion() {
       Runnable completion = afterBoardRestore;
       if (completion != null && completionNotified.compareAndSet(false, true)) {
-        completion.run();
+        try {
+          completion.run();
+        } catch (RuntimeException failure) {
+          String detail = failure.getMessage();
+          if (detail == null || detail.trim().isEmpty()) {
+            detail = failure.getClass().getSimpleName();
+          }
+          String message = "Automatic restart completion callback failed: " + detail;
+          rememberRecentLine(recentStderrLines, message);
+          System.err.println(message);
+        }
       }
     }
   }
 
   /**
-   * Owner-identified lifecycle completion claim installed atomically on an authority and its
-   * frozen mirror. It owns final dual-leg fencing and holds endpoint exclusion through the owner
-   * callback, then releases both endpoints with identity-safe compare-and-clear.
+   * Owner-identified lifecycle completion claim installed atomically on an authority and its frozen
+   * mirror. It owns final dual-leg fencing, releases both endpoints with identity-safe
+   * compare-and-clear, then notifies the external completion observer.
    */
   static final class LifecycleCompletionClaim {
     private final Leelaz authority;
@@ -12806,16 +13003,27 @@ public class Leelaz {
 
   /** End the process */
   public void shutdown() {
-    AnalysisResourceCoordinator.processStopped(
-        this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, process);
+    ReaderStreamBinding binding = currentReaderStreamBinding();
+    shutdown(binding, requestReaderShutdown(binding, true));
+  }
+
+  private void shutdown(ReaderStreamBinding binding, ReaderExecutorSnapshot executors) {
     cancelPositionEstimateRequest();
     leela0110StopPonder();
-    if (this.useJavaSSH) {
-      javaSSH.close();
-    } else if (this.useRemoteCompute) {
-      if (remoteTransport != null) remoteTransport.close();
-    } else {
-      if (process != null) process.destroy();
+    try {
+      if (executors.ownsTransportClose) {
+        AnalysisResourceCoordinator.processStopped(
+            this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, binding.process);
+        if (binding.javaSSH != null) {
+          binding.javaSSH.close();
+        } else if (binding.remoteTransport != null) {
+          binding.remoteTransport.close();
+        } else {
+          if (binding.process != null) binding.process.destroy();
+        }
+      }
+    } finally {
+      shutdownReaderExecutors(executors);
     }
   }
 

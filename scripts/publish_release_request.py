@@ -60,6 +60,7 @@ DIRECT_DOWNLOAD_SUFFIXES = (
     "linux64.nvidia.zip",
 )
 ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "requested", "pending"}
+WORKFLOW_IDENTITY_CONVERGENCE_SECONDS = 90
 CI_WORKFLOW_FILE = "ci.yml"
 UNRESOLVED_NOTE_MARKERS = (
     re.compile(r"\bFULL_TEST_COUNT\b"),
@@ -993,21 +994,48 @@ class ReleasePublisher:
     def _wait_for_runs(self, runs: dict[str, int]) -> None:
         if not runs:
             return
-        deadline = time.monotonic() + self.run_timeout_seconds
+        started_at = time.monotonic()
+        deadline = started_at + self.run_timeout_seconds
+        identity_deadline = min(
+            deadline, started_at + WORKFLOW_IDENTITY_CONVERGENCE_SECONDS
+        )
         pending = dict(runs)
         last_state: dict[int, tuple[str, object]] = {}
+        identity_confirmed: set[int] = set()
+        identity_wait_announced: set[int] = set()
         while pending:
             if time.monotonic() >= deadline:
                 names = ", ".join(sorted(pending))
                 raise PublishError(f"Timed out waiting for workflows: {names}")
+            awaiting_initial_identity = False
             for name, run_id in list(pending.items()):
                 spec = next(item for item in WORKFLOWS if item.platform == name)
                 run = self.client.get_workflow_run(run_id)
                 if not self._run_has_expected_identity(spec, run):
-                    raise PublishError(
-                        f"{name} workflow run {run_id} does not match target SHA "
-                        "and exact release inputs"
-                    )
+                    if run_id in identity_confirmed:
+                        raise PublishError(
+                            f"{name} workflow run {run_id} changed identity after "
+                            "initial verification"
+                        )
+                    if time.monotonic() >= identity_deadline:
+                        raise PublishError(
+                            f"{name} workflow run {run_id} identity did not converge "
+                            "to the target SHA and exact release inputs within "
+                            f"{WORKFLOW_IDENTITY_CONVERGENCE_SECONDS} seconds"
+                        )
+                    if run_id not in identity_wait_announced:
+                        print(
+                            f"{name}: waiting for workflow run {run_id} identity "
+                            "metadata to converge",
+                            flush=True,
+                        )
+                        identity_wait_announced.add(run_id)
+                    awaiting_initial_identity = True
+                    continue
+                identity_confirmed.add(run_id)
+                if run_id in identity_wait_announced:
+                    print(f"{name}: workflow run {run_id} identity confirmed", flush=True)
+                    identity_wait_announced.remove(run_id)
                 status = str(run.get("status", "unknown"))
                 conclusion = run.get("conclusion")
                 state = (status, conclusion)
@@ -1023,7 +1051,11 @@ class ReleasePublisher:
                         )
                     del pending[name]
             if pending:
-                self.sleep(self.poll_seconds)
+                self.sleep(
+                    min(self.poll_seconds, 5)
+                    if awaiting_initial_identity
+                    else self.poll_seconds
+                )
 
     def _require_successful_target_runs(
         self, selected_runs: dict[str, int] | None = None

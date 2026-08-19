@@ -14,6 +14,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.EngineStartupStatus;
 import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.remote.EngineTransport;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.BoardRenderer;
 import featurecat.lizzie.gui.BottomToolbar;
@@ -37,6 +38,9 @@ import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -726,6 +730,478 @@ class EngineManagerLifecycleReservationTest {
     } finally {
       state.restore();
       forceFirstLaunchSession(previousFirstLaunchSession);
+    }
+  }
+
+  @Test
+  void updateEnginesRestoreSettlesInFlightReplacementBeforeRestoringGlobals() throws Exception {
+    UpdateEnginesState state = new UpdateEnginesState(19, 19);
+    try {
+      state.install();
+      state.manager.updateEngines();
+      Leelaz replacement = state.manager.engineList.get(0);
+
+      // The first name response is deliberately gated, so teardown begins while replacement startup
+      // still owns the lifecycle transition.
+      assertTrue(replacement.hasExclusiveGtpLifecycleTransitionForTest());
+      state.restore();
+
+      Process replacementProcess = (Process) getLeelazField(replacement, "process");
+      ScheduledExecutorService stdoutExecutor =
+          (ScheduledExecutorService) getLeelazField(replacement, "executor");
+      ScheduledExecutorService stderrExecutor =
+          (ScheduledExecutorService) getLeelazField(replacement, "executorErr");
+      assertTrue(state.cleanupLifecycleSettled);
+      assertTrue(state.cleanupProcessesStopped);
+      assertTrue(state.cleanupExecutorsStopped);
+      assertEquals(2, state.capturedReaderExecutors.size());
+      assertTrue(
+          state.capturedReaderExecutors.stream().allMatch(ScheduledExecutorService::isShutdown));
+      assertTrue(
+          state.capturedReaderExecutors.stream().allMatch(ScheduledExecutorService::isTerminated));
+      assertFalse(replacement.hasExclusiveGtpLifecycleTransitionForTest());
+      assertTrue(replacementProcess == null || !replacementProcess.isAlive());
+      assertNotNull(stdoutExecutor);
+      assertNotNull(stderrExecutor);
+      assertTrue(stdoutExecutor.isShutdown());
+      assertTrue(stderrExecutor.isShutdown());
+      assertTrue(stdoutExecutor.isTerminated());
+      assertTrue(stderrExecutor.isTerminated());
+      assertSame(state.previousConfig, Lizzie.config);
+      assertSame(state.previousMenu, LizzieFrame.menu);
+    } finally {
+      state.restore();
+    }
+  }
+
+  @Test
+  void testOnlyProcessFallbackCannotRescueProductionCleanupResult() throws Exception {
+    FallbackCleanupLeelaz engine = new FallbackCleanupLeelaz();
+    FallbackProcess process = new FallbackProcess();
+    setLeelazField(engine, "process", process);
+
+    assertFalse(UpdateEnginesState.stopReplacementProcesses(List.of(engine), 1L));
+    assertEquals(1, process.forcibleDestroyCount.get());
+    assertFalse(process.isAlive());
+  }
+
+  @Test
+  void testOnlyExecutorFallbackCannotRescueProductionCleanupResult() throws Exception {
+    ScheduledExecutorService executor = runningReaderExecutor();
+    try {
+      assertFalse(UpdateEnginesState.awaitCapturedReaderExecutorsStopped(List.of(executor), 1L));
+      assertTrue(executor.isShutdown());
+      assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS));
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void capturedReaderExecutorsShareOneProductionTerminationDeadline() {
+    BudgetConsumingExecutor first = new BudgetConsumingExecutor(80L);
+    BudgetConsumingExecutor second = new BudgetConsumingExecutor(80L);
+    try {
+      assertFalse(
+          UpdateEnginesState.awaitCapturedReaderExecutorsStopped(List.of(first, second), 120L));
+      assertEquals(0, first.fallbackShutdownCount.get());
+      assertEquals(1, second.fallbackShutdownCount.get());
+      assertTrue(first.isTerminated());
+      assertTrue(second.isTerminated());
+    } finally {
+      first.shutdownNow();
+      second.shutdownNow();
+    }
+  }
+
+  @Test
+  void readerExecutorShutdownFromItsOwnWorkerDoesNotAwaitItself() throws Exception {
+    ScheduledExecutorService stdoutExecutor = Executors.newSingleThreadScheduledExecutor();
+    ScheduledExecutorService stderrExecutor = Executors.newSingleThreadScheduledExecutor();
+    CountDownLatch shutdownReturned = new CountDownLatch(1);
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+    long[] shutdownElapsedNanos = new long[1];
+    Method shutdownReaderExecutors =
+        Leelaz.class.getDeclaredMethod(
+            "shutdownReaderExecutors",
+            ScheduledExecutorService.class,
+            ScheduledExecutorService.class);
+    shutdownReaderExecutors.setAccessible(true);
+    try {
+      stdoutExecutor.execute(
+          () -> {
+            try {
+              long startedAt = System.nanoTime();
+              shutdownReaderExecutors.invoke(null, stdoutExecutor, stderrExecutor);
+              shutdownElapsedNanos[0] = System.nanoTime() - startedAt;
+              assertFalse(Thread.currentThread().isInterrupted());
+            } catch (Throwable invocationFailure) {
+              failure.set(invocationFailure);
+            } finally {
+              shutdownReturned.countDown();
+            }
+          });
+
+      assertTrue(shutdownReturned.await(3, TimeUnit.SECONDS));
+      assertTrue(stdoutExecutor.awaitTermination(3, TimeUnit.SECONDS));
+      assertTrue(stderrExecutor.awaitTermination(3, TimeUnit.SECONDS));
+      assertNull(failure.get());
+      assertTrue(shutdownElapsedNanos[0] < TimeUnit.MILLISECONDS.toNanos(500L));
+      assertTrue(stdoutExecutor.isTerminated());
+      assertTrue(stderrExecutor.isTerminated());
+    } finally {
+      stdoutExecutor.shutdownNow();
+      stderrExecutor.shutdownNow();
+    }
+  }
+
+  @Test
+  void javaSshExitPathsCloseExactSessionAndBothReaderExecutors() throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Menu previousMenu = LizzieFrame.menu;
+    try {
+      Lizzie.leelaz2 = null;
+      LizzieFrame.menu = allocate(SilentUpdateMenu.class);
+      for (String exitPath : List.of("normal", "force", "shutdown", "terminal")) {
+        QuietExitLeelaz engine = new QuietExitLeelaz();
+        RecordingSshController ssh = new RecordingSshController(engine);
+        ScheduledExecutorService stdout = runningReaderExecutor();
+        ScheduledExecutorService stderr = runningReaderExecutor();
+        Object binding = installJavaSshReaderBinding(engine, ssh, stdout, stderr);
+        Lizzie.leelaz = engine;
+
+        switch (exitPath) {
+          case "normal" -> engine.normalQuit();
+          case "force" -> engine.forceQuit();
+          case "shutdown" -> engine.shutdown();
+          case "terminal" -> invokeShutdownReaderTransport(engine, binding);
+          default -> throw new AssertionError(exitPath);
+        }
+
+        assertEquals(1, ssh.closeCount.get(), exitPath);
+        assertTrue(stdout.isShutdown(), exitPath);
+        assertTrue(stderr.isShutdown(), exitPath);
+        assertTrue(stdout.awaitTermination(3, TimeUnit.SECONDS), exitPath);
+        assertTrue(stderr.awaitTermination(3, TimeUnit.SECONDS), exitPath);
+        assertEquals(
+            !exitPath.equals("terminal"),
+            (boolean) getField(binding, "normalExitRequested"),
+            exitPath);
+      }
+    } finally {
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      LizzieFrame.menu = previousMenu;
+    }
+  }
+
+  @Test
+  void readerShutdownBeforeInstallSkipsBothSubmissionsWithoutRejection() throws Exception {
+    QuietExitLeelaz engine = new QuietExitLeelaz();
+    RecordingSshController ssh = new RecordingSshController(engine);
+    Object binding = installJavaSshReaderBinding(engine, ssh, null, null);
+    engine.shutdown();
+    RecordingSubmissionExecutor stdout = new RecordingSubmissionExecutor(false);
+    RecordingSubmissionExecutor stderr = new RecordingSubmissionExecutor(false);
+    try {
+      assertFalse(invokeStartReaderExecutors(engine, binding, stdout, stderr));
+      assertEquals(0, stdout.submissionCount.get());
+      assertEquals(0, stderr.submissionCount.get());
+      assertTrue(stdout.isShutdown());
+      assertTrue(stderr.isShutdown());
+    } finally {
+      stdout.shutdownNow();
+      stderr.shutdownNow();
+    }
+  }
+
+  @Test
+  void readerInstallAndShutdownSerializeAcrossBothTaskSubmissions() throws Exception {
+    QuietExitLeelaz engine = new QuietExitLeelaz();
+    RecordingSshController ssh = new RecordingSshController(engine);
+    Object binding = installJavaSshReaderBinding(engine, ssh, null, null);
+    RecordingSubmissionExecutor stdout = new RecordingSubmissionExecutor(true);
+    RecordingSubmissionExecutor stderr = new RecordingSubmissionExecutor(false);
+    AtomicReference<Throwable> installFailure = new AtomicReference<>();
+    AtomicReference<Throwable> shutdownFailure = new AtomicReference<>();
+    Thread install =
+        new Thread(
+            () -> {
+              try {
+                assertTrue(invokeStartReaderExecutors(engine, binding, stdout, stderr));
+              } catch (Throwable failure) {
+                installFailure.set(failure);
+              }
+            });
+    Thread shutdown =
+        new Thread(
+            () -> {
+              try {
+                engine.shutdown();
+              } catch (Throwable failure) {
+                shutdownFailure.set(failure);
+              }
+            });
+    try {
+      install.start();
+      assertTrue(stdout.submissionEntered.await(3, TimeUnit.SECONDS));
+      shutdown.start();
+      assertTrue(awaitThreadState(shutdown, Thread.State.BLOCKED, 3_000L));
+      assertFalse(stdout.isShutdown());
+      assertFalse(stderr.isShutdown());
+      stdout.allowSubmission.countDown();
+      install.join(3_000L);
+      shutdown.join(3_000L);
+
+      assertFalse(install.isAlive());
+      assertFalse(shutdown.isAlive());
+      assertNull(installFailure.get());
+      assertNull(shutdownFailure.get());
+      assertEquals(1, stdout.submissionCount.get());
+      assertEquals(1, stderr.submissionCount.get());
+      assertEquals(1, ssh.closeCount.get());
+      assertTrue(stdout.awaitTermination(3, TimeUnit.SECONDS));
+      assertTrue(stderr.awaitTermination(3, TimeUnit.SECONDS));
+    } finally {
+      stdout.allowSubmission.countDown();
+      stdout.shutdownNow();
+      stderr.shutdownNow();
+      install.join(3_000L);
+      shutdown.join(3_000L);
+    }
+  }
+
+  @Test
+  void staleBindingNormalQuitUsesCapturedOutputAndCannotOverwriteReplacementState()
+      throws Exception {
+    assertStaleBindingExitDoesNotAffectReplacement(true);
+  }
+
+  @Test
+  void staleBindingForceQuitDoesNotWriteOrOverwriteReplacementState() throws Exception {
+    assertStaleBindingExitDoesNotAffectReplacement(false);
+  }
+
+  private static void assertStaleBindingExitDoesNotAffectReplacement(boolean normalQuit)
+      throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Menu previousMenu = LizzieFrame.menu;
+    BlockingPonderExitLeelaz engine = new BlockingPonderExitLeelaz();
+    RecordingSshController retiredSsh = new RecordingSshController(engine);
+    RecordingSshController replacementSsh = new RecordingSshController(engine);
+    ScheduledExecutorService retiredStdout = runningReaderExecutor();
+    ScheduledExecutorService retiredStderr = runningReaderExecutor();
+    ScheduledExecutorService replacementStdout = runningReaderExecutor();
+    ScheduledExecutorService replacementStderr = runningReaderExecutor();
+    ByteArrayOutputStream retiredBytes = new ByteArrayOutputStream();
+    BufferedOutputStream retiredOutput = new BufferedOutputStream(retiredBytes);
+    ByteArrayOutputStream replacementBytes = new ByteArrayOutputStream();
+    BufferedOutputStream replacementOutput = new BufferedOutputStream(replacementBytes);
+    installJavaSshReaderBinding(engine, retiredSsh, retiredStdout, retiredStderr, retiredOutput);
+    Object replacementBinding =
+        newJavaSshReaderBinding(
+            replacementSsh, replacementStdout, replacementStderr, replacementOutput, 2L);
+    AtomicReference<Throwable> exitFailure = new AtomicReference<>();
+    Thread exit =
+        new Thread(
+            () -> {
+              try {
+                if (normalQuit) {
+                  engine.normalQuit();
+                } else {
+                  engine.forceQuit();
+                }
+              } catch (Throwable failure) {
+                exitFailure.set(failure);
+              }
+            });
+    try {
+      Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
+      LizzieFrame.menu = allocate(SilentUpdateMenu.class);
+      engine.started = true;
+      engine.isLoaded = true;
+      engine.isNormalEnd = false;
+      exit.start();
+      assertTrue(engine.stopPonderEntered.await(3, TimeUnit.SECONDS));
+      setLeelazField(engine, "readerStreamBinding", replacementBinding);
+      setLeelazField(engine, "javaSSH", replacementSsh);
+      setLeelazField(engine, "executor", replacementStdout);
+      setLeelazField(engine, "executorErr", replacementStderr);
+      setLeelazField(engine, "outputStream", replacementOutput);
+      engine.started = true;
+      engine.isLoaded = true;
+      engine.isNormalEnd = false;
+      engine.allowStopPonder.countDown();
+      exit.join(3_000L);
+
+      assertFalse(exit.isAlive());
+      assertNull(exitFailure.get());
+      assertEquals(1, retiredSsh.closeCount.get());
+      assertEquals(0, replacementSsh.closeCount.get());
+      assertTrue(retiredStdout.awaitTermination(3, TimeUnit.SECONDS));
+      assertTrue(retiredStderr.awaitTermination(3, TimeUnit.SECONDS));
+      assertFalse(replacementStdout.isShutdown());
+      assertFalse(replacementStderr.isShutdown());
+      assertSame(replacementOutput, getLeelazField(engine, "outputStream"));
+      assertEquals(normalQuit ? "quit\n" : "", retiredBytes.toString(StandardCharsets.UTF_8));
+      assertEquals("", replacementBytes.toString(StandardCharsets.UTF_8));
+      assertTrue(engine.started);
+      assertTrue(engine.isLoaded);
+      assertFalse(engine.isNormalEnd);
+    } finally {
+      engine.allowStopPonder.countDown();
+      exit.join(3_000L);
+      retiredStdout.shutdownNow();
+      retiredStderr.shutdownNow();
+      replacementStdout.shutdownNow();
+      replacementStderr.shutdownNow();
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      LizzieFrame.menu = previousMenu;
+    }
+  }
+
+  @Test
+  void staleOrTerminatedBindingCannotInstallOrPublishReaderExecutors() throws Exception {
+    QuietExitLeelaz engine = new QuietExitLeelaz();
+    RecordingSshController retiredSsh = new RecordingSshController(engine);
+    Object staleBinding = installJavaSshReaderBinding(engine, retiredSsh, null, null);
+    ScheduledExecutorService replacementStdout = runningReaderExecutor();
+    ScheduledExecutorService replacementStderr = runningReaderExecutor();
+    Object replacementBinding =
+        newJavaSshReaderBinding(
+            new RecordingSshController(engine), replacementStdout, replacementStderr, 2L);
+    RecordingSubmissionExecutor staleStdout = new RecordingSubmissionExecutor(false);
+    RecordingSubmissionExecutor staleStderr = new RecordingSubmissionExecutor(false);
+    RecordingSubmissionExecutor terminatedStdout = new RecordingSubmissionExecutor(false);
+    RecordingSubmissionExecutor terminatedStderr = new RecordingSubmissionExecutor(false);
+    try {
+      setLeelazField(engine, "readerStreamBinding", replacementBinding);
+      setLeelazField(engine, "executor", replacementStdout);
+      setLeelazField(engine, "executorErr", replacementStderr);
+
+      assertFalse(invokeStartReaderExecutors(engine, staleBinding, staleStdout, staleStderr));
+      assertEquals(0, staleStdout.submissionCount.get());
+      assertEquals(0, staleStderr.submissionCount.get());
+      assertSame(replacementStdout, getLeelazField(engine, "executor"));
+      assertSame(replacementStderr, getLeelazField(engine, "executorErr"));
+
+      setField(replacementBinding, "terminated", true);
+      assertFalse(
+          invokeStartReaderExecutors(
+              engine, replacementBinding, terminatedStdout, terminatedStderr));
+      assertEquals(0, terminatedStdout.submissionCount.get());
+      assertEquals(0, terminatedStderr.submissionCount.get());
+      assertSame(replacementStdout, getLeelazField(engine, "executor"));
+      assertSame(replacementStderr, getLeelazField(engine, "executorErr"));
+      assertTrue(staleStdout.isShutdown());
+      assertTrue(staleStderr.isShutdown());
+      assertTrue(terminatedStdout.isShutdown());
+      assertTrue(terminatedStderr.isShutdown());
+    } finally {
+      staleStdout.shutdownNow();
+      staleStderr.shutdownNow();
+      terminatedStdout.shutdownNow();
+      terminatedStderr.shutdownNow();
+      replacementStdout.shutdownNow();
+      replacementStderr.shutdownNow();
+    }
+  }
+
+  @Test
+  void externalExitAndTerminalCleanupCloseEachExactTransportOnlyOnce() throws Exception {
+    for (boolean remote : List.of(false, true)) {
+      QuietExitLeelaz engine = new QuietExitLeelaz();
+      RecordingSshController ssh = remote ? null : new RecordingSshController(engine, true);
+      RecordingTransport transport = remote ? new RecordingTransport(true) : null;
+      ScheduledExecutorService stdout = runningReaderExecutor();
+      ScheduledExecutorService stderr = runningReaderExecutor();
+      Object binding =
+          remote
+              ? installRemoteReaderBinding(engine, transport, stdout, stderr)
+              : installJavaSshReaderBinding(engine, ssh, stdout, stderr);
+      CountDownLatch closeEntered = remote ? transport.closeEntered : ssh.closeEntered;
+      CountDownLatch allowClose = remote ? transport.allowClose : ssh.allowClose;
+      AtomicInteger closeCount = remote ? transport.closeCount : ssh.closeCount;
+      AtomicReference<Throwable> externalFailure = new AtomicReference<>();
+      AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
+      Thread external =
+          new Thread(
+              () -> {
+                try {
+                  engine.shutdown();
+                } catch (Throwable failure) {
+                  externalFailure.set(failure);
+                }
+              });
+      Thread terminal =
+          new Thread(
+              () -> {
+                try {
+                  invokeShutdownReaderTransport(engine, binding);
+                } catch (Throwable failure) {
+                  terminalFailure.set(failure);
+                }
+              });
+      try {
+        external.start();
+        assertTrue(closeEntered.await(3, TimeUnit.SECONDS), "remote=" + remote);
+        terminal.start();
+        terminal.join(3_000L);
+        assertFalse(terminal.isAlive(), "remote=" + remote);
+        assertEquals(1, closeCount.get(), "remote=" + remote);
+        allowClose.countDown();
+        external.join(3_000L);
+        assertFalse(external.isAlive(), "remote=" + remote);
+        assertNull(externalFailure.get(), "remote=" + remote);
+        assertNull(terminalFailure.get(), "remote=" + remote);
+        assertEquals(1, closeCount.get(), "remote=" + remote);
+        assertTrue(stdout.awaitTermination(3, TimeUnit.SECONDS), "remote=" + remote);
+        assertTrue(stderr.awaitTermination(3, TimeUnit.SECONDS), "remote=" + remote);
+      } finally {
+        allowClose.countDown();
+        external.join(3_000L);
+        terminal.join(3_000L);
+        stdout.shutdownNow();
+        stderr.shutdownNow();
+      }
+    }
+  }
+
+  @Test
+  void localGracefulCloseCanBeEscalatedByForceQuit() throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz previousSecondary = Lizzie.leelaz2;
+    Menu previousMenu = LizzieFrame.menu;
+    QuietExitLeelaz engine = new QuietExitLeelaz();
+    FallbackProcess process = new FallbackProcess();
+    try {
+      Lizzie.leelaz = engine;
+      Lizzie.leelaz2 = null;
+      LizzieFrame.menu = allocate(SilentUpdateMenu.class);
+      setLeelazField(engine, "process", process);
+      Method currentBinding = Leelaz.class.getDeclaredMethod("currentReaderStreamBinding");
+      currentBinding.setAccessible(true);
+      Object binding = currentBinding.invoke(engine);
+
+      invokeShutdownReaderTransport(engine, binding);
+      assertTrue(process.isAlive(), "the controlled process ignores graceful destroy");
+      assertEquals(0, process.forcibleDestroyCount.get());
+
+      engine.forceQuit();
+
+      assertFalse(process.isAlive());
+      assertEquals(1, process.forcibleDestroyCount.get());
+    } finally {
+      if (process.isAlive()) {
+        process.destroyForcibly();
+      }
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.leelaz2 = previousSecondary;
+      LizzieFrame.menu = previousMenu;
     }
   }
 
@@ -3624,6 +4100,124 @@ class EngineManagerLifecycleReservationTest {
     return field.get(target);
   }
 
+  private static void setField(Object target, String name, Object value)
+      throws ReflectiveOperationException {
+    Field field = target.getClass().getDeclaredField(name);
+    field.setAccessible(true);
+    field.set(target, value);
+  }
+
+  private static ScheduledExecutorService runningReaderExecutor() throws Exception {
+    ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    executor.submit(() -> {}).get(3, TimeUnit.SECONDS);
+    return executor;
+  }
+
+  private static Object installJavaSshReaderBinding(
+      Leelaz engine,
+      SSHController ssh,
+      ScheduledExecutorService stdout,
+      ScheduledExecutorService stderr)
+      throws Exception {
+    return installJavaSshReaderBinding(engine, ssh, stdout, stderr, null);
+  }
+
+  private static Object installJavaSshReaderBinding(
+      Leelaz engine,
+      SSHController ssh,
+      ScheduledExecutorService stdout,
+      ScheduledExecutorService stderr,
+      BufferedOutputStream output)
+      throws Exception {
+    engine.useJavaSSH = true;
+    setLeelazField(engine, "javaSSH", ssh);
+    setLeelazField(engine, "outputStream", output);
+    Method currentBinding = Leelaz.class.getDeclaredMethod("currentReaderStreamBinding");
+    currentBinding.setAccessible(true);
+    Object binding = currentBinding.invoke(engine);
+    setField(binding, "stdoutExecutor", stdout);
+    setField(binding, "stderrExecutor", stderr);
+    setLeelazField(engine, "executor", stdout);
+    setLeelazField(engine, "executorErr", stderr);
+    return binding;
+  }
+
+  private static Object installRemoteReaderBinding(
+      Leelaz engine,
+      EngineTransport transport,
+      ScheduledExecutorService stdout,
+      ScheduledExecutorService stderr)
+      throws Exception {
+    engine.useRemoteCompute = true;
+    setLeelazField(engine, "remoteTransport", transport);
+    Method currentBinding = Leelaz.class.getDeclaredMethod("currentReaderStreamBinding");
+    currentBinding.setAccessible(true);
+    Object binding = currentBinding.invoke(engine);
+    setField(binding, "stdoutExecutor", stdout);
+    setField(binding, "stderrExecutor", stderr);
+    setLeelazField(engine, "executor", stdout);
+    setLeelazField(engine, "executorErr", stderr);
+    return binding;
+  }
+
+  private static Object newJavaSshReaderBinding(
+      SSHController ssh,
+      ScheduledExecutorService stdout,
+      ScheduledExecutorService stderr,
+      long incarnation)
+      throws Exception {
+    return newJavaSshReaderBinding(ssh, stdout, stderr, null, incarnation);
+  }
+
+  private static Object newJavaSshReaderBinding(
+      SSHController ssh,
+      ScheduledExecutorService stdout,
+      ScheduledExecutorService stderr,
+      BufferedOutputStream output,
+      long incarnation)
+      throws Exception {
+    Class<?> bindingType = Class.forName(Leelaz.class.getName() + "$ReaderStreamBinding");
+    java.lang.reflect.Constructor<?> constructor = bindingType.getDeclaredConstructors()[0];
+    constructor.setAccessible(true);
+    Object binding = constructor.newInstance(null, null, output, null, null, ssh, incarnation);
+    setField(binding, "stdoutExecutor", stdout);
+    setField(binding, "stderrExecutor", stderr);
+    return binding;
+  }
+
+  private static boolean invokeStartReaderExecutors(
+      Leelaz engine,
+      Object binding,
+      ScheduledExecutorService stdout,
+      ScheduledExecutorService stderr)
+      throws Exception {
+    Method start =
+        Leelaz.class.getDeclaredMethod(
+            "startReaderExecutors",
+            binding.getClass(),
+            ScheduledExecutorService.class,
+            ScheduledExecutorService.class);
+    start.setAccessible(true);
+    return (boolean) start.invoke(engine, binding, stdout, stderr);
+  }
+
+  private static void invokeShutdownReaderTransport(Leelaz engine, Object binding)
+      throws Exception {
+    Method shutdown = Leelaz.class.getDeclaredMethod("shutdownReaderTransport", binding.getClass());
+    shutdown.setAccessible(true);
+    shutdown.invoke(engine, binding);
+  }
+
+  private static boolean awaitThreadState(Thread thread, Thread.State state, long timeoutMillis)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+    while (System.nanoTime() < deadline) {
+      if (thread.getState() == state) return true;
+      Thread.sleep(5L);
+    }
+    return thread.getState() == state;
+  }
+
   private static boolean hasRestartBootstrapReceiptContext(Leelaz engine) {
     try {
       @SuppressWarnings("unchecked")
@@ -4089,6 +4683,255 @@ class EngineManagerLifecycleReservationTest {
     public void setText(String text) {}
   }
 
+  private static final class QuietExitLeelaz extends Leelaz {
+    private QuietExitLeelaz() throws Exception {
+      super("");
+    }
+
+    @Override
+    public void leela0110StopPonder() {}
+  }
+
+  private static final class FallbackCleanupLeelaz extends Leelaz {
+    private FallbackCleanupLeelaz() throws Exception {
+      super("");
+    }
+
+    @Override
+    public void forceQuit() {}
+  }
+
+  private static final class FallbackProcess extends Process {
+    private final AtomicInteger forcibleDestroyCount = new AtomicInteger();
+    private volatile boolean alive = true;
+
+    @Override
+    public java.io.OutputStream getOutputStream() {
+      return new ByteArrayOutputStream();
+    }
+
+    @Override
+    public java.io.InputStream getInputStream() {
+      return java.io.InputStream.nullInputStream();
+    }
+
+    @Override
+    public java.io.InputStream getErrorStream() {
+      return java.io.InputStream.nullInputStream();
+    }
+
+    @Override
+    public int waitFor() {
+      alive = false;
+      return 0;
+    }
+
+    @Override
+    public boolean waitFor(long timeout, TimeUnit unit) {
+      return !alive;
+    }
+
+    @Override
+    public int exitValue() {
+      if (alive) {
+        throw new IllegalThreadStateException("controlled process still alive");
+      }
+      return 0;
+    }
+
+    @Override
+    public void destroy() {}
+
+    @Override
+    public Process destroyForcibly() {
+      forcibleDestroyCount.incrementAndGet();
+      alive = false;
+      return this;
+    }
+
+    @Override
+    public boolean isAlive() {
+      return alive;
+    }
+  }
+
+  private static final class BlockingPonderExitLeelaz extends Leelaz {
+    private final CountDownLatch stopPonderEntered = new CountDownLatch(1);
+    private final CountDownLatch allowStopPonder = new CountDownLatch(1);
+
+    private BlockingPonderExitLeelaz() throws Exception {
+      super("");
+    }
+
+    @Override
+    public void leela0110StopPonder() {
+      stopPonderEntered.countDown();
+      try {
+        if (!allowStopPonder.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("timed out waiting to release controlled stop-ponder");
+        }
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError(interrupted);
+      }
+    }
+  }
+
+  private static final class RecordingSshController extends SSHController {
+    private final boolean blockClose;
+    private final AtomicInteger closeCount = new AtomicInteger();
+    private final CountDownLatch closeEntered = new CountDownLatch(1);
+    private final CountDownLatch allowClose = new CountDownLatch(1);
+
+    private RecordingSshController(Leelaz owner) {
+      this(owner, false);
+    }
+
+    private RecordingSshController(Leelaz owner, boolean blockClose) {
+      super(owner, "127.0.0.1", "22");
+      this.blockClose = blockClose;
+    }
+
+    @Override
+    public void close() {
+      closeCount.incrementAndGet();
+      closeEntered.countDown();
+      if (!blockClose) return;
+      try {
+        if (!allowClose.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("timed out waiting to release controlled SSH close");
+        }
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError(interrupted);
+      }
+    }
+  }
+
+  private static final class RecordingTransport implements EngineTransport {
+    private final boolean blockClose;
+    private final AtomicInteger closeCount = new AtomicInteger();
+    private final CountDownLatch closeEntered = new CountDownLatch(1);
+    private final CountDownLatch allowClose = new CountDownLatch(1);
+
+    private RecordingTransport(boolean blockClose) {
+      this.blockClose = blockClose;
+    }
+
+    @Override
+    public void start() {}
+
+    @Override
+    public java.io.InputStream stdout() {
+      return null;
+    }
+
+    @Override
+    public java.io.OutputStream stdin() {
+      return null;
+    }
+
+    @Override
+    public java.io.InputStream stderr() {
+      return null;
+    }
+
+    @Override
+    public boolean isOpen() {
+      return true;
+    }
+
+    @Override
+    public String description() {
+      return "recording transport";
+    }
+
+    @Override
+    public void close() {
+      closeCount.incrementAndGet();
+      closeEntered.countDown();
+      if (!blockClose) return;
+      try {
+        if (!allowClose.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("timed out waiting to release controlled transport close");
+        }
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError(interrupted);
+      }
+    }
+  }
+
+  private static final class RecordingSubmissionExecutor extends ScheduledThreadPoolExecutor {
+    private final boolean gateFirstSubmission;
+    private final AtomicInteger submissionCount = new AtomicInteger();
+    private final CountDownLatch submissionEntered = new CountDownLatch(1);
+    private final CountDownLatch allowSubmission = new CountDownLatch(1);
+
+    private RecordingSubmissionExecutor(boolean gateFirstSubmission) {
+      super(1);
+      this.gateFirstSubmission = gateFirstSubmission;
+    }
+
+    @Override
+    public void execute(Runnable command) {
+      int submission = submissionCount.incrementAndGet();
+      if (gateFirstSubmission && submission == 1) {
+        submissionEntered.countDown();
+        try {
+          if (!allowSubmission.await(5, TimeUnit.SECONDS)) {
+            throw new AssertionError("timed out waiting to release controlled reader submission");
+          }
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError(interrupted);
+        }
+      }
+      super.execute(() -> {});
+    }
+  }
+
+  private static final class BudgetConsumingExecutor extends ScheduledThreadPoolExecutor {
+    private final long requiredWaitNanos;
+    private final AtomicInteger fallbackShutdownCount = new AtomicInteger();
+    private volatile boolean terminated;
+
+    private BudgetConsumingExecutor(long requiredWaitMillis) {
+      super(1);
+      requiredWaitNanos = TimeUnit.MILLISECONDS.toNanos(requiredWaitMillis);
+    }
+
+    @Override
+    public boolean isShutdown() {
+      return true;
+    }
+
+    @Override
+    public boolean isTerminated() {
+      return terminated;
+    }
+
+    @Override
+    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+      if (terminated) {
+        return true;
+      }
+      long allowedWaitNanos = Math.max(0L, unit.toNanos(timeout));
+      TimeUnit.NANOSECONDS.sleep(Math.min(requiredWaitNanos, allowedWaitNanos));
+      if (allowedWaitNanos >= requiredWaitNanos) {
+        terminated = true;
+      }
+      return terminated;
+    }
+
+    @Override
+    public List<Runnable> shutdownNow() {
+      fallbackShutdownCount.incrementAndGet();
+      terminated = true;
+      return super.shutdownNow();
+    }
+  }
+
   private static final class SilentGtpConsole extends GtpConsolePane {
     private SilentGtpConsole() {
       super((java.awt.Window) null);
@@ -4322,6 +5165,11 @@ class EngineManagerLifecycleReservationTest {
     private final Path loadSgfFailure;
     private final Path catchUpGate;
     private final Path fenceFailure;
+    private boolean cleanupLifecycleSettled;
+    private boolean cleanupProcessesStopped;
+    private boolean cleanupExecutorsStopped;
+    private List<ScheduledExecutorService> capturedReaderExecutors = List.of();
+    private boolean restored;
 
     private UpdateEnginesState(int targetWidth, int targetHeight) throws Exception {
       this(targetWidth, targetHeight, false);
@@ -4422,8 +5270,24 @@ class EngineManagerLifecycleReservationTest {
     }
 
     private void releaseStartup() throws Exception {
-      waitForLog(commandLog, "name", 10000L);
+      awaitReplacementProcessLaunch(30_000L);
+      waitForLog(commandLog, "name", 10_000L);
       Files.writeString(startupGate, "ready");
+    }
+
+    private void awaitReplacementProcessLaunch(long timeoutMillis) throws Exception {
+      assertFalse(manager.engineList == null || manager.engineList.isEmpty());
+      Leelaz replacement = manager.engineList.get(0);
+      long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+      Process replacementProcess = null;
+      while (replacementProcess == null && System.nanoTime() < deadline) {
+        replacementProcess = (Process) getLeelazField(replacement, "process");
+        if (replacementProcess == null) {
+          Thread.sleep(10L);
+        }
+      }
+      assertNotNull(replacementProcess, "timed out waiting for replacement process launch");
+      assertTrue(replacementProcess.isAlive(), "replacement process exited before sending name");
     }
 
     private void releaseBoardFence() throws Exception {
@@ -4441,6 +5305,9 @@ class EngineManagerLifecycleReservationTest {
     }
 
     private void restore() {
+      if (restored) {
+        return;
+      }
       try {
         Files.writeString(startupGate, "ready");
       } catch (Exception ignored) {
@@ -4453,17 +5320,24 @@ class EngineManagerLifecycleReservationTest {
         releaseCatchUp();
       } catch (Exception ignored) {
       }
-      if (manager.engineList != null) {
-        for (Leelaz engine : manager.engineList) {
-          try {
-            Process runningProcess = (Process) getLeelazField(engine, "process");
-            engine.forceQuit();
-            if (runningProcess != null) {
-              runningProcess.waitFor(2, TimeUnit.SECONDS);
-            }
-          } catch (Exception ignored) {
-          }
-        }
+      List<Leelaz> replacementEngines =
+          manager.engineList == null ? List.of() : new ArrayList<>(manager.engineList);
+      List<Leelaz> lifecycleParticipants = new ArrayList<>(replacementEngines);
+      lifecycleParticipants.add(previousForegroundEngine);
+      if (previousSecondaryEngine != null) {
+        lifecycleParticipants.add(previousSecondaryEngine);
+      }
+      cleanupLifecycleSettled = awaitReplacementLifecycleSettlement(lifecycleParticipants, 10_000L);
+      CapturedReaderExecutors executorCapture = captureReaderExecutors(replacementEngines);
+      capturedReaderExecutors = executorCapture.executors;
+      cleanupProcessesStopped = stopReplacementProcesses(replacementEngines);
+      boolean capturedExecutorsStopped =
+          awaitCapturedReaderExecutorsStopped(capturedReaderExecutors, 2_000L);
+      cleanupExecutorsStopped = executorCapture.complete && capturedExecutorsStopped;
+      if (!cleanupLifecycleSettled) {
+        // Drain late work for isolation, but never let test cleanup overwrite the production
+        // settlement result captured before forceQuit.
+        awaitReplacementLifecycleSettlement(lifecycleParticipants, 2_000L);
       }
       try {
         SwingUtilities.invokeAndWait(() -> {});
@@ -4493,6 +5367,194 @@ class EngineManagerLifecycleReservationTest {
       EngineManager.currentEngineNo2 = previousEngineNo2;
       Board.boardWidth = previousBoardWidth;
       Board.boardHeight = previousBoardHeight;
+      restored = true;
+      if (!cleanupLifecycleSettled || !cleanupProcessesStopped || !cleanupExecutorsStopped) {
+        throw new AssertionError(
+            "updateEngines teardown did not settle: lifecycleSettled="
+                + cleanupLifecycleSettled
+                + ", processesStopped="
+                + cleanupProcessesStopped
+                + ", executorsStopped="
+                + cleanupExecutorsStopped);
+      }
+    }
+
+    private static boolean awaitReplacementLifecycleSettlement(
+        List<Leelaz> lifecycleParticipants, long timeoutMillis) {
+      long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+      while (System.nanoTime() < deadline) {
+        boolean lifecycleActive = false;
+        for (Leelaz engine : lifecycleParticipants) {
+          if (engine != null && engine.hasExclusiveGtpWorkInProgress()) {
+            lifecycleActive = true;
+            break;
+          }
+        }
+        if (!lifecycleActive) {
+          return true;
+        }
+        try {
+          Thread.sleep(10L);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          return false;
+        }
+      }
+      for (Leelaz engine : lifecycleParticipants) {
+        if (engine != null && engine.hasExclusiveGtpWorkInProgress()) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    private static boolean stopReplacementProcesses(List<Leelaz> replacementEngines) {
+      return stopReplacementProcesses(replacementEngines, 2_000L);
+    }
+
+    private static boolean stopReplacementProcesses(
+        List<Leelaz> replacementEngines, long productionExitTimeoutMillis) {
+      boolean allStopped = true;
+      for (Leelaz engine : replacementEngines) {
+        Process runningProcess = null;
+        try {
+          runningProcess = (Process) getLeelazField(engine, "process");
+          engine.forceQuit();
+        } catch (Exception cleanupFailure) {
+          allStopped = false;
+        }
+        if (runningProcess == null) {
+          continue;
+        }
+        if (!awaitExactProcessExit(runningProcess, productionExitTimeoutMillis)) {
+          // This is test-only leak prevention. A fallback can make teardown safe, but it must
+          // never turn a missed production deadline green.
+          allStopped = false;
+          try {
+            runningProcess.destroyForcibly();
+          } catch (RuntimeException cleanupFailure) {
+            allStopped = false;
+          }
+          if (!awaitExactProcessExit(runningProcess, 2_000L)) {
+            allStopped = false;
+          }
+        }
+        if (runningProcess.isAlive()) {
+          allStopped = false;
+        }
+      }
+      return allStopped;
+    }
+
+    private static CapturedReaderExecutors captureReaderExecutors(List<Leelaz> replacementEngines) {
+      List<ScheduledExecutorService> captured = new ArrayList<>();
+      boolean complete = true;
+      for (Leelaz engine : replacementEngines) {
+        try {
+          Object binding = getLeelazField(engine, "readerStreamBinding");
+          if (binding == null) {
+            continue;
+          }
+          Object readerExecutorLock = getField(binding, "readerExecutorLock");
+          synchronized (readerExecutorLock) {
+            for (String fieldName : List.of("stdoutExecutor", "stderrExecutor")) {
+              ScheduledExecutorService service =
+                  (ScheduledExecutorService) getField(binding, fieldName);
+              if (service != null
+                  && captured.stream().noneMatch(capturedService -> capturedService == service)) {
+                captured.add(service);
+              }
+            }
+          }
+        } catch (Exception captureFailure) {
+          complete = false;
+        }
+      }
+      return new CapturedReaderExecutors(List.copyOf(captured), complete);
+    }
+
+    private static boolean awaitExactProcessExit(Process process, long timeoutMillis) {
+      boolean interrupted = false;
+      long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+      try {
+        while (process.isAlive()) {
+          long remaining = deadline - System.nanoTime();
+          if (remaining <= 0L) {
+            break;
+          }
+          try {
+            if (process.waitFor(remaining, TimeUnit.NANOSECONDS)) {
+              break;
+            }
+          } catch (InterruptedException interruption) {
+            interrupted = true;
+          }
+        }
+        return !process.isAlive();
+      } finally {
+        if (interrupted) {
+          Thread.currentThread().interrupt();
+        }
+      }
+    }
+
+    private static boolean awaitCapturedReaderExecutorsStopped(
+        List<ScheduledExecutorService> capturedExecutors, long timeoutMillis) {
+      boolean allStopped = true;
+      long productionDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+      List<ScheduledExecutorService> fallbackCleanup = new ArrayList<>();
+      for (ScheduledExecutorService service : capturedExecutors) {
+        boolean shutdownByProduction = service.isShutdown();
+        boolean terminatedByProduction =
+            shutdownByProduction && awaitExactExecutorTerminationUntil(service, productionDeadline);
+        if (!terminatedByProduction) {
+          allStopped = false;
+          fallbackCleanup.add(service);
+        }
+      }
+      for (ScheduledExecutorService service : fallbackCleanup) {
+        service.shutdownNow();
+      }
+      long fallbackDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+      for (ScheduledExecutorService service : fallbackCleanup) {
+        awaitExactExecutorTerminationUntil(service, fallbackDeadline);
+      }
+      return allStopped;
+    }
+
+    private static final class CapturedReaderExecutors {
+      private final List<ScheduledExecutorService> executors;
+      private final boolean complete;
+
+      private CapturedReaderExecutors(List<ScheduledExecutorService> executors, boolean complete) {
+        this.executors = executors;
+        this.complete = complete;
+      }
+    }
+
+    private static boolean awaitExactExecutorTerminationUntil(
+        ScheduledExecutorService service, long deadlineNanos) {
+      boolean interrupted = false;
+      try {
+        while (!service.isTerminated()) {
+          long remaining = deadlineNanos - System.nanoTime();
+          if (remaining <= 0L) {
+            break;
+          }
+          try {
+            if (service.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
+              break;
+            }
+          } catch (InterruptedException interruption) {
+            interrupted = true;
+          }
+        }
+        return service.isTerminated();
+      } finally {
+        if (interrupted) {
+          Thread.currentThread().interrupt();
+        }
+      }
     }
 
     private static <T> T allocateUnchecked(Class<T> type) {
