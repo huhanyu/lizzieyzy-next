@@ -33,6 +33,10 @@ final class KomiHoldSession {
   private final Runnable holdStep;
   private final int initialDelayMs;
   private final int repeatDelayMs;
+  private volatile boolean holding;
+  private boolean focusManagerBound;
+  private Timer timer;
+  private Window trackedWindow;
   private final MouseAdapter mouseAdapter =
       new MouseAdapter() {
         @Override
@@ -101,11 +105,6 @@ final class KomiHoldSession {
           stopHold();
         }
       };
-
-  private volatile boolean holding;
-  private boolean focusManagerBound;
-  private Timer timer;
-  private Window trackedWindow;
 
   static KomiHoldSession attach(AbstractButton control, Runnable holdStep) {
     return attach(control, holdStep, INITIAL_DELAY_MS, REPEAT_DELAY_MS);
