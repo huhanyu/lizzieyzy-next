@@ -173,6 +173,22 @@ class MacOSSigningSecurityTest(unittest.TestCase):
         self.assertIn('rm -f -- "$cert_path"', cleanup)
         self.assertIn('security delete-keychain "$keychain"', cleanup)
 
+    def test_dmg_retry_stops_on_unsafe_detach_status(self) -> None:
+        retry_start = self.script.index("create_dmg_with_retry() {")
+        retry_end = self.script.index("\n}\n", retry_start)
+        retry = self.script[retry_start:retry_end]
+
+        self.assertIn("local unsafe_detach_status=70", retry)
+        self.assertIn('helper_status=$?', retry)
+        self.assertIn(
+            '[[ "$helper_status" -eq "$unsafe_detach_status" ]]', retry
+        )
+        self.assertIn('return "$helper_status"', retry)
+        self.assertLess(
+            retry.index('[[ "$helper_status" -eq "$unsafe_detach_status" ]]'),
+            retry.index('sleep "$attempt"'),
+        )
+
     def test_signing_failure_blocks_both_macos_release_uploads(self) -> None:
         for workflow_name in (
             "build-macos-amd64-release.yml",

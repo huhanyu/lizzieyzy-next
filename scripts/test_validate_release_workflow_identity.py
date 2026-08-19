@@ -348,7 +348,8 @@ class ReleaseWorkflowIdentityWiringTest(unittest.TestCase):
         audited_guard = (
             'if [[ "$RELEASE_TAG" == "next-2026-08-19.1" || '
             '"$RELEASE_TAG" == "next-2026-08-19.2" || '
-            '"$RELEASE_TAG" == "next-2026-08-19.3" ]]; then'
+            '"$RELEASE_TAG" == "next-2026-08-19.3" || '
+            '"$RELEASE_TAG" == "next-2026-08-19.4" ]]; then'
         )
         self.assertEqual(workflow.count(audited_guard), 2)
         generate_step = workflow.index("Generate release notes")

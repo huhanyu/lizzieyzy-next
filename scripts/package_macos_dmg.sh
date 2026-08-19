@@ -64,6 +64,42 @@ if [[ ! -x "$DMG_VALIDATE_SCRIPT" ]]; then
   exit 1
 fi
 
+create_drag_dmg_with_retry() {
+  local volume_name="$1"
+  local source_folder="$2"
+  local output_dmg="$3"
+  local architecture_label="$4"
+  local attempt
+  local helper_status
+  local unsafe_detach_status=70
+
+  for attempt in 1 2 3; do
+    rm -f "$output_dmg"
+    echo "Creating fresh drag-install DMG (attempt $attempt/3)..." >&2
+    if "$DRAG_DMG_SCRIPT" \
+      "$volume_name" \
+      "$source_folder" \
+      "$output_dmg" \
+      "$architecture_label"; then
+      return 0
+    else
+      helper_status=$?
+    fi
+    rm -f "$output_dmg"
+    if [[ "$helper_status" -eq "$unsafe_detach_status" ]]; then
+      echo "Drag-install DMG helper could not safely detach its writable image; refusing to retry." >&2
+      return "$helper_status"
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "Drag-install DMG attempt $attempt/3 failed; retrying with a fresh work directory..." >&2
+      sleep "$attempt"
+    fi
+  done
+
+  echo "Unable to create the drag-install DMG after 3 fresh attempts." >&2
+  return 1
+}
+
 if [[ ! -f "$JAR_PATH" ]]; then
   echo "Jar not found: $JAR_PATH"
   echo "Build first: mvn -DskipTests package"
@@ -243,7 +279,7 @@ INSTALL_NOTE="$META_DIR/${DATE_TAG}-${PUBLIC_ARCH_TAG}-install.txt"
 SHA256_FILE="$META_DIR/${DATE_TAG}-${PUBLIC_ARCH_TAG}-sha256.txt"
 
 mkdir -p "$ROOT_DIR/dist/release"
-"$DRAG_DMG_SCRIPT" \
+create_drag_dmg_with_retry \
   "$APP_NAME - $DMG_ARCH_LABEL" \
   "$APP_IMAGE_DIR" \
   "$FINAL_DMG" \
