@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -144,9 +145,65 @@ class AnalysisResourceCoordinatorTest {
     }
   }
 
+  @Test
+  void staleProcessStopCannotRemoveReplacementDiagnosticsRegistration() throws Exception {
+    Path output = tempDir.resolve("generation-safe-diagnostics.jsonl");
+    String previousEnabled = System.getProperty("lizzie.analysis.diagnostics");
+    String previousPath = System.getProperty("lizzie.analysis.diagnostics.path");
+    System.setProperty("lizzie.analysis.diagnostics", "true");
+    System.setProperty("lizzie.analysis.diagnostics.path", output.toString());
+    Object owner = new Object();
+    ControllableProcess retired = new ControllableProcess(101L);
+    ControllableProcess replacement = new ControllableProcess(202L);
+    try {
+      AnalysisResourceCoordinator.processStarted(
+          owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, "retired", retired);
+      AnalysisResourceCoordinator.processStarted(
+          owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, "replacement", replacement);
+
+      retired.destroy();
+      AnalysisResourceCoordinator.processStopped(
+          owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, retired);
+      replacement.destroy();
+      AnalysisResourceCoordinator.processStopped(
+          owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, replacement);
+
+      List<JSONObject> stoppedEvents =
+          Files.readAllLines(output, StandardCharsets.UTF_8).stream()
+              .map(JSONObject::new)
+              .filter(event -> "process-stopped".equals(event.getString("event")))
+              .toList();
+      assertEquals(1, stoppedEvents.size());
+      assertEquals(202L, stoppedEvents.get(0).getJSONObject("details").getLong("pid"));
+    } finally {
+      retired.destroy();
+      replacement.destroy();
+      AnalysisResourceCoordinator.activeLocalComputeProcessCount();
+      restoreSystemProperty("lizzie.analysis.diagnostics", previousEnabled);
+      restoreSystemProperty("lizzie.analysis.diagnostics.path", previousPath);
+    }
+  }
+
+  private static void restoreSystemProperty(String name, String value) {
+    if (value == null) {
+      System.clearProperty(name);
+    } else {
+      System.setProperty(name, value);
+    }
+  }
+
   private static final class ControllableProcess extends Process {
     private volatile boolean alive = true;
     private final CompletableFuture<Process> exit = new CompletableFuture<>();
+    private final long pid;
+
+    private ControllableProcess() {
+      this(-1L);
+    }
+
+    private ControllableProcess(long pid) {
+      this.pid = pid;
+    }
 
     @Override
     public OutputStream getOutputStream() {
@@ -192,6 +249,11 @@ class AnalysisResourceCoordinatorTest {
     @Override
     public CompletableFuture<Process> onExit() {
       return exit;
+    }
+
+    @Override
+    public long pid() {
+      return pid;
     }
   }
 }

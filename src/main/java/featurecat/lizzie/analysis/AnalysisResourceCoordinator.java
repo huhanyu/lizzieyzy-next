@@ -128,15 +128,18 @@ public final class AnalysisResourceCoordinator {
     if (!diagnosticsEnabled()) {
       return;
     }
+    long stoppedPid = processId(process);
     synchronized (REGISTERED_PROCESSES) {
-      if (REGISTERED_PROCESSES.remove(owner) == null) {
+      Long registeredPid = REGISTERED_PROCESSES.get(owner);
+      if (registeredPid == null || registeredPid.longValue() != stoppedPid) {
         return;
       }
+      REGISTERED_PROCESSES.remove(owner);
     }
     JSONObject details = new JSONObject();
     details.put("owner", ownerId(owner));
     details.put("purpose", normalizedPurpose(purpose).name());
-    details.put("pid", processId(process));
+    details.put("pid", stoppedPid);
     appendEvent("process-stopped", details);
     synchronized (FOREGROUND_SAMPLES) {
       FOREGROUND_SAMPLES.remove(owner);
@@ -161,6 +164,12 @@ public final class AnalysisResourceCoordinator {
         }
       }
       return alive;
+    }
+  }
+
+  static int rawLocalComputeProcessCountForTesting() {
+    synchronized (ACTIVE_LOCAL_COMPUTE_PROCESSES) {
+      return ACTIVE_LOCAL_COMPUTE_PROCESSES.size();
     }
   }
 
