@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Checkout exact release source
+      - name: Checkout request discovery source
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -62,19 +62,21 @@ jobs:
             request_file="${requests[0]}"
           fi
 
-          case "$request_file" in
-            .github/release-requests/*.json) ;;
-            *)
-              echo "Request must be a JSON file under .github/release-requests" >&2
-              exit 1
-              ;;
-          esac
+          if [[ ! "$request_file" =~ ^\.github/release-requests/[A-Za-z0-9._-]+\.json$ ]]; then
+            echo "Request must match .github/release-requests/[A-Za-z0-9._-]+.json" >&2
+            exit 1
+          fi
           test -f "$request_file"
           release_tag="$(
             python3 -c \
               'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_tag"])' \
               "$request_file"
           )"
+          if [[ ! "$release_tag" =~ ^next-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[1-9][0-9]*$ ]]; then
+            echo "Invalid release tag in $request_file" >&2
+            exit 1
+          fi
+          request_sha256="$(sha256sum "$request_file" | awk '{print $1}')"
           target_sha="$TARGET_SHA"
           if git show-ref --verify --quiet "refs/tags/$release_tag"; then
             target_sha="$(git rev-parse "refs/tags/${release_tag}^{commit}")"
@@ -83,19 +85,65 @@ jobs:
             exit 1
           fi
           echo "request_file=$request_file" >> "$GITHUB_OUTPUT"
+          echo "request_sha256=$request_sha256" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
           echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact target SHA
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.request.outputs.target_sha }}
+
+      - name: Revalidate request in exact target tree
+        shell: bash
+        env:
+          RELEASE_REQUEST_FILE: ${{ steps.request.outputs.request_file }}
+          EXPECTED_REQUEST_SHA256: ${{ steps.request.outputs.request_sha256 }}
+          EXPECTED_RELEASE_TAG: ${{ steps.request.outputs.release_tag }}
+          RELEASE_TARGET_SHA: ${{ steps.request.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_REQUEST_FILE" =~ ^\.github/release-requests/[A-Za-z0-9._-]+\.json$ ]]; then
+            echo "Request path changed after exact-target checkout" >&2
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$RELEASE_TARGET_SHA"
+          test -f "$RELEASE_REQUEST_FILE"
+          actual_request_sha256="$(sha256sum "$RELEASE_REQUEST_FILE" | awk '{print $1}')"
+          if [[ "$actual_request_sha256" != "$EXPECTED_REQUEST_SHA256" ]]; then
+            echo "Release request content differs from the exact target tree" >&2
+            exit 1
+          fi
+          actual_release_tag="$(
+            python3 -c \
+              'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_tag"])' \
+              "$RELEASE_REQUEST_FILE"
+          )"
+          if [[ "$actual_release_tag" != "$EXPECTED_RELEASE_TAG" ]]; then
+            echo "Release tag differs after exact-target checkout" >&2
+            exit 1
+          fi
 
       - name: Test release metadata and fail-closed publishing
         run: |
           python3 -m unittest \
             scripts.test_publish_release_request \
-            scripts.test_generate_release_notes
+            scripts.test_generate_release_notes \
+            scripts.test_release_asset_provenance \
+            scripts.test_validate_release_notes \
+            scripts.test_macos_signing_security \
+            scripts.test_validate_windows_release_assets \
+            scripts.test_validate_release_workflow_identity
 
       - name: Build, verify, and publish the pre-release
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_REQUEST_FILE: ${{ steps.request.outputs.request_file }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TARGET_SHA: ${{ steps.request.outputs.target_sha }}
         run: |
           python3 scripts/publish_release_request.py \
-            --request "${{ steps.request.outputs.request_file }}" \
-            --repository "${{ github.repository }}" \
-            --target-sha "${{ steps.request.outputs.target_sha }}"
+            --request "$RELEASE_REQUEST_FILE" \
+            --repository "$RELEASE_REPOSITORY" \
+            --target-sha "$RELEASE_TARGET_SHA"

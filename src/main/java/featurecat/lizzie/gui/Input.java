@@ -412,7 +412,11 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         break;
 
       case VK_P:
-        Lizzie.board.pass();
+        if (Lizzie.frame.humanSlGame != null && !Lizzie.frame.humanSlGame.isFinished()) {
+          Lizzie.frame.humanSlGame.humanPass();
+        } else {
+          Lizzie.board.pass();
+        }
         break;
 
       case VK_COMMA:

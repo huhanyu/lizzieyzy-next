@@ -357,11 +357,13 @@ public final class HumanSlGameController {
     aiThinking = true;
     Lizzie.frame.updateHumanSlTrainingBar();
     long generation = requestGeneration.get();
+    Board requestBoard = Lizzie.board;
+    BoardHistoryNode positionNode = requestBoard.getHistory().getCurrentHistoryNode();
+    long positionContextRevision = requestBoard.getContextRevision();
     try {
       gameExecutor.execute(
           () -> {
             long startedAt = System.currentTimeMillis();
-            BoardHistoryNode positionNode = Lizzie.board.getHistory().getCurrentHistoryNode();
             Optional<String> move = Optional.empty();
             for (int attempt = 0;
                 attempt < AI_MOVE_RETRIES
@@ -383,12 +385,14 @@ public final class HumanSlGameController {
                 runner.cancelActiveRequests();
               }
             }
-            waitMinimumThinkTime(startedAt, generation);
+            waitMinimumThinkTime(
+                startedAt, generation, requestBoard, positionNode, positionContextRevision);
             Optional<String> resolved = move;
             SwingUtilities.invokeLater(
                 () -> {
                   if (generation == requestGeneration.get()) {
-                    applyAiMove(resolved);
+                    applyAiMoveIfCurrent(
+                        resolved, requestBoard, positionNode, positionContextRevision);
                   }
                 });
           });
@@ -397,8 +401,15 @@ public final class HumanSlGameController {
     }
   }
 
-  private void waitMinimumThinkTime(long startedAt, long generation) {
-    if (finished || generation != requestGeneration.get()) {
+  private void waitMinimumThinkTime(
+      long startedAt,
+      long generation,
+      Board requestBoard,
+      BoardHistoryNode positionNode,
+      long positionContextRevision) {
+    if (finished
+        || generation != requestGeneration.get()
+        || !isCurrentAiRequestPosition(requestBoard, positionNode, positionContextRevision)) {
       return;
     }
     long target =
@@ -415,6 +426,28 @@ public final class HumanSlGameController {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
+
+  private void applyAiMoveIfCurrent(
+      Optional<String> move,
+      Board requestBoard,
+      BoardHistoryNode positionNode,
+      long positionContextRevision) {
+    if (!isCurrentAiRequestPosition(requestBoard, positionNode, positionContextRevision)) {
+      // A coaching game owns one live board position. If another action navigated or replaced that
+      // position while HumanSL was thinking, ending the session is safer than applying a response
+      // to an unrelated node or leaving a half-active controller behind.
+      abort();
+      return;
+    }
+    applyAiMove(move);
+  }
+
+  private boolean isCurrentAiRequestPosition(
+      Board requestBoard, BoardHistoryNode positionNode, long positionContextRevision) {
+    return Lizzie.board == requestBoard
+        && requestBoard.getContextRevision() == positionContextRevision
+        && requestBoard.getHistory().getCurrentHistoryNode() == positionNode;
   }
 
   private void applyAiMove(Optional<String> move) {

@@ -11358,13 +11358,20 @@ public class LizzieFrame extends JFrame {
     runWithForegroundEngineModeReservation(this::startEngineGameDialogReserved);
   }
 
-  private void startEngineGameDialogReserved() {
+  protected void startEngineGameDialogReserved() {
     if (EngineManager.isEngineGame) {
       Utils.showMsg(
           Lizzie.resourceBundle.getString(
               "LizzieFrame.engineGameStopFirstHint")); // "请等待当前引擎对战结束,或手动终止对局");
       return;
     }
+    // Opening another mode is an explicit ownership transfer; cancelling its dialog does not
+    // resume the previous coaching session.
+    endHumanSlGameIfActive();
+    showEngineGameDialogAfterModeTransition();
+  }
+
+  protected void showEngineGameDialogAfterModeTransition() {
     if (Lizzie.frame.isPlayingAgainstLeelaz || Lizzie.frame.isAnaPlayingAgainstLeelaz) {
       Lizzie.frame.togglePonderMannul();
     }
@@ -11403,7 +11410,20 @@ public class LizzieFrame extends JFrame {
       Lizzie.leelaz.togglePonder();
       isPondering = true;
     }
+    // A retained mode action owns the foreground engine once this point is reached. Cancelling
+    // its dialog must not leave the previous AI Coach alive beside a later mode.
     Lizzie.frame.stopAiPlayingAndPolicy();
+    // Ending AI Coach restores the analysis state that existed before coaching, which may include
+    // pondering. Keep the replacement mode's dialog quiet and restore it only if that dialog is
+    // cancelled.
+    if (Lizzie.leelaz.isPondering()) {
+      Lizzie.leelaz.togglePonder();
+      isPondering = true;
+    }
+    showAnalyzeGameDialogAfterModeTransition(isPondering);
+  }
+
+  protected void showAnalyzeGameDialogAfterModeTransition(boolean wasPondering) {
     // Lizzie.frame.isPlayingAgainstLeelaz = false;
     // GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
     NewAnaGameDialog newgame = new NewAnaGameDialog(this);
@@ -11411,7 +11431,7 @@ public class LizzieFrame extends JFrame {
     newgame.setVisible(true);
     newgame.dispose();
     if (newgame.isCancelled()) {
-      if (isPondering) Lizzie.leelaz.togglePonder();
+      if (wasPondering) Lizzie.leelaz.togglePonder();
       Lizzie.frame.isAnaPlayingAgainstLeelaz = false;
       return;
     }
@@ -11440,7 +11460,9 @@ public class LizzieFrame extends JFrame {
       showUnsupportedWebSocketAdvancedClock();
       return;
     }
-    if (isPlayingAgainstLeelaz || isAnaPlayingAgainstLeelaz) {
+    if (isPlayingAgainstLeelaz
+        || isAnaPlayingAgainstLeelaz
+        || (humanSlGame != null && !humanSlGame.isFinished())) {
       stopAiPlayingAndPolicy();
     }
     if (Lizzie.config.limitMyTime)
@@ -12018,10 +12040,17 @@ public class LizzieFrame extends JFrame {
   }
 
   public boolean stopAiPlayingAndPolicy() {
+    boolean wasHumanSlGame =
+        Lizzie.frame.humanSlGame != null && !Lizzie.frame.humanSlGame.isFinished();
+    if (wasHumanSlGame) {
+      Lizzie.frame.endHumanSlGameIfActive();
+    }
     toolbar.isPkStop = false;
     Lizzie.leelaz.isGamePaused = false;
     boolean isGaming =
-        Lizzie.frame.isPlayingAgainstLeelaz || Lizzie.frame.isAnaPlayingAgainstLeelaz;
+        wasHumanSlGame
+            || Lizzie.frame.isPlayingAgainstLeelaz
+            || Lizzie.frame.isAnaPlayingAgainstLeelaz;
     if (Lizzie.frame.isShowingHeatmap) {
       Lizzie.leelaz.toggleHeatmap(true);
       Lizzie.leelaz.notPondering();

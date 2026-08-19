@@ -52,7 +52,7 @@ Quick rule:
 
 ### Legacy tag note
 
-Some older tags still show transitional zip names or compatibility packages, but the current maintained release now centers on 15 primary assets: 10 Windows, 2 macOS, and 3 Linux packages. TensorRT acceleration is no longer published as a GitHub Release asset; it is installed on demand inside the app.
+Some older tags still show transitional zip names or compatibility packages, but the current maintained release now centers on 15 first-download assets: 10 Windows, 2 macOS, and 3 Linux packages. In-app installation is the regular TensorRT path; the Release also retains an advanced optional offline split package with its README, manifest, and checksum file.
 
 ## Windows
 
@@ -108,7 +108,7 @@ If your GPU is an RTX 5070, RTX 5080, or RTX 5090:
 2. Extract it and run `LizzieYzy Next NVIDIA 50 CUDA.exe`.
 3. If you prefer an installer, use `windows64.nvidia50.cuda.installer.exe`.
 
-TensorRT acceleration is no longer shipped as a huge standalone package. RTX 20/30/40/50 users can launch the matching NVIDIA/CUDA package, open `KataGo Auto Setup`, and click `Install TensorRT acceleration`. The install UI detects the local NVIDIA GPU / Compute Capability and shows recommended, try, not recommended, or unknown status. RTX 50 is the newer architecture and remains the key experimental acceleration path; GTX 10 series and older cards should prefer CUDA/OpenCL. The app downloads, verifies, and configures files from official KataGo / NVIDIA sources only; users who do not click it will not download TensorRT.
+TensorRT acceleration is no longer a huge standalone package recommended to regular users. RTX 20/30/40/50 users can launch the matching NVIDIA/CUDA package, open `KataGo Auto Setup`, and click `Install TensorRT acceleration`. The install UI detects the local NVIDIA GPU / Compute Capability and shows recommended, try, not recommended, or unknown status. RTX 50 is the newer architecture and remains the key experimental acceleration path; GTX 10 series and older cards should prefer CUDA/OpenCL. The app downloads, verifies, and configures files from official KataGo / NVIDIA sources only; users who do not click it will not download TensorRT. Advanced users who need a fully offline install can instead download every `.7z.00N` split asset from the Release, verify it against the matching README, manifest, and SHA-256 file, and extract from `.001`.
 
 ### Windows x64 no-engine build
 

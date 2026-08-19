@@ -3,9 +3,16 @@ package featurecat.lizzie.analysis;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import featurecat.lizzie.Config;
+import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.EngineStartupStatus;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.rules.Board;
+import java.awt.GraphicsEnvironment;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +33,50 @@ class EngineStartupDialogPolicyTest {
   void secondaryEngineDiagnosticsRemainAvailableOutsideFirstLaunch() {
     assertTrue(Leelaz.shouldOpenInteractiveDiagnostic(false, false));
     assertFalse(Leelaz.shouldOpenInteractiveDiagnostic(false, true));
+  }
+
+  @Test
+  void headlessSecondaryDiagnosticPreservesStatusAndClearsPendingEngineGame() throws Exception {
+    assumeTrue(GraphicsEnvironment.isHeadless());
+    Config previousConfig = Lizzie.config;
+    Leelaz previousPrimary = Lizzie.leelaz;
+    EngineManager previousManager = Lizzie.engineManager;
+    Board previousBoard = Lizzie.board;
+    LizzieFrame previousFrame = Lizzie.frame;
+    boolean previousEngineGame = EngineManager.isEngineGame;
+    boolean previousPreEngineGame = EngineManager.isPreEngineGame;
+    boolean previousFirstLaunch = forceFirstLaunchSession(false);
+    try {
+      Lizzie.config =
+          ConfigTestHelper.createForTests(tempDir.resolve("headless-secondary-diagnostic"));
+      Lizzie.config.autoCheckEngineAlive = false;
+      Leelaz primary = new Leelaz("");
+      Leelaz secondary = new Leelaz("");
+      Lizzie.leelaz = primary;
+      Lizzie.engineManager = new EngineManager(List.of(primary, secondary));
+      Lizzie.board = new Board();
+      Lizzie.board.isPkBoard = true;
+      Lizzie.frame = null;
+      EngineManager.isEngineGame = false;
+      EngineManager.isPreEngineGame = true;
+      Lizzie.engineStartupStatus.ready();
+
+      secondary.tryToDignostic("controlled headless secondary failure", false);
+
+      assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
+      assertFalse(EngineManager.isPreEngineGame);
+      assertFalse(Lizzie.board.isPkBoard);
+    } finally {
+      Lizzie.config = previousConfig;
+      Lizzie.leelaz = previousPrimary;
+      Lizzie.engineManager = previousManager;
+      Lizzie.board = previousBoard;
+      Lizzie.frame = previousFrame;
+      EngineManager.isEngineGame = previousEngineGame;
+      EngineManager.isPreEngineGame = previousPreEngineGame;
+      forceFirstLaunchSession(previousFirstLaunch);
+      Lizzie.engineStartupStatus.ready();
+    }
   }
 
   @Test
@@ -160,6 +211,14 @@ class EngineStartupDialogPolicyTest {
             "publishBundledStartupStatus", String.class, String.class);
     method.setAccessible(true);
     method.invoke(engine, statusKey, statusFallback);
+  }
+
+  private static boolean forceFirstLaunchSession(boolean value) throws Exception {
+    Field field = Lizzie.class.getDeclaredField("firstLaunchSession");
+    field.setAccessible(true);
+    boolean previous = field.getBoolean(null);
+    field.setBoolean(null, value);
+    return previous;
   }
 
 }

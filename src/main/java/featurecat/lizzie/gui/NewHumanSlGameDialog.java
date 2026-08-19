@@ -24,6 +24,7 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
@@ -45,6 +46,7 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JToggleButton;
 import javax.swing.KeyStroke;
@@ -99,13 +101,16 @@ public final class NewHumanSlGameDialog extends JDialog {
       setIconImage(ImageIO.read(MoreEngines.class.getResourceAsStream("/assets/logo.png")));
     } catch (IOException ignored) {
     }
-    setContentPane(buildContent());
+    JScrollPane contentScroll = new JScrollPane(buildContent());
+    contentScroll.setBorder(null);
+    contentScroll.getViewport().setBackground(HumanSlTrainingStyle.BACKGROUND);
+    contentScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+    contentScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+    setContentPane(contentScroll);
     installBehavior();
     refreshModelStatus();
     pack();
-    setMinimumSize(new Dimension(860, 390));
-    setSize(Math.max(920, getWidth()), Math.max(410, getHeight()));
-    setLocationRelativeTo(owner);
+    fitToScreen(null, 410);
   }
 
   private JComponent buildContent() {
@@ -492,8 +497,17 @@ public final class NewHumanSlGameDialog extends JDialog {
     Dimension current = getSize();
     pack();
     int contentHeight = moreButton.isSelected() || downloading ? 500 : 410;
-    setSize(Math.max(current.width, 920), Math.max(getHeight(), contentHeight));
+    fitToScreen(current, contentHeight);
+  }
+
+  private void fitToScreen(Dimension current, int preferredHeight) {
+    Rectangle usableBounds = HumanSlDialogBounds.usableBounds(getOwner(), this);
+    Dimension target =
+        HumanSlDialogBounds.fit(getSize(), current, usableBounds, 920, preferredHeight);
+    setMinimumSize(HumanSlDialogBounds.minimum(target, 860, 390));
+    setSize(target);
     setLocationRelativeTo(getOwner());
+    HumanSlDialogBounds.keepOnScreen(this, usableBounds);
   }
 
   private void updateTrainingSummary() {

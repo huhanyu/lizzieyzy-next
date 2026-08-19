@@ -2,21 +2,30 @@ package featurecat.lizzie.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.util.KataGoAutoSetupHelper;
+import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupSnapshot;
 import java.awt.CardLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Rectangle;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class KataGoAutoSetupDialogLayoutTest {
   @Test
@@ -309,5 +318,127 @@ class KataGoAutoSetupDialogLayoutTest {
     assertEquals(
         KataGoAutoSetupDialog.WeightSwitchPreparation.BLOCKED_BY_ENGINE_TASK,
         KataGoAutoSetupDialog.decideWeightSwitchPreparation(true, false, false, true, false));
+  }
+
+  @Test
+  void acceptedWeightSwitchPublishesTargetImmediatelyOnTheEventDispatchThread(@TempDir Path tempDir)
+      throws IOException {
+    SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
+    AtomicReference<SetupSnapshot> displayed = new AtomicReference<SetupSnapshot>(current);
+    AtomicBoolean updatedOnEdt = new AtomicBoolean(false);
+
+    KataGoAutoSetupDialog.runWeightSwitchUiUpdate(
+        () -> {
+          displayed.set(
+              KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+                  displayed.get(),
+                  requested,
+                  null,
+                  KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
+                  false));
+          updatedOnEdt.set(SwingUtilities.isEventDispatchThread());
+        });
+
+    assertSame(requested, displayed.get(), "the target must be visible before readiness polling");
+    assertTrue(updatedOnEdt.get(), "Swing model and labels must only be updated on the EDT");
+  }
+
+  @Test
+  void terminalFailedWeightSwitchReconcilesWithTheAuthoritativeSetupSnapshot(
+      @TempDir Path tempDir)
+      throws IOException {
+    SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
+    SetupSnapshot authoritative = createSetupSnapshot(tempDir, "authoritative.bin.gz");
+    SetupSnapshot displayed =
+        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+            current,
+            requested,
+            null,
+            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
+            false);
+
+    displayed =
+        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+            displayed,
+            requested,
+            authoritative,
+            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.FAILED,
+            false);
+
+    assertSame(
+        authoritative,
+        displayed,
+        "a terminal failure must replace the optimistic object with the latest setup");
+    assertEquals("authoritative.bin.gz", displayed.activeWeightPath.getFileName().toString());
+  }
+
+  @Test
+  void timedOutWeightSwitchKeepsAcceptedTargetWhileItRemainsPrimary(@TempDir Path tempDir)
+      throws IOException {
+    SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
+    SetupSnapshot staleAuthoritative = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot displayed =
+        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+            current,
+            requested,
+            null,
+            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
+            false);
+
+    displayed =
+        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+            displayed,
+            requested,
+            staleAuthoritative,
+            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.FAILED,
+            true);
+
+    assertSame(
+        requested,
+        displayed,
+        "a 35-second soft deadline must not restore stale discovery while the target is still the pending primary");
+    assertEquals("requested.bin.gz", displayed.activeWeightPath.getFileName().toString());
+  }
+
+  @Test
+  void delayedSuccessfulWeightSwitchKeepsTheTargetModelCurrent(@TempDir Path tempDir)
+      throws IOException {
+    SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
+    SetupSnapshot staleAuthoritative = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot displayed =
+        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+            current,
+            requested,
+            null,
+            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
+            false);
+
+    displayed =
+        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
+            displayed,
+            requested,
+            staleAuthoritative,
+            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.SUCCEEDED,
+            false);
+
+    assertSame(requested, displayed);
+    assertEquals("requested.bin.gz", displayed.activeWeightPath.getFileName().toString());
+  }
+
+  private SetupSnapshot createSetupSnapshot(Path tempDir, String weightFileName)
+      throws IOException {
+    Path engine = tempDir.resolve("katago.exe");
+    Path gtpConfig = tempDir.resolve("gtp.cfg");
+    Path analysisConfig = tempDir.resolve("analysis.cfg");
+    Path weight = tempDir.resolve(weightFileName);
+    Files.writeString(engine, "test engine");
+    Files.writeString(gtpConfig, "test gtp config");
+    Files.writeString(analysisConfig, "test analysis config");
+    Files.writeString(weight, "test weight");
+    return KataGoAutoSetupHelper.inspectSelectedLocalKataGo(engine, gtpConfig, weight).toSnapshot();
   }
 }

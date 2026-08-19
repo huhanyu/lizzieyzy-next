@@ -114,7 +114,7 @@ Quick rule:
 - Windows: start with `*windows64.opencl.portable.zip`
 - Windows + RTX 20/30/40 NVIDIA GPU: start with `*windows64.nvidia.portable.zip`
 - Windows + RTX 5070/5080/5090: start with `*windows64.nvidia50.cuda.portable.zip`
-- Windows + RTX 20/30/40/50 and TensorRT testing: do not look for a separate release asset; install it on demand from KataGo Auto Setup after launching the matching NVIDIA/CUDA package; the app will detect GPU and Compute Capability before recommending it
+- Windows + RTX 20/30/40/50 and TensorRT testing: regular users should install it on demand from KataGo Auto Setup after launching the matching NVIDIA/CUDA package; advanced offline users may instead download every `*windows64.nvidia.tensorrt.portable.7z.00N` split asset from the Release and extract from `.001`
 - GTX 10 series and older NVIDIA cards: prefer CUDA/OpenCL instead of TensorRT
 - OpenCL unstable: switch to `*windows64.with-katago.portable.zip`
 - Mac: choose Apple Silicon or Intel first

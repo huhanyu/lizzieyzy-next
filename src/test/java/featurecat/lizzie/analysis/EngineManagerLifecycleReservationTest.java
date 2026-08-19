@@ -4315,7 +4315,7 @@ class EngineManagerLifecycleReservationTest {
     private final UpdateForegroundLeelaz previousSecondaryEngine;
     private final UpdateBoard board;
     private final EngineManager manager;
-    private final Path commandScript;
+    private final String updateEngineCommand;
     private final Path commandLog;
     private final Path startupGate;
     private final Path boardFenceGate;
@@ -4349,7 +4349,6 @@ class EngineManagerLifecycleReservationTest {
         previousSecondaryEngine.started = true;
         previousSecondaryEngine.isLoaded = true;
       }
-      commandScript = Files.createTempFile("lizzie-update-engine-", ".sh");
       commandLog = Files.createTempFile("lizzie-update-engine-", ".log");
       startupGate = Files.createTempFile("lizzie-update-engine-startup-", ".gate");
       boardFenceGate = Files.createTempFile("lizzie-update-engine-fence-", ".gate");
@@ -4361,8 +4360,14 @@ class EngineManagerLifecycleReservationTest {
       Files.delete(boardFenceGate);
       Files.delete(catchUpGate);
       Files.delete(fenceFailure);
-      Files.writeString(commandScript, updateEngineScript());
-      assertTrue(commandScript.toFile().setExecutable(true));
+      updateEngineCommand =
+          updateEngineCommand(
+              commandLog,
+              startupGate,
+              loadSgfFailure,
+              boardFenceGate,
+              catchUpGate,
+              fenceFailure);
       board = allocate(UpdateBoard.class);
       board.startStonelist = new ArrayList<>();
       board.hasStartStone = false;
@@ -4377,21 +4382,7 @@ class EngineManagerLifecycleReservationTest {
       config.extraMode = doubleEngine ? ExtraMode.Double_Engine : ExtraMode.Normal;
       JSONObject engineConfig =
           new JSONObject()
-              .put(
-                  "command",
-                  commandScript.toString()
-                      + " "
-                      + commandLog
-                      + " "
-                      + startupGate
-                      + " "
-                      + loadSgfFailure
-                      + " "
-                      + boardFenceGate
-                      + " "
-                      + catchUpGate
-                      + " "
-                      + fenceFailure)
+              .put("command", updateEngineCommand)
               .put("name", "update-target")
               .put("preload", false)
               .put("width", targetWidth)
@@ -4431,6 +4422,7 @@ class EngineManagerLifecycleReservationTest {
     }
 
     private void releaseStartup() throws Exception {
+      waitForLog(commandLog, "name", 10000L);
       Files.writeString(startupGate, "ready");
     }
 
@@ -4450,7 +4442,7 @@ class EngineManagerLifecycleReservationTest {
 
     private void restore() {
       try {
-        releaseStartup();
+        Files.writeString(startupGate, "ready");
       } catch (Exception ignored) {
       }
       try {
@@ -4511,55 +4503,53 @@ class EngineManagerLifecycleReservationTest {
       }
     }
 
-    private static String updateEngineScript() {
-      return String.join(
-              "\n",
-              "#!/bin/sh",
-              "log=\"$1\"",
-              "gate=\"$2\"",
-              "loadsgf_failure=\"$3\"",
-              "fence_gate=\"$4\"",
-              "catchup_gate=\"$5\"",
-              "fence_failure=\"$6\"",
-              "name_count=0",
-              "loadsgf_count=0",
-              "while IFS= read -r line; do",
-              "  printf '%s\\n' \"$line\" >> \"$log\"",
-              "  rest=\"$line\"",
-              "  id=\"\"",
-              "  case \"$line\" in",
-              "    [0-9]*\\ *) id=\"${line%% *}\"; rest=\"${line#* }\" ;;",
-              "  esac",
-              "  case \"$rest\" in",
-              "    loadsgf\\ *)",
-              "      loadsgf_count=$((loadsgf_count + 1))",
-              "      printf 'SGF:%s\\n' \"$(cat \"${rest#loadsgf }\")\" >> \"$log\"",
-              "      if [ -f \"$loadsgf_failure\" ]; then",
-              "        if [ -n \"$id\" ]; then printf '?%s controlled restore failure\\n\\n' \"$id\"; else printf '? controlled restore failure\\n\\n'; fi",
-              "        continue",
-              "      fi",
-              "      if [ \"$loadsgf_count\" -ge 2 ]; then while [ ! -f \"$catchup_gate\" ]; do sleep 0.01; done; fi ;;",
-              "  esac",
-              "  case \"$rest\" in",
-              "    name)",
-              "      name_count=$((name_count + 1))",
-              "      if [ \"$name_count\" -eq 1 ]; then while [ ! -f \"$gate\" ]; do sleep 0.01; done; else while [ ! -f \"$fence_gate\" ]; do sleep 0.01; done; fi",
-              "      if [ \"$name_count\" -ge 2 ] && [ -f \"$fence_failure\" ]; then",
-              "        if [ -n \"$id\" ]; then printf '?%s controlled fence failure\\n\\n' \"$id\"; else printf '? controlled fence failure\\n\\n'; fi",
-              "        continue",
-              "      fi ;;",
-              "  esac",
-              "  if [ -n \"$id\" ]; then printf '=%s\\n\\n' \"$id\"; else",
-              "    case \"$rest\" in",
-              "      name) printf '= KataGo\\n\\n' ;;",
-              "      version) printf '= 1.15\\n\\n' ;;",
-              "      list_commands) printf '= protocol_version\\n\\n' ;;",
-              "      *) printf '=\\n\\n' ;;",
-              "    esac",
-              "  fi",
-              "  [ \"$rest\" = quit ] && exit 0",
-              "done")
-          + "\n";
+    private static String updateEngineCommand(
+        Path commandLog,
+        Path startupGate,
+        Path loadSgfFailure,
+        Path boardFenceGate,
+        Path catchUpGate,
+        Path fenceFailure)
+        throws Exception {
+      boolean windows =
+          System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+      Path javaExecutable =
+          Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java")
+              .toAbsolutePath()
+              .normalize();
+      Path testClasses =
+          Path.of(
+                  UpdateEngineGtpFixture.class
+                      .getProtectionDomain()
+                      .getCodeSource()
+                      .getLocation()
+                      .toURI())
+              .toAbsolutePath()
+              .normalize();
+      return commandQuote(javaExecutable.toString())
+          + " -cp "
+          + commandQuote(testClasses.toString())
+          + " "
+          + UpdateEngineGtpFixture.class.getName()
+          + " "
+          + commandQuote(commandLog.toString())
+          + " "
+          + commandQuote(startupGate.toString())
+          + " "
+          + commandQuote(loadSgfFailure.toString())
+          + " "
+          + commandQuote(boardFenceGate.toString())
+          + " "
+          + commandQuote(catchUpGate.toString())
+          + " "
+          + commandQuote(fenceFailure.toString());
+    }
+
+    private static String commandQuote(String value) {
+      if (value.indexOf('"') >= 0) {
+        throw new IllegalArgumentException("command argument contains a double quote: " + value);
+      }
+      return "\"" + value + "\"";
     }
   }
 

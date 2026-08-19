@@ -52,7 +52,7 @@
 
 ### 历史 tag 说明
 
-部分旧 tag 还会看到早期的 zip 命名或兼容包，但当前维护版公开 release 已统一成 15 个主资产：10 个 Windows、2 个 macOS、3 个 Linux。TensorRT 加速不再作为 GitHub Release 资产发布，改为软件内按需安装。普通用户直接按上面的表选即可。
+部分旧 tag 还会看到早期的 zip 命名或兼容包，但当前维护版公开 release 已统一成 15 个首次下载主资产：10 个 Windows、2 个 macOS、3 个 Linux。TensorRT 的普通用户路径是软件内按需安装；Release 同时保留高级可选离线分卷及其 README、清单和校验文件。普通用户直接按上面的表选即可。
 
 ## Windows 安装
 
@@ -111,7 +111,7 @@ OpenCL 免安装包也能直接打开 `KataGo 一键设置`，点一次“智能
 2. 解压后运行 `LizzieYzy Next NVIDIA 50 CUDA.exe`。
 3. 如果你更喜欢安装流程，改用 `windows64.nvidia50.cuda.installer.exe`。
 
-TensorRT 加速不再单独发布巨大安装包。RTX 20/30/40/50 用户可以先打开对应 NVIDIA/CUDA 包，再进入 `KataGo 一键设置`，点击 `安装 TensorRT 加速`。安装界面会检测本机 NVIDIA GPU / Compute Capability，并显示推荐、可尝试、不推荐或未知状态。RTX 50 属于更新架构，是重点实验加速方向；GTX 10 系及更老显卡建议继续使用 CUDA/OpenCL。软件会从 KataGo / NVIDIA 官方源下载、校验并配置 TensorRT；不需要的用户不会被自动下载。
+TensorRT 不再作为普通用户优先下载的巨大单文件包。RTX 20/30/40/50 用户可以先打开对应 NVIDIA/CUDA 包，再进入 `KataGo 一键设置`，点击 `安装 TensorRT 加速`。安装界面会检测本机 NVIDIA GPU / Compute Capability，并显示推荐、可尝试、不推荐或未知状态。RTX 50 属于更新架构，是重点实验加速方向；GTX 10 系及更老显卡建议继续使用 CUDA/OpenCL。软件会从 KataGo / NVIDIA 官方源下载、校验并配置 TensorRT；不需要的用户不会被自动下载。需要完全离线安装的高级用户也可以从 Release 下载全部 `.7z.00N` 分卷，并按同名 README、清单和 SHA-256 文件校验后从 `.001` 解压。
 
 ### Windows 64 位无引擎包
 

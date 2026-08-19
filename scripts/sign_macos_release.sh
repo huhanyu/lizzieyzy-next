@@ -2,8 +2,8 @@
 # Sign and notarize macOS DMG release assets.
 #
 # Requires the following environment variables (typically provided via GitHub
-# Actions secrets). If any of them are empty, the script exits 0 and leaves the
-# unsigned asset untouched so local builds are unaffected.
+# Actions secrets). A fully absent credential set is an explicit local-build
+# skip. A partially configured credential set fails closed.
 #
 #   APPLE_CERT_P12         Base64-encoded Developer ID Application .p12
 #   APPLE_CERT_PASSWORD    Password for the .p12 (may be empty)
@@ -24,10 +24,39 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 entitlements_path="$ROOT_DIR/packaging/macos-entitlements.plist"
 drag_dmg_script="$ROOT_DIR/scripts/create_macos_drag_dmg.sh"
 validate_dmg_script="$ROOT_DIR/scripts/validate_macos_dmg_layout.sh"
+temp_root="${TMPDIR:-/tmp}"
 
-if [[ -z "${APPLE_CERT_P12:-}" || -z "${APPLE_TEAM_ID:-}" ]]; then
-  echo "Apple Developer credentials not configured; skipping sign/notarize."
+required_secret_names=(
+  APPLE_CERT_P12
+  APPLE_ID
+  APPLE_APP_PASSWORD
+  APPLE_TEAM_ID
+)
+configured_secret_count=0
+missing_secret_names=()
+for secret_name in "${required_secret_names[@]}"; do
+  case "$secret_name" in
+    APPLE_CERT_P12) secret_value="${APPLE_CERT_P12:-}" ;;
+    APPLE_ID) secret_value="${APPLE_ID:-}" ;;
+    APPLE_APP_PASSWORD) secret_value="${APPLE_APP_PASSWORD:-}" ;;
+    APPLE_TEAM_ID) secret_value="${APPLE_TEAM_ID:-}" ;;
+    *) echo "Internal error: unknown required secret $secret_name" >&2; exit 2 ;;
+  esac
+  if [[ -n "$secret_value" ]]; then
+    configured_secret_count=$((configured_secret_count + 1))
+  else
+    missing_secret_names+=("$secret_name")
+  fi
+done
+secret_value=""
+
+if [[ "$configured_secret_count" -eq 0 ]]; then
+  echo "Apple Developer credentials are fully absent; skipping sign/notarize."
   exit 0
+fi
+if [[ "$configured_secret_count" -ne "${#required_secret_names[@]}" ]]; then
+  echo "Apple Developer credentials are only partially configured; missing: ${missing_secret_names[*]}" >&2
+  exit 1
 fi
 
 if ! command -v codesign >/dev/null 2>&1 || ! command -v xcrun >/dev/null 2>&1; then
@@ -49,34 +78,61 @@ if [[ ! -x "$validate_dmg_script" ]]; then
   exit 1
 fi
 
-keychain="lizzieyzy-sign.keychain-db"
-keychain_password="$(openssl rand -hex 16)"
-security create-keychain -p "$keychain_password" "$keychain" >/dev/null
-security set-keychain-settings -lut 21600 "$keychain" >/dev/null
-security unlock-keychain -p "$keychain_password" "$keychain" >/dev/null
-
-cert_path="$(mktemp -t lizzieyzy-cert.XXXXXX).p12"
-printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$cert_path"
-security import "$cert_path" -k "$keychain" -P "${APPLE_CERT_PASSWORD:-}" -T /usr/bin/codesign >/dev/null
-security list-keychains -d user -s "$keychain" "$(security list-keychains -d user | tr -d '"')"
-security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
-rm -f "$cert_path"
-
-sign_identity="${APPLE_SIGN_IDENTITY:-}"
-if [[ -z "$sign_identity" ]]; then
-  sign_identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
-fi
-if [[ -z "$sign_identity" ]]; then
-  echo "Could not locate a Developer ID Application identity in keychain." >&2
-  security delete-keychain "$keychain" >/dev/null 2>&1 || true
-  exit 1
-fi
-echo "Using signing identity: $sign_identity"
+keychain=""
+keychain_dir=""
+keychain_password=""
+cert_path=""
+sign_identity=""
+work_dir=""
+mount_point=""
+mounted_target=""
+original_keychains=()
+temporary_paths=()
 
 cleanup() {
-  security delete-keychain "$keychain" >/dev/null 2>&1 || true
+  local exit_code=$?
+  local path
+  trap - EXIT HUP INT TERM
+  set +e
+
+  if [[ -n "$mounted_target" ]] && command -v hdiutil >/dev/null 2>&1; then
+    hdiutil detach "$mounted_target" -force -quiet >/dev/null 2>&1 || true
+    mounted_target=""
+  elif [[ -n "$mount_point" ]] && command -v mount >/dev/null 2>&1 && \
+       mount | grep -Fq " on $mount_point "; then
+    hdiutil detach "$mount_point" -force -quiet >/dev/null 2>&1 || true
+  fi
+
+  if [[ -n "$cert_path" ]]; then
+    rm -f -- "$cert_path"
+    cert_path=""
+  fi
+  for path in "${temporary_paths[@]}"; do
+    [[ -z "$path" ]] || rm -rf -- "$path"
+  done
+  if [[ -n "$work_dir" ]]; then
+    rm -rf -- "$work_dir"
+    work_dir=""
+  fi
+
+  if [[ -n "$keychain" ]] && command -v security >/dev/null 2>&1; then
+    if [[ "${#original_keychains[@]}" -gt 0 ]]; then
+      security list-keychains -d user -s "${original_keychains[@]}" >/dev/null 2>&1 || true
+    fi
+    security delete-keychain "$keychain" >/dev/null 2>&1 || true
+    keychain=""
+  fi
+  if [[ -n "$keychain_dir" ]]; then
+    rm -rf -- "$keychain_dir"
+    keychain_dir=""
+  fi
+  keychain_password=""
+  exit "$exit_code"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 detach_image() {
   local target="$1"
@@ -147,10 +203,13 @@ sign_embedded_jar_natives() {
       continue
     fi
 
-    local jar_work rebuilt_jar native_count
-    jar_work="$(mktemp -d -t lizzieyzy-jar-sign.XXXXXX)"
-    rebuilt_jar="$(mktemp -t lizzieyzy-signed-jar.XXXXXX).jar"
-    rm -f "$rebuilt_jar"
+    local jar_work jar_output_dir rebuilt_jar native_count
+    jar_work="$(mktemp -d "$temp_root/lizzieyzy-jar-sign.XXXXXXXX")"
+    jar_output_dir="$(mktemp -d "$temp_root/lizzieyzy-signed-jar.XXXXXXXX")"
+    rebuilt_jar="$jar_output_dir/rebuilt.jar"
+    chmod 700 "$jar_work"
+    chmod 700 "$jar_output_dir"
+    temporary_paths+=("$jar_work" "$jar_output_dir")
 
     (
       cd "$jar_work"
@@ -174,6 +233,7 @@ sign_embedded_jar_natives() {
       cd "$jar_work"
       zip -qry "$rebuilt_jar" .
     )
+    chmod 600 "$rebuilt_jar"
     mv "$rebuilt_jar" "$jar_file"
     rm -rf "$jar_work"
     signed_any=1
@@ -311,22 +371,60 @@ if [[ ${#dmg_files[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# The cleanup trap is deliberately installed before any credential material or
+# keychain is created. Every failure from this point removes both.
+while IFS= read -r existing_keychain; do
+  [[ -z "$existing_keychain" ]] || original_keychains+=("$existing_keychain")
+done < <(
+  security list-keychains -d user |
+    sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//'
+)
+
+keychain_dir="$(mktemp -d "$temp_root/lizzieyzy-keychain.XXXXXXXX")"
+chmod 700 "$keychain_dir"
+keychain="$keychain_dir/signing.keychain-db"
+keychain_password="$(openssl rand -hex 16)"
+security create-keychain -p "$keychain_password" "$keychain" >/dev/null
+security set-keychain-settings -lut 21600 "$keychain" >/dev/null
+security unlock-keychain -p "$keychain_password" "$keychain" >/dev/null
+
+cert_path="$(mktemp "$temp_root/lizzieyzy-cert.XXXXXXXX")"
+chmod 600 "$cert_path"
+if ! printf '%s' "$APPLE_CERT_P12" | base64 -D > "$cert_path"; then
+  : > "$cert_path"
+  if ! printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$cert_path"; then
+    echo "APPLE_CERT_P12 is not valid base64." >&2
+    exit 1
+  fi
+fi
+if [[ ! -s "$cert_path" ]]; then
+  echo "APPLE_CERT_P12 decoded to an empty certificate." >&2
+  exit 1
+fi
+security import "$cert_path" -k "$keychain" -P "${APPLE_CERT_PASSWORD:-}" -T /usr/bin/codesign >/dev/null
+security list-keychains -d user -s "$keychain" "${original_keychains[@]}" >/dev/null
+security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+rm -f -- "$cert_path"
+cert_path=""
+
+sign_identity="${APPLE_SIGN_IDENTITY:-}"
+if [[ -z "$sign_identity" ]]; then
+  sign_identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+fi
+if [[ -z "$sign_identity" ]]; then
+  echo "Could not locate a Developer ID Application identity in the temporary keychain." >&2
+  exit 1
+fi
+echo "Using signing identity: $sign_identity"
+
 for dmg in "${dmg_files[@]}"; do
   echo "Processing $dmg"
 
-  work_dir="$(mktemp -d -t lizzieyzy-sign.XXXXXX)"
+  work_dir="$(mktemp -d "$temp_root/lizzieyzy-sign.XXXXXXXX")"
+  chmod 700 "$work_dir"
   mount_point="$work_dir/mount"
   mounted_target=""
   mkdir -p "$mount_point"
-  cleanup_work_dir() {
-    if [[ -n "$mounted_target" ]]; then
-      detach_image "$mounted_target" || true
-    elif mount | grep -q " on $mount_point "; then
-      detach_image "$mount_point" || true
-    fi
-    rm -rf "$work_dir"
-  }
-  trap 'cleanup_work_dir; cleanup' EXIT
 
   attach_plist="$work_dir/attach.plist"
   hdiutil attach "$dmg" -mountpoint "$mount_point" -nobrowse -noautoopen -readonly -plist >"$attach_plist"
@@ -426,10 +524,15 @@ PY
 
   xcrun stapler staple "$signed_dmg"
   "$validate_dmg_script" "$signed_dmg" "$dmg_arch_label" "$release_tag"
-  spctl --assess --type open --context context:primary-signature -vvv "$signed_dmg" || true
+  if ! spctl --assess --type open --context context:primary-signature -vvv "$signed_dmg"; then
+    echo "Gatekeeper assessment failed; refusing to replace the original DMG: $dmg" >&2
+    exit 1
+  fi
 
   mv "$signed_dmg" "$dmg"
-  rm -rf "$work_dir"
-  trap cleanup EXIT
+  rm -rf -- "$work_dir"
+  work_dir=""
+  mount_point=""
+  mounted_target=""
   echo "Signed and notarized: $dmg"
 done

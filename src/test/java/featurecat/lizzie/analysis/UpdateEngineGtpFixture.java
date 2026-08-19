@@ -14,12 +14,18 @@ public final class UpdateEngineGtpFixture {
   private UpdateEngineGtpFixture() {}
 
   public static void main(String[] args) throws Exception {
-    if (args.length != 3) {
-      throw new IllegalArgumentException("expected log, startup gate, and loadsgf failure paths");
+    if (args.length != 6) {
+      throw new IllegalArgumentException(
+          "expected log, startup gate, loadsgf failure, fence gate, catchup gate, and fence failure paths");
     }
     Path log = Path.of(args[0]);
     Path startupGate = Path.of(args[1]);
     Path loadSgfFailure = Path.of(args[2]);
+    Path fenceGate = Path.of(args[3]);
+    Path catchUpGate = Path.of(args[4]);
+    Path fenceFailure = Path.of(args[5]);
+    int nameCount = 0;
+    int loadSgfCount = 0;
     try (BufferedReader input =
             new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         BufferedWriter output =
@@ -29,16 +35,26 @@ public final class UpdateEngineGtpFixture {
         append(log, line);
         ParsedCommand parsed = ParsedCommand.parse(line);
         if (parsed.command.startsWith("loadsgf ")) {
+          loadSgfCount++;
           Path sgf = Path.of(parsed.command.substring("loadsgf ".length()));
-          append(log, "SGF:" + Files.readString(sgf));
+          append(
+              log,
+              "SGF:"
+                  + stripTrailingNewlines(Files.readString(sgf, StandardCharsets.UTF_8)));
           if (Files.isRegularFile(loadSgfFailure)) {
             writeResponse(output, parsed.id, false, "controlled restore failure");
             continue;
           }
+          if (loadSgfCount >= 2) {
+            waitForMarker(catchUpGate);
+          }
         }
         if ("name".equals(parsed.command)) {
-          while (!Files.isRegularFile(startupGate)) {
-            Thread.sleep(10L);
+          nameCount++;
+          waitForMarker(nameCount == 1 ? startupGate : fenceGate);
+          if (nameCount >= 2 && Files.isRegularFile(fenceFailure)) {
+            writeResponse(output, parsed.id, false, "controlled fence failure");
+            continue;
           }
         }
         String body =
@@ -58,10 +74,24 @@ public final class UpdateEngineGtpFixture {
     }
   }
 
+  private static void waitForMarker(Path marker) throws InterruptedException {
+    while (!Files.isRegularFile(marker)) {
+      Thread.sleep(10L);
+    }
+  }
+
+  private static String stripTrailingNewlines(String content) {
+    int end = content.length();
+    while (end > 0 && content.charAt(end - 1) == '\n') {
+      end--;
+    }
+    return content.substring(0, end);
+  }
+
   private static void append(Path log, String line) throws Exception {
     Files.writeString(
         log,
-        line + System.lineSeparator(),
+        line + "\n",
         StandardCharsets.UTF_8,
         StandardOpenOption.CREATE,
         StandardOpenOption.APPEND);

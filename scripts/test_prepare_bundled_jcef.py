@@ -45,10 +45,17 @@ class PrepareBundledJcefTest(unittest.TestCase):
     def test_validate_bundle_rejects_wrong_platform(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            self.create_bundle(root, metadata_platform="linux-amd64")
+            # Use the non-executable fixture layout here. Some hardened Windows hosts quarantine a
+            # directory that imitates the complete Chromium DLL/EXE layout, before the metadata
+            # assertion under test can run.
+            self.create_bundle(
+                root,
+                package_platform="macosx-arm64",
+                metadata_platform="macosx-amd64",
+            )
 
             with self.assertRaisesRegex(SystemExit, "JCEF platform mismatch"):
-                JCEF.validate_bundle(root, "windows-amd64")
+                JCEF.validate_bundle(root, "macosx-arm64")
 
     def test_windows_locale_trim_keeps_supported_languages_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
