@@ -450,7 +450,10 @@ class GitHubClient:
         _status, raw = self._request_raw(
             "GET",
             path,
-            accept="application/octet-stream",
+            # GitHub's artifact archive endpoint is still an API endpoint on the
+            # first hop. It requires the JSON media type, then redirects to the
+            # short-lived URL that returns the ZIP bytes.
+            accept="application/vnd.github+json",
             max_bytes=max_bytes,
         )
         if raw is None:
