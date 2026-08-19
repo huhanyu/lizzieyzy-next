@@ -345,17 +345,22 @@ class ReleaseWorkflowIdentityWiringTest(unittest.TestCase):
             "  cancel-in-progress: false",
             workflow,
         )
-        audited_tag = "next-2026-08-19.1"
-        self.assertGreaterEqual(workflow.count(audited_tag), 2)
-        self.assertLess(
-            workflow.index(audited_tag),
-            workflow.index("Generate release notes"),
+        audited_guard = (
+            'if [[ "$RELEASE_TAG" == "next-2026-08-19.1" || '
+            '"$RELEASE_TAG" == "next-2026-08-19.2" ]]; then'
         )
+        self.assertEqual(workflow.count(audited_guard), 2)
+        generate_step = workflow.index("Generate release notes")
+        first_guard = workflow.index(audited_guard)
+        first_guard_end = workflow.index("          fi", first_guard)
+        self.assertLess(first_guard, generate_step)
+        self.assertIn("exit 1", workflow[first_guard:first_guard_end])
+
         update_step = workflow.index("Update GitHub release body")
-        self.assertLess(
-            workflow.index(audited_tag, update_step),
-            workflow.index("gh release edit", update_step),
-        )
+        second_guard = workflow.index(audited_guard, update_step)
+        second_guard_end = workflow.index("          fi", second_guard)
+        self.assertLess(second_guard, workflow.index("gh release edit", update_step))
+        self.assertIn("exit 1", workflow[second_guard:second_guard_end])
 
     def test_release_checklist_requires_explicit_notes_prerelease_identity(self) -> None:
         checklist = (self.root / "docs/RELEASE_CHECKLIST.md").read_text(
