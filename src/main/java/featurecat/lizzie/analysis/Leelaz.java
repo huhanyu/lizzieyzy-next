@@ -23,6 +23,7 @@ import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
 import featurecat.lizzie.util.YikeSyncDebugLog;
 import java.awt.Component;
+import java.awt.GraphicsEnvironment;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
@@ -4184,6 +4185,7 @@ public class Leelaz {
   }
 
   private void finishReaderTerminalCleanup(ReaderStreamBinding binding) {
+    String deferredNonModalDiagnostic = null;
     try {
       if (binding.terminalFailure != null) {
         binding.terminalFailure.printStackTrace();
@@ -4198,16 +4200,20 @@ public class Leelaz {
         javaSSHClosed = true;
       }
       started = false;
-      finishTerminatedReaderIncarnation(binding);
+      deferredNonModalDiagnostic = finishTerminatedReaderIncarnation(binding);
     } finally {
       synchronized (engineArbitrationLock()) {
         readerTerminalCleanupInProgress = false;
         engineArbitrationLock().notifyAll();
       }
     }
+    if (deferredNonModalDiagnostic != null) {
+      String diagnostic = deferredNonModalDiagnostic;
+      SwingUtilities.invokeLater(() -> tryToDignostic(diagnostic, false));
+    }
   }
 
-  private void finishTerminatedReaderIncarnation(ReaderStreamBinding binding) {
+  private String finishTerminatedReaderIncarnation(ReaderStreamBinding binding) {
     ExclusiveGtpSession interruptedForegroundWork;
     synchronized (engineArbitrationLock()) {
       interruptedForegroundWork =
@@ -4259,17 +4265,17 @@ public class Leelaz {
       if (Lizzie.engineManager != null) {
         Lizzie.engineManager.restartUnresponsiveRemoteEngine(this, currentEngineN);
       }
-      return;
+      return null;
     }
     if (!isNormalEnd && !tryRecoverBundledOpenClNativeExit(binding.process)) {
       isDownWithError = true;
       // isLoaded=false;
-      tryToDignostic(
-          buildEngineExitDiagnostic(Lizzie.resourceBundle.getString("Leelaz.engineEndUnormalHint")),
-          false);
+      return buildEngineExitDiagnostic(
+          Lizzie.resourceBundle.getString("Leelaz.engineEndUnormalHint"));
       // ("打开Gtp窗口(快捷键E)查看报错信息");
       // LizzieFrame.openMoreEngineDialog();
     }
+    return null;
   }
 
   private void shutdownReaderTransport(ReaderStreamBinding binding) {
@@ -13196,6 +13202,11 @@ public class Leelaz {
   }
 
   public void tryToDignostic(String message, boolean isModal) {
+    EngineFailedMessage.runOnEventDispatchThreadAndWait(
+        () -> showDiagnosticOnEventDispatchThread(message, isModal));
+  }
+
+  private void showDiagnosticOnEventDispatchThread(String message, boolean isModal) {
     closeBundledStartupDialog();
     boolean primaryEngine = this == Lizzie.leelaz;
     if (primaryEngine) {
@@ -13210,14 +13221,22 @@ public class Leelaz {
     if (!shouldOpenInteractiveDiagnostic(primaryEngine, Lizzie.isFirstLaunchSession())) {
       return;
     }
-    if (!Lizzie.config.autoCheckEngineAlive && EngineManager.isEngineGame())
+    if (Lizzie.config != null
+        && !Lizzie.config.autoCheckEngineAlive
+        && Lizzie.engineManager != null
+        && EngineManager.isEngineGame())
       Lizzie.engineManager.clearEngineGame();
+    if (GraphicsEnvironment.isHeadless()) return;
     if (engineFailedMessage != null && engineFailedMessage.isVisible()) return;
-    engineFailedMessage =
-        new EngineFailedMessage(
-            commands, engineCommand, message, !useJavaSSH && OS.isWindows(), true, false);
-    engineFailedMessage.setModal(isModal);
-    engineFailedMessage.setVisible(true);
+    EngineFailedMessage.showDialog(
+        commands,
+        engineCommand,
+        message,
+        !useJavaSSH && OS.isWindows(),
+        true,
+        false,
+        isModal,
+        dialog -> engineFailedMessage = dialog);
   }
 
   private boolean shouldOpenInteractiveDiagnostic() {

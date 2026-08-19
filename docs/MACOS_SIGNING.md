@@ -2,7 +2,7 @@
 
 ## 需要的 GitHub Secrets
 
-在仓库的 `Settings → Secrets and variables → Actions` 里添加以下 secrets（缺任何一个都会自动跳过签名步骤，产物仍然是未签名的 DMG）：
+在仓库的 `Settings → Secrets and variables → Actions` 里添加以下 secrets。四个必需 secret 全部未配置时，脚本会明确打印“跳过签名”，方便本地构建；只配置了一部分时会直接失败，避免误把未签名 DMG 当成正式发布资产。
 
 | Secret | 作用 | 获取方式 |
 |---|---|---|
@@ -31,16 +31,16 @@
 
 ## Workflow 行为
 
-`build-macos-arm64-release.yml` 和 `build-macos-amd64-release.yml` 在 jpackage 生成 DMG 之后，如果以上 secrets 都已配置，会调用 `scripts/sign_macos_release.sh`：
+`build-macos-arm64-release.yml` 和 `build-macos-amd64-release.yml` 在 jpackage 生成 DMG 之后，如果 `APPLE_CERT_P12`、`APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID` 四个必需 secret 都已配置，会调用 `scripts/sign_macos_release.sh`：
 
-- 创建临时 keychain 导入证书
-- 把 DMG 里的 `.app` 解出，用 `codesign --options runtime --timestamp --deep` 签名所有 `.dylib` 和可执行文件
+- 在导入证书前安装清理 trap，创建仅本次运行使用的随机临时 keychain 和权限为 `0600` 的证书临时文件
+- 把 DMG 里的 `.app` 解出，按“内层原生库/辅助程序 → framework → 主程序 → 外层 `.app`”逐层执行 `codesign --options runtime --timestamp`；`--deep` 只用于签名后的递归验证，不用于签名
 - 重新打包成 DMG，再次签名 DMG
 - 用 `xcrun notarytool submit --wait` 提交公证
 - 用 `xcrun stapler staple` 附着公证票据
 - 用 `spctl --assess` 复查通过
 
-如果 secrets 没配置，脚本打印一行后 `exit 0`，构建流程完全不受影响。
+四个必需 secret 全部未配置时，脚本打印一行后 `exit 0`，本地构建不受影响。只要其中任意一个已配置，其余必需 secret 就必须全部存在；部分配置会 fail closed。`APPLE_CERT_PASSWORD` 可以为空，`APPLE_SIGN_IDENTITY` 仍是可选覆盖。
 
 ## 验证
 
@@ -49,7 +49,7 @@
 命令行验证：
 
 ```bash
-spctl --assess --type install -vvv path/to/LizzieYzy-Next.dmg
+spctl --assess --type open --context context:primary-signature -vvv path/to/LizzieYzy-Next.dmg
 # 应该显示:
 #   path: accepted
 #   source=Notarized Developer ID
@@ -57,7 +57,7 @@ spctl --assess --type install -vvv path/to/LizzieYzy-Next.dmg
 
 ## 失败兜底
 
-如果签名/公证失败，已上传到 GitHub Releases 的资产会是未签名版本（这步失败不会阻断 artifact 上传）。但 workflow 整体会标记失败，方便你看错误日志。
+如果证书导入、逐层签名、公证、票据附着、布局校验或最终 `spctl` Gatekeeper 评估失败，workflow 会在替换原始 DMG 和上传 Release asset 之前终止，因此不会把本次未通过完整校验的 DMG 上传到 GitHub Release。清理 trap 会在任何早期失败时删除 P12 临时文件、随机 keychain、挂载点和工作目录。只有全部校验成功后，工作目录中的已签名 DMG 才会替换原文件并进入 provenance 与 Release 上传步骤。
 
 常见问题：
 - `notarytool` 超时 → 重跑 workflow 即可

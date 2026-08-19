@@ -1,4 +1,5 @@
 name: Build Windows Release
+run-name: "Windows release ${{ inputs.release_tag }} | ${{ inputs.date_tag }} | prerelease=${{ inputs.release_prerelease }}"
 
 on:
   workflow_dispatch:
@@ -6,24 +7,37 @@ on:
       date_tag:
         description: Release date tag, for example 2026-03-24
         required: true
-        default: 2026-05-06
       release_tag:
         description: Existing GitHub release tag to upload into
         required: true
-        default: next-2026-05-06.1
       release_prerelease:
-        description: Optional explicit pre-release state for draft release publishing
-        required: false
-        default: ''
-        type: string
+        description: Exact pre-release state of the existing draft release
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.workflow }}-${{ inputs.release_tag }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 280
+    env:
+      RELEASE_DATE_TAG: ${{ inputs.date_tag }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_PRERELEASE: ${{ inputs.release_prerelease }}
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      RELEASE_TARGET_SHA: ${{ github.sha }}
+      RELEASE_GITHUB_REF: ${{ github.ref }}
+      RELEASE_RUN_ID: ${{ github.run_id }}
+      RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
 
     steps:
       - name: Checkout
@@ -40,6 +54,20 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.x'
+
+      - name: Validate release upload identity
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: >-
+          python scripts/validate_release_workflow_identity.py
+          --date-tag "$RELEASE_DATE_TAG"
+          --release-tag "$RELEASE_TAG"
+          --prerelease "$RELEASE_PRERELEASE"
+          --repository "$RELEASE_REPOSITORY"
+          --target-sha "$RELEASE_TARGET_SHA"
+          --github-ref "$RELEASE_GITHUB_REF"
+          --require-draft
 
       - name: Generate app icons
         shell: powershell
@@ -73,12 +101,11 @@ jobs:
             MODEL_SOURCE="$MODEL_SOURCE" ./scripts/prepare_bundled_katago.sh
 
       - name: Build Windows installer and portable package
-        timeout-minutes: 300
+        id: release_metadata
+        timeout-minutes: 240
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          RELEASE_PRERELEASE: ${{ inputs.release_prerelease }}
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^next-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[1-9][0-9]*$ ]]; then
@@ -87,19 +114,11 @@ jobs:
           fi
 
           release_prerelease="$RELEASE_PRERELEASE"
-          if [[ -z "$release_prerelease" ]]; then
-            # Draft releases are intentionally omitted by the releases/tags endpoint.
-            # The authenticated release listing includes both drafts and public releases.
-            release_prerelease="$(
-              gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" |
-                jq -r --arg tag "$RELEASE_TAG" \
-                  'first(.[] | select(.tag_name == $tag)) | .prerelease'
-            )"
-          fi
           if [[ "$release_prerelease" != "true" && "$release_prerelease" != "false" ]]; then
             echo "Unable to determine pre-release state for $RELEASE_TAG" >&2
             exit 1
           fi
+          echo "release_prerelease=$release_prerelease" >> "$GITHUB_OUTPUT"
 
           serial="$RELEASE_TAG"
           serial="${serial##*.}"
@@ -107,20 +126,28 @@ jobs:
             serial="${GITHUB_RUN_ATTEMPT:-0}"
           fi
           WINDOWS_BUILD_SERIAL="$serial" LIZZIE_RELEASE_PRERELEASE="$release_prerelease" \
-            ./scripts/package_windows_exe.sh "${{ inputs.date_tag }}" 1.0.0 target/lizzie-yzy2.5.3-shaded.jar "$RELEASE_TAG"
+            ./scripts/package_windows_exe.sh "$RELEASE_DATE_TAG" 1.0.0 target/lizzie-yzy2.5.3-shaded.jar "$RELEASE_TAG"
 
       - name: Validate public Windows assets
         shell: bash
-        run: bash ./scripts/validate_release_assets.sh windows dist/release "${{ inputs.date_tag }}"
+        env:
+          RELEASE_METADATA_PRERELEASE: ${{ steps.release_metadata.outputs.release_prerelease }}
+        run: >-
+          bash ./scripts/validate_release_assets.sh
+          windows
+          dist/release
+          "$RELEASE_DATE_TAG"
+          "$RELEASE_TAG"
+          "$RELEASE_METADATA_PRERELEASE"
 
       - name: Audit Windows bundle UX checkpoints
         shell: bash
         run: |
           # Trace every assertion so a future packaging regression identifies the exact failed check.
           set -euxo pipefail
-          note_file="dist/release-meta/${{ inputs.date_tag }}-windows64-install.txt"
+          note_file="dist/release-meta/${RELEASE_DATE_TAG}-windows64-install.txt"
           test -f "$note_file"
-          grep -q "Release display version: ${{ inputs.release_tag }}" "$note_file"
+          grep -q "Release display version: $RELEASE_TAG" "$note_file"
           grep -q "Smart Optimize" "$note_file"
           grep -q "first launch should work offline" "$note_file"
           grep -q "qiyi71w/readboard v3.0.6" "$note_file"
@@ -154,7 +181,7 @@ jobs:
           grep -qx 'Windows OpenCL bundle: katago-v1.17.1-opencl-windows-x64.zip' "dist/windows/input-opencl/engines/katago/VERSION.txt"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/LizzieYzy Next.exe"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/app/PROJECT_INFO.txt"
-          grep -q "java-options=-Dlizzie.next.version=${{ inputs.release_tag }}" "dist/windows/app-image-with-katago/LizzieYzy Next/app/LizzieYzy Next.cfg"
+          grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-with-katago/LizzieYzy Next/app/LizzieYzy Next.cfg"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/app/readboard/readboard.exe"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/app/readboard/lizzieyzy-next-readboard-manifest.txt"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/app/jcef-bundle/build_meta.json"
@@ -163,12 +190,12 @@ jobs:
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/app/jcef-bundle/lizzieyzy-next-jcef-manifest.txt"
           test -f "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/LizzieYzy Next OpenCL.exe"
           test -f "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/PROJECT_INFO.txt"
-          grep -q "java-options=-Dlizzie.next.version=${{ inputs.release_tag }}" "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/LizzieYzy Next OpenCL.cfg"
+          grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/LizzieYzy Next OpenCL.cfg"
           test -f "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/readboard/readboard.exe"
           test -f "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/runtime/bin/java.exe"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/LizzieYzy Next NVIDIA.exe"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/PROJECT_INFO.txt"
-          grep -q "java-options=-Dlizzie.next.version=${{ inputs.release_tag }}" "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/LizzieYzy Next NVIDIA.cfg"
+          grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/LizzieYzy Next NVIDIA.cfg"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/readboard/readboard.exe"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/runtime/bin/java.exe"
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/katago.exe"
@@ -179,7 +206,7 @@ jobs:
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/cublas64_12.dll"
           test -f "dist/windows/app-image-without.engine/LizzieYzy Next/LizzieYzy Next.exe"
           test -f "dist/windows/app-image-without.engine/LizzieYzy Next/app/PROJECT_INFO.txt"
-          grep -q "java-options=-Dlizzie.next.version=${{ inputs.release_tag }}" "dist/windows/app-image-without.engine/LizzieYzy Next/app/LizzieYzy Next.cfg"
+          grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-without.engine/LizzieYzy Next/app/LizzieYzy Next.cfg"
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/cublasLt64_12.dll"
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/cudnn64_9.dll"
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/z.dll"
@@ -195,7 +222,7 @@ jobs:
           find "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvJitLink*.dll' | grep -q .
           test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/LizzieYzy Next NVIDIA 50 CUDA.exe"
           test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/PROJECT_INFO.txt"
-          grep -q "java-options=-Dlizzie.next.version=${{ inputs.release_tag }}" "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/LizzieYzy Next NVIDIA 50 CUDA.cfg"
+          grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/LizzieYzy Next NVIDIA 50 CUDA.cfg"
           test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/readboard/readboard.exe"
           test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/runtime/bin/java.exe"
           test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/katago.exe"
@@ -217,10 +244,10 @@ jobs:
           test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/cudnn64_9.dll"
           test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/z.dll"
           find "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvJitLink*.dll' | grep -q .
-          test -f "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.7z.001"
-          test -f "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.README.txt"
-          test -f "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.manifest.json"
-          test -f "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.sha256.txt"
+          test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.7z.001"
+          test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.README.txt"
+          test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.manifest.json"
+          test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.sha256.txt"
           test -f "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
           grep -qx "KataGo release: v1.17.2" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
@@ -230,8 +257,8 @@ jobs:
             "dist/windows/input-nvidia.tensorrt/engines/katago/VERSION.txt"
           grep -qx "Windows TensorRT bundle: katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip" \
             "dist/windows/input-nvidia.tensorrt/engines/katago/VERSION.txt"
-          grep -q "Advanced optional TensorRT split package" "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.README.txt"
-          grep -q '"engineBackend": "nvidia-tensorrt"' "dist/release/${{ inputs.date_tag }}-windows64.nvidia.tensorrt.portable.manifest.json"
+          grep -q "Advanced optional TensorRT split package" "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.README.txt"
+          grep -q '"engineBackend": "nvidia-tensorrt"' "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.manifest.json"
           test -f "dist/windows/input-without.engine/PROJECT_INFO.txt"
           test -f "dist/windows/input-without.engine/readboard/readboard.exe"
           test -f "dist/windows/input-without.engine/readboard/lizzieyzy-next-readboard-manifest.txt"
@@ -272,9 +299,9 @@ jobs:
               exit 1
             fi
           done
-          test -f "dist/release-meta/${{ inputs.date_tag }}-windows64-runtime.json"
-          grep -q '"optimized": true' "dist/release-meta/${{ inputs.date_tag }}-windows64-runtime.json"
-          grep -q '"created": true' "dist/release-meta/${{ inputs.date_tag }}-windows64-runtime.json"
+          test -f "dist/release-meta/${RELEASE_DATE_TAG}-windows64-runtime.json"
+          grep -q '"optimized": true' "dist/release-meta/${RELEASE_DATE_TAG}-windows64-runtime.json"
+          grep -q '"created": true' "dist/release-meta/${RELEASE_DATE_TAG}-windows64-runtime.json"
           for app_dir in \
             "dist/windows/app-image-with-katago/LizzieYzy Next" \
             "dist/windows/app-image-opencl/LizzieYzy Next OpenCL" \
@@ -383,27 +410,10 @@ jobs:
         if: always()
         shell: bash
         run: |
-          audit="dist/release-meta/${{ inputs.date_tag }}-windows64-package-size-audit.md"
+          audit="dist/release-meta/${RELEASE_DATE_TAG}-windows64-package-size-audit.md"
           if [[ -f "$audit" ]]; then
             cat "$audit" >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      - name: Upload assets to release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ inputs.release_tag }}" \
-            dist/release/*windows64*.installer.exe \
-            dist/release/*windows64*.portable.zip \
-            dist/release/*windows64.core-update.zip \
-            dist/release/lizzieyzy-next-update-manifest.json \
-            dist/release/*windows64.nvidia.tensorrt.portable.7z.* \
-            dist/release/*windows64.nvidia.tensorrt.portable.README.txt \
-            dist/release/*windows64.nvidia.tensorrt.portable.manifest.json \
-            dist/release/*windows64.nvidia.tensorrt.portable.sha256.txt \
-            --repo "${{ github.repository }}" \
-            --clobber
 
       - name: Smoke test Windows upgrade install path
         timeout-minutes: 25
@@ -437,3 +447,50 @@ jobs:
             ${{ runner.temp }}/lizzieyzy-next-msi-smoke/logs/*
             dist/windows/app-image-with-katago/LizzieYzy Next/LastConsoleLogs_*.txt
             dist/windows/app-image-with-katago/LizzieYzy Next/LastErrorLogs_*.txt
+
+      - name: Create run-bound release asset provenance
+        shell: bash
+        run: |
+          python scripts/release_asset_provenance.py \
+            --release-dir dist/release \
+            --platform windows \
+            --date-tag "$RELEASE_DATE_TAG" \
+            --release-tag "$RELEASE_TAG" \
+            --target-sha "$RELEASE_TARGET_SHA" \
+            --run-id "$RELEASE_RUN_ID" \
+            --run-attempt "$RELEASE_RUN_ATTEMPT" \
+            --output dist/release-meta/release-asset-provenance.json
+
+      - name: Upload run-bound release asset provenance
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-asset-provenance-windows-attempt-${{ github.run_attempt }}
+          path: dist/release-meta/release-asset-provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload verified assets to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/validate_release_workflow_identity.py \
+            --date-tag "$RELEASE_DATE_TAG" \
+            --release-tag "$RELEASE_TAG" \
+            --prerelease "$RELEASE_PRERELEASE" \
+            --repository "$RELEASE_REPOSITORY" \
+            --target-sha "$RELEASE_TARGET_SHA" \
+            --github-ref "$RELEASE_GITHUB_REF" \
+            --require-draft
+          gh release upload "$RELEASE_TAG" \
+            dist/release/*windows64*.installer.exe \
+            dist/release/*windows64*.portable.zip \
+            dist/release/*windows64.core-update.zip \
+            dist/release/lizzieyzy-next-update-manifest.json \
+            dist/release/*windows64.nvidia.tensorrt.portable.7z.* \
+            dist/release/*windows64.nvidia.tensorrt.portable.README.txt \
+            dist/release/*windows64.nvidia.tensorrt.portable.manifest.json \
+            dist/release/*windows64.nvidia.tensorrt.portable.sha256.txt \
+            --repo "$RELEASE_REPOSITORY" \
+            --clobber

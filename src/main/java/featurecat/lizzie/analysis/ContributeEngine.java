@@ -1112,11 +1112,14 @@ public class ContributeEngine {
   }
 
   public void tryToDignostic(String message) {
-    EngineFailedMessage engineFailedMessage =
-        new EngineFailedMessage(
-            commands, engineCommand, message, !useJavaSSH && OS.isWindows(), false, true);
-    engineFailedMessage.setModal(true);
-    engineFailedMessage.setVisible(true);
+    EngineFailedMessage.showDialog(
+        commands,
+        engineCommand,
+        message,
+        !useJavaSSH && OS.isWindows(),
+        false,
+        true,
+        true);
   }
 
   private void startWatchingGameThread() {

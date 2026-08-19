@@ -960,7 +960,7 @@ EOF
   if [[ "$has_tensorrt_split" == "true" ]]; then
     cat >>"$note_file" <<'EOF'
 - The advanced optional TensorRT split package is for users who already know how to extract multi-volume 7z archives.
-- It is not the default recommended package. Download all .7z.00N volumes before extracting; downloading only .7z.001 is not enough.
+- It is not the default recommended package. Download both .7z.001 and .7z.002 before extracting.
 EOF
   fi
 
@@ -1007,8 +1007,8 @@ write_tensorrt_split_readme() {
 不确定怎么选的普通用户，请下载普通 NVIDIA/CUDA 包，然后在软件内「KataGo 一键设置」安装 TensorRT；软件内安装支持断点续传。
 
 解压方法：
-1. 下载本次 release 里的全部 ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.00N 文件。
-2. 只下载 .7z.001 没有用，必须把 .001、.002、.003 等所有分卷放在同一个文件夹。
+1. 下载本次 release 里的 ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001 和 .002。
+2. 只下载 .7z.001 没有用，必须把 .001、.002 两个分卷放在同一个文件夹。
 3. 安装 7-Zip。
 4. 右键 ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001，选择 7-Zip 解压。
 5. 解压后打开 ${NVIDIA_TRT_APP_NAME}.exe。
@@ -1025,8 +1025,8 @@ This package is only for RTX 20/30/40/50 users who are comfortable with 7-Zip an
 Most users should download the regular NVIDIA/CUDA package and install TensorRT from KataGo Auto Setup inside the app; the in-app installer supports resume.
 
 How to extract:
-1. Download every ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.00N file from this release.
-2. Downloading only .7z.001 is not enough. Put all .001, .002, .003, ... volumes in the same folder.
+1. Download ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001 and .002 from this release.
+2. Downloading only .7z.001 is not enough. Put both .001 and .002 volumes in the same folder.
 3. Install 7-Zip.
 4. Right-click ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001 and extract with 7-Zip.
 5. Launch ${NVIDIA_TRT_APP_NAME}.exe.
@@ -1095,7 +1095,7 @@ payload = {
     "katagoSha256": katago_sha256,
     "parts": parts,
     "userGuidance": [
-        "Download all .7z.00N parts before extracting.",
+        "Download both .7z.001 and .7z.002 before extracting.",
         "Most users should use the in-app TensorRT installer with resume support instead.",
         "GTX 10 series and older NVIDIA GPUs should prefer CUDA/OpenCL.",
     ],
@@ -1134,8 +1134,11 @@ create_tensorrt_split_package() {
   shopt -s nullglob
   split_parts=("$archive_base.7z".[0-9][0-9][0-9])
   shopt -u nullglob
-  if (( ${#split_parts[@]} == 0 )) || [[ "$(basename "${split_parts[0]}")" != "$(basename "$archive_base").7z.001" ]]; then
-    echo "TensorRT split package was not produced correctly: $archive_base.7z.001" >&2
+  if (( ${#split_parts[@]} != 2 )) \
+    || [[ "$(basename "${split_parts[0]}")" != "$(basename "$archive_base").7z.001" ]] \
+    || [[ "$(basename "${split_parts[1]}")" != "$(basename "$archive_base").7z.002" ]]; then
+    echo "TensorRT split package must contain exactly .001 and .002 volumes" >&2
+    printf 'Produced: %s\n' "${split_parts[@]:-<none>}" >&2
     return 1
   fi
 

@@ -27,6 +27,8 @@ import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
@@ -268,6 +270,89 @@ class LeelazReaderIncarnationTest {
   }
 
   @Test
+  void abnormalReaderCleanupQueuesDiagnosticAfterAnEdtRebindWaitIsReleased() throws Exception {
+    try (GlobalState ignored = GlobalState.install()) {
+      DeferredDiagnosticLeelaz engine = new DeferredDiagnosticLeelaz();
+      RecordingProcess process = new RecordingProcess();
+      setField(engine, "process", process);
+      initializeStreams(engine, bytes(""), bytes(""));
+      Object binding = getField(engine, "readerStreamBinding");
+      Lizzie.leelaz = new Leelaz("");
+      boolean previousFirstLaunch = forceFirstLaunchSession(false);
+      engine.started = true;
+      engine.isLoaded = true;
+      engine.isNormalEnd = false;
+
+      AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
+      AtomicReference<Throwable> rebindFailure = new AtomicReference<>();
+      AtomicReference<Thread> edtThread = new AtomicReference<>();
+      CountDownLatch rebindEntered = new CountDownLatch(1);
+      CountDownLatch rebindFinished = new CountDownLatch(1);
+      Thread terminalThread =
+          new Thread(
+              () -> {
+                try {
+                  invokeTerminal(
+                      engine, binding, new IOException("controlled reader terminal failure"));
+                } catch (Throwable failure) {
+                  terminalFailure.set(failure);
+                }
+              },
+              "test-reader-terminal-cleanup");
+      terminalThread.setDaemon(true);
+
+      try {
+        terminalThread.start();
+        assertTrue(engine.cleanupReached.await(5, TimeUnit.SECONDS));
+        assertTrue((boolean) getField(engine, "readerTerminalCleanupInProgress"));
+
+        SwingUtilities.invokeLater(
+            () -> {
+              edtThread.set(Thread.currentThread());
+              rebindEntered.countDown();
+              try {
+                initializeStreams(engine, bytes(""), bytes(""));
+              } catch (Throwable failure) {
+                rebindFailure.set(failure);
+              } finally {
+                rebindFinished.countDown();
+              }
+            });
+        assertTrue(rebindEntered.await(5, TimeUnit.SECONDS));
+        assertTrue(awaitThreadState(edtThread, Thread.State.WAITING, 5, TimeUnit.SECONDS));
+
+        engine.allowCleanupToFinish.countDown();
+        terminalThread.join(TimeUnit.SECONDS.toMillis(5));
+        assertFalse(terminalThread.isAlive(), "reader cleanup must not wait for the EDT");
+        assertTrue(rebindFinished.await(5, TimeUnit.SECONDS), "EDT rebind must be notified");
+        assertTrue(
+            engine.diagnosticShown.await(5, TimeUnit.SECONDS),
+            "the deferred diagnostic must run after rebind completes");
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertEquals(null, terminalFailure.get());
+        assertEquals(null, rebindFailure.get());
+        assertEquals(null, engine.diagnosticFailure.get());
+        assertEquals(
+            java.awt.GraphicsEnvironment.isHeadless(),
+            engine.diagnosticRanWithNullConfig.get());
+        assertEquals(1, engine.diagnosticCount.get());
+        assertTrue(engine.diagnosticOnEdt.get());
+        assertFalse(engine.diagnosticModal);
+        assertFalse((boolean) getField(engine, "readerTerminalCleanupInProgress"));
+      } finally {
+        engine.allowCleanupToFinish.countDown();
+        if (terminalThread.isAlive()) {
+          terminalThread.interrupt();
+          terminalThread.join(TimeUnit.SECONDS.toMillis(5));
+        }
+        SwingUtilities.invokeAndWait(() -> {});
+        forceFirstLaunchSession(previousFirstLaunch);
+      }
+    }
+  }
+
+  @Test
   void parserTriggeredTerminalCleansUpOnceAfterCurrentLineIsReleased() throws Exception {
     try (GlobalState ignored = GlobalState.install()) {
       Leelaz engine = new Leelaz("");
@@ -414,11 +499,16 @@ class LeelazReaderIncarnationTest {
   }
 
   private static void invokeTerminal(Leelaz engine, Object binding) throws Exception {
+    invokeTerminal(engine, binding, null);
+  }
+
+  private static void invokeTerminal(Leelaz engine, Object binding, Throwable failure)
+      throws Exception {
     Method method =
         Leelaz.class.getDeclaredMethod(
             "terminateReaderIncarnation", binding.getClass(), Throwable.class);
     method.setAccessible(true);
-    method.invoke(engine, binding, null);
+    method.invoke(engine, binding, failure);
   }
 
   private static BufferedReader currentReader(Leelaz engine, String name) throws Exception {
@@ -464,6 +554,29 @@ class LeelazReaderIncarnationTest {
       Thread.sleep(5L);
     } while (System.nanoTime() < deadline);
     return engine.getRcentLine == expected;
+  }
+
+  private static boolean awaitThreadState(
+      AtomicReference<Thread> thread, Thread.State expected, long timeout, TimeUnit unit)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + unit.toNanos(timeout);
+    do {
+      Thread current = thread.get();
+      if (current != null && current.getState() == expected) {
+        return true;
+      }
+      Thread.sleep(5L);
+    } while (System.nanoTime() < deadline);
+    Thread current = thread.get();
+    return current != null && current.getState() == expected;
+  }
+
+  private static boolean forceFirstLaunchSession(boolean value) throws Exception {
+    Field field = Lizzie.class.getDeclaredField("firstLaunchSession");
+    field.setAccessible(true);
+    boolean previous = field.getBoolean(null);
+    field.setBoolean(null, value);
+    return previous;
   }
 
   private static void setField(Leelaz engine, String name, Object value) throws Exception {
@@ -618,6 +731,54 @@ class LeelazReaderIncarnationTest {
     public void failReadBoardGmaEngineRestore(String detail) {
       readBoardCleanupCount++;
       super.failReadBoardGmaEngineRestore(detail);
+    }
+  }
+
+  private static final class DeferredDiagnosticLeelaz extends Leelaz {
+    private final CountDownLatch cleanupReached = new CountDownLatch(1);
+    private final CountDownLatch allowCleanupToFinish = new CountDownLatch(1);
+    private final CountDownLatch diagnosticShown = new CountDownLatch(1);
+    private final AtomicInteger diagnosticCount = new AtomicInteger();
+    private final AtomicBoolean diagnosticOnEdt = new AtomicBoolean();
+    private final AtomicBoolean diagnosticRanWithNullConfig = new AtomicBoolean();
+    private final AtomicReference<Throwable> diagnosticFailure = new AtomicReference<>();
+    private volatile boolean diagnosticModal = true;
+
+    private DeferredDiagnosticLeelaz() throws IOException {
+      super("");
+    }
+
+    @Override
+    public void failReadBoardGmaEngineRestore(String detail) {
+      cleanupReached.countDown();
+      try {
+        if (!allowCleanupToFinish.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("timed out waiting to finish reader cleanup");
+        }
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError(interrupted);
+      }
+    }
+
+    @Override
+    public void tryToDignostic(String message, boolean isModal) {
+      Config config = Lizzie.config;
+      try {
+        if (java.awt.GraphicsEnvironment.isHeadless()) {
+          Lizzie.config = null;
+          diagnosticRanWithNullConfig.set(true);
+          super.tryToDignostic(message, isModal);
+        }
+      } catch (Throwable failure) {
+        diagnosticFailure.set(failure);
+      } finally {
+        Lizzie.config = config;
+        diagnosticCount.incrementAndGet();
+        diagnosticOnEdt.set(SwingUtilities.isEventDispatchThread());
+        diagnosticModal = isModal;
+        diagnosticShown.countDown();
+      }
     }
   }
 

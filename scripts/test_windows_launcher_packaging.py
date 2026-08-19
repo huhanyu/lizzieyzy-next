@@ -126,14 +126,33 @@ def main() -> None:
         "RELEASE_PRERELEASE: ${{ inputs.release_prerelease }}",
         "build-windows-release.yml",
     )
-    require(workflow, "releases?per_page=100", "build-windows-release.yml")
+    require(
+        workflow,
+        "scripts/validate_release_workflow_identity.py",
+        "build-windows-release.yml",
+    )
+    require(workflow, "--require-draft", "build-windows-release.yml")
+    require(
+        workflow,
+        "RELEASE_TARGET_SHA: ${{ github.sha }}",
+        "build-windows-release.yml",
+    )
+    require(
+        workflow,
+        "RELEASE_GITHUB_REF: ${{ github.ref }}",
+        "build-windows-release.yml",
+    )
+    require(workflow, '--target-sha "$RELEASE_TARGET_SHA"', "build-windows-release.yml")
+    require(workflow, '--github-ref "$RELEASE_GITHUB_REF"', "build-windows-release.yml")
     require(
         workflow,
         'if [[ "$release_prerelease" != "true" && "$release_prerelease" != "false" ]]',
         "build-windows-release.yml",
     )
-    if "releases/tags/" in workflow:
-        raise AssertionError("draft release metadata must not use the tag endpoint")
+    if "releases?per_page=100" in workflow or "releases/tags/" in workflow:
+        raise AssertionError(
+            "release identity lookup belongs in validate_release_workflow_identity.py"
+        )
     if "scheduleAutomaticCheck" in lizzie_source or "auto-check" in update_controller:
         raise AssertionError("Windows updates must only run after an explicit user action")
 

@@ -1,4 +1,5 @@
 name: Update Release Notes
+run-name: "Update notes for ${{ inputs.release_tag }} | ${{ inputs.date_tag }} | prerelease=${{ inputs.release_prerelease }}"
 
 on:
   workflow_dispatch:
@@ -6,18 +7,33 @@ on:
       date_tag:
         description: Release date tag, for example 2026-03-23
         required: true
-        default: 2026-05-06
       release_tag:
         description: Existing GitHub release tag to update
         required: true
-        default: next-2026-05-06.1
+      release_prerelease:
+        description: Exact pre-release state of the existing release
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
 
+concurrency:
+  group: publish-requested-pre-release
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_DATE_TAG: ${{ inputs.date_tag }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_PRERELEASE: ${{ inputs.release_prerelease }}
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      RELEASE_NOTES_PATH: dist/release-meta/${{ inputs.date_tag }}-release-notes.md
 
     steps:
       - name: Checkout
@@ -28,32 +44,68 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Refuse audited release notes overwrite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_TAG" == "next-2026-08-19.1" ]]; then
+            echo "The audited release notes for $RELEASE_TAG are immutable." >&2
+            exit 1
+          fi
+
+      - name: Validate release edit identity
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/validate_release_workflow_identity.py
+          --date-tag "$RELEASE_DATE_TAG"
+          --release-tag "$RELEASE_TAG"
+          --prerelease "$RELEASE_PRERELEASE"
+          --repository "$RELEASE_REPOSITORY"
+
       - name: Generate release notes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/generate_release_notes.py \
             --from-gh \
-            --repo "${{ github.repository }}" \
-            --release-tag "${{ inputs.release_tag }}" \
-            --date-tag "${{ inputs.date_tag }}" \
-            --output "dist/release-meta/${{ inputs.date_tag }}-release-notes.md"
+            --repo "$RELEASE_REPOSITORY" \
+            --release-tag "$RELEASE_TAG" \
+            --date-tag "$RELEASE_DATE_TAG" \
+            --output "$RELEASE_NOTES_PATH"
 
       - name: Upload generated notes artifact
         uses: actions/upload-artifact@v6
         with:
           name: release-notes
-          path: dist/release-meta/${{ inputs.date_tag }}-release-notes.md
+          path: ${{ env.RELEASE_NOTES_PATH }}
+          if-no-files-found: error
 
       - name: Update GitHub release body
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          release_title="LizzieYzy Next ${{ inputs.release_tag }}"
-          if [ "${{ inputs.release_tag }}" = "next-2026-06-29.1" ]; then
-            release_title="LizzieYzy Next 首冠版 ${{ inputs.release_tag }}"
+          set -euo pipefail
+          if [[ "$RELEASE_TAG" == "next-2026-08-19.1" ]]; then
+            echo "The audited release notes for $RELEASE_TAG are immutable." >&2
+            exit 1
           fi
-          gh release edit "${{ inputs.release_tag }}" \
-            --repo "${{ github.repository }}" \
+          python3 scripts/validate_release_workflow_identity.py \
+            --date-tag "$RELEASE_DATE_TAG" \
+            --release-tag "$RELEASE_TAG" \
+            --prerelease "$RELEASE_PRERELEASE" \
+            --repository "$RELEASE_REPOSITORY"
+          python3 scripts/validate_release_notes.py \
+            --notes-file "$RELEASE_NOTES_PATH" \
+            --date-tag "$RELEASE_DATE_TAG" \
+            --release-tag "$RELEASE_TAG" \
+            --repository "$RELEASE_REPOSITORY"
+          release_title="LizzieYzy Next $RELEASE_TAG"
+          if [[ "$RELEASE_TAG" == "next-2026-06-29.1" ]]; then
+            release_title="LizzieYzy Next 首冠版 $RELEASE_TAG"
+          fi
+          gh release edit "$RELEASE_TAG" \
+            --repo "$RELEASE_REPOSITORY" \
             --title "$release_title" \
-            --notes-file "dist/release-meta/${{ inputs.date_tag }}-release-notes.md"
+            --notes-file "$RELEASE_NOTES_PATH"

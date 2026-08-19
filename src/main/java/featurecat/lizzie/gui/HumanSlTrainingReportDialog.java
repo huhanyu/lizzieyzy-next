@@ -17,6 +17,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.Rectangle;
 import java.awt.Window;
 import java.text.MessageFormat;
 import java.util.ResourceBundle;
@@ -50,9 +51,12 @@ public final class HumanSlTrainingReportDialog extends JDialog {
     setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
     setContentPane(buildContent());
     pack();
-    setMinimumSize(new Dimension(900, 520));
-    setSize(Math.max(1040, getWidth()), Math.max(590, getHeight()));
+    Rectangle usableBounds = HumanSlDialogBounds.usableBounds(owner, this);
+    Dimension target = HumanSlDialogBounds.fit(getSize(), null, usableBounds, 1040, 590);
+    setMinimumSize(HumanSlDialogBounds.minimum(target, 900, 520));
+    setSize(target);
     setLocationRelativeTo(owner);
+    HumanSlDialogBounds.keepOnScreen(this, usableBounds);
   }
 
   public void showReport() {
@@ -175,7 +179,7 @@ public final class HumanSlTrainingReportDialog extends JDialog {
     scroll.setBorder(null);
     scroll.getViewport().setOpaque(false);
     scroll.setOpaque(false);
-    scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+    scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
     return scroll;
   }
 

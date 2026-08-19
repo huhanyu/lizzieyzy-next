@@ -2636,9 +2636,15 @@ public class EngineManager {
 
   public void clearEngineGame() {
     if (isEngineGame || isPreEngineGame) {
-      Lizzie.frame.addInput(true);
       isPreEngineGame = false;
-      if (!isEngineGame) return;
+      if (!isEngineGame) {
+        if (Lizzie.board != null) {
+          Lizzie.board.isPkBoard = false;
+        }
+        restoreUiAfterEngineGameStartAbort();
+        return;
+      }
+      Lizzie.frame.addInput(true);
       isEngineGame = false;
       LizzieFrame.menu.toggleDoubleMenuGameStatus();
       LizzieFrame.toolbar.isPkStop = false;
@@ -2646,14 +2652,22 @@ public class EngineManager {
   }
 
   private void restoreUiAfterEngineGameStartAbort() {
-    if (Lizzie.frame != null) {
-      Lizzie.frame.addInput(true);
-    }
-    if (LizzieFrame.toolbar != null) {
-      LizzieFrame.toolbar.enableDisabelForEngineGame(true);
-    }
-    if (Menu.engineMenu != null) {
-      Menu.engineMenu.setEnabled(true);
+    Runnable restore =
+        () -> {
+          if (Lizzie.frame != null) {
+            Lizzie.frame.addInput(true);
+          }
+          if (LizzieFrame.toolbar != null) {
+            LizzieFrame.toolbar.enableDisabelForEngineGame(true);
+          }
+          if (Menu.engineMenu != null) {
+            Menu.engineMenu.setEnabled(true);
+          }
+        };
+    if (SwingUtilities.isEventDispatchThread()) {
+      restore.run();
+    } else {
+      SwingUtilities.invokeLater(restore);
     }
   }
 

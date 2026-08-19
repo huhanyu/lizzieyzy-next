@@ -11,14 +11,18 @@
 - 野狐棋谱同步仍然可用，而且明确写成“野狐昵称”
 - 普通 Windows 包支持“智能优化”的信息要写清楚
 - NVIDIA Windows 包“首次自动准备官方运行库”的信息要写清楚
-- RTX 50 系列用户要能明确看到 CUDA 12.8 包是默认下载项；RTX 20/30/40/50 TensorRT 加速是软件内按需安装项
+- RTX 50 系列用户要能明确看到 CUDA 12.8 包是默认下载项；RTX 20/30/40/50 普通用户通过软件内按需安装 TensorRT，高级离线分卷仍作为非默认推荐的发布资产
 - README、安装文档、发布页文案、真实资产名保持一致
 - 软件内“关于”、主窗口标题、安装包启动参数、GitHub release 标题必须显示同一个 release tag，不能停在 `1.0.0`，也不要再把 `1.0.0-` 作为公开 tag 前缀
 - 程序窗口图标、安装包图标、README 展示图标不要混成两套
 
-## 二、当前推荐的公开资产集合
+## 二、当前 fail-closed 公开资产集合
 
-新发布时，优先保留下面这组资产：
+当前预发布器会先保持 GitHub Release 为 draft，只有四个平台工作流全部成功、下面的
+强制资产完整且六语发布正文通过校验后才公开 pre-release。任何一项缺失都必须保持 draft。
+
+所有带日期的文件都使用 `<date>-` 前缀，例如
+`2026-08-19-windows64.opencl.portable.zip`。当前强制公开集合是：
 
 - `windows64.opencl.portable.zip`
 - `windows64.opencl.installer.exe`
@@ -30,12 +34,25 @@
 - `windows64.nvidia50.cuda.installer.exe`
 - `windows64.without.engine.portable.zip`
 - `windows64.without.engine.installer.exe`
-- `windows64-install.txt`
+- `windows64.core-update.zip`
+- `lizzieyzy-next-update-manifest.json`（唯一不带 `<date>-` 前缀的更新清单）
+- `windows64.nvidia.tensorrt.portable.7z.001`
+- `windows64.nvidia.tensorrt.portable.7z.002`
+- `windows64.nvidia.tensorrt.portable.README.txt`
+- `windows64.nvidia.tensorrt.portable.manifest.json`
+- `windows64.nvidia.tensorrt.portable.sha256.txt`
 - `mac-apple-silicon.with-katago.dmg`
-- `mac-apple-silicon-install.txt`
 - `mac-intel.with-katago.dmg`
-- `mac-intel-install.txt`
 - `linux64.with-katago.zip`
+- `linux64.opencl.zip`
+- `linux64.nvidia.zip`
+
+这里的“强制公开”不等于“普通用户默认推荐”。TensorRT 分卷只面向需要离线预装的高级
+用户，普通用户仍应从软件内按需安装；但在当前 fail-closed 预发布链路中，分卷及其 README、
+manifest、SHA-256 文件仍是缺一不可的强制资产。
+
+`windows64-install.txt`、`mac-apple-silicon-install.txt`、`mac-intel-install.txt` 等安装说明
+属于构建元数据，不在当前 GitHub Release 公开上传白名单中，不要把它们写成公开资产。
 
 不再建议重新上传的旧思路：
 
@@ -58,15 +75,19 @@
 - `scripts/macos_katago_bundle.py`
 - `scripts/package_windows_exe.sh`
 - `scripts/generate_release_notes.py`
+- `scripts/publish_release_request.py`
+- `scripts/r2_release.py`
 - `scripts/validate_release_assets.sh`
 
 GitHub Actions：
 
+- `.github/workflows/publish-requested-pre-release.yml`
 - `.github/workflows/build-windows-release.yml`
 - `.github/workflows/build-linux-release.yml`
 - `.github/workflows/build-macos-arm64-release.yml`
 - `.github/workflows/build-macos-amd64-release.yml`
 - `.github/workflows/update-release-notes.yml`
+- `.github/workflows/promote-stable-release.yml`
 
 ## 四、构建前检查
 
@@ -75,9 +96,11 @@ GitHub Actions：
 - `README.md` 和 `README_EN.md` 的包名与计划上传的文件完全一致
 - 安装文档里的 Windows 主路径仍然是 `portable.zip`
 - 如果提供 NVIDIA 极速包，要同时核对 `nvidia.installer.exe` 和 `nvidia.portable.zip`
-- 如果提供 RTX 50 包，要核对 `nvidia50.cuda.*`，并在发布说明里写清 TensorRT 只从软件内按需安装，不再作为 release asset，安装界面会检测 NVIDIA GPU / Compute Capability
+- 必须核对 `nvidia50.cuda.*`，并在发布说明里写清：普通用户从软件内按需安装 TensorRT，安装界面会检测 NVIDIA GPU / Compute Capability；Release 中的 TensorRT 分卷是高级离线选项，不是默认推荐，但仍是当前预发布链路的强制资产
 - 如果提供 OpenCL 包，要同时核对 `opencl.installer.exe` 和 `opencl.portable.zip`
 - 如果提供 Windows 无引擎包，要同时核对 `without.engine.installer.exe` 和 `without.engine.portable.zip`
+- 必须核对 `windows64.core-update.zip` 与 `lizzieyzy-next-update-manifest.json`，并确认更新清单中的 tag、资产名、大小和 SHA-256 对应本次构建
+- Linux 必须同时核对 `linux64.with-katago.zip`、`linux64.opencl.zip` 和 `linux64.nvidia.zip`
 - 界面里仍然写的是 `野狐棋谱（输入野狐昵称获取）`
 - 发布页最上面的中文说明里，要明确写“普通 Windows 包也支持智能优化”
 - 发布页最上面的中文说明里，要明确写“NVIDIA 包首次会自动准备官方运行库”
@@ -124,14 +147,14 @@ python3 scripts/generate_app_icons.py
 - 默认模型大小：`94,281,753` 字节；架构：`transformer`；最低 KataGo：`1.17.0`
 - Windows NVIDIA 包：官方 `cuda12.1-cudnn9.8.0` 构建
 - Windows RTX 50 CUDA 包：官方 `cuda12.8-cudnn9.8.0` 构建
-- Windows TensorRT：不打入主 release 包；RTX 20/30/40/50 用户由软件内 `KataGo 一键设置` 显式下载安装官方 KataGo `v1.17.2` `trt10.9.0-cuda12.8` 构建和所需运行库，并通过 NVIDIA GPU / Compute Capability 检测给出推荐状态；GTX 10 系不建议 TensorRT，普通 NVIDIA 包要求驱动 `527.41` 或更高，仍启动失败时使用 OpenCL 包
+- Windows TensorRT：不内嵌到普通 Windows 主推荐包；RTX 20/30/40/50 普通用户由软件内 `KataGo 一键设置` 显式下载安装官方 KataGo `v1.17.2` `trt10.9.0-cuda12.8` 构建和所需运行库，并通过 NVIDIA GPU / Compute Capability 检测给出推荐状态；当前预发布链路仍强制生成并上传高级离线 TensorRT 分卷及其 README、manifest、SHA-256 文件，缺少任一项都不能公开 pre-release；GTX 10 系不建议 TensorRT，普通 NVIDIA 包要求驱动 `527.41` 或更高，仍启动失败时使用 OpenCL 包
 - `core-update.zip` 必须确认不含 `engines/`、`weights/`、NVIDIA runtime 或 TensorRT
 
 ### 5. 构建 Windows 安装器和便携包
 
 ```bash
 ./scripts/package_windows_exe.sh 2026-04-24 1.0.0 target/lizzie-yzy2.5.3-shaded.jar next-2026-04-24.2
-./scripts/validate_release_assets.sh windows dist/release 2026-04-24
+./scripts/validate_release_assets.sh windows dist/release 2026-04-24 next-2026-04-24.2 true
 ```
 
 ### 6. 构建 Linux 主整合包
@@ -184,8 +207,13 @@ python3 scripts/generate_release_notes.py \
 ```bash
 gh workflow run update-release-notes.yml \
   -f date_tag=2026-04-24 \
-  -f release_tag=next-2026-04-24.2
+  -f release_tag=next-2026-04-24.2 \
+  -f release_prerelease=true
 ```
+
+该工作流要求显式提供 release 的 pre-release 身份，并会再次校验 tag、日期、目标提交、
+占位符和六种语言直链表。已人工审核的 `next-2026-08-19.1` 正文被设为不可覆盖；不要用
+此生成工作流修改它。
 
 ## 六、Release Notes 应该先写什么
 
@@ -222,6 +250,7 @@ R2 只保留当前正式版且设有 `9,000,000,000` 字节硬门禁。完整配
 - 不把免安装包和安装器压缩成同一行，也不使用 `portable / installer` 这类需要用户猜测的短标签。
 - TensorRT 的 `.7z.001` 与 `.7z.002` 是同一套分卷，可以在同一行连续列出，但必须同时显示完整文件名和直链。
 - `publish_release_request.py` 会检查六种语言的下载表；任何语言缺少完整文件名直链都不能发布。
+- `lizzieyzy-next-update-manifest.json` 以及 TensorRT 的 README、manifest、SHA-256 辅助文件不进入普通用户下载表，但必须作为公开 Release 资产存在并通过发布器校验。
 - pre-release 与 Release 正文中的文件直链都保持 GitHub；正式版正文顶部只额外推荐统一的官网下载页面。
 
 ## 七、上传前自查
@@ -231,8 +260,11 @@ R2 只保留当前正式版且设有 `9,000,000,000` 字节硬门禁。完整配
 - 文件名日期一致
 - Windows 主推荐资产确实是 `portable.zip`
 - Windows 无引擎包已经是 `.portable.zip`
+- `windows64.core-update.zip` 与 `lizzieyzy-next-update-manifest.json` 已生成且互相匹配
+- TensorRT `.7z.001`、`.7z.002`、README、manifest、SHA-256 文件全部存在，分卷连续且校验值正确
 - macOS 同时有 `arm64` 与 `amd64` 的 `.dmg`
-- 发布目录里没有把 `.txt`、校验文件或历史兼容包混进公开资产
+- Linux 同时有 `with-katago`、`opencl` 与 `nvidia` 三个 zip
+- 除 TensorRT README、manifest 和 SHA-256 文件外，没有把安装说明 `.txt`、其他校验辅助文件或历史兼容包混进公开资产
 - 没把历史兼容包重新混进主 release 页面
 
 ## 八、上传后，从用户视角复查

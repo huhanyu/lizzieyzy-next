@@ -4,9 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.gui.BottomToolbar;
+import featurecat.lizzie.gui.JFontMenu;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.gui.Menu;
+import featurecat.lizzie.rules.Board;
 import java.lang.reflect.Field;
 import java.util.List;
+import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 
 class EngineManagerEngineGameStartTest {
@@ -33,6 +38,54 @@ class EngineManagerEngineGameStartTest {
     } finally {
       Lizzie.frame = previousFrame;
       Lizzie.leelaz = previousEngine;
+      EngineManager.isEngineGame = previousEngineGame;
+      EngineManager.isPreEngineGame = previousPreEngineGame;
+    }
+  }
+
+  @Test
+  void asynchronousEngineGameStartFailureRestoresEveryDisabledControl() throws Exception {
+    LizzieFrame previousFrame = Lizzie.frame;
+    BottomToolbar previousToolbar = LizzieFrame.toolbar;
+    JFontMenu previousEngineMenu = Menu.engineMenu;
+    Board previousBoard = Lizzie.board;
+    boolean previousEngineGame = EngineManager.isEngineGame;
+    boolean previousPreEngineGame = EngineManager.isPreEngineGame;
+    try {
+      TrackingFrame frame = allocate(TrackingFrame.class);
+      TrackingToolbar toolbar = allocate(TrackingToolbar.class);
+      JFontMenu engineMenu = new JFontMenu();
+      engineMenu.setEnabled(false);
+      Lizzie.frame = frame;
+      LizzieFrame.toolbar = toolbar;
+      Menu.engineMenu = engineMenu;
+      Board board = allocate(Board.class);
+      board.isPkBoard = true;
+      Lizzie.board = board;
+      EngineManager.isEngineGame = false;
+      EngineManager.isPreEngineGame = true;
+      EngineManager manager = new EngineManager(List.of());
+
+      EngineManager.PkEngineSynchronization black =
+          manager.startEngineForPkSynchronization(-1);
+      EngineManager.PkEngineSynchronization white =
+          manager.startEngineForPkSynchronization(-1);
+
+      assertFalse(manager.finishPkEngineSynchronizations(black, white));
+      assertFalse(Lizzie.board.isPkBoard);
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertFalse(EngineManager.isPreEngineGame);
+      assertFalse(EngineManager.isEngineGame);
+      assertTrue(frame.inputRestored);
+      assertTrue(toolbar.controlsEnabled);
+      assertTrue(toolbar.updatedOnEventDispatchThread);
+      assertTrue(engineMenu.isEnabled());
+    } finally {
+      Lizzie.frame = previousFrame;
+      LizzieFrame.toolbar = previousToolbar;
+      Menu.engineMenu = previousEngineMenu;
+      Lizzie.board = previousBoard;
       EngineManager.isEngineGame = previousEngineGame;
       EngineManager.isPreEngineGame = previousPreEngineGame;
     }
@@ -89,5 +142,25 @@ class EngineManagerEngineGameStartTest {
 
     @Override
     public void setResult(String result) {}
+  }
+
+  private static final class TrackingFrame extends LizzieFrame {
+    private boolean inputRestored;
+
+    @Override
+    public void addInput(boolean shouldAdd) {
+      inputRestored = shouldAdd;
+    }
+  }
+
+  private static final class TrackingToolbar extends BottomToolbar {
+    private boolean controlsEnabled;
+    private boolean updatedOnEventDispatchThread;
+
+    @Override
+    public void enableDisabelForEngineGame(boolean enable) {
+      controlsEnabled = enable;
+      updatedOnEventDispatchThread = SwingUtilities.isEventDispatchThread();
+    }
   }
 }

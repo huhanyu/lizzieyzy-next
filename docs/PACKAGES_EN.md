@@ -16,7 +16,7 @@ This page describes the public release layout of the maintained `LizzieYzy Next`
 - If OpenCL behaves poorly, switch to `windows64.with-katago.portable.zip`
 - If you have an RTX 20/30/40 NVIDIA GPU and want more speed, switch to `windows64.nvidia.portable.zip`
 - RTX 5070/5080/5090 users should try `windows64.nvidia50.cuda.portable.zip` first; TensorRT acceleration is installed on demand from inside the app
-- TensorRT is no longer a giant release package; RTX 20/30/40/50 users can install it from `KataGo Auto Setup`. TensorRT is not recommended for GTX 10 series cards; the regular NVIDIA package requires driver `527.41` or newer, and users should switch to the OpenCL package if it still cannot start
+- In-app `KataGo Auto Setup` is the regular TensorRT path; the Release also keeps an advanced optional split offline package. TensorRT is not recommended for GTX 10 series cards; the regular NVIDIA package requires driver `527.41` or newer, and users should switch to the OpenCL package if it still cannot start
 - `KataGo Auto Setup` detects the local NVIDIA GPU / Compute Capability and shows recommended, try, not recommended, or unknown status before TensorRT install
 
 ## The 15 Primary Public Release Assets
@@ -107,7 +107,7 @@ Current bundled defaults:
 - Transformer performs best through CUDA or Metal; OpenCL remains fully offline-capable but is normally slower
 - `core-update.zip` updates only the application and does not include KataGo 1.17 or the new weight; install the latest full bundle to upgrade from the old default
 - Full-bundle migration changes only managed engines still using the old bundled `zhizi 28B` / `default.bin.gz`; custom weights, remote compute, and startup modes are preserved
-- TensorRT acceleration: no longer published as a giant GitHub Release package; RTX 20/30/40/50 users can install it on demand from `KataGo Auto Setup` inside the app
+- TensorRT acceleration: regular users install it on demand from `KataGo Auto Setup`; advanced offline users may download every Release split plus its README, manifest, and SHA-256 file, then extract from `.001`
 - RTX 50 users should still start with the `windows64.nvidia50.cuda` package, with TensorRT as an on-demand acceleration path for the newer architecture
 - The TensorRT install UI uses `nvidia-smi` to detect the local NVIDIA GPU, with a lightweight model-name fallback when Compute Capability is unavailable
 
@@ -129,7 +129,7 @@ From the new maintained releases onward:
 - the main Windows x64 package is `portable.zip`
 - Windows x64 now exposes OpenCL, CPU fallback, NVIDIA, and NVIDIA 50 CUDA variants in both portable and installer forms
 - the Windows x64 no-engine option now has both an installer and a portable `.zip`
-- the public release page keeps the 15 primary user-facing assets above as the main list; TensorRT acceleration is an in-app on-demand install, not a release asset
+- the public release page keeps the 15 primary first-download assets above as the main list; TensorRT uses in-app installation by default, while an advanced optional split offline package and its verification metadata remain Release assets
 - older compatibility zips now stay in historical tags instead of the main recommendation area
 
 ## Related Docs

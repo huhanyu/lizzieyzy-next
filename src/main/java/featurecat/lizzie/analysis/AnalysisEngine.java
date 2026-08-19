@@ -403,16 +403,14 @@ public class AnalysisEngine {
   }
 
   public void tryToDignostic(String message) {
-    EngineFailedMessage engineFailedMessage =
-        new EngineFailedMessage(
-            commands,
-            engineCommand,
-            message,
-            !useJavaSSH && !useRemoteCompute && OS.isWindows(),
-            false,
-            false);
-    engineFailedMessage.setModal(true);
-    engineFailedMessage.setVisible(true);
+    EngineFailedMessage.showDialog(
+        commands,
+        engineCommand,
+        message,
+        !useJavaSSH && !useRemoteCompute && OS.isWindows(),
+        false,
+        false,
+        true);
   }
 
   private void initializeStreams() {

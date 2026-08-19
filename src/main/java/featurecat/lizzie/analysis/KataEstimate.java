@@ -206,6 +206,11 @@ public class KataEstimate {
   }
 
   private void showErrMsg(Exception e) {
+    EngineFailedMessage.runOnEventDispatchThreadAndWait(
+        () -> showErrMsgOnEventDispatchThread(e));
+  }
+
+  private void showErrMsgOnEventDispatchThread(Exception e) {
     if (isPreLoad) return;
     String errMas = "";
     if (Lizzie.config.useZenEstimate) {
@@ -703,15 +708,14 @@ public class KataEstimate {
   }
 
   public void tryToDignostic(String message) {
-    EngineFailedMessage engineFailedMessage =
-        new EngineFailedMessage(
-            commands,
-            engineCommand,
-            message,
-            !this.useJavaSSH && !this.useRemoteCompute && OS.isWindows(),
-            true,
-            false);
-    engineFailedMessage.setVisible(true);
+    EngineFailedMessage.showDialog(
+        commands,
+        engineCommand,
+        message,
+        !this.useJavaSSH && !this.useRemoteCompute && OS.isWindows(),
+        true,
+        false,
+        false);
   }
 
   public boolean isOperational() {
