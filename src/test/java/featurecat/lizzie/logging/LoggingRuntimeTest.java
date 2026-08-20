@@ -193,6 +193,39 @@ class LoggingRuntimeTest {
   }
 
   @Test
+  void rejectedEventsDoNotGrowCompletionBookkeeping() throws Exception {
+    LoggingRuntime runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(tempDir, List.of()),
+            new LoggingLimits(32, 1, 1, 1, 7, 10000, 1000));
+    runtime.startFullTrace(EnumSet.of(TraceScope.ENGINE_GTP));
+    CountDownLatch gate = new CountDownLatch(1);
+    runtime.blockPersistenceForTests(LogStream.ENGINE_TRACE, gate);
+    org.slf4j.Logger trace = LoggerFactory.getLogger(LogCategories.ENGINE_TRACE);
+    for (int i = 0; i < 10_002; i++) {
+      trace.info("reject-flood-{}", i);
+    }
+    try {
+      assertTrue(runtime.droppedCountForTests(LogStream.ENGINE_TRACE) >= 10_000L);
+      int queued = runtime.queuedCountForTests(LogStream.ENGINE_TRACE);
+      long inFlight = runtime.inFlightCountForTests(LogStream.ENGINE_TRACE);
+      int bookkeeping = runtime.completionBookkeepingSizeForTests(LogStream.ENGINE_TRACE);
+      assertTrue(queued <= 1, "queued=" + queued);
+      assertTrue(inFlight <= 1, "inFlight=" + inFlight);
+      assertTrue(
+          bookkeeping <= queued + inFlight,
+          "bookkeeping="
+              + bookkeeping
+              + " queued="
+              + queued
+              + " inFlight="
+              + inFlight);
+    } finally {
+      gate.countDown();
+    }
+  }
+
+  @Test
   void sanitizerRemovesCredentialCanariesAndKeepsOrdinaryPaths() throws Exception {
     LoggingRuntime runtime = start();
     LoggerFactory.getLogger(LogCategories.APP)

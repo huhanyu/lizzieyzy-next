@@ -3,6 +3,8 @@ package featurecat.lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.MoveRankEvaluationMode;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.logging.CrashHandlers;
+import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.logging.LoggingSettings;
 import featurecat.lizzie.logging.WorkDirectoryResolver;
 import featurecat.lizzie.theme.Theme;
@@ -24,8 +26,11 @@ import java.util.*;
 import javax.swing.*;
 import org.jdesktop.swingx.util.OS;
 import org.json.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Config {
+  private static final Logger LOG = LoggerFactory.getLogger(LogCategories.CONFIG);
   public static final String BOARD_STYLE_JAPANESE = "japanese";
   public static final String BOARD_STYLE_CHINESE_CLASSIC = "chinese-classic";
 
@@ -325,7 +330,9 @@ public class Config {
           new File(Config.class.getProtectionDomain().getCodeSource().getLocation().toURI());
       seedPaths.add((codeSource.isFile() ? codeSource.toPath().getParent() : codeSource.toPath()));
     } catch (Exception e) {
-      e.printStackTrace();
+      if (LOG.isErrorEnabled()) {
+        LOG.error("config operation={} source={} outcome={}", "resolve", "bundled-root", "failed", e);
+      }
     }
     seedPaths.add(Path.of("").toAbsolutePath());
     seedPaths.add(Path.of(System.getProperty("user.dir")).toAbsolutePath());
@@ -1210,7 +1217,6 @@ public class Config {
   public int txtMoveRankMarkLastMove = 3;
   public int moveRankMarkLastMove = 1; // -1关闭 0全部
   public boolean disableMoveRankInOrigin = false;
-  public boolean logConsoleToFile = false;
   public boolean logGtpToFile = false;
   public LoggingSettings loggingSettings = LoggingSettings.defaults();
   public boolean enableStartupBenchmark = true;
@@ -1315,33 +1321,27 @@ public class Config {
       dir.mkdirs();
     }
     if (!file.canRead()) {
-      System.err.printf("Creating config file %s\n", fileName);
-
       try {
         writeConfig(defaultCfg, file);
       } catch (JSONException e) {
-        e.printStackTrace();
-        System.exit(1);
+        failClosed("saveboard", e);
       }
     }
     try {
       JSONObject mergedcfg = readJsonObject(file.toPath());
-      boolean modified = mergeDefaults(mergedcfg, defaultCfg);
-
+      int added = mergeDefaultKeys(mergedcfg, defaultCfg);
       if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
-      if (modified) {
+      if (added > 0) {
         writeConfig(mergedcfg, file);
       }
+      logConfig("load", "saveboard", "success", added, null);
       return mergedcfg;
     } catch (JSONException e) {
-      e.printStackTrace();
-      System.err.printf("Creating config file %s\n", fileName);
-
+      logConfig("load", "saveboard", "recovered", 0, e);
       try {
         writeConfig(defaultCfg, file);
       } catch (JSONException es) {
-        es.printStackTrace();
-        System.exit(1);
+        failClosed("saveboard", es);
       }
       return defaultCfg;
     }
@@ -1376,44 +1376,41 @@ public class Config {
   private JSONObject loadAndMergeConfig(
       JSONObject defaultCfg, String fileName, boolean needValidation) throws IOException {
     File file = new File(fileName);
-    if (!file.canRead()) {
-      System.err.printf("Creating config file %s\n", fileName);
+    boolean created = !file.canRead();
+    String source = configSourceKind(fileName);
+    if (created) {
       try {
         writeConfig(defaultCfg, file);
       } catch (JSONException e) {
-        e.printStackTrace();
-        System.exit(1);
+        failClosed(source, e);
       }
     }
-
     JSONObject mergedcfg = readJsonObject(file.toPath());
-    boolean modified = mergeDefaults(mergedcfg, defaultCfg);
-
+    int added = mergeDefaultKeys(mergedcfg, defaultCfg);
     if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
-    if (modified) {
+    if (added > 0) {
       writeConfig(mergedcfg, file);
     }
+    logConfig("load", created ? source + "/created-default" : source, "success", added, null);
     return mergedcfg;
   }
 
   private JSONObject loadAndMergeConfigdef(
       JSONObject defaultCfg, String fileName, boolean needValidation) throws IOException {
     File file = new File(fileName);
-    System.err.printf("Creating config file %s\n", fileName);
+    String source = configSourceKind(fileName);
     try {
       writeConfig(defaultCfg, file);
     } catch (JSONException e) {
-      e.printStackTrace();
-      System.exit(1);
+      failClosed(source, e);
     }
-
     JSONObject mergedcfg = readJsonObject(file.toPath());
-    boolean modified = mergeDefaults(mergedcfg, defaultCfg);
-
+    int added = mergeDefaultKeys(mergedcfg, defaultCfg);
     if (needValidation) checkEmptyBlunderThresholds(mergedcfg);
-    if (modified) {
+    if (added > 0) {
       writeConfig(mergedcfg, file);
     }
+    logConfig("load", source + "/rebuilt-default", "success", added, null);
     return mergedcfg;
   }
 
@@ -1511,7 +1508,7 @@ public class Config {
         save();
       } catch (IOException e) {
         // TODO Auto-generated catch block
-        e.printStackTrace();
+        logConfig("save", "config", "failed", 0, e);
       }
     }
   }
@@ -1553,14 +1550,14 @@ public class Config {
     try {
       this.persisted = loadAndMergeConfig(persistConfig, persistFilename, false);
     } catch (Exception e) {
-      e.printStackTrace();
+      logConfig("load", "persist", "recovered", 0, e);
       this.persisted = persistConfig;
     }
     // Main properties
     try {
       this.config = loadAndMergeConfig(defaultConfig, configFilename, true);
     } catch (JSONException e) {
-      e.printStackTrace();
+      logConfig("load", "config", "unreadable", 0, e);
       backupUnreadableConfig(new File(configFilename));
       this.config = loadAndMergeConfigdef(defaultConfig, configFilename, true);
     }
@@ -2030,8 +2027,8 @@ public class Config {
     txtMoveRankMarkLastMove = uiConfig.optInt("txt-move-rank-mark-last-move", 3);
     moveRankMarkLastMove = uiConfig.optInt("move-rank-mark-last-move", 1);
     disableMoveRankInOrigin = uiConfig.optBoolean("disable-move-rank-in-origin", false);
-    logConsoleToFile = uiConfig.optBoolean("log-console-to-file", false);
     logGtpToFile = uiConfig.optBoolean("log-gtp-to-file", false);
+    migrateLegacyConsoleLogging();
     enableStartupBenchmark = uiConfig.optBoolean("enable-startup-benchmark", true);
     readBoardGetFocus = uiConfig.optBoolean("read-board-get-focus", true);
     useScoreLossInMoveRank = uiConfig.optBoolean("use-score-loss-in-move-rank", true);
@@ -2171,7 +2168,7 @@ public class Config {
     try {
       save();
     } catch (IOException e) {
-      e.printStackTrace();
+      logConfig("save", "config", "failed", 0, e);
     }
   }
 
@@ -2188,7 +2185,7 @@ public class Config {
     try {
       save();
     } catch (IOException e) {
-      e.printStackTrace();
+      logConfig("save", "config", "failed", 0, e);
     }
   }
 
@@ -2327,7 +2324,11 @@ public class Config {
   // Modifies config by adding in values from default_config that are missing.
   // Returns whether it added anything.
   public boolean mergeDefaults(JSONObject config, JSONObject defaultsConfig) {
-    boolean modified = false;
+    return mergeDefaultKeys(config, defaultsConfig) > 0;
+  }
+
+  private int mergeDefaultKeys(JSONObject config, JSONObject defaultsConfig) {
+    int added = 0;
     Iterator<String> keys = defaultsConfig.keys();
     while (keys.hasNext()) {
       String key = keys.next();
@@ -2336,18 +2337,16 @@ public class Config {
         Object oldVal = config.opt(key);
         if (!(oldVal instanceof JSONObject)) {
           config.put(key, new JSONObject(((JSONObject) newVal).toString()));
-          modified = true;
+          added++;
           continue;
         }
-        modified |= mergeDefaults((JSONObject) oldVal, (JSONObject) newVal);
-      } else {
-        if (!config.has(key)) {
-          config.put(key, newVal);
-          modified = true;
-        }
+        added += mergeDefaultKeys((JSONObject) oldVal, (JSONObject) newVal);
+      } else if (!config.has(key)) {
+        config.put(key, newVal);
+        added++;
       }
     }
-    return modified;
+    return added;
   }
 
   private static void backupUnreadableConfig(File configFile) {
@@ -2366,9 +2365,9 @@ public class Config {
     }
     try {
       Files.copy(source, backup);
-      System.err.println("Saved unreadable config backup to " + backup);
+      logConfig("backup", "config", "success", 0, null);
     } catch (IOException backupError) {
-      backupError.printStackTrace();
+      logConfig("backup", "config", "failed", 0, backupError);
     }
   }
 
@@ -2378,8 +2377,7 @@ public class Config {
     try {
       save();
     } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
+      logConfig("save", "config", "failed", 0, e);
     }
   }
 
@@ -2615,7 +2613,7 @@ public class Config {
       Lizzie.config.save();
     } catch (IOException e) {
       // TODO Auto-generated catch block
-      e.printStackTrace();
+      logConfig("save", "config", "failed", 0, e);
     }
     Lizzie.frame.setVarTreeVisible(showVariationGraph);
     if (extraMode == ExtraMode.Min && showVariationGraph) toggleExtraMode(0);
@@ -3498,7 +3496,7 @@ public class Config {
       try {
         this.persisted = loadAndMergeConfig(persistConfig, persistFilename, false);
       } catch (Exception e) {
-        e.printStackTrace();
+        logConfig("load", "persist", "recovered", 0, e);
         this.persisted = persistConfig;
       }
       persistedUi = persisted.getJSONObject("ui-persist");
@@ -3520,7 +3518,13 @@ public class Config {
   }
 
   public void save() throws IOException {
-    writeConfig(this.config, new File(configFilename));
+    try {
+      writeConfig(this.config, new File(configFilename));
+      logConfig("save", "config", "success", 0, null);
+    } catch (IOException e) {
+      logConfig("save", "config", "failed", 0, e);
+      throw e;
+    }
   }
 
   public void suppressReadBoardWebSocketPonderingNotice() {
@@ -3529,29 +3533,47 @@ public class Config {
     try {
       save();
     } catch (IOException e) {
-      e.printStackTrace();
+      logConfig("save", "config", "failed", 0, e);
     }
   }
 
   public void saveConfigSections(JSONObject candidateUi, JSONObject candidateLeelaz)
       throws IOException {
+    int changed = 0;
+    if (LOG.isInfoEnabled()) {
+      changed =
+          countChangedValues(this.uiConfig, candidateUi)
+              + countChangedValues(this.leelazConfig, candidateLeelaz);
+    }
     JSONObject candidateRoot = new JSONObject(this.config.toString());
     candidateRoot.put("ui", new JSONObject(candidateUi.toString()));
     candidateRoot.put("leelaz", new JSONObject(candidateLeelaz.toString()));
-    writeConfig(candidateRoot, new File(configFilename));
+    try {
+      writeConfig(candidateRoot, new File(configFilename));
+    } catch (IOException e) {
+      logConfig("save", "sections", "failed", changed, e);
+      throw e;
+    }
     this.config = candidateRoot;
     this.uiConfig = candidateRoot.getJSONObject("ui");
     this.leelazConfig = candidateRoot.getJSONObject("leelaz");
+    logConfig("save", "sections", "success", changed, null);
   }
 
   public void saveLoggingSettings(LoggingSettings settings) throws IOException {
     JSONObject candidateRoot = new JSONObject(this.config.toString());
     candidateRoot.put(LoggingSettings.CONFIG_KEY, settings.toJson());
-    writeConfig(candidateRoot, new File(configFilename));
+    try {
+      writeConfig(candidateRoot, new File(configFilename));
+    } catch (IOException e) {
+      logConfig("save", "logging", "failed", 0, e);
+      throw e;
+    }
     this.config = candidateRoot;
     this.uiConfig = candidateRoot.getJSONObject("ui");
     this.leelazConfig = candidateRoot.getJSONObject("leelaz");
     this.loggingSettings = settings;
+    logConfig("save", "logging", "success", 0, null);
   }
 
   public void saveTempBoard() throws IOException {
@@ -3595,7 +3617,7 @@ public class Config {
       save();
     } catch (IOException e) {
       // TODO Auto-generated catch block
-      e.printStackTrace();
+      logConfig("save", "config", "failed", 0, e);
     }
   }
 
@@ -3877,4 +3899,93 @@ public class Config {
   public boolean isNormalMode() {
     return extraMode == ExtraMode.Normal;
   }
+
+  void migrateLegacyConsoleLogging() {
+    if (uiConfig == null || !uiConfig.has("log-console-to-file")) {
+      return;
+    }
+    uiConfig.remove("log-console-to-file");
+    logConfig("migration", "log-console-to-file", "removed", 1, null);
+    try {
+      save();
+    } catch (IOException e) {
+      logConfig("migration", "log-console-to-file", "failed", 1, e);
+    }
+  }
+
+  private static String configSourceKind(String fileName) {
+    String name = new File(fileName).getName();
+    if (name.startsWith("persist")) {
+      return "persist";
+    }
+    if (name.contains("save")) {
+      return "saveboard";
+    }
+    return "config";
+  }
+
+  private static int countChangedValues(JSONObject previous, JSONObject candidate) {
+    if (previous == null && candidate == null) {
+      return 0;
+    }
+    if (previous == null) {
+      return candidate.length();
+    }
+    if (candidate == null) {
+      return previous.length();
+    }
+    int changed = 0;
+    for (String key : candidate.keySet()) {
+      if (!previous.has(key) || !jsonValuesEqual(previous.opt(key), candidate.opt(key))) {
+        changed++;
+      }
+    }
+    for (String key : previous.keySet()) {
+      if (!candidate.has(key)) {
+        changed++;
+      }
+    }
+    return changed;
+  }
+
+  private static boolean jsonValuesEqual(Object previous, Object candidate) {
+    if (previous instanceof JSONObject && candidate instanceof JSONObject) {
+      return ((JSONObject) previous).similar(candidate);
+    }
+    if (previous instanceof JSONArray && candidate instanceof JSONArray) {
+      return ((JSONArray) previous).similar(candidate);
+    }
+    return java.util.Objects.equals(previous, candidate);
+  }
+
+  private static void logConfig(
+      String operation, String source, String outcome, int changedKeys, Throwable error) {
+    if (error != null) {
+      if (LOG.isErrorEnabled()) {
+        LOG.error(
+            "config operation={} source={} changedKeys={} outcome={}",
+            operation,
+            source,
+            changedKeys,
+            outcome,
+            error);
+      }
+      return;
+    }
+    if (LOG.isInfoEnabled()) {
+      LOG.info(
+          "config operation={} source={} changedKeys={} outcome={}",
+          operation,
+          source,
+          changedKeys,
+          outcome);
+    }
+  }
+
+  static void failClosed(String source, JSONException error) {
+    logConfig("load", source, "failed", 0, error);
+    CrashHandlers.recordFatal(error);
+    System.exit(1);
+  }
 }
+

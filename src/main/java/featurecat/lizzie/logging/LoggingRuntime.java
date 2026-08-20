@@ -378,6 +378,68 @@ public final class LoggingRuntime {
     }
   }
 
+  void delayNestedAppendForTests(LogStream stream, long millis) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    if (appender != null) {
+      appender.setNestedAppendDelayMillis(millis);
+    }
+  }
+
+  void pauseHandoffForTests(LogStream stream, CountDownLatch entered, CountDownLatch hold) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    if (appender != null) {
+      appender.setHandoffForTests(entered, hold);
+    }
+  }
+
+  void pausePublishForTests(LogStream stream, CountDownLatch entered, CountDownLatch hold) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    if (appender != null) {
+      appender.setPublishHoldForTests(entered, hold);
+    }
+  }
+
+  int completionBookkeepingSizeForTests(LogStream stream) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    return appender == null ? 0 : appender.completionBookkeepingSize();
+  }
+
+  int queuedCountForTests(LogStream stream) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    return appender == null ? 0 : appender.queuedCount();
+  }
+
+  long inFlightCountForTests(LogStream stream) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    return appender == null ? 0L : appender.inFlightCount();
+  }
+
+  long droppedCountForTests(LogStream stream) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    return appender == null ? 0L : appender.droppedCount();
+  }
+
+  void awaitAppAndCrashPersistence() {
+    long deadline = System.nanoTime() + LoggingLimits.SHUTDOWN_BUDGET_NANOS;
+    BoundedAsyncAppender app = appenders.get(LogStream.APP);
+    BoundedAsyncAppender crash = appenders.get(LogStream.CRASH);
+    long appMark = app == null ? 0L : app.submittedCount();
+    long crashMark = crash == null ? 0L : crash.submittedCount();
+    boolean appDone = app == null || app.awaitSubmitted(appMark, deadline);
+    boolean crashDone = crash == null || crash.awaitSubmitted(crashMark, deadline);
+    if (appDone && crashDone) {
+      return;
+    }
+    long unwritten = 0L;
+    if (app != null) {
+      unwritten += Math.max(0L, app.submittedCount() - app.completedCount());
+    }
+    if (crash != null) {
+      unwritten += Math.max(0L, crash.submittedCount() - crash.completedCount());
+    }
+    notice("crash", "unwritten events=" + unwritten);
+  }
+
   void awaitIdle() {
     awaitIdle(40);
   }
@@ -386,7 +448,8 @@ public final class LoggingRuntime {
     for (int i = 0; i < spins; i++) {
       boolean idle = true;
       for (BoundedAsyncAppender appender : appenders.values()) {
-        if (appender != null && appender.queuedCount() > 0) {
+        if (appender != null
+            && (appender.queuedCount() > 0 || appender.inFlightCount() > 0)) {
           idle = false;
           break;
         }
