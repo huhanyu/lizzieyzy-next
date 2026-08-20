@@ -23,6 +23,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Insets;
+import java.awt.FlowLayout;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
@@ -7812,19 +7813,6 @@ public class Menu extends JMenuBar {
     if (!first) doubleMenu(false);
   }
 
-  static void lockDoubleMenuCheckBoxSize(AbstractButton checkBox) {
-    if (checkBox == null) {
-      return;
-    }
-    checkBox.setPreferredSize(null);
-    int extra = Lizzie.config != null && Lizzie.config.shouldWidenCheckBox ? 4 : 0;
-    int width =
-        AccessibilitySupport.localizedControlWidth(
-            checkBox, (int) checkBox.getPreferredSize().getWidth() + extra);
-    Dimension size = new Dimension(width, Config.menuHeight - 3);
-    checkBox.setPreferredSize(size);
-    checkBox.setMinimumSize(size);
-  }
 
   static String withTrailingColon(String text) {
     if (text == null || text.isEmpty()) {
@@ -7839,27 +7827,36 @@ public class Menu extends JMenuBar {
   static JPanel attachDoubleMenuLabeledField(
       AbstractButton enable, JLabel label, JTextField field, String labelText) {
     enable.setText("");
-    lockDoubleMenuCheckBoxSize(enable);
+    enable.setIconTextGap(0);
+    enable.setMargin(new Insets(0, 0, 0, 0));
+    int iconWidth = enable.getIcon() == null ? 16 : enable.getIcon().getIconWidth();
+    Insets checkInsets = enable.getInsets();
+    Dimension checkSize =
+        new Dimension(
+            iconWidth + checkInsets.left + checkInsets.right, Config.menuHeight - 3);
+    enable.setPreferredSize(checkSize);
+    enable.setMinimumSize(checkSize);
+    enable.setMaximumSize(checkSize);
     label.setText(withTrailingColon(labelText));
+    int labelWidth = label.getFontMetrics(label.getFont()).stringWidth(label.getText()) + 2;
+    label.setPreferredSize(new Dimension(labelWidth, 18));
     boolean small = Lizzie.config == null || Lizzie.config.isFrameFontSmall();
     boolean middle = Lizzie.config != null && Lizzie.config.isFrameFontMiddle();
-    int fieldWidth = small ? 48 : (middle ? 54 : 62);
-    int fieldHeight = small ? 19 : (middle ? 21 : 25);
-    int checkWidth = enable.getPreferredSize().width;
-    int labelWidth = Math.max(label.getPreferredSize().width, small ? 35 : (middle ? 40 : 47));
-    int labelX = checkWidth;
-    int fieldX = labelX + labelWidth - 4;
-    int checkY = small ? 0 : (middle ? 1 : 2);
-    int labelY = small ? 1 : (middle ? 3 : 6);
-    int fieldY = small ? 0 : (middle ? 2 : 3);
+    Dimension fieldSize =
+        new Dimension(
+            small ? 48 : (middle ? 54 : 62),
+            small
+                ? (Lizzie.config != null && Lizzie.config.useJavaLooks ? 20 : 19)
+                : (middle
+                    ? (Lizzie.config != null && Lizzie.config.useJavaLooks ? 22 : 21)
+                    : (Lizzie.config != null && Lizzie.config.useJavaLooks ? 26 : 25)));
     field.setHorizontalAlignment(JTextField.CENTER);
-    field.setPreferredSize(new Dimension(fieldWidth, fieldHeight));
-    enable.setBounds(0, checkY, checkWidth, Config.menuHeight - 3);
-    label.setBounds(labelX, labelY, labelWidth, 18);
-    field.setBounds(fieldX, fieldY, fieldWidth, fieldHeight);
-    JPanel panel = new JPanel(null);
+    field.setPreferredSize(fieldSize);
+    field.setMinimumSize(fieldSize);
+    field.setMaximumSize(fieldSize);
+    JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
     panel.setOpaque(false);
-    panel.setPreferredSize(new Dimension(fieldX + fieldWidth + 2, Config.menuHeight));
+    panel.setBorder(new EmptyBorder(0, 0, 0, 0));
     panel.add(enable);
     panel.add(label);
     panel.add(field);

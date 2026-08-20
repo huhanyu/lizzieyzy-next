@@ -5,9 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Lizzie;
+import java.awt.Insets;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JPanel;
 import org.junit.jupiter.api.Test;
@@ -28,8 +30,9 @@ class DoubleMenuEngineCheckBoxLayoutTest {
     JFontCheckBox enable = new JFontCheckBox();
     JFontLabel label = new JFontLabel();
     JFontTextField field = new JFontTextField();
-
     JPanel panel = Menu.attachDoubleMenuLabeledField(enable, label, field, rawLabel);
+    panel.setSize(panel.getPreferredSize());
+    panel.doLayout();
 
     assertEquals("", enable.getText());
     assertTrue(
@@ -38,12 +41,18 @@ class DoubleMenuEngineCheckBoxLayoutTest {
     assertTrue(label.getText().startsWith(rawLabel.replaceAll("[:：]+$", "")));
     assertEquals(3, panel.getComponentCount());
     assertFalse(containsSpinner(panel));
+
+    Icon icon = enable.getIcon();
+    int iconWidth = icon == null ? 16 : icon.getIconWidth();
+    Insets insets = enable.getInsets();
     assertTrue(
-        field.getX() <= label.getX() + label.getWidth(),
-        () -> "field x=" + field.getX() + " should sit against label " + label.getBounds());
+        enable.getPreferredSize().width <= iconWidth + insets.left + insets.right,
+        () -> "checkbox wider than icon: " + enable.getPreferredSize().width);
+
+    assertEquals(0, field.getX() - (label.getX() + label.getWidth()));
     assertTrue(
-        field.getX() >= label.getX() + label.getWidth() - 8,
-        () -> "field x=" + field.getX() + " too far from label " + label.getBounds());
+        field.getX() - (enable.getX() + enable.getWidth()) >= label.getWidth() - 2,
+        () -> "label not sitting between checkbox and field: " + panel.getBounds());
   }
 
   private static boolean containsSpinner(JPanel panel) {
