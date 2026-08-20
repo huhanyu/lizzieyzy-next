@@ -58,6 +58,11 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
     this.nestedStopPauseMillis = nestedStopPauseMillis;
   }
 
+  boolean isNestedStartedForTests() {
+    Appender<ILoggingEvent> current = nested;
+    return current != null && current.isStarted();
+  }
+
   void setActiveFile(Path activeFile) {
     this.activeFile = activeFile;
   }
@@ -122,6 +127,9 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
             }
             nested.stop();
           });
+      if (nested.isStarted()) {
+        nested.stop();
+      }
     }
     super.stop();
     return queue.size() + inFlight.get() + abandoned.get();

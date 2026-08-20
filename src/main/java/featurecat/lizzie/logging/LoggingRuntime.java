@@ -302,6 +302,9 @@ public final class LoggingRuntime {
       }
       try {
         Deadline.run(deadline, context::stop);
+        if (context.isStarted()) {
+          context.stop();
+        }
       } catch (RuntimeException ignored) {
       }
       CorrelationContext.clearAsync();
@@ -355,6 +358,11 @@ public final class LoggingRuntime {
     if (appender != null) {
       appender.setNestedStopPauseMillis(millis);
     }
+  }
+
+  boolean isNestedStartedForTests(LogStream stream) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    return appender != null && appender.isNestedStartedForTests();
   }
 
   void replaceSanitizerForTests(PersistenceSanitizer sanitizer) {

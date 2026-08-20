@@ -379,7 +379,7 @@ class LoggingRuntimeTest {
   }
 
   @Test
-  void shutdownHonorsThreeSecondBudgetWhenNestedStopIsSlow() {
+  void shutdownHonorsThreeSecondBudgetWhenNestedStopIsSlow() throws Exception {
     LoggingRuntime runtime = start();
     runtime.pauseNestedStopForTests(LogStream.APP, 5_000);
     long started = System.nanoTime();
@@ -388,6 +388,10 @@ class LoggingRuntimeTest {
     assertTrue(
         elapsed <= LoggingLimits.SHUTDOWN_BUDGET_NANOS + TimeUnit.MILLISECONDS.toNanos(100),
         "elapsedNanos=" + elapsed);
+    assertFalse(runtime.isNestedStartedForTests(LogStream.APP));
+    assertFalse(runtime.isNestedStartedForTests(LogStream.CRASH));
+    Files.delete(tempDir.resolve("logs/app.log"));
+    Files.delete(tempDir.resolve("logs/crash.log"));
   }
 
   @Test

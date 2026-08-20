@@ -18,5 +18,8 @@ final class Deadline {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+    if (thread.isAlive()) {
+      thread.interrupt();
+    }
   }
 }

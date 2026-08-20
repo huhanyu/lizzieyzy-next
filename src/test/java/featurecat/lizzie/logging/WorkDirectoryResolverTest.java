@@ -107,7 +107,9 @@ class WorkDirectoryResolverTest {
   }
 
   @Test
+  @DisabledOnOs(OS.WINDOWS)
   void migratedLegacyConfigMovesToPreferredHomeDirectory() throws Exception {
+    Assumptions.assumeTrue(Files.getFileStore(Path.of("/tmp")).supportsFileAttributeView("posix"));
     Path home = Files.createTempDirectory("lizzie-migrate-home");
     Path installed = Files.createTempDirectory("lizzie-migrate-installed");
     Files.setPosixFilePermissions(installed, PosixFilePermissions.fromString("r-xr-xr-x"));
