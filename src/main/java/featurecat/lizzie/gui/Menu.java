@@ -7810,6 +7810,20 @@ public class Menu extends JMenuBar {
     if (!first) doubleMenu(false);
   }
 
+  static void lockDoubleMenuCheckBoxSize(AbstractButton checkBox) {
+    if (checkBox == null) {
+      return;
+    }
+    checkBox.setPreferredSize(null);
+    int extra = Lizzie.config != null && Lizzie.config.shouldWidenCheckBox ? 4 : 0;
+    int width =
+        AccessibilitySupport.localizedControlWidth(
+            checkBox, (int) checkBox.getPreferredSize().getWidth() + extra);
+    Dimension size = new Dimension(width, Config.menuHeight - 3);
+    checkBox.setPreferredSize(size);
+    checkBox.setMinimumSize(size);
+  }
+
   public void doubleMenu(boolean first) {
     if (!Lizzie.config.showDoubleMenu) {
       Lizzie.frame.topPanel.setVisible(false);
@@ -9201,8 +9215,7 @@ public class Menu extends JMenuBar {
 
     Lizzie.frame.topPanel.add(chkPDA);
     chkPDA.setText(resourceBundle.getString("Menu.separateLblPda"));
-    chkPDA.setPreferredSize(
-        new Dimension((int) chkPDA.getPreferredSize().getWidth(), Config.menuHeight - 3));
+    lockDoubleMenuCheckBoxSize(chkPDA);
     // lblGfPDAForDouble = new JFontLabel(resourceBundle.getString("Menu.separateLblPda"));
     // Lizzie.frame.topPanel.add(lblGfPDAForDouble);
     Lizzie.frame.topPanel.add(txtGfPDA);
@@ -9213,8 +9226,7 @@ public class Menu extends JMenuBar {
 
     Lizzie.frame.topPanel.add(chkWRN);
     chkWRN.setText(resourceBundle.getString("Menu.separateLblWrn"));
-    chkWRN.setPreferredSize(
-        new Dimension((int) chkWRN.getPreferredSize().getWidth(), Config.menuHeight - 3));
+    lockDoubleMenuCheckBoxSize(chkWRN);
     // lblWRNForDouble = new JFontLabel(resourceBundle.getString("Menu.separateLblWrn"));
     // Lizzie.frame.topPanel.add(lblWRNForDouble);
     Lizzie.frame.topPanel.add(txtWRN);
