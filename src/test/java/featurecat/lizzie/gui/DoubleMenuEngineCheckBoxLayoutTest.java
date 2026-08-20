@@ -1,69 +1,57 @@
 package featurecat.lizzie.gui;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
-import java.awt.Dimension;
-import java.awt.FontMetrics;
-import java.awt.Insets;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
-import javax.swing.AbstractButton;
-import javax.swing.Icon;
+import javax.swing.JButton;
+import javax.swing.JPanel;
 import org.junit.jupiter.api.Test;
 
 class DoubleMenuEngineCheckBoxLayoutTest {
   @Test
-  void wrnAndPdaPreferredWidthCoversIconAndLabelAfterDoubleMenuRebuild() {
+  void wrnAndPdaUseKomiStyleLabelColonAndAdjacentField() {
     for (ResourceBundle bundle :
         List.of(
             Lizzie.resourceBundle,
             ResourceBundle.getBundle("l10n.DisplayStrings", Locale.SIMPLIFIED_CHINESE))) {
-      assertUnclippedAfterRebuild(bundle.getString("Menu.separateLblWrn"));
-      assertUnclippedAfterRebuild(bundle.getString("Menu.separateLblPda"));
+      assertKomiStyleGroup(bundle.getString("Menu.separateLblWrn"));
+      assertKomiStyleGroup(bundle.getString("Menu.separateLblPda"));
     }
   }
 
-  private static void assertUnclippedAfterRebuild(String label) {
-    JFontCheckBox checkBox = new JFontCheckBox();
-    checkBox.setText(label);
-    checkBox.setPreferredSize(new Dimension(20, Config.menuHeight - 3));
+  private static void assertKomiStyleGroup(String rawLabel) {
+    JFontCheckBox enable = new JFontCheckBox();
+    JFontLabel label = new JFontLabel();
+    JFontTextField field = new JFontTextField();
 
-    Menu.lockDoubleMenuCheckBoxSize(checkBox);
-    Menu.lockDoubleMenuCheckBoxSize(checkBox);
+    JPanel panel = Menu.attachDoubleMenuLabeledField(enable, label, field, rawLabel);
 
-    int minimum = unclippedLabelWidth(checkBox);
+    assertEquals("", enable.getText());
     assertTrue(
-        checkBox.getPreferredSize().width >= minimum,
-        () ->
-            "preferred width "
-                + checkBox.getPreferredSize().width
-                + " < unclipped "
-                + minimum
-                + " for "
-                + label);
+        label.getText().endsWith(":") || label.getText().endsWith("："),
+        () -> "label should end with colon: " + label.getText());
+    assertTrue(label.getText().startsWith(rawLabel.replaceAll("[:：]+$", "")));
+    assertEquals(3, panel.getComponentCount());
+    assertFalse(containsSpinner(panel));
     assertTrue(
-        checkBox.getMinimumSize().width >= minimum,
-        () ->
-            "minimum width "
-                + checkBox.getMinimumSize().width
-                + " < unclipped "
-                + minimum
-                + " for "
-                + label);
+        field.getX() <= label.getX() + label.getWidth(),
+        () -> "field x=" + field.getX() + " should sit against label " + label.getBounds());
+    assertTrue(
+        field.getX() >= label.getX() + label.getWidth() - 8,
+        () -> "field x=" + field.getX() + " too far from label " + label.getBounds());
   }
 
-  private static int unclippedLabelWidth(AbstractButton button) {
-    Insets insets = button.getInsets();
-    Icon icon = button.getIcon();
-    int iconWidth = icon == null ? 0 : icon.getIconWidth();
-    FontMetrics metrics = button.getFontMetrics(button.getFont());
-    return insets.left
-        + iconWidth
-        + button.getIconTextGap()
-        + metrics.stringWidth(button.getText())
-        + insets.right;
+  private static boolean containsSpinner(JPanel panel) {
+    for (var component : panel.getComponents()) {
+      if (component instanceof JButton) {
+        return true;
+      }
+    }
+    return false;
   }
 }
