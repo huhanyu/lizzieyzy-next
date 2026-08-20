@@ -16,6 +16,9 @@ import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.LoadEngine;
 import featurecat.lizzie.gui.Menu;
 import featurecat.lizzie.gui.web.WebBoardManager;
+import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.WorkDirectoryResolution;
+import featurecat.lizzie.logging.WorkDirectoryResolver;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
@@ -151,8 +154,17 @@ public class Lizzie {
     if (System.getProperty("swing.aatext") == null) {
       System.setProperty("swing.aatext", "true");
     }
-    ensureWritableWorkingDir();
+    WorkDirectoryResolution workDirectory = WorkDirectoryResolver.resolve();
+    try {
+      Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+      if (!Files.isWritable(cwd)) {
+        System.setProperty("user.dir", workDirectory.directory().toString());
+      }
+    } catch (Exception ignored) {
+    }
+    LoggingRuntime.initialize(workDirectory);
     config = new Config();
+    LoggingRuntime.current().ifPresent(runtime -> runtime.applySettings(config.loggingSettings));
     firstLaunchSession = config.isNewProfile() || config.firstTimeLoad;
     resourceBundle = AppLocale.loadBundle(config.useLanguage);
     NetworkProxy.installSystemProxyPropertyFromSavedConfig();
@@ -560,21 +572,6 @@ public class Lizzie {
     }
     String trimmed = value.trim();
     return trimmed.isEmpty() ? null : trimmed;
-  }
-
-  private static void ensureWritableWorkingDir() {
-    try {
-      Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath();
-      if (Files.isWritable(cwd)) {
-        return;
-      }
-      Path fallback = Config.resolveWritableFallbackDir();
-      System.setProperty("user.dir", fallback.toString());
-      System.out.println("switch user.dir to writable path: " + fallback);
-    } catch (Exception e) {
-      // Keep default behavior if we fail to switch directory.
-      e.printStackTrace();
-    }
   }
 
   private static void installApplicationIcon() {
