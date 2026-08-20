@@ -6,6 +6,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.rolling.RollingFileAppender;
 import ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy;
+import ch.qos.logback.core.status.Status;
 import ch.qos.logback.core.util.FileSize;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -26,12 +27,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import org.slf4j.ILoggerFactory;
 import org.slf4j.LoggerFactory;
 
 public final class LoggingRuntime {
+  public static final String STDERR_PREFIX = "LizzieYzy logging: ";
   private static final String PATTERN =
-      "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger] session=%X{lizzie.appSession} %msg%n%ex";
-  private static final String STDERR_PREFIX = "LizzieYzy logging: ";
+      "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger] %corr %msg%n%ex";
   private static final Object LOCK = new Object();
   private static LoggingRuntime instance;
 
@@ -43,6 +45,7 @@ public final class LoggingRuntime {
   private final PersistenceSanitizer sanitizer;
   private final Map<LogStream, StreamState> streams = new EnumMap<>(LogStream.class);
   private final Map<LogStream, BoundedAsyncAppender> appenders = new EnumMap<>(LogStream.class);
+  private final List<SanitizingEncoder> encoders = new ArrayList<>();
   private final Set<String> issuedEngineIds = ConcurrentHashMap.newKeySet();
   private final AtomicLong engineSequence = new AtomicLong();
   private final AtomicLong commandSequence = new AtomicLong();
@@ -74,16 +77,52 @@ public final class LoggingRuntime {
 
   public static LoggingRuntime initialize(
       WorkDirectoryResolution resolution, LoggingLimits limits) {
+    ILoggerFactory factory;
+    try {
+      factory = LoggerFactory.getILoggerFactory();
+    } catch (RuntimeException e) {
+      return degrade(
+          resolution, limits, e.getClass().getSimpleName() + ": " + e.getMessage());
+    }
+    return initialize(resolution, limits, factory);
+  }
+
+  static LoggingRuntime initialize(
+      WorkDirectoryResolution resolution, LoggingLimits limits, ILoggerFactory factory) {
     Objects.requireNonNull(resolution, "resolution");
     Objects.requireNonNull(limits, "limits");
     synchronized (LOCK) {
       if (instance != null && !instance.shutdown) {
         return instance;
       }
-      LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
+      try {
+        if (!(factory instanceof LoggerContext)) {
+          String name = factory == null ? "null" : factory.getClass().getName();
+          return degrade(resolution, limits, "provider unavailable: " + name);
+        }
+        LoggingRuntime runtime =
+            new LoggingRuntime(
+                resolution.directory(), limits, (LoggerContext) factory, System.err);
+        runtime.bootstrap(resolution);
+        instance = runtime;
+        return runtime;
+      } catch (RuntimeException e) {
+        return degrade(
+            resolution, limits, e.getClass().getSimpleName() + ": " + e.getMessage());
+      }
+    }
+  }
+
+  private static LoggingRuntime degrade(
+      WorkDirectoryResolution resolution, LoggingLimits limits, String reason) {
+    synchronized (LOCK) {
+      if (instance != null && !instance.shutdown) {
+        return instance;
+      }
       LoggingRuntime runtime =
-          new LoggingRuntime(resolution.directory(), limits, context, System.err);
-      runtime.bootstrap(resolution);
+          new LoggingRuntime(resolution.directory(), limits, null, System.err);
+      runtime.persistenceEnabled.set(false);
+      runtime.notice("bootstrap", reason);
       instance = runtime;
       return runtime;
     }
@@ -127,6 +166,10 @@ public final class LoggingRuntime {
 
   public boolean fullTraceActive() {
     return traceSessionId != null;
+  }
+
+  boolean isShutdown() {
+    return shutdown;
   }
 
   public String newEngineIdentity() {
@@ -173,7 +216,7 @@ public final class LoggingRuntime {
   }
 
   public synchronized void startFullTrace(Set<TraceScope> scopes) {
-    if (shutdown) {
+    if (shutdown || context == null) {
       return;
     }
     Set<TraceScope> selected =
@@ -225,6 +268,9 @@ public final class LoggingRuntime {
         return new ShutdownReport(Map.of());
       }
       shutdown = true;
+      if (context == null) {
+        return new ShutdownReport(Map.of());
+      }
       long deadline = System.nanoTime() + LoggingLimits.SHUTDOWN_BUDGET_NANOS;
       for (TraceScope scope : activeTraceScopes) {
         BoundedAsyncAppender appender = appenders.get(scope.stream());
@@ -255,7 +301,7 @@ public final class LoggingRuntime {
         notice("shutdown", "unwritten events=" + remaining);
       }
       try {
-        context.stop();
+        Deadline.run(deadline, context::stop);
       } catch (RuntimeException ignored) {
       }
       CorrelationContext.clearAsync();
@@ -268,6 +314,7 @@ public final class LoggingRuntime {
     if (state != null) {
       state.recordDrop();
     }
+    notice(stream.name() + ":queue", "queue saturation");
   }
 
   void recordFailure(LogStream stream, String reason) {
@@ -275,7 +322,45 @@ public final class LoggingRuntime {
     if (state != null) {
       state.recordFailure(reason);
     }
-    notice(stream.name(), reason);
+    if (stream == LogStream.APP) {
+      persistenceEnabled.set(false);
+    }
+    notice(stream.name() + ":failure", reason);
+  }
+
+  void recordSuccess(LogStream stream) {
+    StreamState state = streams.get(stream);
+    if (state != null) {
+      state.recordSuccess();
+      if (stream == LogStream.APP && state.recovered) {
+        persistenceEnabled.set(true);
+      }
+    }
+  }
+
+  long failureGeneration(LogStream stream) {
+    StreamState state = streams.get(stream);
+    return state == null ? 0L : state.failureGeneration();
+  }
+
+  void failWritesForTests(LogStream stream, boolean fail) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    if (appender != null) {
+      appender.setFailWrites(fail);
+    }
+  }
+
+  void pauseNestedStopForTests(LogStream stream, long millis) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    if (appender != null) {
+      appender.setNestedStopPauseMillis(millis);
+    }
+  }
+
+  void replaceSanitizerForTests(PersistenceSanitizer sanitizer) {
+    for (SanitizingEncoder encoder : encoders) {
+      encoder.setSanitizer(sanitizer);
+    }
   }
 
   void blockPersistenceForTests(LogStream stream, CountDownLatch gate) {
@@ -318,13 +403,20 @@ public final class LoggingRuntime {
   private void bootstrap(WorkDirectoryResolution resolution) {
     try {
       context.reset();
+      context
+          .getStatusManager()
+          .add(
+              status -> {
+                if (status.getLevel() >= Status.ERROR) {
+                  recordFailure(streamOf(status), safeStatusMessage(status));
+                }
+              });
       Logger root = context.getLogger(Logger.ROOT_LOGGER_NAME);
       root.setLevel(Level.WARN);
       root.setAdditive(true);
       configureProjectLoggers();
       CorrelationContext.installAppSession(applicationLogSessionId);
       Files.createDirectories(logsDirectory.resolve("archive"));
-      persistenceEnabled.set(true);
       startFileStream(LogStream.APP, "app.log", true);
       startFileStream(LogStream.CRASH, "crash.log", true);
       attachCrashLogger();
@@ -370,6 +462,9 @@ public final class LoggingRuntime {
 
   private void applyPlan(LoggingSettings newSettings) {
     this.settings = newSettings;
+    if (context == null) {
+      return;
+    }
     for (DiagnosticModule module : DiagnosticModule.values()) {
       Level level =
           newSettings.diagnosticsEnabled() && newSettings.diagnosticModules().contains(module)
@@ -394,19 +489,27 @@ public final class LoggingRuntime {
   private void startFileStream(LogStream stream, String fileName, boolean dropInfoFirst) {
     try {
       RollingFileAppender<ILoggingEvent> file = rollingAppender(stream, fileName);
+      boolean fileStarted = file.isStarted();
       BoundedAsyncAppender async =
           new BoundedAsyncAppender(stream, limits.queueCapacity(stream), dropInfoFirst);
       async.setName(stream.name());
       async.setContext(context);
       async.setNested(file);
       async.setRuntime(this);
+      async.setActiveFile(logsDirectory.resolve(fileName));
       async.start();
       appenders.put(stream, async);
       if (stream == LogStream.APP) {
         context.getLogger(Logger.ROOT_LOGGER_NAME).addAppender(async);
+        persistenceEnabled.set(fileStarted);
+      }
+      if (!fileStarted) {
+        recordFailure(stream, "file appender failed to start");
       }
     } catch (RuntimeException e) {
-      persistenceEnabled.set(stream != LogStream.APP && persistenceEnabled.get());
+      if (stream == LogStream.APP) {
+        persistenceEnabled.set(false);
+      }
       recordFailure(stream, e.getClass().getSimpleName() + ": " + e.getMessage());
     }
   }
@@ -448,7 +551,9 @@ public final class LoggingRuntime {
     encoder.setContext(context);
     encoder.setPattern(PATTERN);
     encoder.setSanitizer(sanitizer);
+    encoder.setLogStream(stream);
     encoder.start();
+    encoders.add(encoder);
     file.setEncoder(encoder);
     SizeAndTimeBasedRollingPolicy<ILoggingEvent> policy = new SizeAndTimeBasedRollingPolicy<>();
     policy.setContext(context);
@@ -472,9 +577,53 @@ public final class LoggingRuntime {
     stderr.println(STDERR_PREFIX + key + " " + message);
   }
 
+  private LogStream streamOf(Status status) {
+    Object origin = status.getOrigin();
+    if (origin instanceof SanitizingEncoder encoder && encoder.logStream() != null) {
+      return encoder.logStream();
+    }
+    String name = "";
+    if (origin instanceof ch.qos.logback.core.Appender<?> appender) {
+      name = appender.getName() == null ? "" : appender.getName();
+    }
+    LogStream fromName = streamFromToken(name);
+    if (fromName != LogStream.APP) {
+      return fromName;
+    }
+    String text =
+        (status.getMessage() == null ? "" : status.getMessage()) + " " + String.valueOf(origin);
+    return streamFromToken(text);
+  }
+
+  private static LogStream streamFromToken(String text) {
+    if (text == null) {
+      return LogStream.APP;
+    }
+    if (text.contains("engine-trace.log") || text.startsWith(LogStream.ENGINE_TRACE.name())) {
+      return LogStream.ENGINE_TRACE;
+    }
+    if (text.contains("readboard-trace.log")
+        || text.startsWith(LogStream.READBOARD_TRACE.name())) {
+      return LogStream.READBOARD_TRACE;
+    }
+    if (text.contains("network-trace.log") || text.startsWith(LogStream.NETWORK_TRACE.name())) {
+      return LogStream.NETWORK_TRACE;
+    }
+    if (text.contains("crash.log") || text.startsWith(LogStream.CRASH.name())) {
+      return LogStream.CRASH;
+    }
+    return LogStream.APP;
+  }
+
+  private static String safeStatusMessage(Status status) {
+    String message = status.getMessage();
+    return message == null || message.isEmpty() ? "file failure" : message;
+  }
+
   private static final class StreamState {
     private final LogStream stream;
     private final AtomicLong dropped = new AtomicLong();
+    private final AtomicLong failures = new AtomicLong();
     private volatile String reason;
     private volatile Instant firstOccurrence;
     private volatile Instant lastOccurrence;
@@ -489,6 +638,8 @@ public final class LoggingRuntime {
       Instant now = Instant.now();
       if (firstOccurrence == null) {
         firstOccurrence = now;
+      }
+      if (reason == null) {
         reason = "queue saturation";
       }
       lastOccurrence = now;
@@ -496,6 +647,7 @@ public final class LoggingRuntime {
     }
 
     private void recordFailure(String failureReason) {
+      failures.incrementAndGet();
       Instant now = Instant.now();
       if (firstOccurrence == null) {
         firstOccurrence = now;
@@ -503,6 +655,16 @@ public final class LoggingRuntime {
       lastOccurrence = now;
       reason = failureReason;
       recovered = false;
+    }
+
+    private long failureGeneration() {
+      return failures.get();
+    }
+
+    private void recordSuccess() {
+      if (reason != null || dropped.get() > 0) {
+        recovered = true;
+      }
     }
 
     private LoggingStatus.StreamStatus snapshot() {

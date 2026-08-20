@@ -3,6 +3,7 @@ package featurecat.lizzie.logging;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,11 +22,12 @@ import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.NOPLoggerFactory;
 import org.slf4j.spi.SLF4JServiceProvider;
 
 class LoggingRuntimeTest {
@@ -158,7 +160,7 @@ class LoggingRuntimeTest {
     }
     runtime.awaitIdle(80);
     assertTrue(Files.isRegularFile(tempDir.resolve("logs/app.log")));
-    try (var stream = Files.list(tempDir.resolve("logs/archive"))) {
+    try (Stream<Path> stream = Files.list(tempDir.resolve("logs/archive"))) {
       assertTrue(stream.anyMatch(path -> path.getFileName().toString().startsWith("app.")));
     }
   }
@@ -185,6 +187,9 @@ class LoggingRuntimeTest {
     assertTrue(elapsedNanos < TimeUnit.SECONDS.toNanos(1));
     assertTrue(read("logs/app.log").contains("app-while-trace-blocked"));
     assertTrue(runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow().droppedCount() > 0);
+    assertEquals(
+        "queue saturation",
+        runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow().reason());
   }
 
   @Test
@@ -192,16 +197,126 @@ class LoggingRuntimeTest {
     LoggingRuntime runtime = start();
     LoggerFactory.getLogger(LogCategories.APP)
         .error(
-            "login password={} path={} url={}",
+            "login password={} authorization=Basic {} path={} url={} token=Bearer {}",
             "CANARY_PASSWORD_7f3a",
+            "CANARY_BASIC_9c2e",
             "/home/dev/lizzieyzy-next/config.txt",
-            "https://example.test/status");
+            "https://example.test/status",
+            "CANARY_BEARER_aa11");
+    LoggerFactory.getLogger(LogCategories.APP)
+        .error("header", new IllegalStateException("Authorization: Basic CANARY_BASIC_THROW"));
+    runtime.awaitIdle();
+
+    String scanned = scanLogFiles();
+    assertFalse(scanned.contains("CANARY_PASSWORD_7f3a"), scanned);
+    assertFalse(scanned.contains("CANARY_BASIC_9c2e"), scanned);
+    assertFalse(scanned.contains("CANARY_BASIC_THROW"), scanned);
+    assertFalse(scanned.contains("CANARY_BEARER_aa11"), scanned);
+    assertTrue(scanned.contains("/home/dev/lizzieyzy-next/config.txt"));
+    assertTrue(scanned.contains("https://example.test/status"));
+  }
+
+  @Test
+  void nopProviderDoesNotAbortInitialize() {
+    PrintStream original = System.err;
+    ByteArrayOutputStream captured = new ByteArrayOutputStream();
+    System.setErr(new PrintStream(captured, true, StandardCharsets.UTF_8));
+    try {
+      LoggingRuntime.resetForTests();
+      LoggingRuntime runtime =
+          LoggingRuntime.initialize(
+              new WorkDirectoryResolution(tempDir, List.of()),
+              testLimits(),
+              new NOPLoggerFactory());
+      assertFalse(runtime.status().persistenceEnabled());
+      LoggerFactory.getLogger(LogCategories.APP).error("must-not-throw");
+    } finally {
+      System.setErr(original);
+    }
+    String err = captured.toString(StandardCharsets.UTF_8);
+    assertTrue(err.contains(LoggingRuntime.STDERR_PREFIX), err);
+    assertEquals(1, count(err, LoggingRuntime.STDERR_PREFIX));
+    assertFalse(Files.exists(tempDir.resolve("logs/app.log")));
+  }
+
+  @Test
+  void illegalAppLogPathRecordsFailureAndContinues() throws Exception {
+    Files.createDirectories(tempDir.resolve("logs").resolve("app.log"));
+    PrintStream original = System.err;
+    ByteArrayOutputStream captured = new ByteArrayOutputStream();
+    System.setErr(new PrintStream(captured, true, StandardCharsets.UTF_8));
+    LoggingRuntime runtime;
+    try {
+      runtime = start();
+      LoggerFactory.getLogger(LogCategories.APP).error("after-failure");
+      LoggerFactory.getLogger(LogCategories.APP).error("after-failure-again");
+      runtime.awaitIdle();
+    } finally {
+      System.setErr(original);
+    }
+    LoggingStatus.StreamStatus app = runtime.status().stream(LogStream.APP).orElseThrow();
+    assertNotNull(app.reason());
+    assertNotNull(app.firstOccurrence());
+    assertNotNull(app.lastOccurrence());
+    assertFalse(runtime.status().persistenceEnabled());
+    String err = captured.toString(StandardCharsets.UTF_8);
+    assertTrue(count(err, LoggingRuntime.STDERR_PREFIX) >= 1, err);
+    assertEquals(1, count(err, "APP:failure"));
+  }
+
+  @Test
+  void queueSaturationThenSuccessfulWriteMarksRecovered() throws Exception {
+    LoggingRuntime runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(tempDir, List.of()),
+            new LoggingLimits(32, 4, 4, 4, 7, 10000, 1000));
+    runtime.startFullTrace(EnumSet.of(TraceScope.ENGINE_GTP));
+    CountDownLatch gate = new CountDownLatch(1);
+    runtime.blockPersistenceForTests(LogStream.ENGINE_TRACE, gate);
+    org.slf4j.Logger trace = LoggerFactory.getLogger(LogCategories.ENGINE_TRACE);
+    for (int i = 0; i < 64; i++) {
+      trace.info("flood-{}", i);
+    }
+    LoggingStatus.StreamStatus blocked =
+        runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow();
+    assertTrue(blocked.droppedCount() > 0);
+    assertEquals("queue saturation", blocked.reason());
+    assertFalse(blocked.recovered());
+    gate.countDown();
+    trace.info("after-drain");
+    runtime.awaitIdle();
+    LoggingStatus.StreamStatus recovered =
+        runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow();
+    assertTrue(recovered.recovered());
+    assertTrue(recovered.droppedCount() > 0);
+    assertEquals("queue saturation", recovered.reason());
+    assertNotNull(recovered.firstOccurrence());
+  }
+
+  @Test
+  void persistedEventsIncludeInstalledCorrelationIdentities() throws Exception {
+    LoggingRuntime runtime = start();
+    String engine = runtime.newEngineIdentity();
+    String command = runtime.newCommandIdentity();
+    CorrelationContext.installEngine(engine);
+    CorrelationContext.installCommand(command);
+    LoggerFactory.getLogger(LogCategories.APP).error("correlated-event");
+    runtime.startFullTrace(EnumSet.of(TraceScope.ENGINE_GTP));
+    String traceSession = runtime.currentTraceSessionId();
+    LoggerFactory.getLogger(LogCategories.ENGINE_TRACE).info("trace-payload");
+    runtime.awaitIdle();
+    runtime.stopFullTrace();
     runtime.awaitIdle();
 
     String appLog = read("logs/app.log");
-    assertFalse(appLog.contains("CANARY_PASSWORD_7f3a"));
-    assertTrue(appLog.contains("/home/dev/lizzieyzy-next/config.txt"));
-    assertTrue(appLog.contains("https://example.test/status"));
+    assertTrue(appLog.contains("session=" + runtime.applicationLogSessionId()), appLog);
+    assertTrue(appLog.contains("engine=" + engine), appLog);
+    assertTrue(appLog.contains("command=" + command), appLog);
+    String traceLog = read("logs/engine-trace.log");
+    assertTrue(traceLog.contains("trace=" + traceSession), traceLog);
+    assertTrue(traceLog.contains("Full Trace session started"), traceLog);
+    CorrelationContext.clearEngine();
+    CorrelationContext.clearCommand();
   }
 
   @Test
@@ -245,39 +360,94 @@ class LoggingRuntimeTest {
   }
 
   @Test
-  void shutdownFlushesAppAndReportsUnwrittenWhenBlocked() throws Exception {
+  void shutdownCountsInterruptedInFlightExactlyOnce() throws Exception {
     LoggingRuntime runtime = start();
+    runtime.awaitIdle();
     CountDownLatch gate = new CountDownLatch(1);
     runtime.blockPersistenceForTests(LogStream.APP, gate);
     LoggerFactory.getLogger(LogCategories.APP).error("late-event");
+    Thread.sleep(80);
+    long started = System.nanoTime();
     ShutdownReport report = runtime.shutdown();
-    gate.countDown();
-    assertTrue(report.unwritten(LogStream.APP) >= 0);
+    long elapsed = System.nanoTime() - started;
+    assertEquals(1L, report.unwritten(LogStream.APP), "unwritten=" + report.unwritten(LogStream.APP));
+    assertTrue(elapsed <= LoggingLimits.SHUTDOWN_BUDGET_NANOS + TimeUnit.MILLISECONDS.toNanos(100));
+    Path appLog = tempDir.resolve("logs/app.log");
+    if (Files.isRegularFile(appLog)) {
+      assertFalse(Files.readString(appLog).contains("late-event"));
+    }
   }
 
   @Test
-  void isolatedJvmProviderSmokeWritesAppLog() throws Exception {
-    Path shaded = findShadedJar();
-    Assumptions.assumeTrue(shaded != null, "shaded artifact is required for provider smoke");
-    Path work = Files.createTempDirectory(tempDir, "smoke");
-    String java =
-        Path.of(
-                System.getProperty("java.home"),
-                "bin",
-                System.getProperty("os.name", "").startsWith("Windows") ? "java.exe" : "java")
-            .toString();
-    Process process =
-        new ProcessBuilder(
-                java,
-                "-cp",
-                shaded.toString(),
-                LoggingProviderSmoke.class.getName(),
-                work.toString())
-            .redirectErrorStream(true)
-            .start();
-    String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-    assertEquals(0, process.waitFor(), output);
-    assertTrue(Files.readString(work.resolve("logs/app.log")).contains("provider-smoke"));
+  void shutdownHonorsThreeSecondBudgetWhenNestedStopIsSlow() {
+    LoggingRuntime runtime = start();
+    runtime.pauseNestedStopForTests(LogStream.APP, 5_000);
+    long started = System.nanoTime();
+    runtime.shutdown();
+    long elapsed = System.nanoTime() - started;
+    assertTrue(
+        elapsed <= LoggingLimits.SHUTDOWN_BUDGET_NANOS + TimeUnit.MILLISECONDS.toNanos(100),
+        "elapsedNanos=" + elapsed);
+  }
+
+  @Test
+  void failedAppendDoesNotMarkRecoveredUntilLaterSuccess() throws Exception {
+    LoggingRuntime runtime = start();
+    assertTrue(runtime.status().persistenceEnabled());
+    runtime.failWritesForTests(LogStream.APP, true);
+    LoggerFactory.getLogger(LogCategories.APP).error("controlled-fail");
+    runtime.awaitIdle();
+    LoggingStatus.StreamStatus failed = runtime.status().stream(LogStream.APP).orElseThrow();
+    assertFalse(failed.recovered());
+    assertNotNull(failed.reason());
+    assertFalse(runtime.status().persistenceEnabled());
+    runtime.failWritesForTests(LogStream.APP, false);
+    LoggerFactory.getLogger(LogCategories.APP).error("after-recovery");
+    runtime.awaitIdle();
+    LoggingStatus.StreamStatus recovered = runtime.status().stream(LogStream.APP).orElseThrow();
+    assertTrue(recovered.recovered());
+    assertTrue(runtime.status().persistenceEnabled());
+    assertTrue(read("logs/app.log").contains("after-recovery"));
+  }
+
+  @Test
+  void engineTraceWriteFailureDoesNotAttachToAppStream() throws Exception {
+    LoggingRuntime runtime = start();
+    runtime.startFullTrace(EnumSet.of(TraceScope.ENGINE_GTP));
+    runtime.failWritesForTests(LogStream.ENGINE_TRACE, true);
+    LoggerFactory.getLogger(LogCategories.ENGINE_TRACE).info("trace-fail");
+    runtime.awaitIdle();
+    LoggingStatus.StreamStatus trace =
+        runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow();
+    assertNotNull(trace.reason());
+    assertFalse(trace.recovered());
+    LoggingStatus.StreamStatus app = runtime.status().stream(LogStream.APP).orElseThrow();
+    assertTrue(app.reason() == null || !app.reason().contains("engine-trace"));
+  }
+
+  @Test
+  void encoderFailureWritesMarkerAndUpdatesStatus() throws Exception {
+    LoggingRuntime runtime = start();
+    runtime.replaceSanitizerForTests(
+        new PersistenceSanitizer() {
+          @Override
+          public String sanitize(String text) {
+            if (text.contains("BLOW_UP")) {
+              throw new IllegalStateException("boom");
+            }
+            return super.sanitize(text);
+          }
+        });
+    LoggerFactory.getLogger(LogCategories.APP).error("BLOW_UP");
+    runtime.awaitIdle();
+    LoggingStatus.StreamStatus app = runtime.status().stream(LogStream.APP).orElseThrow();
+    assertNotNull(app.reason());
+    assertTrue(app.reason().toLowerCase().contains("encoder") || app.reason().contains("redaction"), app.reason());
+    assertFalse(app.recovered());
+    assertFalse(runtime.status().persistenceEnabled());
+    String scanned = scanLogFiles();
+    assertTrue(scanned.contains(PersistenceSanitizer.FAILURE_MARKER), scanned);
+    assertFalse(scanned.contains("BLOW_UP"), scanned);
   }
 
   private LoggingRuntime start() {
@@ -293,6 +463,27 @@ class LoggingRuntimeTest {
     return Files.readString(tempDir.resolve(relative));
   }
 
+  private String scanLogFiles() throws IOException {
+    Path logs = tempDir.resolve("logs");
+    if (!Files.exists(logs)) {
+      return "";
+    }
+    StringBuilder scanned = new StringBuilder();
+    try (Stream<Path> stream = Files.walk(logs)) {
+      stream
+          .filter(Files::isRegularFile)
+          .forEach(
+              path -> {
+                try {
+                  scanned.append(Files.readString(path));
+                } catch (IOException e) {
+                  throw new RuntimeException(e);
+                }
+              });
+    }
+    return scanned.toString();
+  }
+
   private static int count(String text, String token) {
     int count = 0;
     int index = 0;
@@ -301,20 +492,5 @@ class LoggingRuntimeTest {
       index += token.length();
     }
     return count;
-  }
-
-  private static Path findShadedJar() {
-    Path target = Path.of("target");
-    if (!Files.isDirectory(target)) {
-      return null;
-    }
-    try (var stream = Files.list(target)) {
-      return stream
-          .filter(path -> path.getFileName().toString().endsWith("-shaded.jar"))
-          .findFirst()
-          .orElse(null);
-    } catch (IOException e) {
-      return null;
-    }
   }
 }

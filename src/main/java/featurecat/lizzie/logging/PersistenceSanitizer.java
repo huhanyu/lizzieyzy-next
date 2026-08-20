@@ -10,6 +10,8 @@ public class PersistenceSanitizer {
           "(?i)([\\\"']?(?:password|passwd|token|secret|authorization|cookie|set-cookie|connectPassword|zhizi-account-token|zz-socketio-token)[\\\"']?\\s*(?:[=:]\\s*|\\s+)[\\\"']?)([^\\\"'\\s,;}&]+)([\\\"']?)");
   private static final Pattern BEARER_CREDENTIAL =
       Pattern.compile("(?i)\\bBearer\\s+[A-Za-z0-9._~+\\-/]+=*");
+  private static final Pattern BASIC_CREDENTIAL =
+      Pattern.compile("(?i)\\bBasic\\s+[A-Za-z0-9+/=_-]+");
   private static final Pattern URL_SECRET =
       Pattern.compile("(?i)([?&](?:token|key|secret|password)=)[^&\\s]+");
 
@@ -17,8 +19,9 @@ public class PersistenceSanitizer {
     if (text == null || text.isEmpty()) {
       return "";
     }
-    String safe = CREDENTIAL_PARAMETER.matcher(text).replaceAll("$1<redacted>$3");
+    String safe = BASIC_CREDENTIAL.matcher(text).replaceAll("Basic <redacted>");
     safe = BEARER_CREDENTIAL.matcher(safe).replaceAll("Bearer <redacted>");
+    safe = CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1<redacted>$3");
     return URL_SECRET.matcher(safe).replaceAll("$1<redacted>");
   }
 }

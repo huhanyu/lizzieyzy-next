@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
+import ch.qos.logback.core.status.ErrorStatus;
+import java.nio.file.Path;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -17,11 +19,16 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
   private final boolean dropInfoFirst;
   private final int discardingThreshold;
   private final AtomicLong dropped = new AtomicLong();
+  private final AtomicLong inFlight = new AtomicLong();
+  private final AtomicLong abandoned = new AtomicLong();
   private final AtomicBoolean accepting = new AtomicBoolean(true);
   private final AtomicBoolean workerFailed = new AtomicBoolean();
   private volatile Appender<ILoggingEvent> nested;
   private volatile LoggingRuntime runtime;
   private volatile CountDownLatch gate;
+  private volatile boolean failWrites;
+  private volatile long nestedStopPauseMillis;
+  private volatile Path activeFile;
   private Thread worker;
 
   BoundedAsyncAppender(LogStream stream, int capacity, boolean dropInfoFirst) {
@@ -41,6 +48,18 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
 
   void setGate(CountDownLatch gate) {
     this.gate = gate;
+  }
+
+  void setFailWrites(boolean failWrites) {
+    this.failWrites = failWrites;
+  }
+
+  void setNestedStopPauseMillis(long nestedStopPauseMillis) {
+    this.nestedStopPauseMillis = nestedStopPauseMillis;
+  }
+
+  void setActiveFile(Path activeFile) {
+    this.activeFile = activeFile;
   }
 
   LogStream stream() {
@@ -86,23 +105,26 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
   long shutdown(long deadlineNanos) {
     accepting.set(false);
     if (worker != null) {
-      long remaining = deadlineNanos - System.nanoTime();
-      if (remaining > 0) {
-        try {
-          worker.join(TimeUnit.NANOSECONDS.toMillis(remaining) + 1);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }
-      if (worker.isAlive()) {
-        worker.interrupt();
-      }
+      worker.interrupt();
+      joinUntil(deadlineNanos);
     }
     if (nested != null && nested.isStarted()) {
-      nested.stop();
+      Deadline.run(
+          deadlineNanos,
+          () -> {
+            long pause = nestedStopPauseMillis;
+            if (pause > 0) {
+              try {
+                Thread.sleep(pause);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+            }
+            nested.stop();
+          });
     }
     super.stop();
-    return queue.size();
+    return queue.size() + inFlight.get() + abandoned.get();
   }
 
   @Override
@@ -138,11 +160,31 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
           }
           continue;
         }
-        CountDownLatch currentGate = gate;
-        if (currentGate != null) {
-          currentGate.await();
+        inFlight.incrementAndGet();
+        boolean completedAppend = false;
+        try {
+          CountDownLatch currentGate = gate;
+          if (currentGate != null) {
+            currentGate.await();
+          }
+          long generation = runtime == null ? 0L : runtime.failureGeneration(stream);
+          if (failWrites) {
+            reportWriteFailure();
+          } else {
+            nested.doAppend(event);
+          }
+          completedAppend = true;
+          if (runtime != null
+              && nested.isStarted()
+              && runtime.failureGeneration(stream) == generation) {
+            runtime.recordSuccess(stream);
+          }
+        } finally {
+          if (!completedAppend) {
+            abandoned.incrementAndGet();
+          }
+          inFlight.decrementAndGet();
         }
-        nested.doAppend(event);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         break;
@@ -151,6 +193,32 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
           runtime.recordFailure(stream, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
       }
+    }
+  }
+
+  private void reportWriteFailure() {
+    String path = activeFile == null ? stream.name() : activeFile.toAbsolutePath().toString();
+    ErrorStatus status =
+        new ErrorStatus("IO failure while writing to file [" + path + "]", nested);
+    if (getContext() != null) {
+      getContext().getStatusManager().add(status);
+    } else if (runtime != null) {
+      runtime.recordFailure(stream, status.getMessage());
+    }
+  }
+
+  private void joinUntil(long deadlineNanos) {
+    if (worker == null) {
+      return;
+    }
+    long remaining = deadlineNanos - System.nanoTime();
+    if (remaining <= 0) {
+      return;
+    }
+    try {
+      worker.join(Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining)));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 

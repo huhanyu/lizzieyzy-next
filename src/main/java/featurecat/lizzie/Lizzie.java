@@ -44,6 +44,7 @@ import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.function.IntConsumer;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.concurrent.Callable;
@@ -162,7 +163,12 @@ public class Lizzie {
       }
     } catch (Exception ignored) {
     }
-    LoggingRuntime.initialize(workDirectory);
+    try {
+      LoggingRuntime.initialize(workDirectory);
+    } catch (Throwable t) {
+      System.err.println(
+          LoggingRuntime.STDERR_PREFIX + "bootstrap " + t.getClass().getSimpleName());
+    }
     config = new Config();
     LoggingRuntime.current().ifPresent(runtime -> runtime.applySettings(config.loggingSettings));
     firstLaunchSession = config.isNewProfile() || config.firstTimeLoad;
@@ -1074,7 +1080,15 @@ public class Lizzie {
         e.printStackTrace();
       }
     }
-    System.exit(0);
+    shutdownLoggingThenExit(System::exit);
+  }
+
+  public static void shutdownLoggingThenExit(IntConsumer exit) {
+    try {
+      LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+    } catch (RuntimeException ignored) {
+    }
+    exit.accept(0);
   }
 
   public static void resetAllHints() {
