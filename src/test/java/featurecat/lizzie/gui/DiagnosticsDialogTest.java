@@ -27,12 +27,15 @@ class DiagnosticsDialogTest {
   }
 
   @Test
-  void dialogShowsHealthAndAppliesDiagnosticsImmediately() {
+  void dialogShowsHealthAndAppliesDiagnosticsOnApply() {
     LoggingRuntime runtime = start();
     DiagnosticsDialog dialog = dialog(runtime, new AtomicInteger(), new ArrayList<>(), () -> true);
     assertTrue(dialog.healthText().contains(runtime.logsDirectory().toString()));
     assertTrue(dialog.healthText().contains("persistenceEnabled=true"));
+    assertTrue(dialog.estimateText().contains("MB"));
     dialog.diagnosticsEnabledBox().doClick();
+    assertFalse(runtime.settings().diagnosticsEnabled());
+    dialog.applyCurrentPlan();
     assertTrue(runtime.settings().diagnosticsEnabled());
   }
 

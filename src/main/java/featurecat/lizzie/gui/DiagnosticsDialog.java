@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -77,7 +78,7 @@ public class DiagnosticsDialog extends JPanel {
     dialog.setModalityType(JDialog.ModalityType.MODELESS);
     dialog.setDefaultCloseOperation(JDialog.HIDE_ON_CLOSE);
     dialog.setContentPane(new DiagnosticsDialog(runtime, config));
-    dialog.setSize(820, 560);
+    dialog.setSize(820, 600);
     dialog.setLocationRelativeTo(owner);
     dialog.setVisible(true);
     return dialog;
@@ -140,14 +141,6 @@ public class DiagnosticsDialog extends JPanel {
     JButton cancel = new JButton(text("DiagnosticsDialog.cancelExport", "Cancel export"));
 
     apply.addActionListener(e -> applyCurrentPlan());
-    diagnosticsEnabled.addActionListener(e -> applyCurrentPlan());
-    moduleEngine.addActionListener(e -> applyCurrentPlan());
-    moduleGtp.addActionListener(e -> applyCurrentPlan());
-    moduleReadBoard.addActionListener(e -> applyCurrentPlan());
-    moduleNetwork.addActionListener(e -> applyCurrentPlan());
-    scopeEngine.addActionListener(e -> applyCurrentPlan());
-    scopeReadBoard.addActionListener(e -> applyCurrentPlan());
-    scopeNetwork.addActionListener(e -> applyCurrentPlan());
     start.addActionListener(e -> startFullTraceFromUi());
     stop.addActionListener(e -> stopFullTraceFromUi());
     openLogs.addActionListener(e -> folderOpener.accept(runtime.logsDirectory()));
@@ -160,6 +153,10 @@ public class DiagnosticsDialog extends JPanel {
     cancel.addActionListener(e -> cancelExport.set(true));
     includeRaw.addActionListener(e -> refreshEstimate());
 
+    JPanel exportRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+    exportRow.add(includeRaw);
+    exportRow.add(estimateLabel);
+
     JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
     buttons.add(apply);
     buttons.add(start);
@@ -168,8 +165,6 @@ public class DiagnosticsDialog extends JPanel {
     buttons.add(openDiagnostics);
     buttons.add(exportDefault);
     buttons.add(cancel);
-    buttons.add(includeRaw);
-    buttons.add(estimateLabel);
 
     JLabel migration =
         new JLabel(
@@ -186,9 +181,9 @@ public class DiagnosticsDialog extends JPanel {
     content.add(north, BorderLayout.NORTH);
     content.add(new JScrollPane(healthArea), BorderLayout.CENTER);
     JPanel south = new JPanel(new BorderLayout(4, 4));
+    south.add(exportRow, BorderLayout.NORTH);
     south.add(statusArea, BorderLayout.CENTER);
     south.add(buttons, BorderLayout.SOUTH);
-    content.add(south, BorderLayout.SOUTH);
     add(content);
     refreshFromRuntime();
   }
@@ -277,6 +272,10 @@ public class DiagnosticsDialog extends JPanel {
     return statusArea.getText();
   }
 
+  String estimateText() {
+    return estimateLabel.getText();
+  }
+
   JCheckBox diagnosticsEnabledBox() {
     return diagnosticsEnabled;
   }
@@ -340,7 +339,10 @@ public class DiagnosticsDialog extends JPanel {
   private void refreshEstimate() {
     try {
       long bytes = exporter.estimateUncompressedBytes(currentRequest());
-      estimateLabel.setText(text("DiagnosticsDialog.estimate", "Estimated size") + ": " + bytes);
+      estimateLabel.setText(
+          text("DiagnosticsDialog.estimate", "Estimated size")
+              + ": "
+              + String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0)));
     } catch (IOException e) {
       estimateLabel.setText("");
     }
