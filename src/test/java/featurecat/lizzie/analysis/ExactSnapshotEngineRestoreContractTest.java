@@ -121,6 +121,16 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
+  void remoteComputeEmptyTailWhiteToPlaySnapshotRestoreSetsEngineSideToPlay() throws Exception {
+    assertRemoteEmptyTailRestoreSideToPlay(false);
+  }
+
+  @Test
+  void remoteComputeEmptyTailBlackToPlaySnapshotRestoreSetsEngineSideToPlay() throws Exception {
+    assertRemoteEmptyTailRestoreSideToPlay(true);
+  }
+
+  @Test
   void emptyRootHistoryTargetDoesNotEnterExactRestore() throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
       BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
@@ -1430,6 +1440,81 @@ class ExactSnapshotEngineRestoreContractTest {
     return prepareCurrentPositionRestore(engine, positionData).execute();
   }
 
+  private static void assertRemoteEmptyTailRestoreSideToPlay(boolean blackToPlay) throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot(blackToPlay));
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      board.resendMoveToEngine(engine, false);
+
+      List<String> commands = transport.commands();
+      assertTrue(
+          commands.stream().noneMatch(ExactSnapshotEngineRestoreContractTest::isHostLoadSgfCommand),
+          "remote snapshot-anchor restore must not emit a host-only loadsgf path: " + commands);
+      assertEquals(
+          List.of(),
+          collectPlayCommands(commands),
+          "empty-tail restore must not send play, including a bookkeeping pass: " + commands);
+
+      String setPosition =
+          commands.stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand)
+              .findFirst()
+              .orElseThrow(
+                  () ->
+                      new AssertionError(
+                          "remote snapshot restore must represent setup stones in-band: "
+                              + commands));
+      Set<String> placed = setPositionPlacements(setPosition);
+      assertTrue(
+          placed.contains("B " + Board.convertCoordinatesToName(0, 0)),
+          "black setup stone missing from in-band restore: " + setPosition);
+      assertTrue(
+          placed.contains("W " + Board.convertCoordinatesToName(1, 0)),
+          "white setup stone missing from in-band restore: " + setPosition);
+      assertEquals(
+          blackToPlay,
+          replayRemoteEngineBlackToPlay(commands),
+          "empty-tail remote restore must leave engine side-to-play matching snapshot PL: "
+              + commands);
+    }
+  }
+
+  private static boolean replayRemoteEngineBlackToPlay(List<String> commands) {
+    boolean engineBlackToPlay = true;
+    for (String command : commands) {
+      if (command == null) {
+        continue;
+      }
+      if (command.equals("clear_board")
+          || command.startsWith("boardsize ")
+          || command.startsWith("rectangular_boardsize ")) {
+        engineBlackToPlay = true;
+      } else if (isSetPositionCommand(command)) {
+        engineBlackToPlay = true;
+      } else if (command.startsWith("gogui-setup_player ")) {
+        engineBlackToPlay =
+            !"W".equalsIgnoreCase(command.substring("gogui-setup_player ".length()).trim());
+      } else if (command.startsWith("play ")) {
+        String[] parts = command.split("\\s+");
+        if (parts.length >= 2) {
+          engineBlackToPlay = "W".equalsIgnoreCase(parts[1]);
+        }
+      }
+    }
+    return engineBlackToPlay;
+  }
+
   private static List<Path> snapshotSgfFiles(Path tempDirectory) throws IOException {
     try (var files = Files.list(tempDirectory)) {
       return files
@@ -1440,6 +1525,10 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   private static BoardData snapshotRoot() {
+    return snapshotRoot(false);
+  }
+
+  private static BoardData snapshotRoot(boolean blackToPlay) {
     Stone[] stones = emptyStones();
     stones[Board.getIndex(0, 0)] = Stone.BLACK;
     stones[Board.getIndex(1, 0)] = Stone.WHITE;
@@ -1450,7 +1539,7 @@ class ExactSnapshotEngineRestoreContractTest {
         stones,
         java.util.Optional.of(new int[] {1, 0}),
         Stone.WHITE,
-        false,
+        blackToPlay,
         zobrist(stones),
         3,
         moveNumberList,

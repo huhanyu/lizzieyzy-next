@@ -1660,9 +1660,7 @@ class LeelazAutomaticRestartConvergenceTest {
     assertEquals(expectedHeight, engine.engineBoardHeight, "board height must match");
     assertEquals(
         board.getHistory().getGameInfo().getKomi(), engine.engineKomi, 0.0001, "komi must match");
-    if (!engine.usedSetPosition) {
-      assertEquals(application.blackToPlay, engine.engineBlackToPlay, "side-to-play must match");
-    }
+    assertEquals(application.blackToPlay, engine.engineBlackToPlay, "side-to-play must match");
     for (int x = 0; x < expectedWidth; x++) {
       for (int y = 0; y < expectedHeight; y++) {
         assertEquals(
@@ -1734,7 +1732,6 @@ class LeelazAutomaticRestartConvergenceTest {
     private int engineBoardHeight = 19;
     private double engineKomi = -1.0;
     private boolean engineBlackToPlay = true;
-    private boolean usedSetPosition;
 
     private ConvergingRestartLeelaz() throws Exception {
       super("controlled-engine");
@@ -1757,7 +1754,6 @@ class LeelazAutomaticRestartConvergenceTest {
                         "B".equalsIgnoreCase(parts[1]) ? Stone.BLACK : Stone.WHITE);
                   }
                   engineBlackToPlay = "W".equalsIgnoreCase(parts[1]);
-                  usedSetPosition = false;
                 } else if (command.equals("clear_board")) {
                   clearBoardCount.incrementAndGet();
                   engineStones.clear();
@@ -1776,6 +1772,10 @@ class LeelazAutomaticRestartConvergenceTest {
                   engineBlackToPlay = true;
                 } else if (command.startsWith("komi ")) {
                   engineKomi = Double.parseDouble(command.substring("komi ".length()).trim());
+                } else if (command.startsWith("gogui-setup_player ")) {
+                  engineBlackToPlay =
+                      !"W".equalsIgnoreCase(
+                          command.substring("gogui-setup_player ".length()).trim());
                 } else if (command.startsWith("loadsgf ")
                     || command.equals("set_position")
                     || command.startsWith("set_position ")) {
@@ -1788,10 +1788,8 @@ class LeelazAutomaticRestartConvergenceTest {
                     String sgfPath = command.substring("loadsgf ".length()).trim();
                     String sgf = Files.readString(Path.of(sgfPath));
                     applySnapshotSgf(sgf);
-                    usedSetPosition = false;
                   } else {
                     applySetPosition(command);
-                    usedSetPosition = true;
                   }
                   if (blockFirstLoadSgf && count == 1) {
                     // Hold the frozen route in flight so the test can navigate deterministically.
@@ -1903,6 +1901,7 @@ class LeelazAutomaticRestartConvergenceTest {
 
     private void applySetPosition(String command) {
       engineStones.clear();
+      engineBlackToPlay = true;
       String payload =
           command.startsWith("set_position")
               ? command.substring("set_position".length()).trim()

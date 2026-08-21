@@ -185,6 +185,14 @@ public final class ExactSnapshotEngineRestore {
         () ->
             loadEngine.restoreInBandForExactSnapshotRestore(
                 command, loadMirror, plan.admission, () -> {}, null));
+    String setupPlayer = buildSetupPlayerCommand(plan.snapshotData.blackToPlay);
+    for (Leelaz target : remoteTargets) {
+      sendCapturedRestoreCommand(plan, target, setupPlayer, "side-to-play");
+    }
+  }
+
+  private static String buildSetupPlayerCommand(boolean blackToPlay) {
+    return "gogui-setup_player " + (blackToPlay ? "B" : "W");
   }
 
   private static void restoreLocalSnapshotSgf(
