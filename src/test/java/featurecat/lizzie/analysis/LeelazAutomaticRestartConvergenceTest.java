@@ -1772,10 +1772,6 @@ class LeelazAutomaticRestartConvergenceTest {
                   engineBlackToPlay = true;
                 } else if (command.startsWith("komi ")) {
                   engineKomi = Double.parseDouble(command.substring("komi ".length()).trim());
-                } else if (command.startsWith("gogui-setup_player ")) {
-                  engineBlackToPlay =
-                      !"W".equalsIgnoreCase(
-                          command.substring("gogui-setup_player ".length()).trim());
                 } else if (command.startsWith("loadsgf ")
                     || command.equals("set_position")
                     || command.startsWith("set_position ")) {

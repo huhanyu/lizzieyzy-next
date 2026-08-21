@@ -515,8 +515,8 @@ public class KataGoAnalysisWebSocketTransportTest {
     assertTrue(commands.contains("kata-get-param"));
     assertTrue(commands.contains("kata-get-rules"));
     assertTrue(commands.contains("set_position"));
-    assertTrue(commands.contains("gogui-setup_player"));
     assertTrue(commands.contains("loadsgf"));
+    assertFalse(commands.contains("gogui-setup_player"));
 
     assertEquals("= 0.0\n\n", sendGtp(transport, "kata-get-param playoutDoublingAdvantage"));
     assertEquals("= 0.04\n\n", sendGtp(transport, "kata-get-param analysisWideRootNoise"));
@@ -732,24 +732,20 @@ public class KataGoAnalysisWebSocketTransportTest {
   }
 
   @Test
-  void setupPlayerAfterSetPositionSetsInitialPlayerWithoutAMove() throws Exception {
+  void playBlackPassAfterSetPositionLeavesWhiteToPlay() throws Exception {
     KataGoAnalysisWebSocketTransport transport =
         new KataGoAnalysisWebSocketTransport("ws://127.0.0.1:1");
 
     assertEquals("=\n\n", sendGtp(transport, "set_position B A3 W C3"));
-    assertEquals("=\n\n", sendGtp(transport, "gogui-setup_player W"));
+    assertEquals("=\n\n", sendGtp(transport, "play B pass"));
 
     JSONObject query = transport.buildAnalysisQuery("test", false, false, 50, "B");
     assertEquals(
         java.util.List.of(java.util.List.of("B", "A3"), java.util.List.of("W", "C3")),
         query.getJSONArray("initialStones").toList());
-    assertEquals(java.util.List.of(), query.getJSONArray("moves").toList());
-    assertEquals("W", query.getString("initialPlayer"));
-
-    assertEquals("=\n\n", sendGtp(transport, "gogui-setup_player B"));
-    JSONObject blackToPlay = transport.buildAnalysisQuery("test", false, false, 50, "W");
-    assertEquals(java.util.List.of(), blackToPlay.getJSONArray("moves").toList());
-    assertEquals("B", blackToPlay.getString("initialPlayer"));
+    assertEquals(
+        java.util.List.of(java.util.List.of("B", "pass")), query.getJSONArray("moves").toList());
+    assertEquals("B", query.getString("initialPlayer"));
   }
 
   @Test
@@ -809,6 +805,7 @@ public class KataGoAnalysisWebSocketTransportTest {
 
     assertTrue(response.startsWith("?42 unknown command"));
     assertTrue(sendGtp(transport, "time_warp 1").startsWith("? unknown command"));
+    assertTrue(sendGtp(transport, "gogui-setup_player W").startsWith("? unknown command"));
     assertTrue(
         sendGtp(transport, "kata-get-param unsupported").startsWith("? unknown parameter"));
   }

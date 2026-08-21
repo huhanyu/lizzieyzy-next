@@ -113,6 +113,10 @@ class ExactSnapshotEngineRestoreContractTest {
       assertTrue(
           placed.contains("W " + Board.convertCoordinatesToName(1, 0)),
           "white setup stone missing from in-band restore: " + setPosition);
+      assertTrue(
+          commands.stream()
+              .noneMatch(ExactSnapshotEngineRestoreContractTest::isGoguiSetupPlayerCommand),
+          "remote restore must not emit gogui-setup_player: " + commands);
       assertEquals(
           List.of("play B " + Board.convertCoordinatesToName(2, 2)),
           collectPlayCommands(commands),
@@ -1461,10 +1465,16 @@ class ExactSnapshotEngineRestoreContractTest {
       assertTrue(
           commands.stream().noneMatch(ExactSnapshotEngineRestoreContractTest::isHostLoadSgfCommand),
           "remote snapshot-anchor restore must not emit a host-only loadsgf path: " + commands);
+      assertTrue(
+          commands.stream()
+              .noneMatch(ExactSnapshotEngineRestoreContractTest::isGoguiSetupPlayerCommand),
+          "remote restore must not emit gogui-setup_player: " + commands);
       assertEquals(
-          List.of(),
+          blackToPlay ? List.of() : List.of("play B pass"),
           collectPlayCommands(commands),
-          "empty-tail restore must not send play, including a bookkeeping pass: " + commands);
+          blackToPlay
+              ? "B-to-play empty-tail must not send play B pass: " + commands
+              : "W-to-play empty-tail must send exactly one play B pass: " + commands);
 
       String setPosition =
           commands.stream()
@@ -1502,9 +1512,6 @@ class ExactSnapshotEngineRestoreContractTest {
         engineBlackToPlay = true;
       } else if (isSetPositionCommand(command)) {
         engineBlackToPlay = true;
-      } else if (command.startsWith("gogui-setup_player ")) {
-        engineBlackToPlay =
-            !"W".equalsIgnoreCase(command.substring("gogui-setup_player ".length()).trim());
       } else if (command.startsWith("play ")) {
         String[] parts = command.split("\\s+");
         if (parts.length >= 2) {
@@ -1627,6 +1634,11 @@ class ExactSnapshotEngineRestoreContractTest {
   private static boolean isSetPositionCommand(String command) {
     return command != null
         && (command.equals("set_position") || command.startsWith("set_position "));
+  }
+
+  private static boolean isGoguiSetupPlayerCommand(String command) {
+    return command != null
+        && (command.equals("gogui-setup_player") || command.startsWith("gogui-setup_player "));
   }
 
   private static Set<String> setPositionPlacements(String command) {

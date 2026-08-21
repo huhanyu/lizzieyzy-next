@@ -223,7 +223,7 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
             responseId,
             "protocol_version\nname\nversion\nlist_commands\nboardsize\nrectangular_boardsize\n"
                 + "komi\nkata-get-rules\nkata-get-param\nkata-set-param\nkata-set-rules\n"
-                + "clear_board\nset_position\ngogui-setup_player\nloadsgf\nplay\nundo\nkata-analyze\n"
+                + "clear_board\nset_position\nloadsgf\nplay\nundo\nkata-analyze\n"
                 + "kata-genmove_analyze\n"
                 + "genmove\nkata-list_time_settings\nkata-time_settings\nstop\nquit");
       } else if (lower.equals("kata-list_time_settings")) {
@@ -275,14 +275,6 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
         moves.clear();
         snapshotInitialPlayer = "";
         writeOk(responseId, "");
-      } else if (lower.equals("gogui-setup_player") || lower.startsWith("gogui-setup_player ")) {
-        String color = normalizeColor(token(line, 1, ""));
-        if (color.isEmpty()) {
-          writeError(responseId, "invalid gogui-setup_player command");
-        } else {
-          snapshotInitialPlayer = color;
-          writeOk(responseId, "");
-        }
       } else if (lower.startsWith("loadsgf ")) {
         loadSnapshotSgf(line.substring(line.indexOf(' ') + 1).trim());
         writeOk(responseId, "");
