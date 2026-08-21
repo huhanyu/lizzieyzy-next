@@ -5194,6 +5194,7 @@ public class Menu extends JMenuBar {
                       if (Lizzie.frame != null) {
                         Lizzie.frame.updateTitle();
                       }
+                      DiagnosticsDialog.notifyRuntimeChanged();
                     }));
     helpMenu.addMenuListener(
         new MenuListener() {

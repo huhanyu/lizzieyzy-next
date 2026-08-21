@@ -8,6 +8,7 @@ import featurecat.lizzie.logging.DiagnosticBundleExporter;
 import featurecat.lizzie.logging.LoggingLimits;
 import featurecat.lizzie.logging.LoggingRuntime;
 import featurecat.lizzie.logging.WorkDirectoryResolution;
+import featurecat.lizzie.logging.TraceScope;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -93,12 +94,17 @@ class DiagnosticsDialogTest {
     DiagnosticsDialog dialog = dialog(runtime, new AtomicInteger(), opened, () -> true);
     assertTrue(dialog.currentRequest().rawScopes().isEmpty());
     dialog.startFullTraceFromUi();
-    assertFalse(dialog.currentRequest().rawScopes().isEmpty());
+    assertTrue(dialog.confirmBody().contains("Engine/GTP"));
+    assertTrue(dialog.currentRequest().rawScopes().contains(TraceScope.ENGINE_GTP));
+    dialog.scopeEngineBox().setSelected(false);
+    assertTrue(dialog.currentRequest().rawScopes().contains(TraceScope.ENGINE_GTP));
     Path zip = dialog.exportSynchronously();
     assertTrue(Files.isRegularFile(zip));
     assertTrue(zip.getParent().endsWith("diagnostics"));
     assertTrue(opened.contains(zip.getParent()));
-    dialog.stopFullTraceFromUi();
+    runtime.stopFullTrace();
+    dialog.refreshFromRuntime();
+    assertFalse(dialog.fullLogsEnabledBox().isSelected());
     assertTrue(dialog.currentRequest().rawScopes().isEmpty());
   }
 

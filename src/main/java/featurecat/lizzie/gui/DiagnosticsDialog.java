@@ -100,6 +100,12 @@ public class DiagnosticsDialog extends JPanel {
     return openDialog;
   }
 
+  static void notifyRuntimeChanged() {
+    if (openPanel != null) {
+      openPanel.refreshFromRuntime();
+    }
+  }
+
   public DiagnosticsDialog(LoggingRuntime runtime, Config config) {
     this(
         runtime,
@@ -107,7 +113,7 @@ public class DiagnosticsDialog extends JPanel {
         new DiagnosticBundleExporter(
             DiagnosticBundleExporter.defaultOutputDirectory(runtime.logsDirectory().getParent())),
         DiagnosticsDialog::refreshFrameTitle,
-        DiagnosticsDialog::confirmFullTrace,
+        null,
         DiagnosticsDialog::openFolder);
   }
 
@@ -123,7 +129,7 @@ public class DiagnosticsDialog extends JPanel {
     this.config = config;
     this.exporter = exporter;
     this.titleRefresh = titleRefresh == null ? () -> {} : titleRefresh;
-    this.fullTraceConfirmer = fullTraceConfirmer == null ? () -> true : fullTraceConfirmer;
+    this.fullTraceConfirmer = fullTraceConfirmer;
     this.folderOpener = folderOpener == null ? path -> {} : folderOpener;
 
     setOpaque(true);
@@ -287,7 +293,7 @@ public class DiagnosticsDialog extends JPanel {
   }
 
   void startFullTraceFromUi() {
-    if (!fullTraceConfirmer.getAsBoolean()) {
+    if (!confirmStart()) {
       refreshFromRuntime();
       return;
     }
@@ -324,7 +330,9 @@ public class DiagnosticsDialog extends JPanel {
 
   DiagnosticBundleRequest currentRequest() {
     Set<TraceScope> raw =
-        runtime.fullTraceActive() ? selectedScopes() : EnumSet.noneOf(TraceScope.class);
+        runtime.fullTraceActive()
+            ? runtime.activeTraceScopes()
+            : EnumSet.noneOf(TraceScope.class);
     return new DiagnosticBundleRequest(
         runtime,
         raw,
@@ -355,6 +363,18 @@ public class DiagnosticsDialog extends JPanel {
 
   JButton cancelButton() {
     return cancel;
+  }
+
+  JCheckBox scopeEngineBox() {
+    return scopeEngine;
+  }
+
+  String confirmBody() {
+    return text(
+            "DiagnosticsDialog.confirmMessage",
+            "Selected scopes record game and protocol content. While this is on, exporting a package includes those full logs. Retention is 7 days and 100 MB per log class.")
+        + "\n"
+        + selectedScopeLabels();
   }
 
   void refreshFromRuntime() {
@@ -556,17 +576,45 @@ public class DiagnosticsDialog extends JPanel {
     }
   }
 
-  private static boolean confirmFullTrace() {
+  private boolean confirmStart() {
+    if (fullTraceConfirmer != null) {
+      return fullTraceConfirmer.getAsBoolean();
+    }
     int choice =
         JOptionPane.showConfirmDialog(
             Lizzie.frame,
-            text(
-                "DiagnosticsDialog.confirmMessage",
-                "Selected scopes record game and protocol content. While this is on, exporting a package includes those full logs. Retention is 7 days and 100 MB per log class."),
+            confirmBody(),
             text("DiagnosticsDialog.confirmTitle", "Start Full Logs?"),
             JOptionPane.OK_CANCEL_OPTION,
             JOptionPane.WARNING_MESSAGE);
     return choice == JOptionPane.OK_OPTION;
+  }
+
+  private String selectedScopeLabels() {
+    StringBuilder labels = new StringBuilder();
+    appendScopeLabel(labels, scopeEngine, "DiagnosticsDialog.scope.engineGtp", "Engine/GTP");
+    appendScopeLabel(
+        labels, scopeReadBoard, "DiagnosticsDialog.scope.readboardYike", "ReadBoard/Yike");
+    appendScopeLabel(
+        labels, scopeNetwork, "DiagnosticsDialog.scope.networkWebsocket", "Network/WebSocket");
+    return labels.length() == 0
+        ? text("DiagnosticsDialog.scope.engineGtp", "Engine/GTP")
+            + ", "
+            + text("DiagnosticsDialog.scope.readboardYike", "ReadBoard/Yike")
+            + ", "
+            + text("DiagnosticsDialog.scope.networkWebsocket", "Network/WebSocket")
+        : labels.toString();
+  }
+
+  private static void appendScopeLabel(
+      StringBuilder labels, JCheckBox box, String key, String fallback) {
+    if (!box.isSelected()) {
+      return;
+    }
+    if (labels.length() > 0) {
+      labels.append(", ");
+    }
+    labels.append(text(key, fallback));
   }
 
   private static void openFolder(Path directory) {
