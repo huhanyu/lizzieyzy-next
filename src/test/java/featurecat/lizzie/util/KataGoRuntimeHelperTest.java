@@ -1915,6 +1915,8 @@ public class KataGoRuntimeHelperTest {
     touch(directory.resolve("cublas64_12.dll"));
     touch(directory.resolve("cublasLt64_12.dll"));
     touch(directory.resolve("nvJitLink64_12.dll"));
+    touch(directory.resolve("nvrtc64_120_0.dll"));
+    touch(directory.resolve("nvrtc-builtins64_128.dll"));
   }
 
   private static void touchRequiredCuda12_8Dlls(Path directory) throws IOException {
