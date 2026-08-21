@@ -4,6 +4,8 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.SyncDiagnosticsRecorder;
 import featurecat.lizzie.analysis.YikeSessionDiagnosticsSnapshot;
+import featurecat.lizzie.logging.EngineObservation;
+import featurecat.lizzie.logging.ReadBoardObservation;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -520,7 +522,7 @@ public class OnlineDialog extends JDialog {
       return;
     }
     pendingYikeSession = YikeSessionState.pending(sessionKey);
-    publishYikeDiagnostics("begin-pending-session");
+    publishYikeDiagnostics("begin-pending-session", sessionKey);
   }
 
   private void markYikeSyncReady(String sessionKey, int resolvedBoardSize) {
@@ -530,20 +532,20 @@ public class OnlineDialog extends JDialog {
     if (pendingYikeSession.matches(sessionKey)) {
       pendingYikeSession = pendingYikeSession.withResolvedBoardSize(resolvedBoardSize);
       if (!promotePendingYikeSessionIfReady()) {
-        publishYikeDiagnostics("sync-ready");
+        publishYikeDiagnostics("sync-ready", sessionKey);
       }
       return;
     }
     if (activeYikeSession.matches(sessionKey)) {
       activeYikeSession = activeYikeSession.withResolvedBoardSize(resolvedBoardSize);
       applyActiveYikeSessionState();
-      publishYikeDiagnostics("active-sync-ready");
+      publishYikeDiagnostics("active-sync-ready", sessionKey);
       return;
     }
     pendingYikeSession =
         YikeSessionState.pending(sessionKey).withResolvedBoardSize(resolvedBoardSize);
     if (!promotePendingYikeSessionIfReady()) {
-      publishYikeDiagnostics("sync-ready-new-pending");
+      publishYikeDiagnostics("sync-ready-new-pending", sessionKey);
     }
   }
 
@@ -554,19 +556,19 @@ public class OnlineDialog extends JDialog {
     if (pendingYikeSession.matches(sessionKey)) {
       pendingYikeSession = pendingYikeSession.withGeometry(geometry);
       if (!promotePendingYikeSessionIfReady()) {
-        publishYikeDiagnostics("geometry-ready");
+        publishYikeDiagnostics("geometry-ready", sessionKey);
       }
       return;
     }
     if (activeYikeSession.matches(sessionKey)) {
       activeYikeSession = activeYikeSession.withGeometry(geometry);
       applyActiveYikeSessionState();
-      publishYikeDiagnostics("active-geometry-ready");
+      publishYikeDiagnostics("active-geometry-ready", sessionKey);
       return;
     }
     pendingYikeSession = YikeSessionState.pending(sessionKey).withGeometry(geometry);
     if (!promotePendingYikeSessionIfReady()) {
-      publishYikeDiagnostics("geometry-ready-new-pending");
+      publishYikeDiagnostics("geometry-ready-new-pending", sessionKey);
     }
   }
 
@@ -616,7 +618,17 @@ public class OnlineDialog extends JDialog {
   }
 
   private void publishYikeDiagnostics(String reason) {
-    SyncDiagnosticsRecorder.getDefault().updateYikeSession(buildYikeDiagnosticsSnapshot(reason));
+    publishYikeDiagnostics(reason, currentYikeSessionKey());
+  }
+
+  private void publishYikeDiagnostics(String reason, String sessionId) {
+    ReadBoardObservation.inContext(
+        EngineObservation.identityFor(Lizzie.leelaz),
+        null,
+        sessionId,
+        () ->
+            SyncDiagnosticsRecorder.getDefault()
+                .updateYikeSession(buildYikeDiagnosticsSnapshot(reason)));
   }
 
   private void publishYikeGeometryClearDiagnostics(String reason) {
@@ -1549,7 +1561,7 @@ public class OnlineDialog extends JDialog {
               }
             } catch (IOException | JSONException e) {
               YikeSyncDebugLog.log("OnlineDialog.reqNewYikeRoom error: " + e.toString());
-              e.printStackTrace();
+              ReadBoardObservation.recordFailure("yike-fetch", e);
               if (e instanceof IOException
                   && showNetworkProxyConfigWarning((IOException) e)) {
                 invalidProxyConfig.set(true);
@@ -3969,24 +3981,8 @@ public class OnlineDialog extends JDialog {
     markYikeSyncReady(currentYikeSessionKey(), boardSize);
   }
 
-  private static final boolean YIKE_DEBUG_LOG_ENABLED = false;
-  private static final String YIKE_LOG_PATH =
-      System.getProperty("lizzie.yike.extraDebugLog", "target/yike-debug.log");
-
   private static void yikeDebugLog(String msg) {
     YikeSyncDebugLog.log("OnlineDialog " + msg);
-    if (!YIKE_DEBUG_LOG_ENABLED) return;
-    try {
-      java.io.FileWriter fw = new java.io.FileWriter(YIKE_LOG_PATH, true);
-      fw.write(
-          "["
-              + new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date())
-              + "] "
-              + msg
-              + "\n");
-      fw.close();
-    } catch (Exception ignored) {
-    }
   }
 
   private void sendYikeContextToReadBoard() {
@@ -4496,14 +4492,14 @@ public class OnlineDialog extends JDialog {
         reportSyncStatus(syncStatusPrefix() + "已启动");
       } catch (IOException | URISyntaxException e) {
         yikeDebugLog("applyChangeWeb proc error: " + e.toString());
-        e.printStackTrace();
+        ReadBoardObservation.recordFailure("yike-start", e);
         if (e instanceof IOException) {
           showNetworkProxyConfigWarning((IOException) e);
         }
         reportSyncStatus("同步启动失败: " + e.getMessage());
       } catch (RuntimeException e) {
         yikeDebugLog("applyChangeWeb proc runtime error: " + e.toString());
-        e.printStackTrace();
+        ReadBoardObservation.recordFailure("yike-start", e);
         reportSyncStatus("同步启动失败: " + e.getMessage());
       }
     } else {
