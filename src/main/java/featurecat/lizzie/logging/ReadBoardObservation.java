@@ -14,11 +14,14 @@ public final class ReadBoardObservation {
   }
 
   public static boolean traceEnabled() {
-    return initialized() && TRACE.isInfoEnabled();
+    return LoggingRuntime.current()
+            .filter(runtime -> !runtime.isShutdown() && runtime.fullTraceActive())
+            .isPresent()
+        && TRACE.isInfoEnabled();
   }
 
   private static boolean initialized() {
-    return LoggingRuntime.current().isPresent();
+    return LoggingRuntime.current().filter(runtime -> !runtime.isShutdown()).isPresent();
   }
 
   public static void inContext(
