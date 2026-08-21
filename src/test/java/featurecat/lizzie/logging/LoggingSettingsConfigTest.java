@@ -18,7 +18,7 @@ class LoggingSettingsConfigTest {
   @TempDir Path tempDir;
 
   @Test
-  void defaultsSelectEveryModuleAndScopeWithoutEnablingDiagnostics() throws Exception {
+  void defaultsEnableDiagnosticsWithEveryModuleAndScope() throws Exception {
     Path workDirectory = Files.createTempDirectory(tempDir, "config");
     Config config = ConfigTestHelper.createForTests(workDirectory);
     initializeConfig(config);
@@ -34,7 +34,7 @@ class LoggingSettingsConfigTest {
 
     JSONObject saved = new JSONObject(Files.readString(Path.of(config.getConfigFilePath())));
     LoggingSettings persisted = LoggingSettings.fromJson(saved.getJSONObject("logging"));
-    assertFalse(persisted.diagnosticsEnabled());
+    assertTrue(persisted.diagnosticsEnabled());
     assertEquals(EnumSet.allOf(DiagnosticModule.class), persisted.diagnosticModules());
     assertEquals(EnumSet.allOf(TraceScope.class), persisted.preferredTraceScopes());
     assertFalse(saved.getJSONObject("logging").has("full-trace-active"));

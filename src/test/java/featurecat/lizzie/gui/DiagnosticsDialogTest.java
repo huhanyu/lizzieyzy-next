@@ -33,31 +33,31 @@ class DiagnosticsDialogTest {
     assertTrue(dialog.healthText().contains(runtime.logsDirectory().toString()));
     assertTrue(dialog.healthText().contains("persistenceEnabled=true"));
     assertTrue(dialog.estimateText().contains("MB"));
+    assertFalse(dialog.cancelButton().isVisible());
+    assertFalse(dialog.fullLogsEnabledBox().isSelected());
     dialog.diagnosticsEnabledBox().doClick();
-    assertFalse(runtime.settings().diagnosticsEnabled());
-    dialog.applyCurrentPlan();
     assertTrue(runtime.settings().diagnosticsEnabled());
+    dialog.applyCurrentPlan();
+    assertFalse(runtime.settings().diagnosticsEnabled());
   }
 
   @Test
   void applyFailureRestoresUiFromRuntime() {
     LoggingRuntime runtime = start();
     DiagnosticsDialog dialog = dialog(runtime, new AtomicInteger(), new ArrayList<>(), () -> true);
-    assertFalse(runtime.settings().diagnosticsEnabled());
-    dialog.diagnosticsEnabledBox().setSelected(true);
-    // No Config persister; applyCurrentPlan uses runtime.applySettings only and succeeds.
-    // Force rollback by applying through a failing persister via runtime, then refresh.
+    assertTrue(runtime.settings().diagnosticsEnabled());
+    dialog.diagnosticsEnabledBox().setSelected(false);
     try {
       runtime.applySettings(
-          runtime.settings().withDiagnosticsEnabled(true),
+          runtime.settings().withDiagnosticsEnabled(false),
           settings -> {
             throw new java.io.IOException("disk full");
           });
     } catch (RuntimeException ignored) {
     }
     dialog.refreshFromRuntime();
-    assertFalse(dialog.diagnosticsEnabledBox().isSelected());
-    assertFalse(runtime.settings().diagnosticsEnabled());
+    assertTrue(dialog.diagnosticsEnabledBox().isSelected());
+    assertTrue(runtime.settings().diagnosticsEnabled());
   }
 
   @Test
@@ -65,16 +65,23 @@ class DiagnosticsDialogTest {
     LoggingRuntime runtime = start();
     AtomicInteger titles = new AtomicInteger();
     AtomicBoolean confirm = new AtomicBoolean(false);
-    DiagnosticsDialog dialog =
-        dialog(runtime, titles, new ArrayList<>(), confirm::get);
-    dialog.startFullTraceFromUi();
+    DiagnosticsDialog dialog = dialog(runtime, titles, new ArrayList<>(), confirm::get);
+    dialog.fullLogsEnabledBox().setSelected(true);
+    dialog.applyCurrentPlan();
     assertFalse(runtime.fullTraceActive());
     assertEquals(0, titles.get());
     confirm.set(true);
-    dialog.startFullTraceFromUi();
+    dialog.fullLogsEnabledBox().setSelected(true);
+    dialog.applyCurrentPlan();
     assertTrue(runtime.fullTraceActive());
     assertEquals(1, titles.get());
-    dialog.stopFullTraceFromUi();
+    assertTrue(dialog.fullLogsEnabledBox().isSelected());
+    assertTrue(dialog.durationText().contains("s"));
+    DiagnosticsDialog reopened = dialog(runtime, titles, new ArrayList<>(), () -> true);
+    assertTrue(reopened.fullLogsEnabledBox().isSelected());
+    assertTrue(reopened.durationText().contains("s"));
+    dialog.fullLogsEnabledBox().setSelected(false);
+    dialog.applyCurrentPlan();
     assertFalse(runtime.fullTraceActive());
     assertEquals(2, titles.get());
   }
@@ -84,13 +91,15 @@ class DiagnosticsDialogTest {
     LoggingRuntime runtime = start();
     List<Path> opened = new ArrayList<>();
     DiagnosticsDialog dialog = dialog(runtime, new AtomicInteger(), opened, () -> true);
+    assertTrue(dialog.currentRequest().rawScopes().isEmpty());
     dialog.startFullTraceFromUi();
-    dialog.includeRawBox().doClick();
-    assertTrue(dialog.includeRawBox().isSelected());
+    assertFalse(dialog.currentRequest().rawScopes().isEmpty());
     Path zip = dialog.exportSynchronously();
     assertTrue(Files.isRegularFile(zip));
     assertTrue(zip.getParent().endsWith("diagnostics"));
-    assertFalse(dialog.includeRawBox().isSelected());
+    assertTrue(opened.contains(zip.getParent()));
+    dialog.stopFullTraceFromUi();
+    assertTrue(dialog.currentRequest().rawScopes().isEmpty());
   }
 
   private DiagnosticsDialog dialog(

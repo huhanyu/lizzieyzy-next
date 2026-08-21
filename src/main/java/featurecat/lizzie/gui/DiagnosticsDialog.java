@@ -11,9 +11,11 @@ import featurecat.lizzie.logging.LoggingSettings;
 import featurecat.lizzie.logging.LoggingStatus;
 import featurecat.lizzie.logging.TraceScope;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Desktop;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
+import java.awt.Font;
 import java.awt.Window;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -26,19 +28,26 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
-import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
+import javax.swing.border.EmptyBorder;
 
 public class DiagnosticsDialog extends JPanel {
   private static final long serialVersionUID = 1L;
+  private static final Color PAPER = new Color(246, 247, 249);
+  private static final Color INK = new Color(32, 36, 40);
+  private static final Color MUTED = new Color(90, 96, 104);
+  private static final Color HAIRLINE = new Color(221, 223, 227);
 
   private final LoggingRuntime runtime;
   private final Config config;
@@ -46,42 +55,49 @@ public class DiagnosticsDialog extends JPanel {
   private final Runnable titleRefresh;
   private final BooleanSupplier fullTraceConfirmer;
   private final Consumer<Path> folderOpener;
-  private final JCheckBox diagnosticsEnabled =
-      new JCheckBox(text("DiagnosticsDialog.diagnosticsEnabled", "Diagnostics"));
-  private final JCheckBox moduleEngine =
-      new JCheckBox(text("DiagnosticsDialog.module.engine", "Engine"));
-  private final JCheckBox moduleGtp =
-      new JCheckBox(text("DiagnosticsDialog.module.gtpSummary", "GTP Summary"));
-  private final JCheckBox moduleReadBoard =
-      new JCheckBox(text("DiagnosticsDialog.module.readboardYike", "ReadBoard/Yike"));
-  private final JCheckBox moduleNetwork =
-      new JCheckBox(text("DiagnosticsDialog.module.networkRemote", "Network/Remote"));
-  private final JCheckBox scopeEngine =
-      new JCheckBox(text("DiagnosticsDialog.scope.engineGtp", "Engine/GTP"));
-  private final JCheckBox scopeReadBoard =
-      new JCheckBox(text("DiagnosticsDialog.scope.readboardYike", "ReadBoard/Yike"));
-  private final JCheckBox scopeNetwork =
-      new JCheckBox(text("DiagnosticsDialog.scope.networkWebsocket", "Network/WebSocket"));
-  private final JCheckBox includeRaw =
-      new JCheckBox(text("DiagnosticsDialog.exportRaw", "Include current Full Trace"));
-  private final JTextArea healthArea = new JTextArea(8, 60);
-  private final JTextArea statusArea = new JTextArea(2, 60);
-  private final JLabel durationLabel =
-      new JLabel(text("DiagnosticsDialog.duration", "Duration") + ": —");
-  private final JLabel estimateLabel = new JLabel("");
+  private final JCheckBox diagnosticsEnabled = box();
+  private final JCheckBox moduleEngine = box();
+  private final JCheckBox moduleGtp = box();
+  private final JCheckBox moduleReadBoard = box();
+  private final JCheckBox moduleNetwork = box();
+  private final JCheckBox fullLogsEnabled = box();
+  private final JCheckBox scopeEngine = box();
+  private final JCheckBox scopeReadBoard = box();
+  private final JCheckBox scopeNetwork = box();
+  private final JButton apply = new JFontButton(text("DiagnosticsDialog.apply", "Apply"));
+  private final JButton exportDefault =
+      new JFontButton(text("DiagnosticsDialog.exportDefault", "Export package"));
+  private final JButton cancel =
+      new JFontButton(text("DiagnosticsDialog.cancelExport", "Cancel export"));
+  private final JTextArea statusArea = new JFontTextArea(2, 48);
+  private final JLabel durationLabel = new JFontLabel("");
+  private final JLabel estimateLabel = new JFontLabel("");
+  private final JLabel logsPath = new JFontLabel("");
+  private final JLabel persistenceLabel = new JFontLabel("");
+  private final JPanel streamList = new JPanel();
   private final AtomicBoolean cancelExport = new AtomicBoolean();
-  private Instant traceStartedAt;
+  private final Timer durationClock = new Timer(1000, event -> refreshDuration());
+  private static JDialog openDialog;
+  private static DiagnosticsDialog openPanel;
 
   public static JDialog open(Window owner, LoggingRuntime runtime, Config config) {
-    JDialog dialog = new JDialog(owner);
-    dialog.setTitle(text("DiagnosticsDialog.title", "Diagnostics and Logs"));
-    dialog.setModalityType(JDialog.ModalityType.MODELESS);
-    dialog.setDefaultCloseOperation(JDialog.HIDE_ON_CLOSE);
-    dialog.setContentPane(new DiagnosticsDialog(runtime, config));
-    dialog.setSize(820, 600);
-    dialog.setLocationRelativeTo(owner);
-    dialog.setVisible(true);
-    return dialog;
+    if (openDialog == null) {
+      openPanel = new DiagnosticsDialog(runtime, config);
+      openDialog = new JDialog(owner);
+      openDialog.setTitle(text("DiagnosticsDialog.title", "Diagnostics and Logs"));
+      openDialog.setModalityType(JDialog.ModalityType.MODELESS);
+      openDialog.setDefaultCloseOperation(JDialog.HIDE_ON_CLOSE);
+      openDialog.setContentPane(openPanel);
+      openDialog.pack();
+      openDialog.setMinimumSize(new Dimension(520, openDialog.getHeight()));
+      openDialog.setLocationRelativeTo(owner);
+    } else {
+      openPanel.refreshFromRuntime();
+    }
+    openDialog.setVisible(true);
+    openDialog.toFront();
+    openPanel.refreshFromRuntime();
+    return openDialog;
   }
 
   public DiagnosticsDialog(LoggingRuntime runtime, Config config) {
@@ -102,7 +118,7 @@ public class DiagnosticsDialog extends JPanel {
       Runnable titleRefresh,
       BooleanSupplier fullTraceConfirmer,
       Consumer<Path> folderOpener) {
-    super(new BorderLayout(8, 8));
+    super(new BorderLayout(0, 8));
     this.runtime = runtime;
     this.config = config;
     this.exporter = exporter;
@@ -110,81 +126,135 @@ public class DiagnosticsDialog extends JPanel {
     this.fullTraceConfirmer = fullTraceConfirmer == null ? () -> true : fullTraceConfirmer;
     this.folderOpener = folderOpener == null ? path -> {} : folderOpener;
 
-    healthArea.setEditable(false);
+    setOpaque(true);
+    setBackground(AppleStyleSupport.isAppleStyleEnabled() ? new Color(30, 33, 38) : PAPER);
+    setBorder(new EmptyBorder(10, 12, 10, 12));
+
+    durationLabel.setForeground(MUTED);
+    estimateLabel.setForeground(MUTED);
+    logsPath.setForeground(MUTED);
+    persistenceLabel.setForeground(INK);
+    streamList.setOpaque(false);
+    streamList.setLayout(new BoxLayout(streamList, BoxLayout.Y_AXIS));
+
     statusArea.setEditable(false);
+    statusArea.setLineWrap(true);
+    statusArea.setWrapStyleWord(true);
+    statusArea.setOpaque(false);
+    statusArea.setBorder(new EmptyBorder(0, 2, 0, 2));
+    statusArea.setForeground(MUTED);
 
-    JPanel modules = new JPanel(new GridLayout(0, 2, 8, 4));
-    modules.setBorder(
-        BorderFactory.createTitledBorder(text("DiagnosticsDialog.diagnosticsEnabled", "Diagnostics")));
-    modules.add(diagnosticsEnabled);
-    modules.add(moduleEngine);
-    modules.add(moduleGtp);
-    modules.add(moduleReadBoard);
-    modules.add(moduleNetwork);
-
-    JPanel scopes = new JPanel(new GridLayout(0, 2, 8, 4));
-    scopes.setBorder(
-        BorderFactory.createTitledBorder(text("DiagnosticsDialog.fullTrace", "Full Trace")));
-    scopes.add(scopeEngine);
-    scopes.add(scopeReadBoard);
-    scopes.add(scopeNetwork);
-    scopes.add(durationLabel);
-
-    JButton apply = new JButton(text("DiagnosticsDialog.apply", "Apply"));
-    JButton start = new JButton(text("DiagnosticsDialog.startFullTrace", "Start Full Trace"));
-    JButton stop = new JButton(text("DiagnosticsDialog.stopFullTrace", "Stop Full Trace"));
-    JButton openLogs = new JButton(text("DiagnosticsDialog.openLogs", "Open log folder"));
-    JButton openDiagnostics =
-        new JButton(text("DiagnosticsDialog.openDiagnostics", "Open diagnostics folder"));
-    JButton exportDefault =
-        new JButton(text("DiagnosticsDialog.exportDefault", "Export default package"));
-    JButton cancel = new JButton(text("DiagnosticsDialog.cancelExport", "Cancel export"));
+    AppleStyleSupport.markPrimary(apply);
+    AppleStyleSupport.markPrimary(exportDefault);
+    cancel.setVisible(false);
 
     apply.addActionListener(e -> applyCurrentPlan());
-    start.addActionListener(e -> startFullTraceFromUi());
-    stop.addActionListener(e -> stopFullTraceFromUi());
-    openLogs.addActionListener(e -> folderOpener.accept(runtime.logsDirectory()));
-    openDiagnostics.addActionListener(
-        e ->
-            folderOpener.accept(
-                DiagnosticBundleExporter.defaultOutputDirectory(
-                    runtime.logsDirectory().getParent())));
+    diagnosticsEnabled.addActionListener(e -> setModulesEnabled(diagnosticsEnabled.isSelected()));
     exportDefault.addActionListener(e -> exportPackageOffEdt());
     cancel.addActionListener(e -> cancelExport.set(true));
-    includeRaw.addActionListener(e -> refreshEstimate());
 
-    JPanel exportRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-    exportRow.add(includeRaw);
-    exportRow.add(estimateLabel);
+    JPanel recording = new JPanel();
+    recording.setOpaque(false);
+    recording.setLayout(new BoxLayout(recording, BoxLayout.Y_AXIS));
+    addSection(
+        recording,
+        checkRow(
+            text("DiagnosticsDialog.diagnosticsEnabled", "Diagnostic recording"),
+            diagnosticsEnabled,
+            false,
+            null));
+    addSection(
+        recording, checkRow(text("DiagnosticsDialog.module.engine", "Engine"), moduleEngine, true, null));
+    addSection(
+        recording,
+        checkRow(text("DiagnosticsDialog.module.gtpSummary", "GTP Summary"), moduleGtp, true, null));
+    addSection(
+        recording,
+        checkRow(
+            text("DiagnosticsDialog.module.readboardYike", "ReadBoard/Yike"),
+            moduleReadBoard,
+            true,
+            null));
+    addSection(
+        recording,
+        checkRow(
+            text("DiagnosticsDialog.module.networkRemote", "Network/Remote"),
+            moduleNetwork,
+            true,
+            null));
 
-    JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-    buttons.add(apply);
-    buttons.add(start);
-    buttons.add(stop);
-    buttons.add(openLogs);
-    buttons.add(openDiagnostics);
-    buttons.add(exportDefault);
-    buttons.add(cancel);
-
+    JPanel fullLogs = new JPanel();
+    fullLogs.setOpaque(false);
+    fullLogs.setLayout(new BoxLayout(fullLogs, BoxLayout.Y_AXIS));
+    addSection(
+        fullLogs,
+        checkRow(
+            text("DiagnosticsDialog.fullTrace", "Full Logs"), fullLogsEnabled, false, durationLabel));
+    addSection(
+        fullLogs,
+        checkRow(text("DiagnosticsDialog.scope.engineGtp", "Engine/GTP"), scopeEngine, true, null));
+    addSection(
+        fullLogs,
+        checkRow(
+            text("DiagnosticsDialog.scope.readboardYike", "ReadBoard/Yike"),
+            scopeReadBoard,
+            true,
+            null));
+    addSection(
+        fullLogs,
+        checkRow(
+            text("DiagnosticsDialog.scope.networkWebsocket", "Network/WebSocket"),
+            scopeNetwork,
+            true,
+            null));
     JLabel migration =
-        new JLabel(
-            text(
-                "DiagnosticsDialog.gtpMigrationNote",
-                "Legacy GTP file logging now provides GTP Summary. Raw GTP requires temporary explicit Full Trace."));
+        new JFontLabel(
+            "<html>"
+                + text(
+                    "DiagnosticsDialog.gtpMigrationNote",
+                    "Legacy GTP file logging now provides GTP Summary. Raw GTP requires starting Full Logs.")
+                + "</html>");
+    migration.setForeground(MUTED);
+    addSection(fullLogs, migration);
 
-    JPanel content = new JPanel(new BorderLayout(8, 8));
-    content.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-    JPanel north = new JPanel(new BorderLayout(8, 8));
-    north.add(modules, BorderLayout.NORTH);
-    north.add(scopes, BorderLayout.CENTER);
-    north.add(migration, BorderLayout.SOUTH);
-    content.add(north, BorderLayout.NORTH);
-    content.add(new JScrollPane(healthArea), BorderLayout.CENTER);
-    JPanel south = new JPanel(new BorderLayout(4, 4));
-    south.add(exportRow, BorderLayout.NORTH);
-    south.add(statusArea, BorderLayout.CENTER);
-    south.add(buttons, BorderLayout.SOUTH);
-    add(content);
+    JPanel applyRow = new JPanel(new BorderLayout());
+    applyRow.setOpaque(false);
+    applyRow.add(apply, BorderLayout.EAST);
+
+    JPanel logs =
+        pathRow(
+            text("DiagnosticsDialog.logsFolder", "Logs"),
+            logsPath,
+            () -> folderOpener.accept(runtime.logsDirectory()));
+
+    JPanel health = new JPanel(new BorderLayout(0, 4));
+    health.setOpaque(false);
+    health.add(persistenceLabel, BorderLayout.NORTH);
+    health.add(streamList, BorderLayout.CENTER);
+
+    JPanel north = new JPanel();
+    north.setOpaque(false);
+    north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+    addSection(north, recording);
+    addSection(north, hairline());
+    addSection(north, fullLogs);
+    addSection(north, applyRow);
+    addSection(north, hairline());
+    addSection(north, logs);
+    addSection(north, health);
+    JPanel export = new JPanel(new BorderLayout(12, 6));
+    export.setOpaque(false);
+    export.add(estimateLabel, BorderLayout.WEST);
+    export.add(wrap(exportDefault, cancel), BorderLayout.EAST);
+    export.add(statusArea, BorderLayout.SOUTH);
+
+    JPanel south = new JPanel(new BorderLayout(0, 10));
+    south.setOpaque(false);
+    south.add(hairline(), BorderLayout.NORTH);
+    south.add(export, BorderLayout.CENTER);
+
+    add(north, BorderLayout.NORTH);
+    add(south, BorderLayout.SOUTH);
     refreshFromRuntime();
   }
 
@@ -205,11 +275,20 @@ public class DiagnosticsDialog extends JPanel {
     } catch (RuntimeException e) {
       refreshFromRuntime();
       setStatus(text("DiagnosticsDialog.applyFailed", "Apply failed") + ": " + e.getMessage());
+      return;
+    }
+    if (fullLogsEnabled.isSelected()) {
+      if (!runtime.fullTraceActive()) {
+        startFullTraceFromUi();
+      }
+    } else if (runtime.fullTraceActive()) {
+      stopFullTraceFromUi();
     }
   }
 
   void startFullTraceFromUi() {
     if (!fullTraceConfirmer.getAsBoolean()) {
+      refreshFromRuntime();
       return;
     }
     LoggingSettings next = runtime.settings().withPreferredTraceScopes(selectedScopes());
@@ -225,37 +304,27 @@ public class DiagnosticsDialog extends JPanel {
       return;
     }
     runtime.startFullTrace(selectedScopes());
-    traceStartedAt = Instant.now();
     titleRefresh.run();
     refreshFromRuntime();
   }
 
   void stopFullTraceFromUi() {
     runtime.stopFullTrace();
-    traceStartedAt = null;
     titleRefresh.run();
     refreshFromRuntime();
   }
 
   Path exportSynchronously() throws IOException {
     cancelExport.set(false);
-    try {
-      return exporter.export(currentRequest(), cancelExport::get);
-    } finally {
-      includeRaw.setSelected(false);
-      refreshEstimate();
-    }
+    Path zip = exporter.export(currentRequest(), cancelExport::get);
+    folderOpener.accept(zip.getParent());
+    refreshEstimate();
+    return zip;
   }
 
-
-  JCheckBox includeRawBox() {
-    return includeRaw;
-  }
   DiagnosticBundleRequest currentRequest() {
     Set<TraceScope> raw =
-        includeRaw.isSelected() && runtime.fullTraceActive()
-            ? selectedScopes()
-            : EnumSet.noneOf(TraceScope.class);
+        runtime.fullTraceActive() ? selectedScopes() : EnumSet.noneOf(TraceScope.class);
     return new DiagnosticBundleRequest(
         runtime,
         raw,
@@ -265,7 +334,7 @@ public class DiagnosticsDialog extends JPanel {
   }
 
   String healthText() {
-    return healthArea.getText();
+    return renderHealth();
   }
 
   String statusText() {
@@ -280,6 +349,14 @@ public class DiagnosticsDialog extends JPanel {
     return diagnosticsEnabled;
   }
 
+  JCheckBox fullLogsEnabledBox() {
+    return fullLogsEnabled;
+  }
+
+  JButton cancelButton() {
+    return cancel;
+  }
+
   void refreshFromRuntime() {
     LoggingSettings settings = runtime.settings();
     diagnosticsEnabled.setSelected(settings.diagnosticsEnabled());
@@ -289,51 +366,88 @@ public class DiagnosticsDialog extends JPanel {
         settings.diagnosticModules().contains(DiagnosticModule.READBOARD_YIKE));
     moduleNetwork.setSelected(
         settings.diagnosticModules().contains(DiagnosticModule.NETWORK_REMOTE));
+    fullLogsEnabled.setSelected(runtime.fullTraceActive());
     scopeEngine.setSelected(settings.preferredTraceScopes().contains(TraceScope.ENGINE_GTP));
     scopeReadBoard.setSelected(settings.preferredTraceScopes().contains(TraceScope.READBOARD_YIKE));
     scopeNetwork.setSelected(settings.preferredTraceScopes().contains(TraceScope.NETWORK_WEBSOCKET));
-    includeRaw.setEnabled(runtime.fullTraceActive());
-    if (!runtime.fullTraceActive()) {
-      includeRaw.setSelected(false);
+    setModulesEnabled(settings.diagnosticsEnabled());
+    logsPath.setText(runtime.logsDirectory().toAbsolutePath().toString());
+    logsPath.setToolTipText(logsPath.getText());
+    LoggingStatus status = runtime.status();
+    persistenceLabel.setText("persistenceEnabled=" + status.persistenceEnabled());
+    streamList.removeAll();
+    for (LoggingStatus.StreamStatus stream : status.streams()) {
+      JFontLabel line = new JFontLabel(streamLine(stream));
+      line.setForeground(stream.reason() == null ? INK : new Color(176, 64, 64));
+      line.setAlignmentX(LEFT_ALIGNMENT);
+      streamList.add(line);
     }
-    healthArea.setText(renderHealth());
-    durationLabel.setText(
-        text("DiagnosticsDialog.duration", "Duration")
-            + ": "
-            + (runtime.fullTraceActive() && traceStartedAt != null
-                ? Duration.between(traceStartedAt, Instant.now()).toSeconds() + "s"
-                : "—"));
+    streamList.revalidate();
+    streamList.repaint();
+    refreshDuration();
     refreshEstimate();
   }
 
+  String durationText() {
+    return durationLabel.getText();
+  }
+
+  private void refreshDuration() {
+    Instant started = runtime.fullTraceStartedAt();
+    boolean tracing = runtime.fullTraceActive() && started != null;
+    durationLabel.setText(
+        tracing
+            ? text("DiagnosticsDialog.duration", "Duration")
+                + " "
+                + Duration.between(started, Instant.now()).toSeconds()
+                + "s"
+            : text("DiagnosticsDialog.traceOff", "Off"));
+    if (tracing && isShowing()) {
+      if (!durationClock.isRunning()) {
+        durationClock.start();
+      }
+    } else if (durationClock.isRunning()) {
+      durationClock.stop();
+    }
+  }
+
   private String renderHealth() {
+    return text("DiagnosticsDialog.logsFolder", "Logs")
+        + ": "
+        + runtime.logsDirectory()
+        + '\n'
+        + text("DiagnosticsDialog.diagnosticsFolder", "Diagnostics")
+        + ": "
+        + DiagnosticBundleExporter.defaultOutputDirectory(runtime.logsDirectory().getParent())
+        + '\n'
+        + persistenceLabel.getText()
+        + '\n'
+        + renderStreams();
+  }
+
+  private String renderStreams() {
     StringBuilder body = new StringBuilder();
-    body.append(text("DiagnosticsDialog.logsFolder", "Logs"))
-        .append(": ")
-        .append(runtime.logsDirectory())
-        .append('\n');
-    body.append(text("DiagnosticsDialog.diagnosticsFolder", "Diagnostics"))
-        .append(": ")
-        .append(
-            DiagnosticBundleExporter.defaultOutputDirectory(runtime.logsDirectory().getParent()))
-        .append('\n');
-    LoggingStatus status = runtime.status();
-    body.append("persistenceEnabled=").append(status.persistenceEnabled()).append('\n');
-    for (LoggingStatus.StreamStatus stream : status.streams()) {
-      body.append(stream.stream())
-          .append(" reason=")
-          .append(stream.reason() == null ? "healthy" : stream.reason())
-          .append(" dropped=")
-          .append(stream.droppedCount())
-          .append(" recovered=")
-          .append(stream.recovered())
-          .append(" first=")
-          .append(stream.firstOccurrence())
-          .append(" last=")
-          .append(stream.lastOccurrence())
-          .append('\n');
+    for (LoggingStatus.StreamStatus stream : runtime.status().streams()) {
+      body.append(streamLine(stream)).append('\n');
     }
     return body.toString();
+  }
+
+  private static String streamLine(LoggingStatus.StreamStatus stream) {
+    if (stream.reason() == null) {
+      return stream.stream() + "  healthy  dropped=" + stream.droppedCount();
+    }
+    return stream.stream()
+        + "  reason="
+        + stream.reason()
+        + " dropped="
+        + stream.droppedCount()
+        + " recovered="
+        + stream.recovered()
+        + " first="
+        + stream.firstOccurrence()
+        + " last="
+        + stream.lastOccurrence();
   }
 
   private void refreshEstimate() {
@@ -385,24 +499,27 @@ public class DiagnosticsDialog extends JPanel {
   private void exportPackageOffEdt() {
     cancelExport.set(false);
     DiagnosticBundleRequest request = currentRequest();
-    includeRaw.setSelected(false);
-    refreshEstimate();
+    exportDefault.setEnabled(false);
+    cancel.setVisible(true);
     setStatus(text("DiagnosticsDialog.exporting", "Exporting..."));
+    revalidate();
     Thread worker =
         new Thread(
             () -> {
               try {
                 Path zip = exporter.export(request, cancelExport::get);
                 SwingUtilities.invokeLater(
-                    () ->
-                        setStatus(
-                            text("DiagnosticsDialog.exportSuccess", "Exported to:")
-                                + " "
-                                + zip.getFileName()));
+                    () -> {
+                      folderOpener.accept(zip.getParent());
+                      finishExport(
+                          text("DiagnosticsDialog.exportSuccess", "Exported to:")
+                              + " "
+                              + zip.getFileName());
+                    });
               } catch (Exception e) {
                 SwingUtilities.invokeLater(
                     () ->
-                        setStatus(
+                        finishExport(
                             text("DiagnosticsDialog.exportFailure", "Export failed:")
                                 + " "
                                 + e.getMessage()));
@@ -411,6 +528,22 @@ public class DiagnosticsDialog extends JPanel {
             "diagnostic-export");
     worker.setDaemon(true);
     worker.start();
+  }
+
+  private void finishExport(String message) {
+    exportDefault.setEnabled(true);
+    cancel.setVisible(false);
+    cancelExport.set(false);
+    setStatus(message);
+    refreshEstimate();
+    revalidate();
+  }
+
+  private void setModulesEnabled(boolean enabled) {
+    moduleEngine.setEnabled(enabled);
+    moduleGtp.setEnabled(enabled);
+    moduleReadBoard.setEnabled(enabled);
+    moduleNetwork.setEnabled(enabled);
   }
 
   private void setStatus(String value) {
@@ -429,8 +562,8 @@ public class DiagnosticsDialog extends JPanel {
             Lizzie.frame,
             text(
                 "DiagnosticsDialog.confirmMessage",
-                "Selected scopes may record game and protocol content. Retention is 7 days and 100 MB per log class. Raw packages require a fresh explicit export choice."),
-            text("DiagnosticsDialog.confirmTitle", "Start Full Trace?"),
+                "Selected scopes record game and protocol content. While this is on, exporting a package includes those full logs. Retention is 7 days and 100 MB per log class."),
+            text("DiagnosticsDialog.confirmTitle", "Start Full Logs?"),
             JOptionPane.OK_CANCEL_OPTION,
             JOptionPane.WARNING_MESSAGE);
     return choice == JOptionPane.OK_OPTION;
@@ -439,15 +572,78 @@ public class DiagnosticsDialog extends JPanel {
   private static void openFolder(Path directory) {
     try {
       if (Desktop.isDesktopSupported()) {
-        FilesCreate(directory);
+        java.nio.file.Files.createDirectories(directory);
         Desktop.getDesktop().open(directory.toFile());
       }
     } catch (IOException ignored) {
     }
   }
 
-  private static void FilesCreate(Path directory) throws IOException {
-    java.nio.file.Files.createDirectories(directory);
+  private static JCheckBox box() {
+    return new JFontCheckBox("");
+  }
+
+  private static JPanel checkRow(String name, JCheckBox box, boolean child, JComponent extra) {
+    JFontLabel label = new JFontLabel(name);
+    if (!child) {
+      label.setFont(label.getFont().deriveFont(Font.BOLD));
+    }
+    JPanel title = new JPanel(new BorderLayout(8, 0));
+    title.setOpaque(false);
+    title.add(label, BorderLayout.WEST);
+    if (extra != null) {
+      title.add(extra, BorderLayout.EAST);
+    }
+    JPanel row = new JPanel(new BorderLayout(12, 0));
+    row.setOpaque(false);
+    row.setBorder(new EmptyBorder(2, child ? 20 : 0, 2, 0));
+    row.add(title, BorderLayout.CENTER);
+    row.add(box, BorderLayout.EAST);
+    return row;
+  }
+
+  private static JPanel wrap(JComponent... children) {
+    JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+    panel.setOpaque(false);
+    for (JComponent child : children) {
+      panel.add(child);
+    }
+    return panel;
+  }
+
+  private static JPanel pathRow(String name, JLabel path, Runnable open) {
+    JFontButton openButton = new JFontButton(text("DiagnosticsDialog.open", "Open"));
+    AppleStyleSupport.markPrimary(openButton);
+    openButton.addActionListener(e -> open.run());
+    JPanel top = new JPanel(new BorderLayout(8, 0));
+    top.setOpaque(false);
+    JFontLabel label = new JFontLabel(name);
+    label.setFont(label.getFont().deriveFont(Font.BOLD));
+    top.add(label, BorderLayout.WEST);
+    top.add(openButton, BorderLayout.EAST);
+    JPanel row = new JPanel(new BorderLayout(0, 2));
+    row.setOpaque(false);
+    row.add(top, BorderLayout.NORTH);
+    row.add(path, BorderLayout.SOUTH);
+    return row;
+  }
+
+  private static JPanel hairline() {
+    JPanel line = new JPanel();
+    line.setOpaque(true);
+    line.setBackground(HAIRLINE);
+    line.setPreferredSize(new Dimension(0, 1));
+    line.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+    line.setMinimumSize(new Dimension(0, 1));
+    return line;
+  }
+
+  private static void addSection(JPanel parent, JComponent child) {
+    child.setAlignmentX(LEFT_ALIGNMENT);
+    if (parent.getComponentCount() > 0) {
+      parent.add(Box.createVerticalStrut(4));
+    }
+    parent.add(child);
   }
 
   private static String text(String key, String fallback) {

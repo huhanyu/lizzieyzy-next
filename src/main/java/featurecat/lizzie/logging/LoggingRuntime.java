@@ -55,6 +55,7 @@ public final class LoggingRuntime {
   private final PrintStream stderr;
   private volatile LoggingSettings settings = LoggingSettings.defaults();
   private volatile String traceSessionId;
+  private volatile Instant fullTraceStartedAt;
   private volatile Set<TraceScope> activeTraceScopes = EnumSet.noneOf(TraceScope.class);
   private volatile boolean shutdown;
 
@@ -169,6 +170,10 @@ public final class LoggingRuntime {
     return traceSessionId != null;
   }
 
+  public Instant fullTraceStartedAt() {
+    return fullTraceStartedAt;
+  }
+
   public Set<TraceScope> activeTraceScopes() {
     return activeTraceScopes.isEmpty()
         ? EnumSet.noneOf(TraceScope.class)
@@ -238,6 +243,7 @@ public final class LoggingRuntime {
       stopFullTrace();
     }
     traceSessionId = "trace-" + UUID.randomUUID();
+    fullTraceStartedAt = Instant.now();
     activeTraceScopes = selected;
     CorrelationContext.installTraceSession(traceSessionId);
     for (TraceScope scope : selected) {
@@ -262,6 +268,7 @@ public final class LoggingRuntime {
     }
     activeTraceScopes = EnumSet.noneOf(TraceScope.class);
     traceSessionId = null;
+    fullTraceStartedAt = null;
     CorrelationContext.clearTraceSession();
   }
 

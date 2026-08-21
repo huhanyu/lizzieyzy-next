@@ -82,7 +82,7 @@ class DiagnosticBundleExporterTest {
     assertEquals("next-dev", manifest.getString("appVersion"));
     assertEquals(ExportSanitizer.VERSION, manifest.getString("sanitizerVersion"));
     assertFalse(manifest.getBoolean("fullTraceActive"));
-    assertFalse(manifest.getBoolean("diagnosticsEnabled"));
+    assertTrue(manifest.getBoolean("diagnosticsEnabled"));
     JSONObject sources = manifest.getJSONObject("sources");
     assertEquals("included", sources.getJSONObject("app").getString("status"));
     assertEquals(24, sources.getJSONObject("app").getInt("windowHours"));

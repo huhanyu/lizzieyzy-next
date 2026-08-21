@@ -32,7 +32,7 @@ public final class LoggingSettings {
 
   public static LoggingSettings defaults() {
     return new LoggingSettings(
-        false, EnumSet.allOf(DiagnosticModule.class), EnumSet.allOf(TraceScope.class));
+        true, EnumSet.allOf(DiagnosticModule.class), EnumSet.allOf(TraceScope.class));
   }
 
   public static LoggingSettings fromJson(JSONObject json) {
@@ -57,7 +57,7 @@ public final class LoggingSettings {
         scopes.add(TraceScope.fromWireName(scopeNames.getString(i)));
       }
     }
-    return new LoggingSettings(json.optBoolean(DIAGNOSTICS_ENABLED_KEY, false), modules, scopes);
+    return new LoggingSettings(json.optBoolean(DIAGNOSTICS_ENABLED_KEY, true), modules, scopes);
   }
 
   public boolean diagnosticsEnabled() {

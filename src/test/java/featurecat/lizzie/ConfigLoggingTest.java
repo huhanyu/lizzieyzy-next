@@ -154,7 +154,7 @@ class ConfigLoggingTest {
   }
 
   @Test
-  void disabledLegacyGtpKeyIsRemovedWithoutEnablingDiagnostics() throws Exception {
+  void disabledLegacyGtpKeyIsRemovedWithoutDisablingDiagnostics() throws Exception {
     LoggingRuntime.initialize(
         new WorkDirectoryResolution(tempDir, List.of()),
         new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
@@ -176,7 +176,7 @@ class ConfigLoggingTest {
     JSONObject saved = new JSONObject(Files.readString(Path.of(config.getConfigFilePath())));
     assertFalse(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
     LoggingSettings persisted = LoggingSettings.fromJson(saved.getJSONObject("logging"));
-    assertFalse(persisted.diagnosticsEnabled());
+    assertTrue(persisted.diagnosticsEnabled());
   }
 
   @Test

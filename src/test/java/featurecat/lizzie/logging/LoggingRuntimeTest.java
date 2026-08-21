@@ -72,6 +72,7 @@ class LoggingRuntimeTest {
   @Test
   void diagnosticsEnableSelectedModuleImmediately() throws Exception {
     LoggingRuntime runtime = start();
+    runtime.applySettings(LoggingSettings.defaults().withDiagnosticsEnabled(false));
     org.slf4j.Logger engine = LoggerFactory.getLogger(LogCategories.ENGINE);
     engine.debug("hidden-before-diagnostics");
     runtime.applySettings(LoggingSettings.defaults().withDiagnosticsEnabled(true));
@@ -86,6 +87,7 @@ class LoggingRuntimeTest {
   @Test
   void persistFailureRestoresPreviousRuntimePlan() throws Exception {
     LoggingRuntime runtime = start();
+    runtime.applySettings(LoggingSettings.defaults().withDiagnosticsEnabled(false));
     LoggingSettings enabled = LoggingSettings.defaults().withDiagnosticsEnabled(true);
     assertThrows(
         IllegalStateException.class,
