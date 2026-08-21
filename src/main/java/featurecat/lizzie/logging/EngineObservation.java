@@ -1,5 +1,6 @@
 package featurecat.lizzie.logging;
 
+import java.util.Optional;
 import java.util.WeakHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,15 +15,16 @@ public final class EngineObservation {
   private EngineObservation() {}
 
   public static boolean engineDiagnosticsEnabled() {
-    return ENGINE.isDebugEnabled();
+    return activeRuntime().isPresent() && ENGINE.isDebugEnabled();
   }
 
   public static boolean gtpDiagnosticsEnabled() {
-    return GTP.isDebugEnabled();
+    return activeRuntime().isPresent() && GTP.isDebugEnabled();
   }
 
   public static boolean traceEnabled() {
-    return TRACE.isInfoEnabled();
+    return activeRuntime().filter(LoggingRuntime::fullTraceActive).isPresent()
+        && TRACE.isInfoEnabled();
   }
 
   public static String identityFor(Object owner) {
@@ -88,7 +90,7 @@ public final class EngineObservation {
   }
 
   public static void recordStarted(String engineId, String purpose) {
-    if (!ENGINE.isInfoEnabled()) {
+    if (!runtimeActive() || !ENGINE.isInfoEnabled()) {
       return;
     }
     inContext(
@@ -98,7 +100,7 @@ public final class EngineObservation {
   }
 
   public static void recordStopped(String engineId, String reason) {
-    if (!ENGINE.isInfoEnabled()) {
+    if (!runtimeActive() || !ENGINE.isInfoEnabled()) {
       return;
     }
     inContext(
@@ -108,14 +110,14 @@ public final class EngineObservation {
   }
 
   public static void recordReady(String engineId) {
-    if (!ENGINE.isInfoEnabled()) {
+    if (!runtimeActive() || !ENGINE.isInfoEnabled()) {
       return;
     }
     inContext(engineId, null, () -> ENGINE.info("engine event=ready"));
   }
 
   public static void recordFailed(String engineId, String reason) {
-    if (!ENGINE.isWarnEnabled()) {
+    if (!runtimeActive() || !ENGINE.isWarnEnabled()) {
       return;
     }
     inContext(
@@ -125,7 +127,7 @@ public final class EngineObservation {
   }
 
   public static void recordQueue(String engineId, int depth, int inFlight) {
-    if (!ENGINE.isDebugEnabled()) {
+    if (!engineDiagnosticsEnabled()) {
       return;
     }
     inContext(
@@ -135,14 +137,14 @@ public final class EngineObservation {
   }
 
   public static void recordRecentStderr(String engineId, String facts) {
-    if (!ENGINE.isDebugEnabled() || facts == null || facts.isEmpty()) {
+    if (!engineDiagnosticsEnabled() || facts == null || facts.isEmpty()) {
       return;
     }
     inContext(engineId, null, () -> ENGINE.debug("engine event=stderr facts={}", facts));
   }
 
   public static void recordThroughput(String engineId, int playouts, double playoutsPerSecond) {
-    if (!ENGINE.isDebugEnabled()) {
+    if (!engineDiagnosticsEnabled()) {
       return;
     }
     inContext(
@@ -157,7 +159,7 @@ public final class EngineObservation {
 
   public static void recordProcessDetails(
       String engineId, String event, String purpose, long pid, String command) {
-    if (!ENGINE.isDebugEnabled()) {
+    if (!engineDiagnosticsEnabled()) {
       return;
     }
     inContext(
@@ -174,10 +176,10 @@ public final class EngineObservation {
 
   public static void recordCommandSent(
       String engineId, String commandId, String name, int queueDepth, int inFlight) {
-    if (ENGINE.isDebugEnabled()) {
+    if (engineDiagnosticsEnabled()) {
       recordQueue(engineId, queueDepth, inFlight);
     }
-    if (!GTP.isDebugEnabled()) {
+    if (!gtpDiagnosticsEnabled()) {
       return;
     }
     inContext(
@@ -188,7 +190,7 @@ public final class EngineObservation {
 
   public static void recordCommandOutcome(
       String engineId, String commandId, String name, String outcome, long latencyMs) {
-    if (!GTP.isDebugEnabled()) {
+    if (!gtpDiagnosticsEnabled()) {
       return;
     }
     inContext(
@@ -200,7 +202,7 @@ public final class EngineObservation {
   }
 
   public static void traceRawCommand(String engineId, String commandId, String command) {
-    if (!TRACE.isInfoEnabled() || command == null) {
+    if (!traceEnabled() || command == null) {
       return;
     }
     inContext(
@@ -208,7 +210,7 @@ public final class EngineObservation {
   }
 
   public static void traceRawResponse(String engineId, String commandId, String response) {
-    if (!TRACE.isInfoEnabled() || response == null) {
+    if (!traceEnabled() || response == null) {
       return;
     }
     inContext(
@@ -216,7 +218,7 @@ public final class EngineObservation {
   }
 
   public static void traceRawStream(String engineId, String commandId, String line) {
-    if (!TRACE.isInfoEnabled() || line == null) {
+    if (!traceEnabled() || line == null) {
       return;
     }
     inContext(engineId, commandId, () -> TRACE.info("gtp raw stream={}", line));
@@ -237,6 +239,14 @@ public final class EngineObservation {
       CorrelationContext.clearEngine();
       CorrelationContext.clearTraceSession();
     }
+  }
+
+  private static boolean runtimeActive() {
+    return activeRuntime().isPresent();
+  }
+
+  private static Optional<LoggingRuntime> activeRuntime() {
+    return LoggingRuntime.current().filter(runtime -> !runtime.isShutdown());
   }
 
   public static String allocateIdentity(Object owner) {
