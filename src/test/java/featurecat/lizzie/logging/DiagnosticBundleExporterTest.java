@@ -109,6 +109,7 @@ class DiagnosticBundleExporterTest {
   void missingCrashSourceStillPublishesPackage() throws Exception {
     LoggingRuntime runtime = start();
     runtime.awaitIdle();
+    runtime.shutdown();
     Files.deleteIfExists(tempDir.resolve("logs/crash.log"));
 
     Path zip = exportDefault(runtime);
