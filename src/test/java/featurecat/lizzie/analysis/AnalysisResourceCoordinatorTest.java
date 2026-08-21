@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.logging.DiagnosticModule;
+import featurecat.lizzie.logging.EngineObservation;
 import featurecat.lizzie.logging.LoggingLimits;
 import featurecat.lizzie.logging.LoggingRuntime;
 import featurecat.lizzie.logging.LoggingSettings;
@@ -183,6 +184,31 @@ class AnalysisResourceCoordinatorTest {
     assertFalse(app.contains("private-value"), app);
     assertFalse(app.contains("private-user"), app);
     assertFalse(Files.exists(jsonl));
+    runtime.shutdown();
+  }
+
+  @Test
+  void remoteStartThenPonderKeepsIdentity() throws Exception {
+    LoggingRuntime runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(tempDir, List.of()),
+            new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
+    runtime.applySettings(
+        LoggingSettings.defaults()
+            .withDiagnosticsEnabled(true)
+            .withDiagnosticModules(EnumSet.of(DiagnosticModule.ENGINE)));
+    Object owner = new Object();
+    String id = EngineObservation.ensureStarted(owner, "MAIN_BOARD");
+    AnalysisResourceCoordinator.processStarted(
+        owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, "ssh katago", null);
+    AnalysisResourceCoordinator.processStarted(
+        owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, "ssh katago", null);
+    Method awaitIdle = LoggingRuntime.class.getDeclaredMethod("awaitIdle");
+    awaitIdle.setAccessible(true);
+    awaitIdle.invoke(runtime);
+    assertEquals(id, EngineObservation.identityFor(owner));
+    String app = Files.readString(tempDir.resolve("logs/app.log"), StandardCharsets.UTF_8);
+    assertFalse(app.contains("reason=replaced"), app);
     runtime.shutdown();
   }
 

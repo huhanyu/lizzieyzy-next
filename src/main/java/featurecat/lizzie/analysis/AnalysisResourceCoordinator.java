@@ -82,6 +82,19 @@ public final class AnalysisResourceCoordinator {
         ACTIVE_LOCAL_COMPUTE_PROCESSES.add(process);
       }
     }
+    String purposeName = normalizedPurpose(purpose).name();
+    if (process == null) {
+      EngineObservation.ensureStarted(owner, purposeName);
+      if (EngineObservation.engineDiagnosticsEnabled()) {
+        EngineObservation.recordProcessDetails(
+            EngineObservation.identityFor(owner),
+            "process-started",
+            purposeName,
+            -1L,
+            diagnosticCommand(command));
+      }
+      return;
+    }
     long pid = processId(process);
     synchronized (REGISTERED_PROCESSES) {
       Long registered = REGISTERED_PROCESSES.get(owner);
@@ -90,7 +103,6 @@ public final class AnalysisResourceCoordinator {
       }
       REGISTERED_PROCESSES.put(owner, pid);
     }
-    String purposeName = normalizedPurpose(purpose).name();
     String engineId = EngineObservation.restartInstance(owner, purposeName);
     if (!EngineObservation.engineDiagnosticsEnabled()) {
       return;
@@ -114,6 +126,17 @@ public final class AnalysisResourceCoordinator {
           // activeLocalComputeProcessCount() remains a safe pruning fallback.
         }
       }
+    }
+    if (process == null) {
+      String purposeName = normalizedPurpose(purpose).name();
+      String engineId = EngineObservation.identityFor(owner);
+      EngineObservation.recordProcessDetails(
+          engineId, "process-stopped", purposeName, -1L, null);
+      EngineObservation.ensureStopped(owner, "stopped");
+      synchronized (FOREGROUND_SAMPLES) {
+        FOREGROUND_SAMPLES.remove(owner);
+      }
+      return;
     }
     long stoppedPid = processId(process);
     synchronized (REGISTERED_PROCESSES) {

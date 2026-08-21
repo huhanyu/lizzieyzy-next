@@ -1684,14 +1684,14 @@ public class Leelaz {
   }
 
   private void noteEngineFailed(String reason) {
-    if (loggingEngineId == null) {
-      loggingEngineId = EngineObservation.allocateIdentity(this);
-    }
+    loggingEngineId = EngineObservation.mintIdentity(this);
     if (EngineObservation.engineDiagnosticsEnabled()) {
       EngineObservation.recordRecentStderr(
           loggingEngineId, snapshotRecentLines(recentStderrLines));
     }
     EngineObservation.recordFailed(loggingEngineId, reason);
+    EngineObservation.discardIdentity(this);
+    loggingEngineId = null;
   }
 
   private void markEngineLoaded() {

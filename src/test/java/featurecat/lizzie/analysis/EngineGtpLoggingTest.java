@@ -83,13 +83,37 @@ class EngineGtpLoggingTest {
     Method fail = Leelaz.class.getDeclaredMethod("noteEngineFailed", String.class);
     fail.setAccessible(true);
     fail.invoke(engine, "ssh login failed");
-    String id = EngineObservation.identityFor(engine);
     awaitLogs(runtime);
     String app = readApp();
-    assertTrue(id != null && !id.isEmpty(), app);
-    assertTrue(app.contains("engine=" + id), app);
     assertTrue(app.contains("engine event=failed reason=ssh login failed"), app);
     assertFalse(app.contains("engine event=started"), app);
+    assertTrue(app.contains("engine=eng-"), app);
+  }
+
+  @Test
+  void consecutiveFailuresAndRetryMintDistinctIdentities() throws Exception {
+    LoggingRuntime runtime = startRuntime();
+    Leelaz engine = prepareEngine();
+    Method fail = Leelaz.class.getDeclaredMethod("noteEngineFailed", String.class);
+    fail.setAccessible(true);
+    fail.invoke(engine, "ssh login failed");
+    fail.invoke(engine, "ssh login failed");
+    Method started = Leelaz.class.getDeclaredMethod("noteEngineStarted");
+    started.setAccessible(true);
+    started.invoke(engine);
+    awaitLogs(runtime);
+    String app = readApp();
+    java.util.regex.Matcher matcher =
+        java.util.regex.Pattern.compile("engine=(eng-[0-9a-f-]+)").matcher(app);
+    java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+    while (matcher.find()) {
+      ids.add(matcher.group(1));
+    }
+    assertTrue(ids.size() >= 3, app);
+    assertTrue(app.contains("engine event=failed"), app);
+    assertTrue(app.contains("engine event=started"), app);
+    String successId = EngineObservation.identityFor(engine);
+    assertTrue(successId != null && ids.contains(successId), app);
   }
 
   @Test

@@ -254,6 +254,10 @@ public final class EngineObservation {
     if (existing != null) {
       return existing;
     }
+    return mintIdentity(owner);
+  }
+
+  public static String mintIdentity(Object owner) {
     String id =
         LoggingRuntime.current()
             .map(LoggingRuntime::newEngineIdentity)
@@ -264,6 +268,15 @@ public final class EngineObservation {
       }
     }
     return id;
+  }
+
+  public static void discardIdentity(Object owner) {
+    if (owner == null) {
+      return;
+    }
+    synchronized (IDENTITY_LOCK) {
+      ENGINE_IDS.remove(owner);
+    }
   }
 
   private static String startInstance(Object owner, String purpose) {
