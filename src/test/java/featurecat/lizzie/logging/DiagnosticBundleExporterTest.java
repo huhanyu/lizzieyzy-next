@@ -170,6 +170,27 @@ class DiagnosticBundleExporterTest {
   }
 
   @Test
+  void exportOmitsOriginalSessionKeysFromEveryZipEntryIncludingManifest() throws Exception {
+    LoggingRuntime runtime = start();
+    LoggerFactory.getLogger(LogCategories.APP).info("yike session=live-room:186538");
+    runtime.awaitIdle();
+
+    Map<String, String> entries = unzipTextEntries(exportDefault(runtime));
+    for (Map.Entry<String, String> entry : entries.entrySet()) {
+      assertFalse(
+          entry.getValue().contains("live-room:186538"),
+          entry.getKey() + " leaked live-room:186538");
+      assertFalse(
+          entry.getValue().contains("live-room\\u003a186538"),
+          entry.getKey() + " leaked escaped live-room id");
+    }
+    String all = String.join("\n", entries.values());
+    assertTrue(all.contains("live-room#1"), all);
+    JSONObject manifest = new JSONObject(entries.get("manifest.json"));
+    assertEquals("live-room#1", manifest.getJSONArray("aliases").getString(0));
+  }
+
+  @Test
   void rawOptInCopiesCurrentTraceSessionOnly() throws Exception {
     LoggingRuntime runtime = start();
     runtime.startFullTrace(EnumSet.of(TraceScope.ENGINE_GTP));

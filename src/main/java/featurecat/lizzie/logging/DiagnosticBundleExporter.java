@@ -397,7 +397,11 @@ public final class DiagnosticBundleExporter {
     manifest.put("diagnosticModules", wireNames(settings.diagnosticModules()));
     manifest.put("preferredTraceScopes", wireScopeNames(settings.preferredTraceScopes()));
     manifest.put("activeTraceScopes", wireScopeNames(runtime.activeTraceScopes()));
-    manifest.put("aliases", new JSONObject(sanitizer.aliases()));
+    JSONArray aliases = new JSONArray();
+    for (String alias : sanitizer.aliases().values()) {
+      aliases.put(alias);
+    }
+    manifest.put("aliases", aliases);
     manifest.put("sources", sources);
     return manifest;
   }
