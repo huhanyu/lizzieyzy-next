@@ -29,6 +29,7 @@ import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -4356,7 +4357,7 @@ class EngineManagerLifecycleReservationTest {
     long deadline = System.currentTimeMillis() + timeoutMillis;
     String content = "";
     while (System.currentTimeMillis() < deadline) {
-      content = Files.readString(log);
+      content = readLog(log);
       if (content.contains(marker)) {
         return content;
       }
@@ -4371,7 +4372,7 @@ class EngineManagerLifecycleReservationTest {
     long deadline = System.currentTimeMillis() + timeoutMillis;
     String content = "";
     while (System.currentTimeMillis() < deadline) {
-      content = Files.readString(log);
+      content = readLog(log);
       if (countCommands(content, command) >= expectedCount) {
         return content;
       }
@@ -4379,8 +4380,29 @@ class EngineManagerLifecycleReservationTest {
     }
     assertTrue(
         countCommands(content, command) >= expectedCount,
-        "timed out waiting for engine command count: " + command + " x" + expectedCount);
+        "timed out waiting for engine command count: "
+            + command
+            + " x"
+            + expectedCount
+            + " actual="
+            + countCommands(content, command)
+            + " log=\n"
+            + content);
     return content;
+  }
+
+  private static String readLog(Path log) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(250);
+    while (true) {
+      try {
+        return Files.readString(log);
+      } catch (IOException ex) {
+        if (System.nanoTime() >= deadline) {
+          return "";
+        }
+        Thread.sleep(10L);
+      }
+    }
   }
 
   private static int countCommands(String log, String command) {
@@ -5271,23 +5293,41 @@ class EngineManagerLifecycleReservationTest {
 
     private void releaseStartup() throws Exception {
       awaitReplacementProcessLaunch(30_000L);
-      waitForLog(commandLog, "name", 10_000L);
+      // Both replacement fixtures block their first `name` on startupGate. Opening the
+      // gate after only one name lets the ready engine start dual-engine loadsgf before
+      // the second process exists, so the restore waits 5s for a response that never
+      // comes. Later `name` commands wait on the fence gate, so this count is only safe
+      // before the startup gate is written.
+      waitForCommandCount(commandLog, "name", expectedReplacementProcesses(), 10_000L);
       Files.writeString(startupGate, "ready");
+    }
+
+    private int expectedReplacementProcesses() {
+      return doubleEngine && !mirrorStartFails ? 2 : 1;
     }
 
     private void awaitReplacementProcessLaunch(long timeoutMillis) throws Exception {
       assertFalse(manager.engineList == null || manager.engineList.isEmpty());
-      Leelaz replacement = manager.engineList.get(0);
+      int expected = expectedReplacementProcesses();
+      assertTrue(
+          manager.engineList.size() >= expected,
+          "replacement engine list is smaller than the expected process count");
       long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
-      Process replacementProcess = null;
-      while (replacementProcess == null && System.nanoTime() < deadline) {
-        replacementProcess = (Process) getLeelazField(replacement, "process");
-        if (replacementProcess == null) {
-          Thread.sleep(10L);
+      for (int index = 0; index < expected; index++) {
+        Leelaz replacement = manager.engineList.get(index);
+        Process replacementProcess = null;
+        while (replacementProcess == null && System.nanoTime() < deadline) {
+          replacementProcess = (Process) getLeelazField(replacement, "process");
+          if (replacementProcess == null) {
+            Thread.sleep(10L);
+          }
         }
+        assertNotNull(
+            replacementProcess, "timed out waiting for replacement process launch index=" + index);
+        assertTrue(
+            replacementProcess.isAlive(),
+            "replacement process exited before sending name index=" + index);
       }
-      assertNotNull(replacementProcess, "timed out waiting for replacement process launch");
-      assertTrue(replacementProcess.isAlive(), "replacement process exited before sending name");
     }
 
     private void releaseBoardFence() throws Exception {
