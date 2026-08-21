@@ -135,7 +135,7 @@ public final class LoggingRuntime {
     }
   }
 
-  static void resetForTests() {
+  public static void resetForTests() {
     synchronized (LOCK) {
       if (instance != null) {
         instance.shutdown();
@@ -167,6 +167,12 @@ public final class LoggingRuntime {
 
   public boolean fullTraceActive() {
     return traceSessionId != null;
+  }
+
+  public Set<TraceScope> activeTraceScopes() {
+    return activeTraceScopes.isEmpty()
+        ? EnumSet.noneOf(TraceScope.class)
+        : EnumSet.copyOf(activeTraceScopes);
   }
 
   boolean isShutdown() {

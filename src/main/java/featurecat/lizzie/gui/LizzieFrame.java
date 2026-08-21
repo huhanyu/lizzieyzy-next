@@ -9221,6 +9221,11 @@ public class LizzieFrame extends JFrame {
     //  updateTitle();
   }
 
+  @Override
+  public void setTitle(String title) {
+    super.setTitle(WindowTitleDecorator.decorate(title));
+  }
+
   public void updateTitle() {
     if (isTrying) {
       return;
