@@ -15,6 +15,7 @@ public final class CorrelationConverter extends ClassicConverter {
     append(rendered, "session", mdc.get(CorrelationContext.APP_SESSION));
     append(rendered, "engine", mdc.get(CorrelationContext.ENGINE_ID));
     append(rendered, "command", mdc.get(CorrelationContext.COMMAND_ID));
+    append(rendered, "request", mdc.get(CorrelationContext.REQUEST_ID));
     append(rendered, "gma", mdc.get(CorrelationContext.GMA_ID));
     append(rendered, "yike", mdc.get(CorrelationContext.SYNC_SESSION));
     append(rendered, "trace", mdc.get(CorrelationContext.TRACE_SESSION));

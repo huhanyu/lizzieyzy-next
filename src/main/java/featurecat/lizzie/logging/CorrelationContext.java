@@ -6,6 +6,7 @@ public final class CorrelationContext {
   public static final String APP_SESSION = "lizzie.appSession";
   public static final String ENGINE_ID = "lizzie.engineId";
   public static final String COMMAND_ID = "lizzie.commandId";
+  public static final String REQUEST_ID = "lizzie.requestId";
   public static final String TRACE_SESSION = "lizzie.traceSession";
   public static final String GMA_ID = "lizzie.gmaId";
   public static final String SYNC_SESSION = "lizzie.syncSession";
@@ -22,6 +23,10 @@ public final class CorrelationContext {
 
   public static void installCommand(String commandId) {
     put(COMMAND_ID, commandId);
+  }
+
+  public static void installRequest(String requestId) {
+    put(REQUEST_ID, requestId);
   }
 
   public static void installTraceSession(String traceSessionId) {
@@ -44,6 +49,10 @@ public final class CorrelationContext {
     MDC.remove(COMMAND_ID);
   }
 
+  public static void clearRequest() {
+    MDC.remove(REQUEST_ID);
+  }
+
   public static void clearTraceSession() {
     MDC.remove(TRACE_SESSION);
   }
@@ -59,6 +68,7 @@ public final class CorrelationContext {
   public static void clearAsync() {
     MDC.remove(ENGINE_ID);
     MDC.remove(COMMAND_ID);
+    MDC.remove(REQUEST_ID);
     MDC.remove(TRACE_SESSION);
     MDC.remove(GMA_ID);
     MDC.remove(SYNC_SESSION);

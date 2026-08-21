@@ -49,6 +49,7 @@ public final class LoggingRuntime {
   private final Set<String> issuedEngineIds = ConcurrentHashMap.newKeySet();
   private final AtomicLong engineSequence = new AtomicLong();
   private final AtomicLong commandSequence = new AtomicLong();
+  private final AtomicLong requestSequence = new AtomicLong();
   private final AtomicBoolean persistenceEnabled = new AtomicBoolean();
   private final Set<String> stderrNotices = ConcurrentHashMap.newKeySet();
   private final PrintStream stderr;
@@ -186,6 +187,10 @@ public final class LoggingRuntime {
 
   public String newCommandIdentity() {
     return "cmd-" + Long.toUnsignedString(commandSequence.incrementAndGet(), 16);
+  }
+
+  public String newRequestIdentity() {
+    return "req-" + Long.toUnsignedString(requestSequence.incrementAndGet(), 16);
   }
 
   public void applySettings(LoggingSettings newSettings) {
