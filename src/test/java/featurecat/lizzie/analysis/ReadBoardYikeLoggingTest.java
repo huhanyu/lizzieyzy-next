@@ -13,16 +13,19 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import featurecat.lizzie.logging.LoggingSettings;
 import featurecat.lizzie.logging.TraceScope;
+import featurecat.lizzie.gui.OnlineDialog;
 import featurecat.lizzie.logging.WorkDirectoryResolution;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Constructor;
 import java.util.EnumSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import featurecat.lizzie.util.YikeSyncDebugLog;
 import java.util.List;
+import javax.swing.JTextField;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -266,6 +269,96 @@ class ReadBoardYikeLoggingTest {
     assertTrue(app.contains("readboard event=failed reason=native-start"), app);
   }
 
+  @Test
+  void yikePromoteKeepsEventSessionWhenUrlChanges() throws Exception {
+    LoggingRuntime runtime = startDiagnostics();
+    OnlineDialog dialog = dialogForYikeUrl("https://home.yikeweiqi.com/#/live/new-room/186538/0/0");
+    invoke(dialog, "beginPendingYikeSession", String.class, currentUrl(dialog));
+    invoke(
+        dialog,
+        "markYikeGeometryReady",
+        new Class<?>[] {String.class, geometryClass()},
+        new Object[] {"live-room:186538", newGeometry()});
+    ((JTextField) field(dialog, "txtUrl"))
+        .setText("https://home.yikeweiqi.com/#/unite/66304678");
+    invoke(
+        dialog,
+        "markYikeSyncReady",
+        new Class<?>[] {String.class, int.class},
+        new Object[] {"live-room:186538", 19});
+    awaitLogs(runtime);
+
+    String line = lineContaining(readApp(), "reason=pending-promoted");
+    assertTrue(line.contains("yike=live-room:186538"), line);
+    assertFalse(line.contains("yike=unite-board"), line);
+  }
+
+  @Test
+  void yikeInvalidateKeepsActiveSessionWhenUrlChanges() throws Exception {
+    LoggingRuntime runtime = startDiagnostics();
+    OnlineDialog dialog = dialogForYikeUrl("https://home.yikeweiqi.com/#/live/new-room/186538/0/0");
+    invoke(dialog, "beginPendingYikeSession", String.class, currentUrl(dialog));
+    invoke(
+        dialog,
+        "markYikeGeometryReady",
+        new Class<?>[] {String.class, geometryClass()},
+        new Object[] {"live-room:186538", newGeometry()});
+    invoke(
+        dialog,
+        "markYikeSyncReady",
+        new Class<?>[] {String.class, int.class},
+        new Object[] {"live-room:186538", 19});
+    ((JTextField) field(dialog, "txtUrl"))
+        .setText("https://home.yikeweiqi.com/#/unite/66304678");
+    invoke(dialog, "invalidateYikePlacementGeometry");
+    awaitLogs(runtime);
+
+    String line = lastLineContaining(readApp(), "readboard event=yike-session");
+    assertTrue(line.contains("yike=live-room:186538"), line);
+    assertFalse(line.contains("yike=unite-board"), line);
+    assertTrue(line.contains("geometryReady=false"), line);
+  }
+
+  @Test
+  void yikeResetDoesNotBindLaterUrlSession() throws Exception {
+    LoggingRuntime runtime = startDiagnostics();
+    OnlineDialog dialog = dialogForYikeUrl("https://home.yikeweiqi.com/#/live/new-room/186538/0/0");
+    invoke(dialog, "beginPendingYikeSession", String.class, currentUrl(dialog));
+    invoke(
+        dialog,
+        "markYikeGeometryReady",
+        new Class<?>[] {String.class, geometryClass()},
+        new Object[] {"live-room:186538", newGeometry()});
+    invoke(
+        dialog,
+        "markYikeSyncReady",
+        new Class<?>[] {String.class, int.class},
+        new Object[] {"live-room:186538", 19});
+    ((JTextField) field(dialog, "txtUrl"))
+        .setText("https://home.yikeweiqi.com/#/unite/66304678");
+    invoke(dialog, "resetYikeSessions");
+    awaitLogs(runtime);
+
+    String line = lineContaining(readApp(), "reason=sessions-reset");
+    assertFalse(line.contains("yike=unite-board"), line);
+    assertFalse(line.contains("yike=live-room:186538"), line);
+  }
+
+  @Test
+  void yikeFailureRecordsEventSession() throws Exception {
+    LoggingRuntime runtime = startRuntime();
+    OnlineDialog dialog = dialogForYikeUrl("https://home.yikeweiqi.com/#/live/new-room/186538/0/0");
+    Method method =
+        OnlineDialog.class.getDeclaredMethod(
+            "recordYikeFailure", String.class, String.class, Throwable.class);
+    method.setAccessible(true);
+    method.invoke(
+        dialog, "yike-fetch", "live-room:186538", new IOException("fetch failed"));
+    awaitLogs(runtime);
+    String line = lineContaining(readApp(), "reason=yike-fetch");
+    assertTrue(line.contains("yike=live-room:186538"), line);
+  }
+
   @SuppressWarnings("unchecked")
   private static <T> T allocate(Class<T> type) throws Exception {
     Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
@@ -289,5 +382,122 @@ class ReadBoardYikeLoggingTest {
     Method method = LoggingRuntime.class.getDeclaredMethod("awaitIdle");
     method.setAccessible(true);
     method.invoke(runtime);
+  }
+
+  private LoggingRuntime startDiagnostics() {
+    LoggingRuntime runtime = startRuntime();
+    runtime.applySettings(
+        LoggingSettings.defaults()
+            .withDiagnosticsEnabled(true)
+            .withDiagnosticModules(EnumSet.of(DiagnosticModule.READBOARD_YIKE)));
+    return runtime;
+  }
+
+  private static String lineContaining(String app, String needle) {
+    int index = app.indexOf(needle);
+    assertTrue(index >= 0, app);
+    int start = app.lastIndexOf('\n', index) + 1;
+    int end = app.indexOf('\n', index);
+    if (end < 0) {
+      end = app.length();
+    }
+    return app.substring(start, end);
+  }
+
+  private static String lastLineContaining(String app, String needle) {
+    int index = app.lastIndexOf(needle);
+    assertTrue(index >= 0, app);
+    int start = app.lastIndexOf('\n', index) + 1;
+    int end = app.indexOf('\n', index);
+    if (end < 0) {
+      end = app.length();
+    }
+    return app.substring(start, end);
+  }
+
+  private static OnlineDialog dialogForYikeUrl(String url) throws Exception {
+    OnlineDialog dialog = allocate(OnlineDialog.class);
+    JTextField txtUrl = new JTextField();
+    txtUrl.setText(url);
+    Field txtUrlField = OnlineDialog.class.getDeclaredField("txtUrl");
+    txtUrlField.setAccessible(true);
+    txtUrlField.set(dialog, txtUrl);
+    Object emptySession = emptyYikeSession();
+    setSession(dialog, "activeYikeSession", emptySession);
+    setSession(dialog, "pendingYikeSession", emptySession);
+    Field boardSize = OnlineDialog.class.getDeclaredField("boardSize");
+    boardSize.setAccessible(true);
+    boardSize.setInt(dialog, 19);
+    Field hasSize = OnlineDialog.class.getDeclaredField("hasResolvedYikeBoardSize");
+    hasSize.setAccessible(true);
+    hasSize.setBoolean(dialog, false);
+    Field geometry = OnlineDialog.class.getDeclaredField("lastYikeGeometry");
+    geometry.setAccessible(true);
+    geometry.set(dialog, null);
+    return dialog;
+  }
+
+  private static void setSession(OnlineDialog dialog, String name, Object value) throws Exception {
+    Field field = OnlineDialog.class.getDeclaredField(name);
+    field.setAccessible(true);
+    field.set(dialog, value);
+  }
+
+  private static Object emptyYikeSession() throws Exception {
+    Class<?> type = Class.forName("featurecat.lizzie.gui.OnlineDialog$YikeSessionState");
+    Method empty = type.getDeclaredMethod("empty");
+    empty.setAccessible(true);
+    return empty.invoke(null);
+  }
+
+  private static Object field(Object target, String name) throws Exception {
+    Field field = target.getClass().getDeclaredField(name);
+    field.setAccessible(true);
+    return field.get(target);
+  }
+
+  private static String currentUrl(OnlineDialog dialog) throws Exception {
+    return ((JTextField) field(dialog, "txtUrl")).getText();
+  }
+
+  private static void invoke(Object target, String methodName) throws Exception {
+    Method method = target.getClass().getDeclaredMethod(methodName);
+    method.setAccessible(true);
+    method.invoke(target);
+  }
+
+  private static void invoke(Object target, String methodName, Class<?> argType, Object arg)
+      throws Exception {
+    invoke(target, methodName, new Class<?>[] {argType}, new Object[] {arg});
+  }
+
+  private static void invoke(Object target, String methodName, Class<?>[] argTypes, Object[] args)
+      throws Exception {
+    Method method = target.getClass().getDeclaredMethod(methodName, argTypes);
+    method.setAccessible(true);
+    method.invoke(target, args);
+  }
+
+  private static Object newGeometry() throws Exception {
+    Constructor<?> constructor =
+        geometryClass()
+            .getDeclaredConstructor(
+                int.class,
+                int.class,
+                int.class,
+                int.class,
+                Double.class,
+                Double.class,
+                Double.class,
+                Double.class,
+                int.class,
+                String.class,
+                String.class);
+    constructor.setAccessible(true);
+    return constructor.newInstance(10, 20, 380, 380, 10.0, 20.0, 20.0, 20.0, 100, "#board", "test");
+  }
+
+  private static Class<?> geometryClass() throws Exception {
+    return Class.forName("featurecat.lizzie.gui.OnlineDialog$YikeGeometrySnapshot");
   }
 }

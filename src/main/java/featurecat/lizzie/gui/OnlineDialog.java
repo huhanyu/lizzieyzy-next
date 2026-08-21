@@ -515,7 +515,7 @@ public class OnlineDialog extends JDialog {
     String sessionKey = yikeSessionKey(sourceUrl);
     if (Utils.isBlank(sessionKey)) {
       pendingYikeSession = YikeSessionState.empty();
-      publishYikeSessionSwitchDiagnostics("begin-pending-cleared");
+      publishYikeSessionSwitchDiagnostics("begin-pending-cleared", "");
       return;
     }
     if (activeYikeSession.matches(sessionKey) || pendingYikeSession.matches(sessionKey)) {
@@ -576,10 +576,11 @@ public class OnlineDialog extends JDialog {
     if (!shouldPromotePendingSession(activeYikeSession, pendingYikeSession)) {
       return false;
     }
+    String sessionKey = pendingYikeSession.sessionKey;
     activeYikeSession = pendingYikeSession;
     pendingYikeSession = YikeSessionState.empty();
     applyActiveYikeSessionState();
-    publishYikeSessionSwitchDiagnostics("pending-promoted");
+    publishYikeSessionSwitchDiagnostics("pending-promoted", sessionKey);
     return true;
   }
 
@@ -599,13 +600,14 @@ public class OnlineDialog extends JDialog {
   }
 
   private void invalidateYikePlacementGeometry() {
+    String sessionKey = activeYikeSession != null ? activeYikeSession.sessionKey : "";
     if (activeYikeSession != null && activeYikeSession.hasSessionKey()) {
       activeYikeSession = activeYikeSession.withGeometry(null);
     }
     pendingYikeSession = YikeSessionState.empty();
     lastYikeGeometry = null;
     clearYikeGeometryToReadBoard();
-    publishYikeGeometryClearDiagnostics("placement-geometry-invalidated");
+    publishYikeGeometryClearDiagnostics("placement-geometry-invalidated", sessionKey);
   }
 
   private void resetYikeSessions() {
@@ -614,11 +616,7 @@ public class OnlineDialog extends JDialog {
     lastYikeGeometry = null;
     hasResolvedYikeBoardSize = false;
     lastYikeSyncApplyAtMillis = 0L;
-    publishYikeClearAndSessionSwitchDiagnostics("sessions-reset");
-  }
-
-  private void publishYikeDiagnostics(String reason) {
-    publishYikeDiagnostics(reason, currentYikeSessionKey());
+    publishYikeClearAndSessionSwitchDiagnostics("sessions-reset", "");
   }
 
   private void publishYikeDiagnostics(String reason, String sessionId) {
@@ -631,21 +629,29 @@ public class OnlineDialog extends JDialog {
                 .updateYikeSession(buildYikeDiagnosticsSnapshot(reason)));
   }
 
-  private void publishYikeGeometryClearDiagnostics(String reason) {
+  private void recordYikeFailure(String reason, String sessionId, Throwable error) {
+    ReadBoardObservation.inContext(
+        EngineObservation.identityFor(Lizzie.leelaz),
+        null,
+        sessionId,
+        () -> ReadBoardObservation.recordFailure(reason, error));
+  }
+
+  private void publishYikeGeometryClearDiagnostics(String reason, String sessionId) {
     lastYikeGeometryClearReason = yikeDiagnosticsReason(reason);
-    publishYikeDiagnostics(reason);
+    publishYikeDiagnostics(reason, sessionId);
   }
 
-  private void publishYikeSessionSwitchDiagnostics(String reason) {
+  private void publishYikeSessionSwitchDiagnostics(String reason, String sessionId) {
     lastYikeSessionSwitchReason = yikeDiagnosticsReason(reason);
-    publishYikeDiagnostics(reason);
+    publishYikeDiagnostics(reason, sessionId);
   }
 
-  private void publishYikeClearAndSessionSwitchDiagnostics(String reason) {
+  private void publishYikeClearAndSessionSwitchDiagnostics(String reason, String sessionId) {
     String safeReason = yikeDiagnosticsReason(reason);
     lastYikeGeometryClearReason = safeReason;
     lastYikeSessionSwitchReason = safeReason;
-    publishYikeDiagnostics(safeReason);
+    publishYikeDiagnostics(safeReason, sessionId);
   }
 
   private YikeSessionDiagnosticsSnapshot buildYikeDiagnosticsSnapshot(String reason) {
@@ -1561,7 +1567,7 @@ public class OnlineDialog extends JDialog {
               }
             } catch (IOException | JSONException e) {
               YikeSyncDebugLog.log("OnlineDialog.reqNewYikeRoom error: " + e.toString());
-              ReadBoardObservation.recordFailure("yike-fetch", e);
+              recordYikeFailure("yike-fetch", yikeSessionKey(sourceUrl), e);
               if (e instanceof IOException
                   && showNetworkProxyConfigWarning((IOException) e)) {
                 invalidProxyConfig.set(true);
@@ -4492,14 +4498,14 @@ public class OnlineDialog extends JDialog {
         reportSyncStatus(syncStatusPrefix() + "已启动");
       } catch (IOException | URISyntaxException e) {
         yikeDebugLog("applyChangeWeb proc error: " + e.toString());
-        ReadBoardObservation.recordFailure("yike-start", e);
+        recordYikeFailure("yike-start", yikeSessionKey(url), e);
         if (e instanceof IOException) {
           showNetworkProxyConfigWarning((IOException) e);
         }
         reportSyncStatus("同步启动失败: " + e.getMessage());
       } catch (RuntimeException e) {
         yikeDebugLog("applyChangeWeb proc runtime error: " + e.toString());
-        ReadBoardObservation.recordFailure("yike-start", e);
+        recordYikeFailure("yike-start", yikeSessionKey(url), e);
         reportSyncStatus("同步启动失败: " + e.getMessage());
       }
     } else {
