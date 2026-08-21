@@ -515,6 +515,7 @@ public class KataGoAnalysisWebSocketTransportTest {
     assertTrue(commands.contains("kata-get-param"));
     assertTrue(commands.contains("kata-get-rules"));
     assertTrue(commands.contains("set_position"));
+    assertTrue(commands.contains("gogui-setup_player"));
     assertTrue(commands.contains("loadsgf"));
 
     assertEquals("= 0.0\n\n", sendGtp(transport, "kata-get-param playoutDoublingAdvantage"));
@@ -728,6 +729,27 @@ public class KataGoAnalysisWebSocketTransportTest {
         java.util.List.of(java.util.List.of("W", "pass")), query.getJSONArray("moves").toList());
     assertEquals(java.util.List.of(1), query.getJSONArray("analyzeTurns").toList());
     assertEquals("W", query.getString("initialPlayer"));
+  }
+
+  @Test
+  void setupPlayerAfterSetPositionSetsInitialPlayerWithoutAMove() throws Exception {
+    KataGoAnalysisWebSocketTransport transport =
+        new KataGoAnalysisWebSocketTransport("ws://127.0.0.1:1");
+
+    assertEquals("=\n\n", sendGtp(transport, "set_position B A3 W C3"));
+    assertEquals("=\n\n", sendGtp(transport, "gogui-setup_player W"));
+
+    JSONObject query = transport.buildAnalysisQuery("test", false, false, 50, "B");
+    assertEquals(
+        java.util.List.of(java.util.List.of("B", "A3"), java.util.List.of("W", "C3")),
+        query.getJSONArray("initialStones").toList());
+    assertEquals(java.util.List.of(), query.getJSONArray("moves").toList());
+    assertEquals("W", query.getString("initialPlayer"));
+
+    assertEquals("=\n\n", sendGtp(transport, "gogui-setup_player B"));
+    JSONObject blackToPlay = transport.buildAnalysisQuery("test", false, false, 50, "W");
+    assertEquals(java.util.List.of(), blackToPlay.getJSONArray("moves").toList());
+    assertEquals("B", blackToPlay.getString("initialPlayer"));
   }
 
   @Test
