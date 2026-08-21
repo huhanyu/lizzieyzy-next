@@ -57,8 +57,14 @@ public final class TeacherLlmClient {
   public List<String> listModels() throws IOException, InterruptedException {
     long started = System.nanoTime();
     HttpRequest request = requestBuilder(endpoint("models"), Duration.ofSeconds(30)).GET().build();
-    HttpResponse<String> response =
-        httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    HttpResponse<String> response;
+    try {
+      response =
+          httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    } catch (IOException failure) {
+      observe(request, 0, started, "failed");
+      throw failure;
+    }
     if (response.statusCode() / 100 != 2) {
       observe(request, response.statusCode(), started, "failed");
       throw httpFailure(response.statusCode(), response.body());
@@ -115,8 +121,13 @@ public final class TeacherLlmClient {
             .header("Accept", "text/event-stream")
             .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
             .build();
-    HttpResponse<InputStream> response =
-        httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+    HttpResponse<InputStream> response;
+    try {
+      response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+    } catch (IOException failure) {
+      observe(request, 0, started, "failed");
+      throw failure;
+    }
     observe(
         request,
         response.statusCode(),
@@ -130,7 +141,7 @@ public final class TeacherLlmClient {
     NetworkObservation.recordNetwork(
         request.method(),
         uri == null ? "unknown" : uri.getHost(),
-        NetworkEndpointCategory.CREDENTIAL,
+        NetworkEndpointCategory.OTHER,
         status,
         Math.max(0L, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)),
         outcome,
