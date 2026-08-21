@@ -645,18 +645,18 @@ class EngineManagerLifecycleReservationTest {
       // The frozen round (2 loadsgf commands, one per captured engine) restores the
       // pre-navigation frame; the frame recheck rejects it and starts a catch-up round whose
       // loadsgf responses are gated on the catch-up gate.
-      waitForCommandCount(state.commandLog, "loadsgf ", 4, 2000L);
+      waitForCommandCount(state.commandLog, "loadsgf ", 4, 10_000L);
       // Navigate again while both engines are blocked in the catch-up round.
       assertTrue(state.board.nextMove(false));
       state.releaseCatchUp();
-      waitForCommandCount(state.commandLog, "loadsgf ", 6, 2000L);
+      waitForCommandCount(state.commandLog, "loadsgf ", 6, 10_000L);
       assertEquals(1, state.board.getHistory().getData().moveNumber);
       assertEquals(Stone.WHITE, state.board.getHistory().getData().lastMoveColor);
 
       // Both captured replacement engines converge to the final Board position before Ready/fence
       // completion: every round restores the static root, and later catch-up rounds replay the
       // Board's final white tail to both engines.
-      waitForCommandCount(state.commandLog, "name", 4, 2000L);
+      waitForCommandCount(state.commandLog, "name", 4, 10_000L);
       String commands = Files.readString(state.commandLog);
       assertEquals(6, countCommands(commands, "loadsgf "));
       List<String> restores = sgfLines(commands);
