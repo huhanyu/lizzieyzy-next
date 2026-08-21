@@ -4,6 +4,7 @@ import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.MoveRankEvaluationMode;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.logging.CrashHandlers;
+import featurecat.lizzie.logging.DiagnosticModule;
 import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.logging.LoggingSettings;
 import featurecat.lizzie.logging.WorkDirectoryResolver;
@@ -1217,7 +1218,6 @@ public class Config {
   public int txtMoveRankMarkLastMove = 3;
   public int moveRankMarkLastMove = 1; // -1关闭 0全部
   public boolean disableMoveRankInOrigin = false;
-  public boolean logGtpToFile = false;
   public LoggingSettings loggingSettings = LoggingSettings.defaults();
   public boolean enableStartupBenchmark = true;
   public boolean readBoardPonder = false;
@@ -2027,8 +2027,8 @@ public class Config {
     txtMoveRankMarkLastMove = uiConfig.optInt("txt-move-rank-mark-last-move", 3);
     moveRankMarkLastMove = uiConfig.optInt("move-rank-mark-last-move", 1);
     disableMoveRankInOrigin = uiConfig.optBoolean("disable-move-rank-in-origin", false);
-    logGtpToFile = uiConfig.optBoolean("log-gtp-to-file", false);
     migrateLegacyConsoleLogging();
+    migrateLegacyGtpLogging();
     enableStartupBenchmark = uiConfig.optBoolean("enable-startup-benchmark", true);
     readBoardGetFocus = uiConfig.optBoolean("read-board-get-focus", true);
     useScoreLossInMoveRank = uiConfig.optBoolean("use-score-loss-in-move-rank", true);
@@ -3910,6 +3910,32 @@ public class Config {
       save();
     } catch (IOException e) {
       logConfig("migration", "log-console-to-file", "failed", 1, e);
+    }
+  }
+
+  void migrateLegacyGtpLogging() {
+    if (uiConfig == null || !uiConfig.has("log-gtp-to-file")) {
+      return;
+    }
+    boolean enabled = uiConfig.optBoolean("log-gtp-to-file", false);
+    uiConfig.remove("log-gtp-to-file");
+    if (enabled) {
+      EnumSet<DiagnosticModule> modules =
+          loggingSettings.diagnosticModules().isEmpty()
+              ? EnumSet.noneOf(DiagnosticModule.class)
+              : EnumSet.copyOf(loggingSettings.diagnosticModules());
+      modules.add(DiagnosticModule.GTP_SUMMARY);
+      loggingSettings =
+          loggingSettings.withDiagnosticsEnabled(true).withDiagnosticModules(modules);
+      if (config != null) {
+        config.put(LoggingSettings.CONFIG_KEY, loggingSettings.toJson());
+      }
+    }
+    logConfig("migration", "log-gtp-to-file", enabled ? "migrated" : "removed", 1, null);
+    try {
+      save();
+    } catch (IOException e) {
+      logConfig("migration", "log-gtp-to-file", "failed", 1, e);
     }
   }
 

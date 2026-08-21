@@ -226,8 +226,6 @@ public class ConfigDialog2 extends JDialog {
   private JCheckBox chkAlwaysOnTop;
   private JCheckBox chkShowQuickLinks;
 
-  private JCheckBox chkLogGtpToFile;
-
   //  public JCheckBox chkHoldBestMovesToSgf;
   //  public JCheckBox chkShowBestMovesByHold;
   //  public JCheckBox chkColorByWinrateInsteadOfVisits;
@@ -1904,20 +1902,6 @@ public class ConfigDialog2 extends JDialog {
     comboMoveHint = new JComboBox<String>();
     comboMoveHint.setBounds(503, 155, 67, 23);
     uiTab.add(comboMoveHint);
-
-    JLabel lblLogGtpToFile =
-        new JLabel(resourceBundle.getString("LizzieConfig.lblLogGtpToFile")); // ("记录GTP日志到文件");
-    lblLogGtpToFile.setBounds(608, 580, 205, 15);
-    uiTab.add(lblLogGtpToFile);
-    lblLogGtpToFile.setToolTipText(
-        resourceBundle.getString("LizzieConfig.lblLogGtpToFile.tooltips"));
-
-    chkLogGtpToFile = new JCheckBox();
-    chkLogGtpToFile.setBounds(837, 577, 26, 23);
-    uiTab.add(chkLogGtpToFile);
-    chkLogGtpToFile.setToolTipText(
-        resourceBundle.getString("LizzieConfig.lblLogGtpToFile.tooltips"));
-    chkLogGtpToFile.setSelected(Lizzie.config.logGtpToFile);
 
     JLabel lblEnableStartupBenchmark =
         new JLabel(resourceBundle.getString("LizzieConfig.lblEnableStartupBenchmark"));
@@ -5842,8 +5826,6 @@ public class ConfigDialog2 extends JDialog {
     Lizzie.config.uiConfig.put(NetworkProxy.KEY_PROXY_PORT, savedNetworkProxyPort());
     Lizzie.config.showScoreAsDiff = chkShowScoreAsLead.isSelected();
     Lizzie.config.uiConfig.put("show-score-as-diff", Lizzie.config.showScoreAsDiff);
-    Lizzie.config.logGtpToFile = chkLogGtpToFile.isSelected();
-    Lizzie.config.uiConfig.put("log-gtp-to-file", Lizzie.config.logGtpToFile);
     Lizzie.config.enableStartupBenchmark = chkEnableStartupBenchmark.isSelected();
     Lizzie.config.uiConfig.put("enable-startup-benchmark", Lizzie.config.enableStartupBenchmark);
     if (rdoLastMark.isSelected()) {

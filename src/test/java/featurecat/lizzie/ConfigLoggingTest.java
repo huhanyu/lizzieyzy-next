@@ -8,9 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import featurecat.lizzie.logging.DiagnosticModule;
 import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.logging.LoggingLimits;
 import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.LoggingSettings;
+import featurecat.lizzie.logging.TraceScope;
 import featurecat.lizzie.logging.WorkDirectoryResolution;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -18,6 +21,7 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.EnumSet;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -105,6 +109,74 @@ class ConfigLoggingTest {
     String app = Files.readString(tempDir.resolve("logs/app.log"));
     assertTrue(app.contains("log-console-to-file"), app);
     assertTrue(app.contains("operation=migration"), app);
+  }
+
+  @Test
+  void legacyGtpKeyMigratesToDiagnosticsGtpSummaryWithoutStartingTrace() throws Exception {
+    LoggingRuntime runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(tempDir, List.of()),
+            new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
+    Config config = ConfigTestHelper.createForTests(tempDir);
+    JSONObject root = new JSONObject();
+    JSONObject ui = new JSONObject();
+    ui.put("log-gtp-to-file", true);
+    root.put("ui", ui);
+    root.put("leelaz", new JSONObject());
+    LoggingSettings previous =
+        new LoggingSettings(
+            false, EnumSet.of(DiagnosticModule.ENGINE), EnumSet.allOf(TraceScope.class));
+    root.put(LoggingSettings.CONFIG_KEY, previous.toJson());
+    config.config = root;
+    config.uiConfig = ui;
+    config.leelazConfig = root.getJSONObject("leelaz");
+    config.loggingSettings = previous;
+    Path legacyGtp = tempDir.resolve("LastGtpLogs_keep.txt");
+    Files.writeString(legacyGtp, "KEEP_GTP\n");
+
+    config.migrateLegacyGtpLogging();
+    runtime.applySettings(config.loggingSettings);
+    assertFalse(runtime.fullTraceActive());
+    LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+
+    JSONObject saved = new JSONObject(Files.readString(Path.of(config.getConfigFilePath())));
+    assertFalse(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
+    LoggingSettings persisted = LoggingSettings.fromJson(saved.getJSONObject("logging"));
+    assertTrue(persisted.diagnosticsEnabled());
+    assertEquals(
+        EnumSet.of(DiagnosticModule.ENGINE, DiagnosticModule.GTP_SUMMARY),
+        persisted.diagnosticModules());
+    assertEquals("KEEP_GTP\n", Files.readString(legacyGtp));
+    assertFalse(Files.exists(tempDir.resolve("logs/engine-trace.log")));
+    String app = Files.readString(tempDir.resolve("logs/app.log"));
+    assertTrue(app.contains("log-gtp-to-file"), app);
+    assertTrue(app.contains("operation=migration"), app);
+  }
+
+  @Test
+  void disabledLegacyGtpKeyIsRemovedWithoutEnablingDiagnostics() throws Exception {
+    LoggingRuntime.initialize(
+        new WorkDirectoryResolution(tempDir, List.of()),
+        new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
+    Config config = ConfigTestHelper.createForTests(tempDir);
+    JSONObject root = new JSONObject();
+    JSONObject ui = new JSONObject();
+    ui.put("log-gtp-to-file", false);
+    root.put("ui", ui);
+    root.put("leelaz", new JSONObject());
+    root.put(LoggingSettings.CONFIG_KEY, LoggingSettings.defaults().toJson());
+    config.config = root;
+    config.uiConfig = ui;
+    config.leelazConfig = root.getJSONObject("leelaz");
+    config.loggingSettings = LoggingSettings.defaults();
+
+    config.migrateLegacyGtpLogging();
+    LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+
+    JSONObject saved = new JSONObject(Files.readString(Path.of(config.getConfigFilePath())));
+    assertFalse(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
+    LoggingSettings persisted = LoggingSettings.fromJson(saved.getJSONObject("logging"));
+    assertFalse(persisted.diagnosticsEnabled());
   }
 
   @Test

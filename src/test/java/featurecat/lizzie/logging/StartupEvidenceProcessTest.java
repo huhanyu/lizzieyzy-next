@@ -26,7 +26,7 @@ class StartupEvidenceProcessTest {
     Files.writeString(legacyConsole, "KEEP_CONSOLE\n");
     Path legacyError = work.resolve("LastErrorLogs_keep.txt");
     Files.writeString(legacyError, "KEEP_ERROR\n");
-
+    Files.writeString(work.resolve("LastGtpLogs_keep.txt"), "KEEP_GTP\n");
     LoggingChildProcess.Result result =
         LoggingChildProcess.run(work, StartupEvidenceProbe.class);
 
@@ -49,9 +49,11 @@ class StartupEvidenceProcessTest {
 
     JSONObject saved = new JSONObject(Files.readString(work.resolve("config.txt")));
     assertFalse(saved.getJSONObject("ui").has("log-console-to-file"), saved.toString(2));
-    assertTrue(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
+    assertFalse(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
+    assertTrue(saved.getJSONObject("logging").getBoolean("diagnostics-enabled"), saved.toString(2));
     assertEquals("KEEP_CONSOLE\n", Files.readString(legacyConsole));
     assertEquals("KEEP_ERROR\n", Files.readString(legacyError));
+    assertEquals("KEEP_GTP\n", Files.readString(work.resolve("LastGtpLogs_keep.txt")));
     assertFalse(hasNewLegacyLog(work), listNames(work));
   }
 
@@ -66,7 +68,7 @@ class StartupEvidenceProcessTest {
     assertEquals(0, result.exitCode(), result.output());
     JSONObject saved = new JSONObject(Files.readString(work.resolve("config.txt")));
     assertFalse(saved.getJSONObject("ui").has("log-console-to-file"), saved.toString(2));
-    assertTrue(saved.getJSONObject("ui").getBoolean("log-gtp-to-file"));
+    assertFalse(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
     assertTrue(LoggingChildProcess.readLog(work, "app.log").contains("log-console-to-file"), 
         LoggingChildProcess.readLog(work, "app.log"));
   }
@@ -91,9 +93,12 @@ class StartupEvidenceProcessTest {
           .map(path -> path.getFileName().toString())
           .anyMatch(
               name ->
-                  (name.startsWith("LastConsoleLogs_") || name.startsWith("LastErrorLogs_"))
+                  (name.startsWith("LastConsoleLogs_")
+                          || name.startsWith("LastErrorLogs_")
+                          || name.startsWith("LastGtpLogs_"))
                       && !name.equals("LastConsoleLogs_keep.txt")
-                      && !name.equals("LastErrorLogs_keep.txt"));
+                      && !name.equals("LastErrorLogs_keep.txt")
+                      && !name.equals("LastGtpLogs_keep.txt"));
     }
   }
 
