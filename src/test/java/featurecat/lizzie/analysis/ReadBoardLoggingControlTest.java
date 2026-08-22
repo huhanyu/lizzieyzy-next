@@ -224,4 +224,90 @@ class ReadBoardLoggingControlTest {
     assertEquals(ReadBoardLoggingProtocol.Toggle.OFF, second.trace);
     assertNotNull(second.requestId);
   }
+
+  @Test
+  void snapshotDoesNotReportEnabledBeforeObservedAck() {
+    ReadBoardLoggingControl control =
+        new ReadBoardLoggingControl(ReadBoardLoggingControl.Desired.launchDefaults(false), true);
+    control.onCapability(
+        ReadBoardLoggingProtocol.tryParseCapability(
+            "readboardLoggingV1 dGVzdFByb2Nlc3NJRA off off off healthy 0"));
+    control.beginSet(true, false, false);
+
+    ReadBoardLoggingSnapshot snapshot = control.snapshot();
+
+    assertTrue(snapshot.desired().diagnostics);
+    assertEquals(ReadBoardLoggingProtocol.Toggle.OFF, snapshot.observedDiagnostics());
+    assertEquals(ReadBoardLoggingControl.Presentation.NOT_APPLIED, snapshot.diagnosticsPresentation());
+    assertNotEquals(ReadBoardLoggingControl.Presentation.ON, snapshot.diagnosticsPresentation());
+  }
+
+  @Test
+  void snapshotKeepsObservedOnUntilDisableAck() {
+    ReadBoardLoggingControl control =
+        new ReadBoardLoggingControl(ReadBoardLoggingControl.Desired.launchDefaults(true), true);
+    control.onCapability(
+        ReadBoardLoggingProtocol.tryParseCapability(
+            "readboardLoggingV1 dGVzdFByb2Nlc3NJRA on off off healthy 0"));
+    control.beginSet(false, false, false);
+
+    ReadBoardLoggingSnapshot snapshot = control.snapshot();
+
+    assertFalse(snapshot.desired().diagnostics);
+    assertEquals(ReadBoardLoggingProtocol.Toggle.ON, snapshot.observedDiagnostics());
+    assertEquals(ReadBoardLoggingControl.Presentation.ON, snapshot.diagnosticsPresentation());
+    assertNotEquals(ReadBoardLoggingControl.Presentation.OFF, snapshot.diagnosticsPresentation());
+  }
+
+  @Test
+  void snapshotExposesCapabilityPersistenceDropCountAndProcessSession() {
+    ReadBoardLoggingControl control =
+        new ReadBoardLoggingControl(ReadBoardLoggingControl.Desired.launchDefaults(true), true);
+    control.onCapability(
+        ReadBoardLoggingProtocol.tryParseCapability(
+            "readboardLoggingV1 dGVzdFByb2Nlc3NJRA on off off degraded 4"));
+
+    ReadBoardLoggingSnapshot snapshot = control.snapshot();
+
+    assertTrue(snapshot.attached());
+    assertTrue(snapshot.capabilityKnown());
+    assertEquals(PROCESS_SESSION, snapshot.processSessionId());
+    assertEquals(ReadBoardLoggingProtocol.Persistence.DEGRADED, snapshot.persistence());
+    assertEquals(4, snapshot.dropCount());
+    assertEquals(ReadBoardLoggingControl.Presentation.ON_STORAGE_DEGRADED, snapshot.diagnosticsPresentation());
+    assertEquals(ReadBoardLoggingControl.Presentation.OFF, snapshot.capturePresentation());
+    assertTrue(snapshot.captureSummary().contains(PROCESS_SESSION));
+    assertTrue(snapshot.captureSummary().contains("off"));
+  }
+
+  @Test
+  void snapshotAfterDisconnectIsUnknownAndDoesNotKeepCaptureDesired() {
+    ReadBoardLoggingControl control =
+        new ReadBoardLoggingControl(ReadBoardLoggingControl.Desired.launchDefaults(true), true);
+    control.onCapability(ReadBoardLoggingProtocol.tryParseCapability(CAPABILITY));
+    control.beginSet(true, true, true);
+    control.onDisconnect();
+
+    ReadBoardLoggingSnapshot snapshot = control.snapshot();
+
+    assertEquals(ReadBoardLoggingControl.Status.UNKNOWN, snapshot.status());
+    assertFalse(snapshot.desired().capture);
+    assertFalse(snapshot.desired().trace);
+    assertTrue(snapshot.desired().diagnostics);
+    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.capturePresentation());
+    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.diagnosticsPresentation());
+    assertEquals("no capture session", snapshot.captureSummary());
+  }
+
+  @Test
+  void detachedSnapshotIsUnknownNotSuccess() {
+    ReadBoardLoggingSnapshot snapshot = ReadBoardLoggingSnapshot.detached();
+
+    assertFalse(snapshot.attached());
+    assertFalse(snapshot.capabilityKnown());
+    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.diagnosticsPresentation());
+    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.capturePresentation());
+    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.tracePresentation());
+    assertEquals("no capture session", snapshot.captureSummary());
+  }
 }

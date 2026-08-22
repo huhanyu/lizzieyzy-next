@@ -3,6 +3,9 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.SyncDiagnosticsRecorder;
+import featurecat.lizzie.analysis.ReadBoard;
+import featurecat.lizzie.analysis.ReadBoardLoggingControl;
+import featurecat.lizzie.analysis.ReadBoardLoggingSnapshot;
 import featurecat.lizzie.logging.DiagnosticBundleExporter;
 import featurecat.lizzie.logging.DiagnosticBundleRequest;
 import featurecat.lizzie.logging.DiagnosticModule;
@@ -35,6 +38,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
+import javax.swing.JScrollPane;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
@@ -55,6 +59,20 @@ public class DiagnosticsDialog extends JPanel {
   private final Runnable titleRefresh;
   private final BooleanSupplier fullTraceConfirmer;
   private final Consumer<Path> folderOpener;
+  private final HelperLogging helperLogging;
+  private final BooleanSupplier captureConfirmer;
+  private final JLabel hostSessionLabel = new JFontLabel("");
+  private final JLabel helperCapability = new JFontLabel("");
+  private final JLabel helperPersistence = new JFontLabel("");
+  private final JLabel helperDropCount = new JFontLabel("");
+  private final JLabel helperProcessSession = new JFontLabel("");
+  private final JLabel helperCaptureSummary = new JFontLabel("");
+  private final JLabel helperDiagnosticsObserved = new JFontLabel("");
+  private final JLabel helperTraceObserved = new JFontLabel("");
+  private final JLabel helperCaptureObserved = new JFontLabel("");
+  private final JCheckBox helperDiagnostics = box();
+  private final JCheckBox helperTrace = box();
+  private final JCheckBox helperCapture = box();
   private final JCheckBox diagnosticsEnabled = box();
   private final JCheckBox moduleEngine = box();
   private final JCheckBox moduleGtp = box();
@@ -73,6 +91,8 @@ public class DiagnosticsDialog extends JPanel {
   private final JLabel durationLabel = new JFontLabel("");
   private final JLabel estimateLabel = new JFontLabel("");
   private final JLabel logsPath = new JFontLabel("");
+  private final JLabel hostAppLog = new JFontLabel("");
+  private final JLabel hostCrashLog = new JFontLabel("");
   private final JLabel persistenceLabel = new JFontLabel("");
   private final JPanel streamList = new JPanel();
   private final AtomicBoolean cancelExport = new AtomicBoolean();
@@ -89,7 +109,7 @@ public class DiagnosticsDialog extends JPanel {
       openDialog.setDefaultCloseOperation(JDialog.HIDE_ON_CLOSE);
       openDialog.setContentPane(openPanel);
       openDialog.pack();
-      openDialog.setMinimumSize(new Dimension(520, openDialog.getHeight()));
+      openDialog.setMinimumSize(new Dimension(560, Math.min(720, openDialog.getHeight())));
       openDialog.setLocationRelativeTo(owner);
     } else {
       openPanel.refreshFromRuntime();
@@ -100,7 +120,11 @@ public class DiagnosticsDialog extends JPanel {
     return openDialog;
   }
 
-  static void notifyRuntimeChanged() {
+  public static void notifyRuntimeChanged() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(DiagnosticsDialog::notifyRuntimeChanged);
+      return;
+    }
     if (openPanel != null) {
       openPanel.refreshFromRuntime();
     }
@@ -124,6 +148,18 @@ public class DiagnosticsDialog extends JPanel {
       Runnable titleRefresh,
       BooleanSupplier fullTraceConfirmer,
       Consumer<Path> folderOpener) {
+    this(runtime, config, exporter, titleRefresh, fullTraceConfirmer, folderOpener, null, null);
+  }
+
+  DiagnosticsDialog(
+      LoggingRuntime runtime,
+      Config config,
+      DiagnosticBundleExporter exporter,
+      Runnable titleRefresh,
+      BooleanSupplier fullTraceConfirmer,
+      Consumer<Path> folderOpener,
+      HelperLogging helperLogging,
+      BooleanSupplier captureConfirmer) {
     super(new BorderLayout(0, 8));
     this.runtime = runtime;
     this.config = config;
@@ -131,6 +167,8 @@ public class DiagnosticsDialog extends JPanel {
     this.titleRefresh = titleRefresh == null ? () -> {} : titleRefresh;
     this.fullTraceConfirmer = fullTraceConfirmer;
     this.folderOpener = folderOpener == null ? path -> {} : folderOpener;
+    this.helperLogging = helperLogging == null ? new LiveHelperLogging() : helperLogging;
+    this.captureConfirmer = captureConfirmer;
 
     setOpaque(true);
     setBackground(AppleStyleSupport.isAppleStyleEnabled() ? new Color(30, 33, 38) : PAPER);
@@ -138,6 +176,8 @@ public class DiagnosticsDialog extends JPanel {
 
     durationLabel.setForeground(MUTED);
     estimateLabel.setForeground(MUTED);
+    hostAppLog.setForeground(MUTED);
+    hostCrashLog.setForeground(MUTED);
     logsPath.setForeground(MUTED);
     persistenceLabel.setForeground(INK);
     streamList.setOpaque(false);
@@ -158,6 +198,18 @@ public class DiagnosticsDialog extends JPanel {
     diagnosticsEnabled.addActionListener(e -> setModulesEnabled(diagnosticsEnabled.isSelected()));
     exportDefault.addActionListener(e -> exportPackageOffEdt());
     cancel.addActionListener(e -> cancelExport.set(true));
+    helperDiagnostics.addActionListener(e -> requestHelperToggle(HelperField.DIAGNOSTICS));
+    helperTrace.addActionListener(e -> requestHelperToggle(HelperField.TRACE));
+    helperCapture.addActionListener(e -> requestHelperToggle(HelperField.CAPTURE));
+    hostSessionLabel.setForeground(MUTED);
+    helperCapability.setForeground(INK);
+    helperPersistence.setForeground(INK);
+    helperDropCount.setForeground(INK);
+    helperProcessSession.setForeground(INK);
+    helperCaptureSummary.setForeground(MUTED);
+    helperDiagnosticsObserved.setForeground(MUTED);
+    helperTraceObserved.setForeground(MUTED);
+    helperCaptureObserved.setForeground(MUTED);
 
     JPanel recording = new JPanel();
     recording.setOpaque(false);
@@ -231,7 +283,7 @@ public class DiagnosticsDialog extends JPanel {
         pathRow(
             text("DiagnosticsDialog.logsFolder", "Logs"),
             logsPath,
-            () -> folderOpener.accept(runtime.logsDirectory()));
+            this::openLogsDirectory);
 
     JPanel health = new JPanel(new BorderLayout(0, 4));
     health.setOpaque(false);
@@ -241,13 +293,19 @@ public class DiagnosticsDialog extends JPanel {
     JPanel north = new JPanel();
     north.setOpaque(false);
     north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+    addSection(north, sectionTitle(text("DiagnosticsDialog.hostPane", "LizzieYzy")));
+    addSection(north, hostSessionLabel);
     addSection(north, recording);
     addSection(north, hairline());
     addSection(north, fullLogs);
     addSection(north, applyRow);
     addSection(north, hairline());
     addSection(north, logs);
+    addSection(north, hostAppLog);
+    addSection(north, hostCrashLog);
     addSection(north, health);
+    addSection(north, hairline());
+    addSection(north, helperPane());
     JPanel export = new JPanel(new BorderLayout(12, 6));
     export.setOpaque(false);
     export.add(estimateLabel, BorderLayout.WEST);
@@ -259,7 +317,11 @@ public class DiagnosticsDialog extends JPanel {
     south.add(hairline(), BorderLayout.NORTH);
     south.add(export, BorderLayout.CENTER);
 
-    add(north, BorderLayout.NORTH);
+    JScrollPane scroll = new JScrollPane(north);
+    scroll.setBorder(null);
+    scroll.setOpaque(false);
+    scroll.getViewport().setOpaque(false);
+    add(scroll, BorderLayout.CENTER);
     add(south, BorderLayout.SOUTH);
     refreshFromRuntime();
   }
@@ -377,6 +439,102 @@ public class DiagnosticsDialog extends JPanel {
         + selectedScopeLabels();
   }
 
+  void openLogsDirectory() {
+    folderOpener.accept(runtime.logsDirectory());
+  }
+
+  String hostSessionText() {
+    return hostSessionLabel.getText();
+  }
+
+  String hostAppLogText() {
+    return hostAppLog.getText();
+  }
+
+  String hostCrashLogText() {
+    return hostCrashLog.getText();
+  }
+
+  String hostPaneText() {
+    return text("DiagnosticsDialog.hostPane", "LizzieYzy")
+        + '\n'
+        + hostSessionText()
+        + '\n'
+        + text("DiagnosticsDialog.diagnosticsEnabled", "Diagnostic recording")
+        + '\n'
+        + text("DiagnosticsDialog.module.engine", "Engine")
+        + '\n'
+        + text("DiagnosticsDialog.module.gtpSummary", "GTP Summary")
+        + '\n'
+        + text("DiagnosticsDialog.module.readboardYike", "ReadBoard/Yike")
+        + '\n'
+        + text("DiagnosticsDialog.module.networkRemote", "Network/Remote")
+        + '\n'
+        + text("DiagnosticsDialog.fullTrace", "Full Logs")
+        + '\n'
+        + text("DiagnosticsDialog.scope.engineGtp", "Engine/GTP")
+        + '\n'
+        + text("DiagnosticsDialog.scope.readboardYike", "ReadBoard/Yike")
+        + '\n'
+        + text("DiagnosticsDialog.scope.networkWebsocket", "Network/WebSocket");
+  }
+
+  String helperPaneText() {
+    return text("DiagnosticsDialog.readBoardPane", "ReadBoard")
+        + '\n'
+        + text("DiagnosticsDialog.helperDiagnostics", "Diagnostics")
+        + '\n'
+        + text("DiagnosticsDialog.helperFullTrace", "Full Trace")
+        + '\n'
+        + text("DiagnosticsDialog.helperCapture", "Capture");
+  }
+
+  String helperCapabilityText() {
+    return helperCapability.getText();
+  }
+
+  String helperPersistenceText() {
+    return helperPersistence.getText();
+  }
+
+  String helperDropCountText() {
+    return helperDropCount.getText();
+  }
+
+  String helperProcessSessionText() {
+    return helperProcessSession.getText();
+  }
+
+  String helperDiagnosticsObservedText() {
+    return helperDiagnosticsObserved.getText();
+  }
+
+  String helperTraceObservedText() {
+    return helperTraceObserved.getText();
+  }
+
+  String helperCaptureObservedText() {
+    return helperCaptureObserved.getText();
+  }
+
+  JCheckBox helperDiagnosticsBox() {
+    return helperDiagnostics;
+  }
+
+  JCheckBox helperTraceBox() {
+    return helperTrace;
+  }
+
+  JCheckBox helperCaptureBox() {
+    return helperCapture;
+  }
+
+  String captureConfirmBody() {
+    return text(
+        "DiagnosticsDialog.captureConfirmMessage",
+        "Capture writes screenshots and recognition artifacts for this ReadBoard process only. It is not Diagnostics or Full Trace, and it will not stay on after restart. Continue?");
+  }
+
   void refreshFromRuntime() {
     LoggingSettings settings = runtime.settings();
     diagnosticsEnabled.setSelected(settings.diagnosticsEnabled());
@@ -392,6 +550,13 @@ public class DiagnosticsDialog extends JPanel {
     scopeNetwork.setSelected(settings.preferredTraceScopes().contains(TraceScope.NETWORK_WEBSOCKET));
     setModulesEnabled(settings.diagnosticsEnabled());
     logsPath.setText(runtime.logsDirectory().toAbsolutePath().toString());
+    hostAppLog.setText("app.log: " + runtime.logsDirectory().resolve("app.log").toAbsolutePath());
+    hostCrashLog.setText(
+        "crash.log: " + runtime.logsDirectory().resolve("crash.log").toAbsolutePath());
+    hostSessionLabel.setText(
+        text("DiagnosticsDialog.hostSession", "Host session")
+            + ": "
+            + runtime.applicationLogSessionId());
     logsPath.setToolTipText(logsPath.getText());
     LoggingStatus status = runtime.status();
     persistenceLabel.setText("persistenceEnabled=" + status.persistenceEnabled());
@@ -405,11 +570,181 @@ public class DiagnosticsDialog extends JPanel {
     streamList.revalidate();
     streamList.repaint();
     refreshDuration();
+    refreshHelperFromSnapshot();
     refreshEstimate();
   }
 
   String durationText() {
     return durationLabel.getText();
+  }
+
+  private JPanel helperPane() {
+    JPanel pane = new JPanel();
+    pane.setOpaque(false);
+    pane.setLayout(new BoxLayout(pane, BoxLayout.Y_AXIS));
+    addSection(pane, sectionTitle(text("DiagnosticsDialog.readBoardPane", "ReadBoard")));
+    addSection(pane, helperCapability);
+    addSection(pane, helperPersistence);
+    addSection(pane, helperDropCount);
+    addSection(pane, helperProcessSession);
+    addSection(
+        pane,
+        helperRow(
+            text("DiagnosticsDialog.helperDiagnostics", "Diagnostics"),
+            helperDiagnostics,
+            helperDiagnosticsObserved));
+    addSection(
+        pane,
+        helperRow(
+            text("DiagnosticsDialog.helperFullTrace", "Full Trace"),
+            helperTrace,
+            helperTraceObserved));
+    addSection(
+        pane,
+        helperRow(
+            text("DiagnosticsDialog.helperCapture", "Capture"),
+            helperCapture,
+            helperCaptureObserved));
+    addSection(pane, helperCaptureSummary);
+    return pane;
+  }
+
+  private void requestHelperToggle(HelperField field) {
+    ReadBoardLoggingSnapshot current = helperLogging.snapshot();
+    boolean diagnostics = helperDiagnostics.isSelected();
+    boolean capture = helperCapture.isSelected();
+    boolean trace = helperTrace.isSelected();
+    if (field == HelperField.CAPTURE && capture && !current.desired().capture) {
+      if (!confirmCapture()) {
+        helperCapture.setSelected(false);
+        return;
+      }
+    }
+    if (!helperLogging.requestSet(diagnostics, capture, trace)) {
+      refreshHelperFromSnapshot();
+      return;
+    }
+    refreshHelperFromSnapshot();
+  }
+
+  private boolean confirmCapture() {
+    if (captureConfirmer != null) {
+      return captureConfirmer.getAsBoolean();
+    }
+    int choice =
+        JOptionPane.showConfirmDialog(
+            this,
+            captureConfirmBody(),
+            text("DiagnosticsDialog.captureConfirmTitle", "Enable ReadBoard capture?"),
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.WARNING_MESSAGE);
+    return choice == JOptionPane.OK_OPTION;
+  }
+
+  private void refreshHelperFromSnapshot() {
+    ReadBoardLoggingSnapshot snapshot = helperLogging.snapshot();
+    helperCapability.setText(
+        text("DiagnosticsDialog.helperCapability", "Observed capability")
+            + ": "
+            + capabilityText(snapshot));
+    helperPersistence.setText(
+        text("DiagnosticsDialog.helperPersistence", "Persistence")
+            + ": "
+            + (snapshot.persistence() == null
+                ? text("DiagnosticsDialog.capability.none", "none")
+                : snapshot.persistence().name().toLowerCase()));
+    helperDropCount.setText(
+        text("DiagnosticsDialog.helperDropCount", "dropCount")
+            + ": "
+            + (snapshot.dropCount() < 0 ? "—" : Integer.toString(snapshot.dropCount())));
+    helperProcessSession.setText(
+        text("DiagnosticsDialog.helperProcessSession", "Process session")
+            + ": "
+            + (snapshot.processSessionId().isEmpty()
+                ? text("DiagnosticsDialog.capability.none", "none")
+                : snapshot.processSessionId()));
+    helperDiagnostics.setSelected(snapshot.desired().diagnostics);
+    helperTrace.setSelected(snapshot.desired().trace);
+    helperCapture.setSelected(snapshot.desired().capture);
+    helperDiagnosticsObserved.setText(presentationText(snapshot.diagnosticsPresentation()));
+    helperTraceObserved.setText(presentationText(snapshot.tracePresentation()));
+    helperCaptureObserved.setText(presentationText(snapshot.capturePresentation()));
+    helperCaptureSummary.setText(
+        text("DiagnosticsDialog.captureSummary", "Capture session")
+            + ": "
+            + snapshot.captureSummary());
+  }
+
+  private static String capabilityText(ReadBoardLoggingSnapshot snapshot) {
+    if (snapshot.status() == ReadBoardLoggingControl.Status.LEGACY_UNCONFIRMED
+        || snapshot.diagnosticsPresentation()
+            == ReadBoardLoggingControl.Presentation.LEGACY_UNCONFIRMED) {
+      return text("DiagnosticsDialog.presentation.legacy", "legacy-unconfirmed");
+    }
+    if (snapshot.capabilityKnown()) {
+      return text("DiagnosticsDialog.capability.ready", "ready");
+    }
+    return text("DiagnosticsDialog.capability.none", "none");
+  }
+
+  private static String presentationText(ReadBoardLoggingControl.Presentation presentation) {
+    if (presentation == null) {
+      return text("DiagnosticsDialog.presentation.unknown", "Unknown");
+    }
+    switch (presentation) {
+      case ON:
+        return text("DiagnosticsDialog.presentation.on", "On");
+      case ON_STORAGE_DEGRADED:
+        return text("DiagnosticsDialog.presentation.onDegraded", "On, storage degraded");
+      case ON_STORAGE_UNAVAILABLE:
+        return text("DiagnosticsDialog.presentation.onUnavailable", "On, storage unavailable");
+      case NOT_APPLIED:
+        return text("DiagnosticsDialog.presentation.notApplied", "Not applied");
+      case LEGACY_UNCONFIRMED:
+        return text("DiagnosticsDialog.presentation.legacy", "legacy-unconfirmed");
+      case OFF:
+        return text("DiagnosticsDialog.presentation.off", "Off");
+      case UNKNOWN:
+      default:
+        return text("DiagnosticsDialog.presentation.unknown", "Unknown");
+    }
+  }
+
+  private static JPanel helperRow(String name, JCheckBox desired, JLabel observed) {
+    JPanel row = checkRow(name, desired, false, observed);
+    return row;
+  }
+
+  private static JLabel sectionTitle(String name) {
+    JFontLabel label = new JFontLabel(name);
+    label.setFont(label.getFont().deriveFont(Font.BOLD));
+    return label;
+  }
+
+  interface HelperLogging {
+    ReadBoardLoggingSnapshot snapshot();
+
+    boolean requestSet(boolean diagnostics, boolean capture, boolean trace);
+  }
+
+  private enum HelperField {
+    DIAGNOSTICS,
+    TRACE,
+    CAPTURE
+  }
+
+  private static final class LiveHelperLogging implements HelperLogging {
+    @Override
+    public ReadBoardLoggingSnapshot snapshot() {
+      ReadBoard board = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
+      return board == null ? ReadBoardLoggingSnapshot.detached() : board.loggingSnapshot();
+    }
+
+    @Override
+    public boolean requestSet(boolean diagnostics, boolean capture, boolean trace) {
+      ReadBoard board = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
+      return board != null && board.requestLoggingSet(diagnostics, capture, trace);
+    }
   }
 
   private void refreshDuration() {

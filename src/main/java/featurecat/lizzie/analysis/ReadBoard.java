@@ -5873,6 +5873,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     }
     if (loggingControl != null) {
       loggingControl.onDisconnect();
+      publishLoggingSnapshot();
     }
     retireTrackingEligibility();
     noMsg = true;
@@ -6247,6 +6248,12 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     return loggingControl;
   }
 
+  public ReadBoardLoggingSnapshot loggingSnapshot() {
+    return loggingControl == null
+        ? ReadBoardLoggingSnapshot.detached()
+        : loggingControl.snapshot();
+  }
+
   public boolean requestLoggingSet(boolean diagnostics, boolean capture, boolean trace) {
     if (loggingControl == null || loggingControl.processSessionId() == null) {
       return false;
@@ -6255,6 +6262,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
         loggingControl.beginSet(diagnostics, capture, trace);
     sendCommand(ReadBoardLoggingProtocol.formatSet(request));
     scheduleLoggingTimeout();
+    publishLoggingSnapshot();
     return true;
   }
 
@@ -6267,6 +6275,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     if (capability != null) {
       loggingControl.onCapability(capability);
       loggingWaitGeneration++;
+      publishLoggingSnapshot();
       return;
     }
     ReadBoardLoggingProtocol.Observed observed = ReadBoardLoggingProtocol.tryParseObserved(line);
@@ -6275,6 +6284,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
       if (loggingControl.status() == ReadBoardLoggingControl.Status.OBSERVED) {
         loggingWaitGeneration++;
       }
+      publishLoggingSnapshot();
     }
   }
 
@@ -6317,6 +6327,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
   void markCapabilityTimeout() {
     if (loggingControl != null) {
       loggingControl.onCapabilityTimeout();
+      publishLoggingSnapshot();
     }
   }
 
@@ -6331,7 +6342,12 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     if (loggingControl != null) {
       loggingControl.onReady();
       scheduleCapabilityTimeout();
+      publishLoggingSnapshot();
     }
+  }
+
+  private void publishLoggingSnapshot() {
+    featurecat.lizzie.gui.DiagnosticsDialog.notifyRuntimeChanged();
   }
 
   private void sendAnalysisState() {

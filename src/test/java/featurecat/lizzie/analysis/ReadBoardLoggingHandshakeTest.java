@@ -69,6 +69,18 @@ class ReadBoardLoggingHandshakeTest {
     assertFalse(args.contains("--trace"));
   }
 
+  @Test
+  void loggingSnapshotIsDetachedUntilControlExists() throws Exception {
+    ReadBoard board = allocateBoard();
+
+    ReadBoardLoggingSnapshot snapshot = board.loggingSnapshot();
+
+    assertFalse(snapshot.attached());
+    assertEquals(
+        ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.diagnosticsPresentation());
+    assertEquals("no capture session", snapshot.captureSummary());
+  }
+
 
   @Test
   void requestLoggingSetRequiresProcessSession() throws Exception {

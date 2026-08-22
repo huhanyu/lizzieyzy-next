@@ -155,6 +155,7 @@ public final class ReadBoardLoggingControl {
 
   public void onDisconnect() {
     status = contractLaunch ? Status.UNKNOWN : Status.LEGACY_UNCONFIRMED;
+    desired = Desired.launchDefaults(desired.diagnostics);
     clearObservedSuccess();
   }
 
@@ -176,6 +177,10 @@ public final class ReadBoardLoggingControl {
         requestId, toggle(diagnostics), toggle(capture), toggle(trace));
   }
 
+  public ReadBoardLoggingSnapshot snapshot() {
+    return ReadBoardLoggingSnapshot.from(this);
+  }
+
   public Presentation presentation(
       boolean desiredOn,
       ReadBoardLoggingProtocol.Toggle observedToggle,
@@ -192,7 +197,7 @@ public final class ReadBoardLoggingControl {
     if (desiredOn && observedToggle == ReadBoardLoggingProtocol.Toggle.OFF) {
       return Presentation.NOT_APPLIED;
     }
-    if (desiredOn && observedToggle == ReadBoardLoggingProtocol.Toggle.ON) {
+    if (observedToggle == ReadBoardLoggingProtocol.Toggle.ON) {
       if (persistence == ReadBoardLoggingProtocol.Persistence.DEGRADED) {
         return Presentation.ON_STORAGE_DEGRADED;
       }
