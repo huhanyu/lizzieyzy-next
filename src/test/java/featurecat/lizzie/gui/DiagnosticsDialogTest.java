@@ -110,6 +110,8 @@ class DiagnosticsDialogTest {
     dialog.refreshFromRuntime();
     assertFalse(dialog.fullLogsEnabledBox().isSelected());
     assertTrue(dialog.currentRequest().rawScopes().isEmpty());
+    assertTrue(dialog.currentRequest().includeCapture());
+    assertFalse(dialog.currentRequest().includeReadBoardTrace());
   }
 
   @Test
@@ -313,6 +315,29 @@ class DiagnosticsDialogTest {
     assertEquals("Not applied", dialog.helperTraceObservedText());
     assertEquals("Off", dialog.helperDiagnosticsObservedText());
     assertEquals("Off", dialog.helperCaptureObservedText());
+  }
+
+  @Test
+  void exportRequestForwardsHelperSessionAndReadBoardTraceOptIn() {
+    LoggingRuntime runtime = start();
+    ReadBoardLoggingControl control =
+        new ReadBoardLoggingControl(ReadBoardLoggingControl.Desired.launchDefaults(false), true);
+    control.onCapability(
+        ReadBoardLoggingProtocol.tryParseCapability(
+            "readboardLoggingV1 dGVzdFByb2Nlc3NJRA off off off healthy 0"));
+    RecordingHelper helper = new RecordingHelper(control);
+    DiagnosticsDialog dialog =
+        dialog(runtime, new AtomicInteger(), new ArrayList<>(), () -> true, helper, () -> true);
+
+    assertTrue(dialog.currentRequest().includeCapture());
+    assertFalse(dialog.currentRequest().includeReadBoardTrace());
+    assertEquals("dGVzdFByb2Nlc3NJRA", dialog.currentRequest().readBoardLogging().processSessionId());
+    assertTrue(dialog.currentRequest().rawScopes().isEmpty());
+
+    dialog.helperTraceBox().doClick();
+    assertTrue(dialog.currentRequest().includeReadBoardTrace());
+    assertTrue(dialog.currentRequest().includeCapture());
+    assertTrue(dialog.currentRequest().rawScopes().isEmpty());
   }
 
   private DiagnosticsDialog dialog(

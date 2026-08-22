@@ -2,6 +2,7 @@ package featurecat.lizzie.analysis;
 
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -49,6 +50,7 @@ public final class ReadBoardLoggingControl {
   private Desired desired;
   private ReadBoardLoggingProtocol.Observed observed;
   private String processSessionId;
+  private Instant processSessionObservedAt;
   private Status status;
 
   public ReadBoardLoggingControl(Desired desired, boolean contractLaunch) {
@@ -98,6 +100,10 @@ public final class ReadBoardLoggingControl {
     return processSessionId;
   }
 
+  public Instant processSessionObservedAt() {
+    return processSessionObservedAt;
+  }
+
   public boolean awaitsCapability() {
     return contractLaunch && status == Status.STARTING;
   }
@@ -121,6 +127,7 @@ public final class ReadBoardLoggingControl {
       return;
     }
     processSessionId = capability.processSessionId;
+    noteProcessSession(capability.processSessionId);
     observed = observedFromCapability(capability);
     status = Status.CAPABILITY_READY;
   }
@@ -133,6 +140,7 @@ public final class ReadBoardLoggingControl {
       return;
     }
     processSessionId = incoming.processSessionId;
+    noteProcessSession(incoming.processSessionId);
     observed = incoming;
     status = Status.OBSERVED;
   }
@@ -161,6 +169,7 @@ public final class ReadBoardLoggingControl {
 
   public void resetForNewProcess() {
     processSessionId = null;
+    processSessionObservedAt = null;
     observed = null;
     gate = new ReadBoardLoggingProtocol.RequestGate();
     desired = Desired.launchDefaults(desired.diagnostics);
@@ -211,7 +220,17 @@ public final class ReadBoardLoggingControl {
 
   private void clearObservedSuccess() {
     processSessionId = null;
+    processSessionObservedAt = null;
     observed = null;
+  }
+
+  private void noteProcessSession(String incoming) {
+    if (incoming == null || incoming.isEmpty()) {
+      return;
+    }
+    if (processSessionObservedAt == null) {
+      processSessionObservedAt = Instant.now();
+    }
   }
 
   private String newRequestId() {

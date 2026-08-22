@@ -7,7 +7,7 @@ public class PersistenceSanitizer {
 
   private static final Pattern CREDENTIAL_PARAMETER =
       Pattern.compile(
-          "(?i)([\\\"']?(?:password|passwd|token|secret|authorization|cookie|set-cookie|connectPassword|zhizi-account-token|zz-socketio-token)[\\\"']?\\s*(?:[=:]\\s*|\\s+)[\\\"']?)([^\\\"'\\s,;}&]+)([\\\"']?)");
+          "(?i)([\\\"']?(?:password|passwd|token|secret|authorization|cookie|set-cookie|connectPassword|zhizi-account-token|zz-socketio-token|machinekey|machine-key|MachineKey)[\\\"']?\\s*(?:[=:]\\s*|\\s+)[\\\"']?)([^\\\"'\\s,;}&]+)([\\\"']?)");
   private static final Pattern BEARER_CREDENTIAL =
       Pattern.compile("(?i)\\bBearer\\s+[A-Za-z0-9._~+\\-/]+=*");
   private static final Pattern BASIC_CREDENTIAL =

@@ -68,14 +68,26 @@ public final class SyncDiagnosticsExporter {
       SyncDiagnosticsExportSnapshot snapshot,
       SyncDiagnosticsExportSanitizer sanitizer)
       throws IOException {
-    writeEntry(out, "summary.txt", renderSummary(snapshot, sanitizer));
-    writeEntry(out, "sync-context.json", renderSyncContext(snapshot.getReport(), sanitizer));
+    writeSnapshotEntries(out, snapshot, sanitizer, "");
+  }
+
+  public static void writeSnapshotEntries(
+      ZipOutputStream out,
+      SyncDiagnosticsExportSnapshot snapshot,
+      SyncDiagnosticsExportSanitizer sanitizer,
+      String entryPrefix)
+      throws IOException {
+    String prefix = entryPrefix == null ? "" : entryPrefix;
+    writeEntry(out, prefix + "summary.txt", renderSummary(snapshot, sanitizer));
+    writeEntry(out, prefix + "sync-context.json", renderSyncContext(snapshot.getReport(), sanitizer));
     writeEntry(
-        out, "yike-session.json", renderYike(snapshot.getReport().getYikeSnapshot(), sanitizer));
-    writeEntry(out, "recent-decisions.jsonl", renderDecisions(snapshot, sanitizer));
-    writeEntry(out, "readboard-protocol.log", renderProtocolLog(snapshot, sanitizer));
-    writeEntry(out, "yike-events.jsonl", renderYikeEvents(snapshot, sanitizer));
-    writeEntry(out, "environment.txt", renderEnvironment(snapshot.getEnvironment(), sanitizer));
+        out,
+        prefix + "yike-session.json",
+        renderYike(snapshot.getReport().getYikeSnapshot(), sanitizer));
+    writeEntry(out, prefix + "recent-decisions.jsonl", renderDecisions(snapshot, sanitizer));
+    writeEntry(out, prefix + "readboard-protocol.log", renderProtocolLog(snapshot, sanitizer));
+    writeEntry(out, prefix + "yike-events.jsonl", renderYikeEvents(snapshot, sanitizer));
+    writeEntry(out, prefix + "environment.txt", renderEnvironment(snapshot.getEnvironment(), sanitizer));
   }
 
   private static Path defaultWorkDirectory() {

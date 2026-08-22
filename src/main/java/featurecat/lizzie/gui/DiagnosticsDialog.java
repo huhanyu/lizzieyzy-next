@@ -6,6 +6,7 @@ import featurecat.lizzie.analysis.SyncDiagnosticsRecorder;
 import featurecat.lizzie.analysis.ReadBoard;
 import featurecat.lizzie.analysis.ReadBoardLoggingControl;
 import featurecat.lizzie.analysis.ReadBoardLoggingSnapshot;
+import featurecat.lizzie.analysis.ReadBoardLoggingProtocol;
 import featurecat.lizzie.logging.DiagnosticBundleExporter;
 import featurecat.lizzie.logging.DiagnosticBundleRequest;
 import featurecat.lizzie.logging.DiagnosticModule;
@@ -395,12 +396,20 @@ public class DiagnosticsDialog extends JPanel {
         runtime.fullTraceActive()
             ? runtime.activeTraceScopes()
             : EnumSet.noneOf(TraceScope.class);
+    ReadBoardLoggingSnapshot helper = helperLogging.snapshot();
+    boolean includeReadBoardTrace =
+        helper.desired().trace
+            || helper.observedTrace() == ReadBoardLoggingProtocol.Toggle.ON;
     return new DiagnosticBundleRequest(
         runtime,
         raw,
+        includeReadBoardTrace,
+        true,
         config == null ? new org.json.JSONObject() : config.config,
         SyncDiagnosticsRecorder.getDefault().exportSnapshot(),
-        Lizzie.nextVersion == null ? "unknown" : Lizzie.nextVersion);
+        helper,
+        Lizzie.nextVersion == null ? "unknown" : Lizzie.nextVersion,
+        "unknown");
   }
 
   String healthText() {

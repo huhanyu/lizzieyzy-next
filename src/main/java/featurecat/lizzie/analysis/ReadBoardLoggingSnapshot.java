@@ -1,5 +1,7 @@
 package featurecat.lizzie.analysis;
 
+import java.time.Instant;
+
 public final class ReadBoardLoggingSnapshot {
   private final boolean attached;
   private final boolean contractLaunch;
@@ -17,6 +19,7 @@ public final class ReadBoardLoggingSnapshot {
   private final ReadBoardLoggingControl.Presentation capturePresentation;
   private final ReadBoardLoggingControl.Presentation tracePresentation;
   private final String captureSummary;
+  private final Instant processSessionObservedAt;
 
   private ReadBoardLoggingSnapshot(
       boolean attached,
@@ -34,7 +37,8 @@ public final class ReadBoardLoggingSnapshot {
       ReadBoardLoggingControl.Presentation diagnosticsPresentation,
       ReadBoardLoggingControl.Presentation capturePresentation,
       ReadBoardLoggingControl.Presentation tracePresentation,
-      String captureSummary) {
+      String captureSummary,
+      Instant processSessionObservedAt) {
     this.attached = attached;
     this.contractLaunch = contractLaunch;
     this.status = status;
@@ -51,6 +55,7 @@ public final class ReadBoardLoggingSnapshot {
     this.capturePresentation = capturePresentation;
     this.tracePresentation = tracePresentation;
     this.captureSummary = captureSummary;
+    this.processSessionObservedAt = processSessionObservedAt;
   }
 
   public static ReadBoardLoggingSnapshot detached() {
@@ -70,7 +75,8 @@ public final class ReadBoardLoggingSnapshot {
         ReadBoardLoggingControl.Presentation.UNKNOWN,
         ReadBoardLoggingControl.Presentation.UNKNOWN,
         ReadBoardLoggingControl.Presentation.UNKNOWN,
-        "no capture session");
+        "no capture session",
+        null);
   }
 
   static ReadBoardLoggingSnapshot from(ReadBoardLoggingControl control) {
@@ -105,7 +111,8 @@ public final class ReadBoardLoggingSnapshot {
         control.presentation(desired.diagnostics, diagnostics, persistence),
         control.presentation(desired.capture, capture, persistence),
         control.presentation(desired.trace, trace, persistence),
-        captureSummary(processSessionId, desired.capture, capture, persistence));
+        captureSummary(processSessionId, desired.capture, capture, persistence),
+        control.processSessionObservedAt());
   }
 
   public boolean attached() {
@@ -170,6 +177,10 @@ public final class ReadBoardLoggingSnapshot {
 
   public String captureSummary() {
     return captureSummary;
+  }
+
+  public Instant processSessionObservedAt() {
+    return processSessionObservedAt;
   }
 
   private static String captureSummary(
