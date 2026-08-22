@@ -676,6 +676,25 @@ class DiagnosticBundleExporterTest {
     assertFalse(joinedText(entries).contains("old-bundle"));
   }
 
+  @Test
+  void attachedHelperWithoutProcessSessionOmitsCaptureAsNoCurrentSession() throws Exception {
+    LoggingRuntime runtime = start();
+    ReadBoardLoggingControl control =
+        new ReadBoardLoggingControl(
+            new ReadBoardLoggingControl.Desired(false, true, false), true);
+    ReadBoardLoggingSnapshot helper = control.snapshot();
+    Map<String, byte[]> entries =
+        unzipEntries(
+            new DiagnosticBundleExporter(DiagnosticBundleExporter.defaultOutputDirectory(tempDir))
+                .export(request(runtime, helper)));
+    JSONObject capture = source(manifest(entries), "readboard-capture");
+    assertSource(capture, true, false, "omitted", "diagnostics/readboard-capture/");
+    assertEquals("no-current-session", capture.getString("reason"));
+    assertFalse(
+        entries.keySet().stream()
+            .anyMatch(name -> name.startsWith("diagnostics/readboard-capture/")));
+  }
+
   private LoggingRuntime start() {
     LoggingRuntime.resetForTests();
     return LoggingRuntime.initialize(

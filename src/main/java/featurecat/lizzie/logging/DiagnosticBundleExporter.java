@@ -391,7 +391,7 @@ public final class DiagnosticBundleExporter {
               limits.captureCapBytes(),
               NS_CAPTURE,
               processAlias,
-              "helper-not-started",
+              request.readBoardLogging().attached() ? "no-current-session" : "helper-not-started",
               false));
       return;
     }
