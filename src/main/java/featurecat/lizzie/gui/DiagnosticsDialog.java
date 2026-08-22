@@ -96,7 +96,8 @@ public class DiagnosticsDialog extends JPanel {
       new JFontButton(text("DiagnosticsDialog.exportDefault", "Export package"));
   private final JButton cancel =
       new JFontButton(text("DiagnosticsDialog.cancelExport", "Cancel export"));
-  private final JButton openLogs = new JFontButton(text("DiagnosticsDialog.open", "Open"));
+  private final JButton openLogs =
+      new JFontButton(text("DiagnosticsDialog.openLogs", "Open log folder"));
   private final JTextArea statusArea = new JFontTextArea(2, 48);
   private final JLabel durationLabel = new JFontLabel("");
   private final JLabel estimateLabel = new JFontLabel("");
@@ -200,8 +201,8 @@ public class DiagnosticsDialog extends JPanel {
     statusArea.setBorder(new EmptyBorder(0, 2, 0, 2));
     statusArea.setForeground(SECONDARY);
 
+    sizeButton(openLogs, 136);
     sizeButton(apply, 96);
-    sizeButton(openLogs, 96);
     sizeButton(exportDefault, 120);
     sizeButton(cancel, 96);
     cancel.setVisible(false);
@@ -220,6 +221,7 @@ public class DiagnosticsDialog extends JPanel {
     helperDropCount.setForeground(INK);
     helperProcessSession.setForeground(INK);
     helperCaptureSummary.setForeground(SECONDARY);
+    helperCaptureSummary.setBorder(new EmptyBorder(2, 20, 2, 0));
     helperDiagnosticsObserved.setForeground(SECONDARY);
     helperTraceObserved.setForeground(SECONDARY);
     helperCaptureObserved.setForeground(SECONDARY);
@@ -335,14 +337,15 @@ public class DiagnosticsDialog extends JPanel {
 
     JPanel processes = new JPanel(new GridLayout(1, 2, 8, 8));
     processes.setOpaque(false);
-    processes.add(sectionCard(host, buttonBar(apply)));
+    processes.add(sectionCard(host, null));
     processes.add(sectionCard(readBoard, null));
 
     JPanel page = new JPanel(new BorderLayout(0, 8));
     page.setOpaque(false);
     page.add(processes, BorderLayout.CENTER);
-    page.add(sectionCard(logs, buttonBar(openLogs, cancel, exportDefault)), BorderLayout.SOUTH);
-
+    page.add(
+        sectionCard(logs, buttonBar(openLogs, cancel, apply, exportDefault)),
+        BorderLayout.SOUTH);
     JScrollPane scroll = new JScrollPane(page);
     scroll.setBorder(null);
     scroll.setOpaque(false);
@@ -607,7 +610,7 @@ public class DiagnosticsDialog extends JPanel {
       streamList.add(streamName(stream), streamConstraint(0, row, 0));
       JFontLabel state = new JFontLabel(streamStatusText(stream));
       state.setForeground(color);
-      streamList.add(state, streamConstraint(1, row, 1));
+      streamList.add(state, streamConstraint(1, row, 0));
       JFontLabel dropped =
           new JFontLabel(
               format("DiagnosticsDialog.dropped", "dropped {0}", stream.droppedCount()));
@@ -615,11 +618,10 @@ public class DiagnosticsDialog extends JPanel {
       streamList.add(dropped, streamConstraint(2, row, 0));
       row++;
     }
-    GridBagConstraints glue = streamConstraint(0, row, 1);
-    glue.gridwidth = 3;
-    glue.weighty = 1;
-    glue.fill = GridBagConstraints.VERTICAL;
-    streamList.add(Box.createVerticalGlue(), glue);
+    GridBagConstraints filler = streamConstraint(3, 0, 1.0);
+    filler.gridheight = Math.max(1, row);
+    filler.fill = GridBagConstraints.BOTH;
+    streamList.add(Box.createHorizontalGlue(), filler);
     streamList.revalidate();
     streamList.repaint();
     refreshDuration();
@@ -720,9 +722,23 @@ public class DiagnosticsDialog extends JPanel {
         return text("DiagnosticsDialog.presentation.unknown", "Unknown");
     }
   }
-
   private static JPanel helperRow(String name, JCheckBox desired, JLabel observed) {
-    JPanel row = checkRow(name, desired, false, observed);
+    JFontLabel label = new JFontLabel(name);
+    label.setForeground(INK);
+    observed.setForeground(SECONDARY);
+    JPanel east = new JPanel();
+    east.setOpaque(false);
+    east.setLayout(new BoxLayout(east, BoxLayout.X_AXIS));
+    if (observed != null) {
+      east.add(observed);
+      east.add(Box.createHorizontalStrut(8));
+    }
+    east.add(desired);
+    JPanel row = new JPanel(new BorderLayout(12, 0));
+    row.setOpaque(false);
+    row.setBorder(new EmptyBorder(2, 0, 2, 0));
+    row.add(label, BorderLayout.WEST);
+    row.add(east, BorderLayout.EAST);
     return row;
   }
 
@@ -978,18 +994,21 @@ public class DiagnosticsDialog extends JPanel {
   }
 
   private static JCheckBox box() {
-    return new JFontCheckBox("");
+    JCheckBox b = new JFontCheckBox("");
+    b.setMargin(new Insets(0, 0, 0, 0));
+    return b;
   }
-
   private static JPanel checkRow(String name, JCheckBox box, boolean child, JComponent extra) {
     JFontLabel label = new JFontLabel(name);
     if (!child) {
       label.setFont(label.getFont().deriveFont(Font.BOLD));
     }
-    JPanel east = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+    JPanel east = new JPanel();
     east.setOpaque(false);
+    east.setLayout(new BoxLayout(east, BoxLayout.X_AXIS));
     if (extra != null) {
       east.add(extra);
+      east.add(Box.createHorizontalStrut(8));
     }
     east.add(box);
     JPanel row = new JPanel(new BorderLayout(12, 0));
@@ -999,14 +1018,15 @@ public class DiagnosticsDialog extends JPanel {
     row.add(east, BorderLayout.EAST);
     return row;
   }
-
   private static JPanel metaRow(String name, JLabel value) {
     JPanel row = new JPanel(new BorderLayout(12, 0));
     row.setOpaque(false);
     row.setBorder(new EmptyBorder(2, 0, 2, 0));
     JFontLabel label = new JFontLabel(name);
-    label.setForeground(SECONDARY);
+    label.setForeground(INK);
+    value.setForeground(INK);
     value.setHorizontalAlignment(JLabel.RIGHT);
+    value.setBorder(new EmptyBorder(0, 0, 0, 4));
     row.add(label, BorderLayout.WEST);
     row.add(value, BorderLayout.EAST);
     return row;
@@ -1076,7 +1096,7 @@ public class DiagnosticsDialog extends JPanel {
     constraints.weightx = weightx;
     constraints.fill = GridBagConstraints.HORIZONTAL;
     constraints.anchor = GridBagConstraints.WEST;
-    constraints.insets = new Insets(1, 0, 1, column < 2 ? 12 : 0);
+    constraints.insets = new Insets(1, 0, 1, column < 2 ? 24 : 0);
     return constraints;
   }
 
