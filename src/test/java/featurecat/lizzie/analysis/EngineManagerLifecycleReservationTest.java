@@ -642,11 +642,16 @@ class EngineManagerLifecycleReservationTest {
       // Navigate while both replacement engines' readiness is gated.
       assertTrue(state.board.previousMove(false));
       state.releaseStartup();
+      state.releaseBoardFence();
 
       // The frozen round (2 loadsgf commands, one per captured engine) restores the
-      // pre-navigation frame; the frame recheck rejects it and starts a catch-up round whose
-      // loadsgf responses are gated on the catch-up gate.
+      // pre-navigation frame. Keep the later catch-up responses gated, but do not make
+      // cross-process command dispatch depend on which engine reaches its final fence first.
+      // The frame recheck then starts a catch-up round whose loadsgf responses remain gated.
       waitForCommandCount(state.commandLog, "loadsgf ", 4, 10_000L);
+      assertEquals(EngineStartupStatus.State.CHECKING, Lizzie.engineStartupStatus.snapshot().state);
+      assertNull(replacement.beginEngineModeReservation());
+      assertNull(mirror.beginEngineModeReservation());
       // Navigate again while both engines are blocked in the catch-up round.
       assertTrue(state.board.nextMove(false));
       state.releaseCatchUp();
@@ -673,11 +678,6 @@ class EngineManagerLifecycleReservationTest {
       awaitLifecycleTransitionReleased(mirror);
       assertFalse(replacement.hasExclusiveGtpLifecycleTransitionForTest());
       assertFalse(mirror.hasExclusiveGtpLifecycleTransitionForTest());
-      // The final fence is pending: Ready and the completion gate have not settled yet.
-      assertEquals(EngineStartupStatus.State.CHECKING, Lizzie.engineStartupStatus.snapshot().state);
-      assertNull(replacement.beginEngineModeReservation());
-      assertNull(mirror.beginEngineModeReservation());
-      state.releaseBoardFence();
       awaitEngineStartupReady();
       assertTrue(replacement.isLoaded());
       assertTrue(mirror.isLoaded());
@@ -3437,6 +3437,7 @@ class EngineManagerLifecycleReservationTest {
       assertFalse(fenceThread.isAlive());
       fenceThread = null;
       assertTrue(manager.fenceFailureSettled.await(2, TimeUnit.SECONDS));
+      awaitReservationReleased(secondary);
       fenceSettled = true;
 
       assertFalse(secondary.isLoaded());

@@ -557,8 +557,11 @@ class DiagnosticBundleExporterTest {
     Path rb = readBoardRoot(runtime);
     Files.createDirectories(rb);
     Path unreadable = rb.resolve("app.log");
-    Files.writeString(unreadable, jsonl(Instant.now().toString(), "app", PROCESS_SESSION, "hidden", null));
-    Files.setPosixFilePermissions(unreadable, Set.of());
+    boolean posix = Files.getFileStore(rb).supportsFileAttributeView("posix");
+    if (posix) {
+      Files.writeString(unreadable, jsonl(Instant.now().toString(), "app", PROCESS_SESSION, "hidden", null));
+      Files.setPosixFilePermissions(unreadable, Set.of());
+    }
 
     Map<String, byte[]> detached = unzipEntries(exportDefault(runtime));
     JSONObject detachedManifest = manifest(detached);
@@ -584,9 +587,11 @@ class DiagnosticBundleExporterTest {
     assertEquals("no-current-session", source(helperManifest, "readboard-capture").getString("reason"));
     assertEquals("omitted", source(helperManifest, "readboard-capture").getString("status"));
     assertTrue(helperOn.containsKey("manifest.json"));
-    try {
-      Files.setPosixFilePermissions(unreadable, Set.of(PosixFilePermission.OWNER_READ));
-    } catch (IOException ignored) {
+    if (posix) {
+      try {
+        Files.setPosixFilePermissions(unreadable, Set.of(PosixFilePermission.OWNER_READ));
+      } catch (IOException ignored) {
+      }
     }
   }
 
