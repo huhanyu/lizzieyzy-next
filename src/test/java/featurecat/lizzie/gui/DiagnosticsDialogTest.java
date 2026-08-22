@@ -36,7 +36,7 @@ class DiagnosticsDialogTest {
     LoggingRuntime runtime = start();
     DiagnosticsDialog dialog = dialog(runtime, new AtomicInteger(), new ArrayList<>(), () -> true);
     assertTrue(dialog.healthText().contains(runtime.logsDirectory().toString()));
-    assertTrue(dialog.healthText().contains("persistenceEnabled=true"));
+    assertTrue(dialog.healthText().contains("Persistence:"));
     assertTrue(dialog.estimateText().contains("MB"));
     assertFalse(dialog.cancelButton().isVisible());
     assertFalse(dialog.fullLogsEnabledBox().isSelected());
@@ -133,7 +133,7 @@ class DiagnosticsDialogTest {
     assertFalse(dialog.hostPaneText().contains("Full Trace"));
     assertFalse(dialog.hostPaneText().contains("Capture"));
     assertTrue(dialog.helperPaneText().contains("Diagnostics"));
-    assertTrue(dialog.helperPaneText().contains("Full Trace"));
+    assertTrue(dialog.helperPaneText().contains("Full Logs"));
     assertTrue(dialog.helperPaneText().contains("Capture"));
     assertEquals(runtime.logsDirectory(), opened.get(0));
     assertTrue(opened.get(0).endsWith("logs"));
@@ -207,7 +207,7 @@ class DiagnosticsDialogTest {
             () -> true,
             new RecordingHelper(legacy),
             () -> true);
-    assertEquals("legacy-unconfirmed", legacyDialog.helperDiagnosticsObservedText());
+    assertEquals("Legacy, unconfirmed", legacyDialog.helperDiagnosticsObservedText());
 
     ReadBoardLoggingControl degraded =
         new ReadBoardLoggingControl(ReadBoardLoggingControl.Desired.launchDefaults(true), true);
