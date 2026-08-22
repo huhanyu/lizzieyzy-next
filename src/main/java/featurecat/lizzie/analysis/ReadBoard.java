@@ -615,6 +615,9 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
       handleHostedUpdateRequest(updateRequest);
       return;
     }
+    if (ReadBoardLoggingProtocol.isControlLine(line)) {
+      return;
+    }
     if (isYikeSyncStartCommand(line)) {
       YikeSyncDebugLog.log("ReadBoard received yikeSyncStart");
       handleYikeSyncStartCommand(true);
