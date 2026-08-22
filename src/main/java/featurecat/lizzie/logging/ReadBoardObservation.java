@@ -10,18 +10,31 @@ public final class ReadBoardObservation {
   private ReadBoardObservation() {}
 
   public static boolean diagnosticsEnabled() {
-    return initialized() && DIAG.isDebugEnabled();
+    try {
+      return initialized() && DIAG.isDebugEnabled();
+    } catch (RuntimeException ignored) {
+      return false;
+    }
   }
 
   public static boolean traceEnabled() {
-    return LoggingRuntime.current()
-            .filter(runtime -> !runtime.isShutdown() && runtime.fullTraceActive())
-            .isPresent()
-        && TRACE.isInfoEnabled();
+    try {
+      return initialized()
+          && LoggingRuntime.current()
+              .filter(LoggingRuntime::fullTraceActive)
+              .isPresent()
+          && TRACE.isInfoEnabled();
+    } catch (RuntimeException ignored) {
+      return false;
+    }
   }
 
   private static boolean initialized() {
-    return LoggingRuntime.current().filter(runtime -> !runtime.isShutdown()).isPresent();
+    try {
+      return LoggingRuntime.current().filter(runtime -> !runtime.isShutdown()).isPresent();
+    } catch (RuntimeException ignored) {
+      return false;
+    }
   }
 
   public static void inContext(
@@ -29,87 +42,106 @@ public final class ReadBoardObservation {
     if (action == null) {
       return;
     }
-    String trace =
-        LoggingRuntime.current().map(LoggingRuntime::currentTraceSessionId).orElse(null);
     try {
-      CorrelationContext.installEngine(engineId);
-      CorrelationContext.installGma(gmaId);
-      CorrelationContext.installSyncSession(sessionId);
-      if (trace != null) {
-        CorrelationContext.installTraceSession(trace);
+      String trace =
+          LoggingRuntime.current().map(LoggingRuntime::currentTraceSessionId).orElse(null);
+      try {
+        CorrelationContext.installEngine(engineId);
+        CorrelationContext.installGma(gmaId);
+        CorrelationContext.installSyncSession(sessionId);
+        if (trace != null) {
+          CorrelationContext.installTraceSession(trace);
+        }
+        action.run();
+      } finally {
+        CorrelationContext.clearSyncSession();
+        CorrelationContext.clearGma();
+        CorrelationContext.clearEngine();
+        CorrelationContext.clearTraceSession();
       }
-      action.run();
-    } finally {
-      CorrelationContext.clearSyncSession();
-      CorrelationContext.clearGma();
-      CorrelationContext.clearEngine();
-      CorrelationContext.clearTraceSession();
+    } catch (RuntimeException ignored) {
     }
   }
 
   public static void recordDecision(String result, String reason, long epoch, String platform) {
-    if (result == null || result.isEmpty()) {
-      return;
-    }
-    String safeReason = reason == null ? "unknown" : reason;
-    String safePlatform = platform == null ? "unknown" : platform;
-    if (diagnosticsEnabled()) {
-      DIAG.debug(
-          "readboard event=decision result={} reason={} epoch={} platform={}",
-          result,
-          safeReason,
-          epoch,
-          safePlatform);
-    }
-    if (traceEnabled()) {
-      TRACE.info(
-          "readboard raw decision result={} reason={} epoch={} platform={}",
-          result,
-          safeReason,
-          epoch,
-          safePlatform);
+    try {
+      if (result == null || result.isEmpty()) {
+        return;
+      }
+      String safeReason = reason == null ? "unknown" : reason;
+      String safePlatform = platform == null ? "unknown" : platform;
+      if (diagnosticsEnabled()) {
+        DIAG.debug(
+            "readboard event=decision result={} reason={} epoch={} platform={}",
+            result,
+            safeReason,
+            epoch,
+            safePlatform);
+      }
+      if (traceEnabled()) {
+        TRACE.info(
+            "readboard raw decision result={} reason={} epoch={} platform={}",
+            result,
+            safeReason,
+            epoch,
+            safePlatform);
+      }
+    } catch (RuntimeException ignored) {
     }
   }
 
   public static void recordGma(String phase, String outcome) {
-    if (!diagnosticsEnabled()) {
-      return;
+    try {
+      if (!diagnosticsEnabled()) {
+        return;
+      }
+      DIAG.debug(
+          "readboard event=gma phase={} outcome={}",
+          phase == null || phase.isEmpty() ? "unknown" : phase,
+          outcome == null || outcome.isEmpty() ? "unknown" : outcome);
+    } catch (RuntimeException ignored) {
     }
-    DIAG.debug(
-        "readboard event=gma phase={} outcome={}",
-        phase == null || phase.isEmpty() ? "unknown" : phase,
-        outcome == null || outcome.isEmpty() ? "unknown" : outcome);
   }
 
   public static void recordLocalMove(String outcome, String reason) {
-    if (!diagnosticsEnabled()) {
-      return;
+    try {
+      if (!diagnosticsEnabled()) {
+        return;
+      }
+      DIAG.debug(
+          "readboard event=local-move outcome={} reason={}",
+          outcome == null || outcome.isEmpty() ? "unknown" : outcome,
+          reason == null || reason.isEmpty() ? "unknown" : reason);
+    } catch (RuntimeException ignored) {
     }
-    DIAG.debug(
-        "readboard event=local-move outcome={} reason={}",
-        outcome == null || outcome.isEmpty() ? "unknown" : outcome,
-        reason == null || reason.isEmpty() ? "unknown" : reason);
   }
 
   public static void recordFailure(String reason, Throwable error) {
-    if (!initialized() || !DIAG.isWarnEnabled()) {
-      return;
+    try {
+      if (!initialized() || !DIAG.isWarnEnabled()) {
+        return;
+      }
+      String safeReason = reason == null || reason.isEmpty() ? "unknown" : reason;
+      if (error == null) {
+        DIAG.warn("readboard event=failed reason={}", safeReason);
+        return;
+      }
+      DIAG.warn("readboard event=failed reason={}", safeReason, error);
+    } catch (RuntimeException ignored) {
     }
-    if (error == null) {
-      DIAG.warn("readboard event=failed reason={}", reason == null ? "unknown" : reason);
-      return;
-    }
-    DIAG.warn("readboard event=failed reason={}", reason == null ? "unknown" : reason, error);
   }
 
   public static void recordLifecycle(String event, String detail) {
-    if (!initialized() || !DIAG.isInfoEnabled()) {
-      return;
+    try {
+      if (!initialized() || !DIAG.isInfoEnabled()) {
+        return;
+      }
+      DIAG.info(
+          "readboard event={} detail={}",
+          event == null || event.isEmpty() ? "lifecycle" : event,
+          detail == null ? "" : detail);
+    } catch (RuntimeException ignored) {
     }
-    DIAG.info(
-        "readboard event={} detail={}",
-        event == null || event.isEmpty() ? "lifecycle" : event,
-        detail == null ? "" : detail);
   }
 
   public static void recordYikeSession(
@@ -118,22 +150,38 @@ public final class ReadBoardObservation {
       Boolean syncReady,
       Boolean geometryReady,
       String pendingSession) {
-    if (!diagnosticsEnabled()) {
-      return;
+    try {
+      if (!diagnosticsEnabled()) {
+        return;
+      }
+      DIAG.debug(
+          "readboard event=yike-session reason={} active={} pending={} syncReady={} geometryReady={}",
+          reason == null || reason.isEmpty() ? "unknown" : reason,
+          activeSession == null || activeSession.isEmpty() ? "none" : activeSession,
+          pendingSession == null || pendingSession.isEmpty() ? "none" : pendingSession,
+          syncReady,
+          geometryReady);
+    } catch (RuntimeException ignored) {
     }
-    DIAG.debug(
-        "readboard event=yike-session reason={} active={} pending={} syncReady={} geometryReady={}",
-        reason == null || reason.isEmpty() ? "unknown" : reason,
-        activeSession == null || activeSession.isEmpty() ? "none" : activeSession,
-        pendingSession == null || pendingSession.isEmpty() ? "none" : pendingSession,
-        syncReady,
-        geometryReady);
   }
 
   public static void traceProtocol(String summary) {
-    if (!traceEnabled() || summary == null) {
-      return;
+    try {
+      if (!traceEnabled() || summary == null) {
+        return;
+      }
+      TRACE.info("readboard raw protocol={}", summary);
+    } catch (RuntimeException ignored) {
     }
-    TRACE.info("readboard raw protocol={}", summary);
+  }
+
+  public static void traceInbound(String summary) {
+    try {
+      if (!traceEnabled() || summary == null || summary.isEmpty()) {
+        return;
+      }
+      TRACE.info("readboard {}", summary);
+    } catch (RuntimeException ignored) {
+    }
   }
 }

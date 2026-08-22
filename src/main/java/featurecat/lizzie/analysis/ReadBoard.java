@@ -13,6 +13,7 @@ import featurecat.lizzie.rules.Movelist;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.logging.EngineObservation;
+import featurecat.lizzie.logging.LoggingRuntime;
 import featurecat.lizzie.logging.ReadBoardObservation;
 import featurecat.lizzie.util.Utils;
 import featurecat.lizzie.util.YikeSyncDebugLog;
@@ -43,7 +44,6 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
   private static final String LEGACY_NATIVE_READBOARD_EXE = "readboard.exe";
   private static final String LEGACY_NATIVE_READBOARD_BAT = "readboard.bat";
   private static final int SYNC_ANALYSIS_RESUME_DELAY_MS = 200;
-  private static final int STARTUP_OUTPUT_LOG_LIMIT = 8;
   private static final String READBOARD_PLACEMENT_FAILED = "error place failed";
   private static final int LOCAL_MOVE_PLACE_RETRY_LIMIT = 0;
   private static final long LOCAL_MOVE_PLACE_RETRY_INTERVAL_MS = 350L;
@@ -227,7 +227,6 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
   private boolean hideFloadBoardBeforePlace = false;
   private boolean hideFromPlace = false;
   public boolean editMode = false;
-  private int startupOutputLineCount = 0;
   private volatile boolean shutdownStarted = false;
   private Object trackingEligibilityIdentity = new Object();
   private long trackingEligibilityRevision = 0L;
@@ -517,15 +516,16 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
     List<String> command = processBuilder.command();
     File workingDirectory = processBuilder.directory();
     String executable =
-        command.isEmpty() ? "" : new File(command.get(0)).getName();
-    observe(
-        () ->
-            ReadBoardObservation.recordLifecycle(
-                "started",
-                "executable="
-                    + executable
-                    + " dir="
-                    + (workingDirectory == null ? "" : workingDirectory.getName())));
+        command.isEmpty() ? "" : new File(command.get(0)).getAbsolutePath();
+    String cwd = workingDirectory == null ? "" : workingDirectory.getAbsolutePath();
+    String hostSession = "";
+    try {
+      hostSession =
+          LoggingRuntime.current().map(LoggingRuntime::applicationLogSessionId).orElse("");
+    } catch (RuntimeException ignored) {
+    }
+    String detail = "executable=" + executable + " cwd=" + cwd + " hostSession=" + hostSession;
+    observe(() -> ReadBoardObservation.recordLifecycle("started", detail));
   }
 
   private void logNativeReadBoardStartFailure(
@@ -534,13 +534,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
   }
 
   private void logReadBoardOutputLine(String rawLine) {
-    if (!ReadBoardObservation.traceEnabled()
-        || startupOutputLineCount >= STARTUP_OUTPUT_LOG_LIMIT) {
-      return;
-    }
-    startupOutputLineCount++;
-    String line = rawLine.replace("\r", "\\r").replace("\n", "\\n");
-    observe(() -> ReadBoardObservation.traceProtocol("native-output " + line));
+    observe(() -> ReadBoardObservation.traceInbound(summarizeInboundHelperLine(rawLine)));
   }
 
   private void logReadBoardExit() {
@@ -616,6 +610,7 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
       return;
     }
     if (ReadBoardLoggingProtocol.isControlLine(line)) {
+      ReadBoardObservation.traceInbound(summarizeInboundHelperLine(line));
       return;
     }
     if (isYikeSyncStartCommand(line)) {
@@ -1291,6 +1286,70 @@ public class ReadBoard implements ReadBoardTrackingEligibilityAdapter.Eligibilit
         || "loadsgf".equals(normalized)
         || "recordtitlefingerprint".equals(normalized)
         || "readboardupdateready".equals(normalized);
+  }
+
+  private String summarizeInboundHelperLine(String rawLine) {
+    if (rawLine == null) {
+      return "direction=in command=none outcome=empty";
+    }
+    String trimmed = rawLine.trim();
+    if (trimmed.isEmpty()) {
+      return "direction=in command=empty outcome=empty";
+    }
+    if (ReadBoardLoggingProtocol.isControlLine(trimmed)) {
+      return summarizeInboundControlLine(trimmed);
+    }
+    String command = inboundCommandToken(trimmed);
+    String outcome = isSensitiveProtocolCommand(command) ? "redacted" : "received";
+    return "direction=in command=" + command + " outcome=" + outcome;
+  }
+
+  private String summarizeInboundControlLine(String trimmed) {
+    ReadBoardLoggingProtocol.Capability capability =
+        ReadBoardLoggingProtocol.tryParseCapability(trimmed);
+    if (capability != null) {
+      return "direction=in command="
+          + ReadBoardLoggingProtocol.CAPABILITY_COMMAND
+          + " outcome=control persistence="
+          + enumToken(capability.persistence);
+    }
+    ReadBoardLoggingProtocol.SetRequest setRequest = ReadBoardLoggingProtocol.tryParseSet(trimmed);
+    if (setRequest != null) {
+      return "direction=in command="
+          + ReadBoardLoggingProtocol.SET_COMMAND
+          + " outcome=control requestId="
+          + setRequest.requestId;
+    }
+    ReadBoardLoggingProtocol.Observed observed =
+        ReadBoardLoggingProtocol.tryParseObserved(trimmed);
+    if (observed != null) {
+      return "direction=in command="
+          + ReadBoardLoggingProtocol.OBSERVED_COMMAND
+          + " outcome=control requestId="
+          + observed.requestId
+          + " reason="
+          + enumToken(observed.reason);
+    }
+    return "direction=in command=" + inboundCommandToken(trimmed) + " outcome=invalid";
+  }
+
+  private static String inboundCommandToken(String trimmed) {
+    if (trimmed.length() >= 3 && trimmed.regionMatches(true, 0, "re=", 0, 3)) {
+      return "re";
+    }
+    int end = 0;
+    while (end < trimmed.length() && end < 40) {
+      char c = trimmed.charAt(end);
+      if (!(Character.isLetterOrDigit(c) || c == '_' || c == '-')) {
+        break;
+      }
+      end++;
+    }
+    return end == 0 ? "unknown" : trimmed.substring(0, end);
+  }
+
+  private static String enumToken(Enum<?> value) {
+    return value.name().toLowerCase(Locale.ROOT).replace('_', '-');
   }
 
   private SyncDecisionTrace publishCompleteSnapshotRecoveryDiagnostics(
