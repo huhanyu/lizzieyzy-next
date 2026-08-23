@@ -109,7 +109,12 @@ class BoardNodeKindHistoryPipelineTest {
       primaryRefresh.pda = 0;
       assertTrue(
           primaryRefresh.tryToSetBestMovesFromEngine(
-              new ArrayList<>(List.of(move)), "primary-explicit-owner", secondary, 100, null));
+              new ArrayList<>(List.of(move)),
+              "primary-explicit-owner",
+              secondary,
+              100,
+              null,
+              false));
       assertEquals("primary-explicit-owner", primaryRefresh.engineName);
       assertEquals(61.0, primaryRefresh.winrate, 0.0001);
       assertEquals(2.0, primaryRefresh.pda, 0.0001);
@@ -127,6 +132,7 @@ class BoardNodeKindHistoryPipelineTest {
           List.of(1.0, 2.0));
 
       assertEquals("secondary-estimate", estimateRefresh.engineName2);
+      assertEquals(List.of(9.0), estimateRefresh.estimateArray);
       assertEquals(List.of(1.0, 2.0), estimateRefresh.estimateArray2);
     } finally {
       EngineManager.isEngineGame = previousEngineGame;
