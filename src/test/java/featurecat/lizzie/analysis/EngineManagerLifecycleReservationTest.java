@@ -5121,7 +5121,7 @@ class EngineManagerLifecycleReservationTest {
   }
 
   @Test
-  void retainedSwitchKeepsOldTrackingQueueGatedUntilFinalFence() throws Exception {
+  void retainedSwitchRejectsOldTrackingOrdinaryCommandAtQueueGate() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     LizzieFrame previousFrame = Lizzie.frame;
     Config previousConfig = Lizzie.config;
@@ -5129,7 +5129,7 @@ class EngineManagerLifecycleReservationTest {
     TrackingRestartActionLeelaz target = new TrackingRestartActionLeelaz();
     LifecycleFrame frame = allocate(LifecycleFrame.class);
     ByteArrayOutputStream output = new ByteArrayOutputStream();
-    setLeelazField(current, "outputStream", new BufferedOutputStream(output));
+    current.installCommandOutputForTest(new BufferedOutputStream(output));
     setCapabilityDiscoveryComplete(current, true);
     DeferredSwitchEngineManager manager =
         new DeferredSwitchEngineManager(List.of(current, target));
@@ -5163,7 +5163,10 @@ class EngineManagerLifecycleReservationTest {
       assertTrue(dispatchExclusiveLine(current, "=800000002"));
       assertTrue(dispatchExclusiveLine(current, ""));
       assertFalse(current.hasExclusiveGtpWorkInProgress());
-      assertTrue(output.toString(StandardCharsets.UTF_8).endsWith("stop\nstop\n"));
+      assertEquals(
+          "800000000 stop\n800000001 kata-analyze B 10\n800000002 stop\n",
+          output.toString(StandardCharsets.UTF_8),
+          "an uncredentialed ordinary command rejected behind the lifecycle gate must not replay");
     } finally {
       Lizzie.leelaz = previousEngine;
       Lizzie.frame = previousFrame;

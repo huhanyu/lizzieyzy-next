@@ -25,6 +25,7 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import java.awt.Window;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -1327,7 +1328,8 @@ class LeelazReadBoardGmaTest {
             "a loadsgf cancelled before registration must never reach the engine.");
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         loadThread.interrupt();
         loadThread.join(1000L);
@@ -1383,7 +1385,8 @@ class LeelazReadBoardGmaTest {
         assertFalse(loadThread.isAlive());
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         output.releaseFirstFlush.countDown();
         loadThread.interrupt();
@@ -1433,7 +1436,8 @@ class LeelazReadBoardGmaTest {
         assertFalse(loadThread.isAlive());
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         loadThread.interrupt();
         loadThread.join(1000L);
@@ -1489,7 +1493,8 @@ class LeelazReadBoardGmaTest {
         assertFalse(loadThread.isAlive());
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         loadThread.interrupt();
         loadThread.join(1000L);
@@ -1711,8 +1716,6 @@ class LeelazReadBoardGmaTest {
         loadThread.start();
         assertTrue(blockedOutput.firstFlushStarted.await(1, TimeUnit.SECONDS));
         engine.failReadBoardGmaEngineRestore("controlled restore failure");
-        RecordingOutputStream recoveryOutput = new RecordingOutputStream();
-        setOutputStream(engine, recoveryOutput);
         engine.sendCommand("name");
         engine.sendCommand("version");
         engine.sendCommand("protocol_version");
@@ -1723,9 +1726,9 @@ class LeelazReadBoardGmaTest {
         invokeProcessCommandResponseLine(engine, "=");
 
         assertFalse(
-            recoveryOutput.commands().contains("version"),
+            blockedOutput.commands().contains("version"),
             "post-reset send failure must not retire the old loadsgf outstanding twice.");
-        assertFalse(recoveryOutput.commands().contains("protocol_version"));
+        assertFalse(blockedOutput.commands().contains("protocol_version"));
         assertTrue(loadFailure.get() instanceof IllegalStateException);
       } finally {
         blockedOutput.releaseFirstFlush.countDown();
@@ -4827,23 +4830,49 @@ class LeelazReadBoardGmaTest {
     }
   }
 
-  private static final class BlockingFailingFirstFlushOutputStream extends OutputStream {
+  /**
+   * Keeps one coherent physical output binding while the first command is in WRITE_CLAIMED. The
+   * first flush discards its still-local bytes before failing, so successors can safely use the
+   * same stream after the blocked writer settles; replacing a live writer would violate the test
+   * seam's quiescence contract.
+   */
+  private static final class BlockingFailingFirstFlushOutputStream
+      extends BufferedOutputStream {
+    private final RecordingOutputStream recordingOutput;
     private final CountDownLatch firstFlushStarted = new CountDownLatch(1);
     private final CountDownLatch releaseFirstFlush = new CountDownLatch(1);
+    private boolean failFirstFlush = true;
+
+    private BlockingFailingFirstFlushOutputStream() {
+      this(new RecordingOutputStream());
+    }
+
+    private BlockingFailingFirstFlushOutputStream(RecordingOutputStream recordingOutput) {
+      super(recordingOutput);
+      this.recordingOutput = recordingOutput;
+    }
 
     @Override
-    public void write(int value) {}
-
-    @Override
-    public void flush() throws IOException {
+    public synchronized void flush() throws IOException {
+      if (!failFirstFlush) {
+        super.flush();
+        return;
+      }
+      failFirstFlush = false;
       firstFlushStarted.countDown();
       try {
         releaseFirstFlush.await();
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
+        count = 0;
         throw new IOException("controlled blocked flush interrupted", ex);
       }
+      count = 0;
       throw new IOException("controlled blocked flush failure");
+    }
+
+    private List<String> commands() {
+      return recordingOutput.commands();
     }
   }
 

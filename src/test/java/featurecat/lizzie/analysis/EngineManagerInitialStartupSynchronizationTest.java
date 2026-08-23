@@ -3117,6 +3117,12 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       target.normalQuitGate.countDown();
       assertTrue(target.normalQuitCompleted.await(2, TimeUnit.SECONDS));
+      Thread failedStopThread = target.normalQuitThread;
+      assertNotNull(failedStopThread);
+      failedStopThread.join(2_000L);
+      assertFalse(
+          failedStopThread.isAlive(),
+          "the quarantine capability must finish after the controlled normalQuit returns");
       assertTrue(
           manager.switchEngineIfAvailable(1, true),
           "the same catalog identity may be selected only after quarantine stop completes");
@@ -4034,8 +4040,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       engine.startEngine(0);
 
       EngineManager.InitialEngineStartupSynchronization startup = captureStartup(engine, board);
-      setLeelazField(engine, "exclusiveGtpLifecycleQueueGate", true);
-      sendFailOnErrorCommand(engine, "name");
+      queueFailingCommandForLifecycleRelease(engine, "name");
       engine.installCommandOutputForTest(new FailingOutputStream());
 
       RuntimeException failure = assertThrows(RuntimeException.class, startup::close);
@@ -4104,10 +4109,8 @@ class EngineManagerInitialStartupSynchronizationTest {
           target.beginExclusiveGtpLifecycleReservation();
       assertNotNull(currentReservation);
       assertNotNull(targetReservation);
-      setLeelazField(current, "exclusiveGtpLifecycleQueueGate", true);
-      setLeelazField(target, "exclusiveGtpLifecycleQueueGate", true);
-      sendFailOnErrorCommand(current, "name");
-      sendFailOnErrorCommand(target, "name");
+      queueFailingCommandForLifecycleRelease(current, "name");
+      queueFailingCommandForLifecycleRelease(target, "name");
       current.installCommandOutputForTest(new FailingOutputStream("current release failure"));
       target.installCommandOutputForTest(new FailingOutputStream("target release failure"));
       AssertionError gateFailure = new AssertionError("controlled interaction gate close failure");
@@ -4163,8 +4166,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       env.publish(engine, board);
       engine.startEngine(0);
 
-      setLeelazField(engine, "exclusiveGtpLifecycleQueueGate", true);
-      sendFailOnErrorCommand(engine, "name");
+      queueFailingCommandForLifecycleRelease(engine, "name");
       engine.installCommandOutputForTest(new FailingOutputStream());
 
       RuntimeException failure =
@@ -5975,6 +5977,25 @@ class EngineManagerInitialStartupSynchronizationTest {
             "sendCommand", String.class, Runnable.class, boolean.class, boolean.class);
     method.setAccessible(true);
     method.invoke(engine, command, null, true, false);
+  }
+
+  private static void queueFailingCommandForLifecycleRelease(Leelaz engine, String command)
+      throws Exception {
+    int previousCommandCount = ((Number) getLeelazField(engine, "cmdNumber")).intValue();
+    // Model ordinary work that was already queued when the lifecycle gate closed. Commands first
+    // admitted after that gate closes now require an exact restart receipt and are intentionally
+    // rejected, so they cannot exercise reservation-close failure propagation.
+    setLeelazField(engine, "normalCommandSendInProgress", true);
+    try {
+      sendFailOnErrorCommand(engine, command);
+      setLeelazField(engine, "exclusiveGtpLifecycleQueueGate", true);
+    } finally {
+      setLeelazField(engine, "normalCommandSendInProgress", false);
+    }
+    assertEquals(
+        previousCommandCount + 1,
+        ((Number) getLeelazField(engine, "cmdNumber")).intValue(),
+        "the controlled command must be queued before the lifecycle gate closes");
   }
 
   private static final class FailingOutputStream extends OutputStream {

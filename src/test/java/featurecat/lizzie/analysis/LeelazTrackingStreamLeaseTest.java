@@ -822,7 +822,7 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
-  void lifecycleReservationClaimsTrackingAndKeepsOrdinaryQueueClosedUntilCallerFinishes()
+  void lifecycleReservationClaimsTrackingAndRejectsOrdinaryCommandBehindQueueGate()
       throws Exception {
     try (TestState state = TestState.open(reusableLocalKatago())) {
       List<Leelaz.TrackingReleaseDisposition> dispositions = new ArrayList<>();
@@ -851,7 +851,10 @@ class LeelazTrackingStreamLeaseTest {
 
       reservation.close();
 
-      assertTrue(state.output.toString(StandardCharsets.UTF_8).endsWith("stop\nstop\n"));
+      assertEquals(
+          "800000000 stop\n800000001 kata-analyze B 10\n800000002 stop\n",
+          state.output.toString(StandardCharsets.UTF_8),
+          "an uncredentialed ordinary command rejected behind the lifecycle gate must not replay");
     }
   }
 

@@ -49,6 +49,7 @@ class EngineManagerEngineGameStartTest {
     BottomToolbar previousToolbar = LizzieFrame.toolbar;
     JFontMenu previousEngineMenu = Menu.engineMenu;
     Board previousBoard = Lizzie.board;
+    EngineManager previousManager = Lizzie.engineManager;
     boolean previousEngineGame = EngineManager.isEngineGame;
     boolean previousPreEngineGame = EngineManager.isPreEngineGame;
     try {
@@ -65,6 +66,7 @@ class EngineManagerEngineGameStartTest {
       EngineManager.isEngineGame = false;
       EngineManager.isPreEngineGame = true;
       EngineManager manager = new EngineManager(List.of());
+      Lizzie.engineManager = manager;
 
       EngineManager.PkEngineSynchronization black =
           manager.startEngineForPkSynchronization(-1);
@@ -86,6 +88,7 @@ class EngineManagerEngineGameStartTest {
       LizzieFrame.toolbar = previousToolbar;
       Menu.engineMenu = previousEngineMenu;
       Lizzie.board = previousBoard;
+      Lizzie.engineManager = previousManager;
       EngineManager.isEngineGame = previousEngineGame;
       EngineManager.isPreEngineGame = previousPreEngineGame;
     }

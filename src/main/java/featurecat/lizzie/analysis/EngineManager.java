@@ -7041,8 +7041,10 @@ public class EngineManager {
         if (bindingRecoveryToken != null) {
           if (manager == null
               || recoveryToken != bindingRecoveryToken
-              || !manager.isExactFailedRollbackAnalysisRecoveryLocked(
-                  engine, expectedIncarnation, bindingRecoveryToken)) {
+              || (!manager.isExactFailedRollbackAnalysisRecoveryLocked(
+                      engine, expectedIncarnation, bindingRecoveryToken)
+                  && !manager.isExactDeferredEngineGameAnalysisRecoveryLocked(
+                      engine, expectedIncarnation, bindingRecoveryToken))) {
             return null;
           }
           kind = TransactionlessAnalysisWriteKind.RECOVERY_TOMBSTONE;
@@ -7076,6 +7078,39 @@ public class EngineManager {
         && Lizzie.engineManager == this
         && engine.analysisOutputRecoveryToken(expectedIncarnation) == recoveryToken
         && recovery.claimAnalysisOutputBinding(expectedIncarnation);
+  }
+
+  /** Requires {@link #ENGINE_SELECTION_STATE_LOCK}. */
+  private boolean isExactDeferredEngineGameAnalysisRecoveryLocked(
+      Leelaz engine, Object expectedIncarnation, Object recoveryToken) {
+    EngineGameRecoveryBatch recoveryBatch = activeEngineGameRecoveryBatch;
+    EngineGameDeferredRecovery recovery =
+        recoveryBatch == null ? null : recoveryBatch.current;
+    InitialEngineStartupSynchronization synchronization =
+        recovery == null ? null : recovery.synchronization;
+    Object replacementIncarnation =
+        recovery == null ? null : recovery.replacementIncarnation;
+    return recovery != null
+        && recoveryToken == recovery
+        && recoveryBatch.transaction == recovery.transaction
+        && !recovery.completed.get()
+        && recovery.engine == engine
+        && recovery.startAttempt != null
+        && (replacementIncarnation == null || replacementIncarnation == expectedIncarnation)
+        && synchronization != null
+        && synchronization.lifecycleOwner != null
+        && synchronization.board == Lizzie.board
+        && recovery.transaction.manager == this
+        && Lizzie.engineManager == this
+        && engineGameInfo == recovery.transaction.gameInfo
+        && engineGameTransactionSequence == recovery.transaction.inactiveEpoch
+        && activeEngineGameTransaction == null
+        && retiringEngineGameTransaction == null
+        && !isEngineGame
+        && !isPreEngineGame
+        && recovery.transactionEpoch == recovery.transaction.epoch
+        && isExactCatalogSlot(this, recovery.engineIndex, engine)
+        && engine.analysisOutputRecoveryToken(expectedIncarnation) == recoveryToken;
   }
 
   private static boolean isCurrentEngineGameTransactionLocked(EngineGameTransaction transaction) {
@@ -7851,7 +7886,7 @@ public class EngineManager {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
-      engine.startDeferredEngineGameRecovery(startAttempt, recovery.engineIndex);
+      engine.startDeferredEngineGameRecovery(startAttempt, recovery, recovery.engineIndex);
       Object replacementIncarnation = startAttempt.publishedIncarnation();
       if (replacementIncarnation == null || replacementIncarnation == recovery.failedIncarnation) {
         completeDeferredEngineGameRecovery(
@@ -7861,7 +7896,18 @@ public class EngineManager {
             null);
         return;
       }
-      recovery.replacementIncarnation = replacementIncarnation;
+      Object authorizedIncarnation =
+          engine.authorizeAnalysisOutputRecoveryForExactBinding(
+              replacementIncarnation, recovery);
+      if (authorizedIncarnation != replacementIncarnation) {
+        completeDeferredEngineGameRecovery(
+            recoveryBatch,
+            recovery,
+            "engine-game recovery lost its exact analysis-output binding",
+            null);
+        return;
+      }
+      recovery.replacementIncarnation = authorizedIncarnation;
       manager.beforeDeferredEngineGameRecoveryStage(
           recovery, DeferredEngineGameRecoveryStage.READINESS);
       if (!isDeferredEngineGameRecoveryCurrent(
@@ -7906,6 +7952,15 @@ public class EngineManager {
                     engine.isDownWithError = false;
                   })) {
                 completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
+                return;
+              }
+              if (!completeDeferredEngineGameAnalysisOutputRecovery(
+                  recoveryBatch, recovery, replacementIncarnation)) {
+                completeDeferredEngineGameRecovery(
+                    recoveryBatch,
+                    recovery,
+                    "replacement engine lost analysis-output recovery ownership",
+                    null);
                 return;
               }
               startAttempt.complete();
@@ -7970,6 +8025,46 @@ public class EngineManager {
       return false;
     }
     return isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, expectedIncarnation);
+  }
+
+  /**
+   * Clears the exact recovery capability and promotes any physically published tombstone while
+   * the batch barrier is still active. The later batch commit only removes presentation
+   * quarantine and the global barrier; ordinary output can never observe an unowned gap.
+   */
+  private static boolean completeDeferredEngineGameAnalysisOutputRecovery(
+      EngineGameRecoveryBatch recoveryBatch,
+      EngineGameDeferredRecovery recovery,
+      Object expectedIncarnation) {
+    if (recoveryBatch == null || recovery == null || expectedIncarnation == null) {
+      return false;
+    }
+    ENGINE_GAME_ANALYSIS_OUTPUT_MUTATION_LOCK.lock();
+    try {
+      synchronized (ENGINE_SELECTION_STATE_LOCK) {
+        EngineManager manager = recovery.transaction.manager;
+        if (manager == null
+            || activeEngineGameRecoveryBatch != recoveryBatch
+            || recoveryBatch.current != recovery
+            || recovery.replacementIncarnation != expectedIncarnation
+            || !manager.isExactDeferredEngineGameAnalysisRecoveryLocked(
+                recovery.engine, expectedIncarnation, recovery)) {
+          return false;
+        }
+        return recovery.engine.completeAnalysisOutputRecovery(
+            expectedIncarnation,
+            recovery,
+            false,
+            () ->
+                activeEngineGameRecoveryBatch == recoveryBatch
+                    && recoveryBatch.current == recovery
+                    && recovery.replacementIncarnation == expectedIncarnation
+                    && manager.isExactDeferredEngineGameAnalysisRecoveryLocked(
+                        recovery.engine, expectedIncarnation, recovery));
+      }
+    } finally {
+      ENGINE_GAME_ANALYSIS_OUTPUT_MUTATION_LOCK.unlock();
+    }
   }
 
   private static void completeDeferredEngineGameRecovery(

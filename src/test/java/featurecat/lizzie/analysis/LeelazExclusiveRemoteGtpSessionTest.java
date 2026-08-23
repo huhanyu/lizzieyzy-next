@@ -20,13 +20,11 @@ import featurecat.lizzie.rules.Movelist;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.StringReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -226,8 +224,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
   @Test
   void foregroundLeaseInitialStopEofClosesOnceWithoutBecomingReady() throws Exception {
     Leelaz engine = reusableKatagoEngine(false, false);
-    installOutput(engine);
     installInput(engine, "");
+    installOutput(engine);
     AtomicInteger ready = new AtomicInteger();
     AtomicInteger closed = new AtomicInteger();
     try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
@@ -1792,8 +1790,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
   void exclusiveLineConsumerFailureCannotEscapeReadCleanup() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Leelaz engine = reusableKatagoEngine(false, false);
-    installOutput(engine);
     installInput(engine, "info move D4 visits 1\n");
+    installOutput(engine);
     AtomicInteger consumerCalls = new AtomicInteger();
     try {
       Lizzie.leelaz = engine;
@@ -2007,17 +2005,13 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   private static void installInput(Leelaz engine, String input) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("inputStream");
-    field.setAccessible(true);
-    field.set(engine, new BufferedReader(new StringReader(input)));
+    installInput(
+        engine, new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)));
   }
 
   private static void installInput(Leelaz engine, InputStream input) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("inputStream");
-    field.setAccessible(true);
-    field.set(
-        engine,
-        new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8)));
+    engine.installFreshCommandStreamsForTest(
+        input, new ByteArrayOutputStream(), new ByteArrayInputStream(new byte[0]));
   }
 
   private static void invokeRead(Leelaz engine) throws Exception {

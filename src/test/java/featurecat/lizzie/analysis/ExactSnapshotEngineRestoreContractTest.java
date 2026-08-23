@@ -798,7 +798,7 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
-  void preclearFailureUpdatesOnlyTargetsThatAcceptedTheCommand() throws Exception {
+  void preclearFailureInvalidatesAnalysisForEveryAttemptedTarget() throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
       Lizzie.board.setHistory(new BoardHistoryList(snapshotRoot()));
       Leelaz primary = new Leelaz("");
@@ -828,8 +828,10 @@ class ExactSnapshotEngineRestoreContractTest {
       assertEquals(List.of("clear_board"), mirrorOutput.commands());
       assertTrue(primary.getBestMoves().isEmpty());
       assertEquals(0.0, primary.scoreMean);
-      assertEquals(1, mirror.getBestMoves().size());
-      assertEquals(34.0, mirror.scoreMean);
+      assertTrue(
+          mirror.getBestMoves().isEmpty(),
+          "state invalidation precedes the first command byte and therefore survives flush failure");
+      assertEquals(0.0, mirror.scoreMean);
       assertEquals(0, primaryOutput.loadSgfCommandCount());
       assertEquals(0, mirrorOutput.loadSgfCommandCount());
     }

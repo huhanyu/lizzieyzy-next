@@ -11,6 +11,7 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
 import java.awt.Window;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -315,7 +316,7 @@ class LeelazLoadSgfResponseBindingTest {
   }
 
   @Test
-  void queuedLoadSgfSendFailureAutoSendsAlreadyQueuedCommand() throws Exception {
+  void queuedLoadSgfRecoverableFlushFailureAutoSendsAlreadyQueuedCommand() throws Exception {
     try (TestHarness harness = TestHarness.open()) {
       Leelaz engine = new Leelaz("");
       Lizzie.leelaz = engine;
@@ -354,6 +355,9 @@ class LeelazLoadSgfResponseBindingTest {
         waitForCommandCount(
             output, 2, 2000L, "queued follow-up command should auto-send after loadsgf failure.");
         assertEquals("version", output.commands().get(1), "follow-up command should be sent next.");
+        assertTrue(
+            outputStreamField(engine) == output,
+            "a pre-delegation failure must keep the known-clean physical output available.");
 
         loadThread.join(3000L);
         assertFalse(loadThread.isAlive(), "loadsgf send failure should release waiting thread.");
@@ -798,18 +802,32 @@ class LeelazLoadSgfResponseBindingTest {
     }
   }
 
-  private static final class RecordingFailingOutputStream extends OutputStream {
+  /**
+   * A buffered test transport whose selected flush fails before any byte reaches its delegate.
+   * This models the recoverable branch: the failed command is discarded locally and the same
+   * physical stream may safely carry the already-queued successor. Partial/delegated-byte failures
+   * have a separate fail-closed test below.
+   */
+  private static final class RecordingFailingOutputStream extends BufferedOutputStream {
     private final String failPrefix;
     private final StringBuilder currentCommand = new StringBuilder();
     private final List<String> commands = new ArrayList<>();
 
     private RecordingFailingOutputStream(String failPrefix) {
+      super(new ByteArrayOutputStream());
       this.failPrefix = failPrefix;
     }
 
     @Override
     public synchronized void write(int b) {
       currentCommand.append((char) b);
+    }
+
+    @Override
+    public synchronized void write(byte[] bytes, int offset, int length) {
+      for (int index = offset; index < offset + length; index++) {
+        currentCommand.append((char) bytes[index]);
+      }
     }
 
     @Override
@@ -820,7 +838,7 @@ class LeelazLoadSgfResponseBindingTest {
         return;
       }
       if (command.startsWith(failPrefix) || command.contains(" " + failPrefix)) {
-        throw new IOException("simulated flush failure: " + command);
+        throw new IOException("simulated pre-delegation flush failure: " + command);
       }
       commands.add(command);
     }

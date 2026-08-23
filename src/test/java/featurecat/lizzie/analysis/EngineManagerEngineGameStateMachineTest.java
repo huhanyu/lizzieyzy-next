@@ -2816,6 +2816,107 @@ class EngineManagerEngineGameStateMachineTest {
   }
 
   @Test
+  void failedStateCommandPoisonsDependentAnalysisUntilFreshStateRebuild() throws Exception {
+    installManager();
+    black.isKatago = true;
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze B 35");
+    black.processCommandResponseLineForTest("=");
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals(1, black.getBestMoves().size());
+
+    black.playMoveNoPonder(Stone.BLACK, "Q16");
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze W 36");
+
+    // Streaming output remains valid while the preceding state command is merely pending.
+    assertEquals("ORDINARY_CURRENT", black.analysisOutputRouteForTest());
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals(1, black.getBestMoves().size());
+
+    black.processCommandResponseLineForTest("? illegal move");
+
+    assertEquals("EXACT_RETIRED", black.analysisOutputRouteForTest());
+    assertTrue(black.getBestMoves().isEmpty());
+    assertEquals(0, black.getBestMovesPlayouts());
+
+    // Neither the dependent analysis acknowledgement nor an unrelated command can revive the
+    // poisoned position lineage.
+    black.processCommandResponseLineForTest("=");
+    black.sendCommandNoLeelaz2("name");
+    black.processCommandResponseLineForTest("=");
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals("EXACT_RETIRED", black.analysisOutputRouteForTest());
+    assertTrue(black.getBestMoves().isEmpty());
+
+    // A full state replacement deliberately starts a clean lineage; its successor may stream
+    // before the clear_board acknowledgement just like a normal pending state command.
+    black.sendCommandNoLeelaz2("clear_board");
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze B 37");
+    assertEquals("ORDINARY_CURRENT", black.analysisOutputRouteForTest());
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals(1, black.getBestMoves().size());
+    assertEquals(40, black.getBestMovesPlayouts());
+    black.processCommandResponseLineForTest("=");
+    black.processCommandResponseLineForTest("=");
+  }
+
+  @Test
+  void timedOutStateCommandPoisonsAndClearsDependentAnalysis() throws Exception {
+    installManager();
+    black.isKatago = true;
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze B 38");
+    black.processCommandResponseLineForTest("=");
+    Runnable playResponse = () -> {};
+
+    black.sendCommandWithResponseForTest("play B Q16", playResponse);
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze W 39");
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals("ORDINARY_CURRENT", black.analysisOutputRouteForTest());
+    assertEquals(1, black.getBestMoves().size());
+
+    black.retireTimedOutNormalCommandForTest(playResponse);
+
+    assertEquals("EXACT_RETIRED", black.analysisOutputRouteForTest());
+    assertTrue(black.getBestMoves().isEmpty());
+    assertEquals(0, black.getBestMovesPlayouts());
+    black.processCommandResponseLineForTest("=");
+  }
+
+  @Test
+  void suppressedStateTimeoutPoisonsWithoutRetrySpin() throws Exception {
+    installManager();
+    black.isKatago = true;
+    Runnable playResponse = () -> {};
+    black.sendCommandWithResponseForTest("play B Q16", playResponse);
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze W 40");
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals(1, black.getBestMoves().size());
+    black.suppressGlobalEnginePresentationForTest();
+    assertTrue(black.suppressesGlobalEnginePresentation(black.analysisReaderBindingForTest()));
+    AtomicReference<Throwable> timeoutFailure = new AtomicReference<>();
+    Thread timeout =
+        new Thread(
+            () -> {
+              try {
+                black.retireTimedOutNormalCommandForTest(playResponse);
+              } catch (Throwable failure) {
+                timeoutFailure.set(failure);
+              }
+            },
+            "suppressed-state-timeout");
+    timeout.setDaemon(true);
+
+    timeout.start();
+    timeout.join(2_000L);
+
+    assertFalse(timeout.isAlive(), "suppressed state failure must not spin on hidden ownership");
+    assertNull(timeoutFailure.get());
+    assertEquals("EXACT_RETIRED", black.analysisOutputRouteForTest());
+    assertTrue(black.getBestMoves().isEmpty());
+    assertEquals(0, black.getBestMovesPlayouts());
+    black.processCommandResponseLineForTest("=");
+  }
+
+  @Test
   void clearCallerCannotEraseSuccessorPublishedBeforeItsReturn() throws Exception {
     installManager();
     black.isKatago = true;
@@ -2934,6 +3035,22 @@ class EngineManagerEngineGameStateMachineTest {
             }));
     assertFalse(settlementRan.get());
     assertSame(recoveryToken, black.analysisOutputRecoveryTokenForTest());
+  }
+
+  @Test
+  void exactRecoveryAuthorizationNeverContaminatesReplacementBinding() {
+    installManager();
+    Object staleBinding = black.analysisReaderBindingForTest();
+    black.bindLiveRuntime();
+    Object replacementBinding = black.analysisReaderBindingForTest();
+    Object recoveryToken = new Object();
+
+    assertNotSame(staleBinding, replacementBinding);
+    assertNull(
+        black.authorizeAnalysisOutputRecoveryForExactBinding(
+            staleBinding, recoveryToken));
+    assertSame(replacementBinding, black.analysisReaderBindingForTest());
+    assertNull(black.analysisOutputRecoveryTokenForTest());
   }
 
   @Test
@@ -3245,7 +3362,8 @@ class EngineManagerEngineGameStateMachineTest {
 
   @Test
   void numberedGenmoveResignKeepsKataScoreOnPublishingParticipant() throws Exception {
-    ImmediateUiEngineManager manager = installManager();
+    StopCommentEngineManager manager =
+        installManager(new StopCommentEngineManager(allEngines()));
     EngineGameInfo game = gameInfo();
     game.isGenmove = true;
     black.isKatago = true;
@@ -3256,7 +3374,11 @@ class EngineManagerEngineGameStateMachineTest {
     int commandId = firstCommandId(black.commandText());
 
     black.parseEngineGameLineForTest(kataAnalysisInfo());
-    black.parseEngineGameLineForTest("=" + commandId + " resign");
+    assertSame(
+        manager.stopAfterComment,
+        assertThrows(
+            AssertionError.class,
+            () -> black.parseEngineGameLineForTest("=" + commandId + " resign")));
 
     assertTrue(black.resigned);
     assertEquals(2.5, black.scoreMean, 0.0001);
@@ -3699,6 +3821,7 @@ class EngineManagerEngineGameStateMachineTest {
         activeTransaction(manager, gameInfo(), black, 0);
     Object failedIncarnation = black.currentEngineIncarnation();
     black.enableDeferredRecoveryStart = true;
+    black.sendDeferredRecoveryBootstrapStateCommand = true;
 
     manager.restartUnresponsiveRemoteEngine(black, 0);
 
@@ -3720,12 +3843,18 @@ class EngineManagerEngineGameStateMachineTest {
     assertEquals(1, black.deferredRecoveryStartCount.get());
     Object replacementIncarnation = black.currentEngineIncarnation();
     assertNotSame(failedIncarnation, replacementIncarnation);
+    assertTrue(
+        black.recoveryTransport.commands().contains("komi 6.25"),
+        black.recoveryTransport.commands().toString());
     assertTrue(black.suppressesGlobalEnginePresentation(replacementIncarnation));
     assertTrue(EngineManager.hasEngineGameAnalysisOutputBarrier());
     assertNull(EngineManager.beginEngineGameTransaction(manager, gameInfo(), null, true));
 
     manager.releaseStage(EngineManager.DeferredEngineGameRecoveryStage.READINESS);
     assertTrue(manager.stageEntered(EngineManager.DeferredEngineGameRecoveryStage.CONFIRMATION));
+    List<String> recoveryCommands = black.recoveryTransport.commands();
+    assertTrue(recoveryCommands.contains("komi 7.5"), recoveryCommands.toString());
+    assertTrue(recoveryCommands.contains("clear_board"), recoveryCommands.toString());
     int quarantinedMoveCount = black.getBestMoves().size();
     black.parseStartupCommandResponseForTest(
         "info move D4 visits 100 winrate 5000 prior 1000 order 0 pv D4");
@@ -3738,6 +3867,7 @@ class EngineManagerEngineGameStateMachineTest {
     assertTrue(manager.recoveryFinished.await(2, TimeUnit.SECONDS));
     assertFalse(EngineManager.hasDeferredEngineGameRecoveryGateForTest());
     assertFalse(EngineManager.hasEngineGameAnalysisOutputBarrier());
+    assertNull(black.analysisOutputRecoveryTokenForTest());
     assertFalse(black.suppressesGlobalEnginePresentation(replacementIncarnation));
     assertTrue(
         EngineManager.runIfNoEngineGameAnalysisOutputBarrier(
@@ -4645,6 +4775,7 @@ class EngineManagerEngineGameStateMachineTest {
     private final AtomicInteger forceQuitAttempts = new AtomicInteger();
     private final AtomicInteger successfulForceQuits = new AtomicInteger();
     private volatile boolean enableDeferredRecoveryStart;
+    private volatile boolean sendDeferredRecoveryBootstrapStateCommand;
     private volatile boolean throwAfterDeferredRecoveryBinding;
     private volatile boolean deferredRecoveryIsolationObserved;
     private volatile boolean runStartupPostActionsInline;
@@ -4663,6 +4794,7 @@ class EngineManagerEngineGameStateMachineTest {
       installFreshCommandOutputForTest(commandOutput);
       started = true;
       isLoaded = true;
+      isNormalEnd = false;
     }
 
     private void bindLiveRuntime(OutputStream output) {
@@ -4671,6 +4803,7 @@ class EngineManagerEngineGameStateMachineTest {
       installFreshCommandOutputForTest(output);
       started = true;
       isLoaded = true;
+      isNormalEnd = false;
     }
 
     private String commandText() {
@@ -4693,6 +4826,9 @@ class EngineManagerEngineGameStateMachineTest {
           ExactSnapshotRestoreProtocolFixture.install(
               this, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
       deferredRecoveryIsolationObserved = Leelaz.isDeferredEngineGameRecoveryStartup();
+      if (sendDeferredRecoveryBootstrapStateCommand) {
+        sendCommandNoLeelaz2("komi 6.25");
+      }
       if (throwAfterDeferredRecoveryBinding) {
         throw new AssertionError("controlled recovery failure after reader publication");
       }

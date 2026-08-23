@@ -1200,20 +1200,26 @@ public class Leelaz {
     return Boolean.TRUE.equals(deferredEngineGameRecoveryStartupContext.get());
   }
 
-  void startDeferredEngineGameRecovery(UpdateEngineStartAttempt attempt, int index)
-      throws IOException {
-    if (attempt == null || attempt.owner() != this) {
-      throw new IllegalArgumentException("attempt");
+  void startDeferredEngineGameRecovery(
+      UpdateEngineStartAttempt attempt, Object recoveryToken, int index) throws IOException {
+    if (attempt == null || attempt.owner() != this || recoveryToken == null) {
+      throw new IllegalArgumentException("attempt/recoveryToken");
     }
-    Boolean previous = deferredEngineGameRecoveryStartupContext.get();
+    Boolean previousDeferredRecovery = deferredEngineGameRecoveryStartupContext.get();
+    Object previousAnalysisRecovery = analysisOutputRecoveryTokenContext.get();
+    if (Boolean.TRUE.equals(previousDeferredRecovery) || previousAnalysisRecovery != null) {
+      throw new IllegalStateException("Nested deferred analysis-output recovery start");
+    }
     deferredEngineGameRecoveryStartupContext.set(Boolean.TRUE);
+    analysisOutputRecoveryTokenContext.set(recoveryToken);
     try {
       attempt.startEngine(index);
     } finally {
-      if (previous == null) {
+      analysisOutputRecoveryTokenContext.remove();
+      if (previousDeferredRecovery == null) {
         deferredEngineGameRecoveryStartupContext.remove();
       } else {
-        deferredEngineGameRecoveryStartupContext.set(previous);
+        deferredEngineGameRecoveryStartupContext.set(previousDeferredRecovery);
       }
     }
   }
@@ -2908,16 +2914,24 @@ public class Leelaz {
 
   /**
    * Attaches one manager-owned recovery capability to the exact current reader. A freshly started
-   * reader already receives this token from {@link #startEngineForAnalysisOutputRecovery}; this
-   * path also covers a still-live rollback engine whose stream did not need replacement.
+   * reader already receives this token from the failed-switch or deferred engine-game recovery
+   * startup context; this path also covers a still-live rollback engine whose stream did not need
+   * replacement.
    */
   Object authorizeAnalysisOutputRecoveryForCurrentBinding(Object recoveryToken) {
-    if (recoveryToken == null) {
+    return authorizeAnalysisOutputRecoveryForExactBinding(
+        captureEngineIncarnationFence(), recoveryToken);
+  }
+
+  /** Attaches a recovery capability only if the caller's exact reader is still current. */
+  Object authorizeAnalysisOutputRecoveryForExactBinding(
+      Object expectedIncarnation, Object recoveryToken) {
+    if (!(expectedIncarnation instanceof ReaderStreamBinding) || recoveryToken == null) {
       return null;
     }
     synchronized (engineArbitrationLock()) {
-      ReaderStreamBinding binding = readerStreamBinding;
-      if (binding == null
+      ReaderStreamBinding binding = (ReaderStreamBinding) expectedIncarnation;
+      if (readerStreamBinding != binding
           || binding.terminated
           || binding.readerShutdownRequested
           || binding.output == null
@@ -2974,7 +2988,8 @@ public class Leelaz {
       }
       if (promotedFreshOwner) {
         binding.analysisOutputOwnership.set(
-            AnalysisOutputOwnership.ordinary(analysisOutputGeneration.get()));
+            AnalysisOutputOwnership.ordinary(
+                analysisOutputGeneration.get(), binding.analysisStateLineage));
         binding.suppressGlobalEnginePresentation = false;
         suppressGlobalEnginePresentationUntilOwned = false;
       }
@@ -3978,6 +3993,23 @@ public class Leelaz {
     }
   }
 
+  /**
+   * Failure lineage for position-dependent output on one reader incarnation. Pending state
+   * commands leave the lineage usable so streaming analysis can start immediately; a known failed
+   * state command poisons every dependent owner until a full state rebuild starts a fresh lineage.
+   */
+  private static final class AnalysisStateLineage {
+    private final AtomicBoolean failed = new AtomicBoolean();
+
+    private boolean fail() {
+      return failed.compareAndSet(false, true);
+    }
+
+    private boolean isFailed() {
+      return failed.get();
+    }
+  }
+
   private static final class ReaderStreamBinding {
     private final BufferedReader stdout;
     private final BufferedReader stderr;
@@ -4005,6 +4037,7 @@ public class Leelaz {
     private final ReentrantLock analysisOutputMutationLock = new ReentrantLock();
     private final AtomicReference<AnalysisOutputOwnership> analysisOutputOwnership =
         new AtomicReference<>();
+    private volatile AnalysisStateLineage analysisStateLineage = new AnalysisStateLineage();
     private int linesInProgress;
     private int startupPostActionsInProgress;
     private final List<StartupCommandDelivery> startupCommandDeliveries = new ArrayList<>();
@@ -4098,30 +4131,39 @@ public class Leelaz {
     private final boolean ordinary;
     private final Object recoveryToken;
     private final long generation;
+    private final AnalysisStateLineage analysisStateLineage;
 
     private AnalysisOutputOwnership(
         EngineManager.EngineGamePrimaryContext exactContext,
         boolean ordinary,
         Object recoveryToken,
-        long generation) {
+        long generation,
+        AnalysisStateLineage analysisStateLineage) {
       this.exactContext = exactContext;
       this.ordinary = ordinary;
       this.recoveryToken = recoveryToken;
       this.generation = generation;
+      this.analysisStateLineage = analysisStateLineage;
     }
 
     private static AnalysisOutputOwnership exact(
-        EngineManager.EngineGamePrimaryContext context, long generation) {
-      return new AnalysisOutputOwnership(context, false, null, generation);
+        EngineManager.EngineGamePrimaryContext context,
+        long generation,
+        AnalysisStateLineage analysisStateLineage) {
+      return new AnalysisOutputOwnership(
+          context, false, null, generation, analysisStateLineage);
     }
 
-    private static AnalysisOutputOwnership ordinary(long generation) {
-      return new AnalysisOutputOwnership(null, true, null, generation);
+    private static AnalysisOutputOwnership ordinary(
+        long generation, AnalysisStateLineage analysisStateLineage) {
+      return new AnalysisOutputOwnership(
+          null, true, null, generation, analysisStateLineage);
     }
 
     private static AnalysisOutputOwnership recoveryTombstone(
-        Object recoveryToken, long generation) {
-      return new AnalysisOutputOwnership(null, false, recoveryToken, generation);
+        Object recoveryToken, long generation, AnalysisStateLineage analysisStateLineage) {
+      return new AnalysisOutputOwnership(
+          null, false, recoveryToken, generation, analysisStateLineage);
     }
 
     private boolean isExact() {
@@ -4134,6 +4176,10 @@ public class Leelaz {
 
     private boolean isRecoveryTombstone(Object expectedRecoveryToken) {
       return expectedRecoveryToken != null && recoveryToken == expectedRecoveryToken;
+    }
+
+    private boolean hasFailedAnalysisStateLineage() {
+      return analysisStateLineage != null && analysisStateLineage.isFailed();
     }
   }
 
@@ -5738,6 +5784,107 @@ public class Leelaz {
     return AnalysisStateMutation.NONE;
   }
 
+  /** Commands that fully replace the engine position and therefore start a clean dependency. */
+  private boolean startsFreshAnalysisStateLineage(String command) {
+    if (command == null) {
+      return false;
+    }
+    String normalized = command.trim().toLowerCase(Locale.ROOT);
+    return normalized.equals("clear_board")
+        || normalized.startsWith("loadsgf ")
+        || normalized.equals("set_position")
+        || normalized.startsWith("set_position ")
+        || normalized.startsWith("boardsize ")
+        || normalized.startsWith("rectangular_boardsize ")
+        || normalized.startsWith("fixed_handicap ")
+        || normalized.startsWith("place_free_handicap ")
+        || normalized.startsWith("set_free_handicap ");
+  }
+
+  /** Requires the binding's analysis-output mutation lock at the physical state-write boundary. */
+  private void bindAnalysisStateLineageAtPhysicalWrite(
+      QueuedCommand command, ReaderStreamBinding binding) {
+    AnalysisStateLineage lineage = binding.analysisStateLineage;
+    if (lineage == null || startsFreshAnalysisStateLineage(command.command)) {
+      lineage = new AnalysisStateLineage();
+      binding.analysisStateLineage = lineage;
+    }
+    command.bindAnalysisStateLineage(lineage, binding);
+  }
+
+  /**
+   * Permanently poisons one physically written state lineage. If it still owns current analysis,
+   * the same manager admission used by parser commits makes failure publication atomic with a
+   * final payload clear. A raced successor on the same lineage is retried; a full rebuild owns a
+   * different lineage and is deliberately left intact.
+   */
+  private void failAnalysisStateLineage(QueuedCommand command) {
+    AnalysisStateLineage lineage = command == null ? null : command.analysisStateLineage();
+    if (lineage == null || lineage.isFailed()) {
+      return;
+    }
+    ReaderStreamBinding responseBinding = command.analysisStateResponseBinding();
+    boolean resetScore =
+        analysisStateMutation(command.command) == AnalysisStateMutation.RESET_PAYLOAD_AND_SCORE;
+    while (!lineage.isFailed()) {
+      AnalysisOutputRoute route = analysisOutputRoute(responseBinding);
+      AnalysisOutputOwnership ownership =
+          route.ownerToken instanceof AnalysisOutputOwnership
+              ? (AnalysisOutputOwnership) route.ownerToken
+              : null;
+      if (route.acceptsInfoLine()
+          && ownership != null
+          && ownership.analysisStateLineage == lineage) {
+        if (runIfCurrentAnalysisOutputRoute(
+            route,
+            () -> {
+              if (lineage.fail()) {
+                resetAnalysisInfoPayload(resetScore);
+              }
+            })) {
+          return;
+        }
+        continue;
+      }
+
+      ReaderStreamBinding binding = responseBinding;
+      boolean retryCurrentOwner = false;
+      if (binding != null) {
+        binding.analysisOutputMutationLock.lock();
+        try {
+          boolean currentLineage =
+              readerStreamBinding == binding
+                  && !binding.terminated
+                  && binding.analysisStateLineage == lineage;
+          AnalysisOutputOwnership currentOwnership = binding.analysisOutputOwnership.get();
+          // A successor may have published between the route snapshot above and this binding
+          // fence. Retry so its manager admission drains any parser that already passed the
+          // owner check before the lineage is poisoned.
+          retryCurrentOwner =
+              currentLineage
+                  && route.binding == binding
+                  && currentOwnership != null
+                  && currentOwnership != ownership
+                  && currentOwnership.analysisStateLineage == lineage
+                  && !currentOwnership.hasFailedAnalysisStateLineage();
+          if (!retryCurrentOwner && lineage.fail() && currentLineage) {
+            // Keep the reset inside the binding fence: a fresh full-state rebuild cannot replace
+            // the lineage and publish a new payload between this decision and the clear.
+            resetAnalysisInfoPayload(resetScore);
+          }
+        } finally {
+          binding.analysisOutputMutationLock.unlock();
+        }
+      } else {
+        lineage.fail();
+      }
+      if (retryCurrentOwner) {
+        continue;
+      }
+      return;
+    }
+  }
+
   private boolean shouldPublishAnalysisOutputOwnership(
       QueuedCommand command, ReaderStreamBinding binding) {
     if (command == null || binding == null || !isAnalysisOutputOwnershipCommand(command.command)) {
@@ -5785,11 +5932,15 @@ public class Leelaz {
           == EngineManager.TransactionlessAnalysisWriteKind.RECOVERY_TOMBSTONE) {
         replacement =
             AnalysisOutputOwnership.recoveryTombstone(
-                transactionlessLease.recoveryToken, analysisOutputGeneration.get());
+                transactionlessLease.recoveryToken,
+                analysisOutputGeneration.get(),
+                binding.analysisStateLineage);
         binding.suppressGlobalEnginePresentation = true;
         suppressGlobalEnginePresentationUntilOwned = true;
       } else {
-        replacement = AnalysisOutputOwnership.ordinary(analysisOutputGeneration.get());
+        replacement =
+            AnalysisOutputOwnership.ordinary(
+                analysisOutputGeneration.get(), binding.analysisStateLineage);
         binding.suppressGlobalEnginePresentation = false;
         suppressGlobalEnginePresentationUntilOwned = false;
       }
@@ -5806,7 +5957,8 @@ public class Leelaz {
           "engine-game analysis output lost ownership before physical command output");
     }
     AnalysisOutputOwnership replacement =
-        AnalysisOutputOwnership.exact(exactContext, analysisOutputGeneration.get());
+        AnalysisOutputOwnership.exact(
+            exactContext, analysisOutputGeneration.get(), binding.analysisStateLineage);
     AnalysisOutputOwnership previous = binding.analysisOutputOwnership.get();
     boolean previousBindingSuppression = binding.suppressGlobalEnginePresentation;
     boolean previousPersistentSuppression = suppressGlobalEnginePresentationUntilOwned;
@@ -5878,6 +6030,10 @@ public class Leelaz {
           null,
           null);
     }
+    if (ownership.hasFailedAnalysisStateLineage()) {
+      return new AnalysisOutputRoute(
+          AnalysisOutputRouteKind.EXACT_RETIRED, null, binding, ownership, null);
+    }
     if (ownership.generation != analysisOutputGeneration.get()) {
       return new AnalysisOutputRoute(
           AnalysisOutputRouteKind.EXACT_RETIRED, null, binding, ownership, null);
@@ -5927,6 +6083,7 @@ public class Leelaz {
     AnalysisOutputOwnership ownership = expected.binding.analysisOutputOwnership.get();
     return expected.ownerToken != null
         && ownership == expected.ownerToken
+        && !ownership.hasFailedAnalysisStateLineage()
         && ownership.generation == analysisOutputGeneration.get();
   }
 
@@ -11700,6 +11857,7 @@ public class Leelaz {
                 // Retire and clear/advance the old payload before the first state-command byte is
                 // observable. The manager lease prevents an already-admitted parser mutation from
                 // crossing this boundary, and caller-side cleanup cannot retire a queued successor.
+                bindAnalysisStateLineageAtPhysicalWrite(queuedCommand, outputBinding);
                 applyAnalysisStateMutation(stateMutation);
                 if (exactStateWrite != null) {
                   // Exact terminal cancellation must never wait for a blocked transport flush.
@@ -11747,6 +11905,7 @@ public class Leelaz {
         RuntimeException commandFailure = buildCommandSendFailure(commandLine, detail, e);
         Throwable cleanupFailure = e;
         if (!physicalWriteCompleted) {
+          queuedCommand.failAnalysisStateLineageAfterSendFailure();
           // Publish delivery failure before any diagnostic or stream-recovery callback can throw.
           // Startup workers may be waiting on this exact write and must never strand their lease.
           cleanupFailure =
@@ -12433,6 +12592,9 @@ public class Leelaz {
         }
       }
     }
+    if (retiredPending != null) {
+      failAnalysisStateLineage(retiredPending.queuedCommand);
+    }
     if (retiredQueued != null) {
       try {
         retiredQueued.publishSettlementFailure(failure);
@@ -12808,6 +12970,7 @@ public class Leelaz {
     boolean ignoreResponse;
     boolean settleOnlyStaleBootstrapResponse = false;
     boolean foregroundRestoreResponseError = false;
+    QueuedCommand failedAnalysisStateCommand = null;
     currentCommandResponseLine = line == null ? "" : line;
     currentCommandResponseError = line != null && line.startsWith("?");
     try {
@@ -12860,6 +13023,14 @@ public class Leelaz {
                   && line != null
                   && line.trim().startsWith("?")
                   && matchedPendingHandler.queuedCommand.foregroundRestoreCommand;
+          if (!ignoreResponse
+              && matchedPendingHandler != null
+              && !matchedPendingHandler.isOutstandingResponseRetired()
+              && currentCommandResponseError
+              && analysisStateMutation(matchedPendingHandler.queuedCommand.command)
+                  != AnalysisStateMutation.NONE) {
+            failedAnalysisStateCommand = matchedPendingHandler.queuedCommand;
+          }
           if ((!ignoreResponse || settleOnlyStaleBootstrapResponse)
               && (matchedPendingHandler == null
                   || !matchedPendingHandler.isOutstandingResponseRetired())) {
@@ -12869,6 +13040,9 @@ public class Leelaz {
             }
           }
         }
+      }
+      if (failedAnalysisStateCommand != null) {
+        failAnalysisStateLineage(failedAnalysisStateCommand);
       }
       if (settleOnlyStaleBootstrapResponse) {
         matchedPendingHandler.settleWithoutBusinessCallback();
@@ -17948,6 +18122,8 @@ public class Leelaz {
     private boolean stateResetAfterOutputWritePublished;
     private boolean outstandingResponseRetired;
     private boolean commandCountRetired;
+    private volatile AnalysisStateLineage analysisStateLineage;
+    private volatile ReaderStreamBinding analysisStateResponseBinding;
 
     private QueuedCommand(
         String command,
@@ -17992,6 +18168,27 @@ public class Leelaz {
 
     private boolean isTrackedLoadSgf() {
       return isTrackedExactSnapshotRestoreCommand(command) && onSendFailure != null;
+    }
+
+    private void bindAnalysisStateLineage(
+        AnalysisStateLineage lineage, ReaderStreamBinding responseBinding) {
+      analysisStateLineage = lineage;
+      analysisStateResponseBinding = responseBinding;
+    }
+
+    private AnalysisStateLineage analysisStateLineage() {
+      return analysisStateLineage;
+    }
+
+    private ReaderStreamBinding analysisStateResponseBinding() {
+      return analysisStateResponseBinding;
+    }
+
+    private void failAnalysisStateLineageAfterSendFailure() {
+      AnalysisStateLineage lineage = analysisStateLineage;
+      if (lineage != null) {
+        lineage.fail();
+      }
     }
 
     private boolean requiresStateReset() {
