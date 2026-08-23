@@ -2,6 +2,7 @@ package featurecat.lizzie.rules;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.gui.LizzieFrame;
 import java.util.*;
@@ -354,6 +355,39 @@ public class BoardData {
       int totalplayouts,
       List<Double> estimateArray,
       boolean forceOverride) {
+    return tryToSetBestMovesWithStatusFromEngine(
+        moves,
+        engName,
+        isFromLeelaz ? Lizzie.leelaz : null,
+        totalplayouts,
+        estimateArray,
+        forceOverride);
+  }
+
+  /**
+   * Publishes main-analysis metadata from an explicit engine owner. This avoids routing delayed
+   * exact-engine output through whichever engine happens to be globally primary at publication
+   * time.
+   */
+  public boolean tryToSetBestMovesFromEngine(
+      List<MoveData> moves,
+      String engName,
+      Leelaz sourceEngine,
+      int totalplayouts,
+      List<Double> estimateArray,
+      boolean forceOverride) {
+    return tryToSetBestMovesWithStatusFromEngine(
+        moves, engName, sourceEngine, totalplayouts, estimateArray, forceOverride);
+  }
+
+  private boolean tryToSetBestMovesWithStatusFromEngine(
+      List<MoveData> moves,
+      String engName,
+      Leelaz sourceEngine,
+      int totalplayouts,
+      List<Double> estimateArray,
+      boolean forceOverride) {
+    Leelaz metadataEngine = sourceEngine != null ? sourceEngine : Lizzie.leelaz;
     if (moves == null || moves.isEmpty()) {
       return false;
     }
@@ -361,7 +395,9 @@ public class BoardData {
         && Lizzie.config.enableLizzieCache
         && !Lizzie.config.isAutoAna
         && !EngineManager.isEngineGame) {
-      if (!(totalplayouts > playouts || isChanged || pda != Lizzie.leelaz.pda)) {
+      if (!(totalplayouts > playouts
+          || isChanged
+          || (metadataEngine != null && pda != metadataEngine.pda))) {
         if (estimateArray == null || this.estimateArray != null) return false;
       }
     }
@@ -374,22 +410,20 @@ public class BoardData {
     if (moves.get(0).isKataData) {
       scoreMean = moves.get(0).scoreMean;
       scoreStdev = moves.get(0).scoreStdev;
-      if (isFromLeelaz) {
-        Lizzie.leelaz.scoreMean = moves.get(0).scoreMean;
-        Lizzie.leelaz.scoreStdev = moves.get(0).scoreStdev;
-      }
       isKataData = true;
     } else isKataData = false;
     isSaiData = moves.get(0).isSaiData;
     engineName = engName;
     komi = Lizzie.board.getHistory().getGameInfo().getKomi();
-    if (isFromLeelaz) {
-      if (Lizzie.leelaz.isDymPda || Lizzie.leelaz.pda != 0) {
-        pda = Lizzie.leelaz.pda;
+    if (sourceEngine != null) {
+      if (sourceEngine.isDymPda || sourceEngine.pda != 0) {
+        pda = sourceEngine.pda;
       } else pda = 0;
     }
-    if (!(EngineManager.isEngineGame && EngineManager.engineGameInfo.isGenmove))
-      wrn = Lizzie.leelaz.wrn;
+    if (!(EngineManager.isEngineGame && EngineManager.engineGameInfo.isGenmove)
+        && metadataEngine != null) {
+      wrn = metadataEngine.wrn;
+    }
     analysisHeaderSlots = 0;
     // 排序
     Collections.sort(
@@ -464,11 +498,38 @@ public class BoardData {
       boolean isFromLeelaz,
       int totalplayouts,
       List<Double> estimateArray) {
+    tryToSetBestMoves2FromEngine(
+        moves,
+        engName,
+        isFromLeelaz,
+        isFromLeelaz ? Lizzie.leelaz2 : null,
+        totalplayouts,
+        estimateArray);
+  }
+
+  /** Secondary-display counterpart of {@link #tryToSetBestMovesFromEngine}. */
+  public void tryToSetBestMoves2FromEngine(
+      List<MoveData> moves,
+      String engName,
+      Leelaz sourceEngine,
+      int totalplayouts,
+      List<Double> estimateArray) {
+    tryToSetBestMoves2FromEngine(
+        moves, engName, true, sourceEngine, totalplayouts, estimateArray);
+  }
+
+  private void tryToSetBestMoves2FromEngine(
+      List<MoveData> moves,
+      String engName,
+      boolean isFromLeelaz,
+      Leelaz metadataEngine,
+      int totalplayouts,
+      List<Double> estimateArray) {
     if (Lizzie.config.enableLizzieCache && !Lizzie.config.isAutoAna) {
       if (!(totalplayouts > playouts2
           || isChanged2
-          || pda != Lizzie.leelaz.pda)) { // ||Lizzie.frame.urlSgf
-        if (estimateArray == null || this.estimateArray != null) return;
+          || (metadataEngine != null && pda2 != metadataEngine.pda))) { // ||Lizzie.frame.urlSgf
+        if (estimateArray == null || this.estimateArray2 != null) return;
       }
     }
     if (totalplayouts < playouts2) isChanged2 = false;
@@ -478,17 +539,13 @@ public class BoardData {
     if (moves.get(0).isKataData) {
       scoreMean2 = moves.get(0).scoreMean;
       scoreStdev2 = moves.get(0).scoreStdev;
-      if (Lizzie.leelaz2 != null && isFromLeelaz) {
-        Lizzie.leelaz2.scoreMean = moves.get(0).scoreMean;
-        Lizzie.leelaz2.scoreStdev = moves.get(0).scoreStdev;
-      }
       isKataData2 = true;
     } else isKataData2 = false;
     isSaiData2 = moves.get(0).isSaiData;
     engineName2 = engName;
     if (isFromLeelaz) {
-      if (Lizzie.leelaz2 != null && (Lizzie.leelaz2.isDymPda || Lizzie.leelaz2.pda != 0)) {
-        pda2 = Lizzie.leelaz2.pda;
+      if (metadataEngine != null && (metadataEngine.isDymPda || metadataEngine.pda != 0)) {
+        pda2 = metadataEngine.pda;
       } else pda2 = 0;
     }
     analysisHeaderSlots2 = 0;
@@ -676,14 +733,6 @@ public class BoardData {
   public void tryToClearBestMoves() {
     clearPrimaryAnalysisPayloadState();
     clearSecondaryAnalysisPayloadState();
-    if (Lizzie.leelaz.isKatago) {
-      Lizzie.leelaz.scoreMean = 0;
-      Lizzie.leelaz.scoreStdev = 0;
-    }
-    if (Lizzie.leelaz2 != null && Lizzie.leelaz2.isKatago) {
-      Lizzie.leelaz2.scoreMean = 0;
-      Lizzie.leelaz2.scoreStdev = 0;
-    }
   }
 
   /**

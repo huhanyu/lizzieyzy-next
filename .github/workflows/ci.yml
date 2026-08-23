@@ -44,6 +44,10 @@ jobs:
         shell: pwsh
         run: python scripts/test_prepare_bundled_jcef.py
 
+      - name: Verify bundled NVIDIA runtime packaging
+        shell: pwsh
+        run: python scripts/test_prepare_bundled_nvidia_runtime.py
+
       - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
@@ -74,13 +78,17 @@ jobs:
           "-Dtest=PlatformCredentialStoreTest,RemoteComputeConfigTest,MigratingCredentialStoreTest"
           test
 
-      - name: Run full Windows unit suite
+      - name: Run full Windows verification gate
         shell: pwsh
         run: >-
           mvn -B "-Dfmt.skip=true"
           "-Djava.awt.headless=true"
           "-Dlizzie.work.dir=$env:RUNNER_TEMP\lizzieyzy-next-full-tests"
-          test
+          "-DskipTests=false"
+          "-DskipITs=false"
+          "-Dit.test=LoggingProviderSmokeIT"
+          "-Dfailsafe.failIfNoSpecifiedTests=true"
+          verify
 
   build:
     runs-on: ubuntu-latest
@@ -115,6 +123,7 @@ jobs:
             scripts/macos_katago_bundle.py \
             scripts/package_runtime_tools.py \
             scripts/prepare_bundled_jcef.py \
+            scripts/prepare_bundled_nvidia_runtime.py \
             scripts/publish_release_request.py \
             scripts/r2_release.py \
             scripts/summarize_jfr.py \
@@ -124,6 +133,7 @@ jobs:
             scripts/test_macos_drag_dmg_script.py \
             scripts/test_macos_bundle_version.py \
             scripts/test_macos_katago_bundle.py \
+            scripts/test_prepare_bundled_nvidia_runtime.py \
             scripts/test_publish_release_request.py \
             scripts/release_asset_provenance.py \
             scripts/test_release_asset_provenance.py \
@@ -144,6 +154,7 @@ jobs:
           python3 scripts/test_macos_katago_bundle.py
           bash scripts/test_prepare_bundled_katago.sh
           python3 scripts/test_prepare_bundled_jcef.py
+          python3 scripts/test_prepare_bundled_nvidia_runtime.py
           python3 -m unittest scripts.test_publish_release_request
           python3 -m unittest scripts.test_release_asset_provenance
           python3 -m unittest scripts.test_validate_release_notes
@@ -165,8 +176,12 @@ jobs:
             scripts/sign_macos_release_with_retry.sh \
             scripts/validate_release_assets.sh
 
-      - name: Run unit tests
-        run: mvn -B -Dfmt.skip=true test
-
-      - name: Build shaded jar
-        run: mvn -B -DskipTests package
+      - name: Run full Linux verification gate
+        run: >-
+          mvn -B -Dfmt.skip=true
+          -Djava.awt.headless=true
+          -DskipTests=false
+          -DskipITs=false
+          -Dit.test=LoggingProviderSmokeIT
+          -Dfailsafe.failIfNoSpecifiedTests=true
+          verify

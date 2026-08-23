@@ -10,11 +10,56 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JLayeredPane;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 
 class EngineStartupStatusTest {
+  @Test
+  void staleReadyListenerCannotOverwriteNewerFailureOnTheEdt() throws Exception {
+    CountingLizzieFrame frame = allocate(CountingLizzieFrame.class);
+    CountingLayeredPane basePanel = new CountingLayeredPane();
+    JFontButton statusButton = new JFontButton();
+    basePanel.add(statusButton, Integer.valueOf(12));
+    setField(LizzieFrame.class, frame, "basePanel", basePanel);
+    setField(LizzieFrame.class, frame, "engineStartupStatusButton", statusButton);
+
+    EngineStartupStatus status = new EngineStartupStatus();
+    status.checking("checking", "Checking");
+    CountDownLatch readyListenerEntered = new CountDownLatch(1);
+    CountDownLatch releaseReadyListener = new CountDownLatch(1);
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+    status.addListener(
+        snapshot -> {
+          try {
+            if (snapshot.state == EngineStartupStatus.State.READY) {
+              readyListenerEntered.countDown();
+              assertTrue(releaseReadyListener.await(2, TimeUnit.SECONDS));
+            }
+            invokeStatusUpdate(frame, snapshot);
+          } catch (Throwable problem) {
+            failure.compareAndSet(null, problem);
+          }
+        });
+
+    Thread staleReady = new Thread(status::ready, "stale-ready-publisher");
+    staleReady.start();
+    assertTrue(readyListenerEntered.await(2, TimeUnit.SECONDS));
+    status.failed("failed", "Failed", "newer failure");
+    releaseReadyListener.countDown();
+    staleReady.join(2_000L);
+    SwingUtilities.invokeAndWait(() -> {});
+
+    assertFalse(staleReady.isAlive());
+    assertEquals(null, failure.get());
+    assertEquals(EngineStartupStatus.State.START_FAILED, status.snapshot().state);
+    assertTrue(statusButton.isVisible(), "the newer failure must remain visible");
+    assertEquals("Failed", statusButton.getText());
+  }
+
   @Test
   void listenersReceiveCurrentAndFutureStates() {
     EngineStartupStatus status = new EngineStartupStatus();

@@ -1,5 +1,7 @@
 package featurecat.lizzie.analysis.remote;
 
+import featurecat.lizzie.logging.NetworkEndpointCategory;
+import featurecat.lizzie.logging.NetworkObservation;
 import featurecat.lizzie.util.NetworkProxy;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -87,18 +89,19 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
   private final GtpCommandOutputStream stdin = new GtpCommandOutputStream();
   private final AtomicLong queryCounter = new AtomicLong();
   private final AtomicBoolean open = new AtomicBoolean(false);
-  private final AtomicBoolean terminated = new AtomicBoolean(false);
+  private final AtomicBoolean gracefulCloseStarted = new AtomicBoolean(false);
+  private final AtomicBoolean abortStarted = new AtomicBoolean(false);
   private final StringBuilder incomingText = new StringBuilder();
   private final List<Move> initialStones = new ArrayList<>();
   private final List<Move> moves = new ArrayList<>();
 
-  private WebSocket webSocket;
+  private volatile WebSocket webSocket;
   private int boardWidth = DEFAULT_BOARD_SIZE;
   private int boardHeight = DEFAULT_BOARD_SIZE;
   private double komi = 7.5;
   private String rules = CHINESE_RULES;
   private QueryParameters queryParameters = QueryParameters.defaults();
-  private ActiveQuery activeQuery;
+  private volatile ActiveQuery activeQuery;
   private String snapshotInitialPlayer = "";
 
   public KataGoAnalysisWebSocketTransport(String remoteUrl) throws IOException {
@@ -123,6 +126,8 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
 
   @Override
   public void start() throws IOException {
+    long started = System.nanoTime();
+    boolean recorded = false;
     try {
       WebSocket connected =
           httpClient
@@ -131,19 +136,30 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
               .buildAsync(remoteUri, new Listener())
               .get(CONNECT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
       synchronized (this) {
-        if (terminated.get()) {
+        if (gracefulCloseStarted.get() || abortStarted.get()) {
           try {
-            connected.sendClose(WebSocket.NORMAL_CLOSURE, "closed during connect");
+            if (abortStarted.get()) {
+              connected.abort();
+            } else {
+              connected.sendClose(WebSocket.NORMAL_CLOSURE, "closed during connect");
+            }
           } catch (Exception ignored) {
           }
+          recordConnect("failed", started);
+          recorded = true;
           throw new IOException("自建算力在连接完成前已断开。");
         }
         webSocket = connected;
         open.set(true);
+        recordConnect("ok", started);
+        recorded = true;
         writeStderrLine("自建算力已连接：" + remoteUri);
       }
     } catch (Exception e) {
       open.set(false);
+      if (!recorded) {
+        recordConnect("failed", started);
+      }
       throw new IOException("连接自建算力失败，请检查 ws/wss 链接是否可用。", e);
     }
   }
@@ -175,21 +191,57 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
 
   @Override
   public void close() {
+    if (abortStarted.get() || !gracefulCloseStarted.compareAndSet(false, true)) {
+      return;
+    }
     terminateTransport(true);
   }
 
-  private synchronized void terminateTransport(boolean sendClose) {
-    if (!terminated.compareAndSet(false, true)) {
+  @Override
+  public void abort() {
+    if (!abortStarted.compareAndSet(false, true)) {
       return;
     }
+    terminateTransport(false);
+  }
+
+  private void terminateTransport(boolean sendClose) {
     open.set(false);
-    ActiveQuery query = activeQuery;
-    if (query != null) {
-      completeActiveQuery(query);
+    if (!sendClose) {
+      // The hard-abort path must not wait for a synchronized command/close callback that may itself
+      // be stalled in sendClose. This transport is terminal, so detach its exact socket and query
+      // first, then tear down the physical channel without entering the command monitor.
+      WebSocket current = webSocket;
+      webSocket = null;
+      ActiveQuery query = activeQuery;
+      if (query != null) {
+        query.completed = true;
+        if (activeQuery == query) {
+          activeQuery = null;
+        }
+      }
+      if (current != null) {
+        try {
+          current.abort();
+        } catch (Exception ignored) {
+        }
+      }
+      stdout.finish();
+      stderr.finish();
+      return;
     }
-    WebSocket current = webSocket;
-    webSocket = null;
-    if (sendClose && current != null) {
+    WebSocket current;
+    synchronized (this) {
+      ActiveQuery query = activeQuery;
+      if (query != null) {
+        completeActiveQuery(query);
+      }
+      current = webSocket;
+      // Keep a graceful close's socket reachable until the peer confirms closure or a force
+      // escalation captures it. sendClose only queues a handshake and must not make abort lose the
+      // exact physical socket while that handshake is still pending.
+    }
+    if (current != null) {
       try {
         current.sendClose(WebSocket.NORMAL_CLOSURE, "bye");
       } catch (Exception ignored) {
@@ -335,8 +387,10 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
         buildAnalysisQuery(
             queryId, genmove, ownership, intervalCentisec, player, queryContext.parameterSnapshot);
     try {
+      String payload = query.toString();
+      NetworkObservation.tracePayload(NetworkEndpointCategory.PROTOCOL, "send", () -> payload);
       current
-          .sendText(query.toString(), true)
+          .sendText(payload, true)
           .whenComplete((ignored, failure) -> completeAnalysisSend(queryContext, failure));
     } catch (RuntimeException failure) {
       failActiveQuery(queryContext, "发送分析请求失败：" + summarize(failure.getMessage()));
@@ -895,8 +949,10 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
       terminate.put("action", "terminate");
       terminate.put("terminateId", query.queryId);
       try {
+        String payload = terminate.toString();
+        NetworkObservation.tracePayload(NetworkEndpointCategory.PROTOCOL, "send", () -> payload);
         current
-            .sendText(terminate.toString(), true)
+            .sendText(payload, true)
             .whenComplete((ignored, failure) -> completeTerminateSend(query, failure));
       } catch (RuntimeException failure) {
         completeTerminateSend(query, failure);
@@ -922,7 +978,7 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
       writeError(query.gtpResponseId, diagnostic);
     }
     completeActiveQuery(query);
-    terminateTransport(true);
+    close();
   }
 
   private void failProtocol(String diagnostic) {
@@ -932,7 +988,7 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
       return;
     }
     writeStderrLine(diagnostic);
-    terminateTransport(true);
+    close();
   }
 
   private void completeStoppedQueryIfReady(ActiveQuery query) {
@@ -1011,6 +1067,17 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
 
   private void writeStderrLine(String line) {
     stderr.append(("[remote-ws] " + line + "\n").getBytes(StandardCharsets.UTF_8));
+  }
+
+  private void recordConnect(String outcome, long startedNanos) {
+    NetworkObservation.recordNetwork(
+        "WS",
+        remoteUri.getHost(),
+        NetworkEndpointCategory.PROTOCOL,
+        null,
+        Math.max(0L, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)),
+        outcome,
+        NetworkObservation.newRequestIdentity());
   }
 
   private static String safeResponseId(String responseId) {
@@ -1216,6 +1283,7 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
         if (last) {
           String message = incomingText.toString();
           incomingText.setLength(0);
+          NetworkObservation.tracePayload(NetworkEndpointCategory.PROTOCOL, "recv", () -> message);
           handleWebSocketMessage(message);
         }
       }
@@ -1226,14 +1294,14 @@ public class KataGoAnalysisWebSocketTransport implements EngineTransport {
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
       writeStderrLine("自建算力连接已断开：" + statusCode + " " + reason);
-      terminateTransport(false);
+      abort();
       return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
     }
 
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
       writeStderrLine("自建算力连接错误：" + (error == null ? "unknown" : error.getMessage()));
-      terminateTransport(false);
+      abort();
     }
   }
 

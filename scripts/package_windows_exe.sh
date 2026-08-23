@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/release_metadata.sh"
+source "$ROOT_DIR/scripts/katago_windows_pins.sh"
 
 DATE_TAG="${1:-$(date +%F)}"
 APP_VERSION="${2:-1.0.0}"
@@ -64,7 +65,11 @@ TENSORRT_KATAGO_TAG="${TENSORRT_KATAGO_TAG:-v1.17.2}"
 TENSORRT_KATAGO_ASSET="${TENSORRT_KATAGO_ASSET:-katago-${TENSORRT_KATAGO_TAG}-trt10.9.0-cuda12.8-windows-x64.zip}"
 TENSORRT_KATAGO_SHA256="${TENSORRT_KATAGO_SHA256:-be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6}"
 TENSORRT_KATAGO_URL="${TENSORRT_KATAGO_URL:-https://github.com/lightvector/KataGo/releases/download/${TENSORRT_KATAGO_TAG}/${TENSORRT_KATAGO_ASSET}}"
+CUDA_12_8_NVRTC_VERSION="12.8.61"
+CUDA_12_8_NVRTC_SHA256="e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d"
+TENSORRT_10_9_RUNTIME_SHA256="c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d"
 TENSORRT_ENGINE_MANIFEST_NAME="lizzieyzy-next-katago-engine-manifest.txt"
+HUMAN_SL_CUDA_COMPANION_NAME="katago-human-sl-cuda.exe"
 TENSORRT_KATAGO_CACHE_DIR="$ROOT_DIR/.cache/katago/tensorrt"
 JCEF_BUNDLE_PREPARE_SCRIPT="$ROOT_DIR/scripts/prepare_bundled_jcef.py"
 JCEF_BUNDLE_STAGE_DIR="$DIST_DIR/jcef-bundle"
@@ -550,6 +555,24 @@ prepare_bundled_nvidia_runtime_assets() {
   "$PYTHON_BIN" "$NVIDIA_RUNTIME_PREPARE_SCRIPT" \
     --profile "$runtime_profile" \
     --output-dir "$runtime_stage_dir"
+
+  local runtime_manifest="$runtime_stage_dir/lizzieyzy-next-nvidia-runtime-manifest.txt"
+  if [[ "$runtime_profile" == cuda12.8-* ]]; then
+    if [[ ! -f "$runtime_stage_dir/nvrtc64_120_0.dll" || ! -f "$runtime_stage_dir/nvrtc-builtins64_128.dll" ]]; then
+      echo "CUDA 12.8 runtime is missing the pinned NVRTC 12.8 compiler or builtins DLL" >&2
+      exit 1
+    fi
+    if ! grep -Eq "^- CUDA NVRTC: ${CUDA_12_8_NVRTC_VERSION} \\| .* \\| sha256=${CUDA_12_8_NVRTC_SHA256}[[:space:]]*$" "$runtime_manifest"; then
+      echo "CUDA 12.8 runtime manifest does not contain the pinned NVRTC compiler/builtins archive" >&2
+      exit 1
+    fi
+  fi
+  if [[ "$runtime_profile" == "cuda12.8-cudnn9-tensorrt" ]]; then
+    if ! grep -Eq "^- NVIDIA TensorRT: 10\\.9\\.0\\.34 \\| .* \\| sha256=${TENSORRT_10_9_RUNTIME_SHA256}[[:space:]]*$" "$runtime_manifest"; then
+      echo "TensorRT runtime manifest does not contain the pinned TensorRT 10.9 archive" >&2
+      exit 1
+    fi
+  fi
 }
 
 copy_bundle_nvidia_runtime_assets() {
@@ -576,6 +599,11 @@ copy_bundle_nvidia_runtime_assets() {
 prepare_bundled_tensorrt_engine_assets() {
   resolve_python_bin
   local output_dir="$ROOT_DIR/engines/katago/$NVIDIA_TRT_ENGINE_PLATFORM_DIR"
+  local companion_source="$ROOT_DIR/engines/katago/$NVIDIA50_CUDA_ENGINE_PLATFORM_DIR/katago.exe"
+  if [[ ! -f "$companion_source" ]]; then
+    echo "TensorRT HumanSL CUDA companion source is missing: $companion_source" >&2
+    exit 1
+  fi
   log_step "Preparing optional TensorRT KataGo engine [$TENSORRT_KATAGO_ASSET]"
   "$PYTHON_BIN" - \
     "$TENSORRT_KATAGO_URL" \
@@ -584,7 +612,10 @@ prepare_bundled_tensorrt_engine_assets() {
     "$TENSORRT_KATAGO_ASSET" \
     "$TENSORRT_KATAGO_SHA256" \
     "$TENSORRT_KATAGO_TAG" \
-    "$TENSORRT_ENGINE_MANIFEST_NAME" <<'PY'
+    "$TENSORRT_ENGINE_MANIFEST_NAME" \
+    "$companion_source" \
+    "$HUMAN_SL_CUDA_COMPANION_NAME" \
+    "$HUMAN_SL_CUDA_COMPANION_SHA256" <<'PY'
 import hashlib
 import os
 import shutil
@@ -594,8 +625,20 @@ import tempfile
 import urllib.request
 import zipfile
 
-url, cache_dir, output_dir, asset_name, expected_sha256, release_tag, manifest_name = sys.argv[1:8]
+(
+    url,
+    cache_dir,
+    output_dir,
+    asset_name,
+    expected_sha256,
+    release_tag,
+    manifest_name,
+    companion_source,
+    companion_name,
+    expected_companion_sha256,
+) = sys.argv[1:11]
 expected_sha256 = expected_sha256.lower().replace("sha256:", "")
+expected_companion_sha256 = expected_companion_sha256.lower().replace("sha256:", "")
 archive_path = os.path.join(cache_dir, asset_name)
 part_path = archive_path + ".part"
 
@@ -670,16 +713,32 @@ def copy_engine_files(source, target):
         raise SystemExit("Prepared TensorRT engine is missing katago.exe")
 
 download_with_resume()
+actual_companion_source_sha256 = file_sha256(companion_source)
+if actual_companion_source_sha256 != expected_companion_sha256:
+    raise SystemExit(
+        "TensorRT HumanSL companion checksum mismatch: "
+        f"expected {expected_companion_sha256}, got {actual_companion_source_sha256}"
+    )
 temp_dir = tempfile.mkdtemp(prefix="katago-tensorrt-", dir=cache_dir)
 try:
     with zipfile.ZipFile(archive_path) as archive:
         archive.extractall(temp_dir)
     copy_engine_files(find_katago_root(temp_dir), output_dir)
+    companion_target = os.path.join(output_dir, companion_name)
+    shutil.copy2(companion_source, companion_target)
+    companion_sha256 = file_sha256(companion_target)
+    if companion_sha256 != expected_companion_sha256:
+        raise SystemExit(
+            "Copied TensorRT HumanSL companion checksum mismatch: "
+            f"expected {expected_companion_sha256}, got {companion_sha256}"
+        )
     with open(os.path.join(output_dir, manifest_name), "w", encoding="utf-8") as manifest:
         manifest.write(
             f"KataGo release: {release_tag}\n"
             f"Asset: {asset_name}\n"
             f"Asset SHA-256: {expected_sha256}\n"
+            f"HumanSL companion: {companion_name}\n"
+            f"HumanSL companion SHA-256: {expected_companion_sha256}\n"
         )
 finally:
     shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1510,7 +1569,7 @@ fi
 
 if [[ "${WINDOWS_BUILD_TENSORRT_SPLIT:-true}" == "true" ]] \
   && [[ -f "$ROOT_DIR/weights/default.bin.gz" ]] \
-  && [[ "$has_nvidia_katago_assets" == "true" || "$has_nvidia50_cuda_katago_assets" == "true" ]]; then
+  && [[ "$has_nvidia50_cuda_katago_assets" == "true" ]]; then
   has_tensorrt_split_assets="true"
   prepare_bundled_tensorrt_engine_assets
   prepare_bundled_nvidia_runtime_assets "cuda12.8-cudnn9-tensorrt" "$NVIDIA_TRT_RUNTIME_STAGE_DIR"

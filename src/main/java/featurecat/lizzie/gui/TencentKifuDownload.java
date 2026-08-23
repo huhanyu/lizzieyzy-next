@@ -366,14 +366,8 @@ public class TencentKifuDownload extends JFrame {
       if (jsonObject.has("chess")) {
         String kifu = jsonObject.getString("chess");
         showProgressNotice(Lizzie.frame.kifuLoadText("KifuLoad.parsing"));
-        boolean loaded = Lizzie.frame.loadDownloadedSgfString(kifu, 0, false, false, null);
-        if (loaded) {
-          finishTencentKifuLoadAfterMainPaint();
-        } else {
-          isKifuLoading = false;
-          setTableBusy(false);
-          hideProgressNotice();
-        }
+        Lizzie.frame.loadDownloadedSgfString(
+            kifu, 0, false, false, null, this::completeTencentKifuLoadRequest);
       }
     } catch (Exception e) {
       e.printStackTrace();
@@ -384,6 +378,16 @@ public class TencentKifuDownload extends JFrame {
       }
       isSearching = false;
       Utils.showMsg(text("TencentKifuDownload.getKifuFailed") + string, this);
+    }
+  }
+
+  private void completeTencentKifuLoadRequest(boolean loaded) {
+    if (loaded) {
+      finishTencentKifuLoadAfterMainPaint();
+    } else {
+      isKifuLoading = false;
+      setTableBusy(false);
+      hideProgressNotice();
     }
   }
 

@@ -126,7 +126,9 @@ public final class ReadBoardGmaSession {
     /** The captured engine process terminated before confirmation. */
     PROCESS_TERMINATED,
     /** A stale admission was rejected before any physical side effect. */
-    ADMISSION_STALE
+    ADMISSION_STALE,
+    /** The remote protocol cannot represent the captured position without inventing a move. */
+    UNSUPPORTED_REMOTE_POSITION
   }
 
   /**

@@ -147,7 +147,9 @@ public final class HumanSlTrainingBar extends JPanel {
         event ->
             withController(
                 active -> {
-                  if (active.isReviewing()) {
+                  if (active.isStopRequested()) {
+                    active.abort();
+                  } else if (active.isReviewing()) {
                     active.abort();
                   } else {
                     active.finishAndReview();
@@ -168,7 +170,14 @@ public final class HumanSlTrainingBar extends JPanel {
     }
     setLabelText(opponentLabel, active.opponentLabel(), Font.BOLD, 14);
     String status;
-    if (active.isReviewing()) {
+    if (active.isExitRecoveryPending()) {
+      status =
+          text(
+              "HumanSlTraining.bar.cleanupRetry",
+              "Cleanup needs attention. Retry before starting another mode.");
+    } else if (active.isStopRequested()) {
+      status = text("HumanSlTraining.bar.stopping", "Stopping AI Coach safely...");
+    } else if (active.isReviewing()) {
       status = text("HumanSlTraining.bar.reviewing", "Preparing the training report...");
     } else if (active.hasAiFailure()) {
       status = text("HumanSlTraining.bar.aiFailed", "AI did not respond. Retry or finish.");
@@ -188,17 +197,30 @@ public final class HumanSlTrainingBar extends JPanel {
         text("HumanSlTraining.bar.ai", "AI") + "  " + format(active.aiElapsedMillis()),
         Font.BOLD,
         13);
-    thinkingBar.setVisible(active.isAiThinking() || active.isReviewing());
-    retryButton.setVisible(active.hasAiFailure() && !active.isReviewing());
-    passButton.setEnabled(active.isHumanTurn() && !active.isReviewing());
-    resignButton.setEnabled(!active.isReviewing());
-    finishButton.setText(
-        text(
-            active.isReviewing()
-                ? "HumanSlTraining.stopReview"
-                : "HumanSlTraining.finishReview",
-            active.isReviewing() ? "Stop and return" : "Finish and review"));
-    finishButton.setEnabled(true);
+    thinkingBar.setVisible(
+        active.isAiThinking() || active.isReviewing() || active.isExitInProgress());
+    retryButton.setVisible(
+        !active.isStopRequested() && active.hasAiFailure() && !active.isReviewing());
+    passButton.setEnabled(
+        !active.isStopRequested() && active.isHumanTurn() && !active.isReviewing());
+    resignButton.setEnabled(!active.isStopRequested() && !active.isReviewing());
+    String finishKey;
+    String finishFallback;
+    if (active.isExitRecoveryPending()) {
+      finishKey = "HumanSlTraining.retryCleanup";
+      finishFallback = "Retry cleanup";
+    } else if (active.isStopRequested()) {
+      finishKey = "HumanSlTraining.stopping";
+      finishFallback = "Stopping...";
+    } else if (active.isReviewing()) {
+      finishKey = "HumanSlTraining.stopReview";
+      finishFallback = "Stop and return";
+    } else {
+      finishKey = "HumanSlTraining.finishReview";
+      finishFallback = "Finish and review";
+    }
+    finishButton.setText(text(finishKey, finishFallback));
+    finishButton.setEnabled(!active.isExitInProgress());
     revalidate();
     repaint();
   }

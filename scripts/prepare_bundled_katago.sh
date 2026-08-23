@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/katago_windows_pins.sh"
 CACHE_DIR="${CACHE_DIR:-$ROOT_DIR/.cache/katago}"
 KATAGO_TAG="${KATAGO_TAG:-v1.17.1}"
 KATAGO_RELEASE_BASE="https://github.com/lightvector/KataGo/releases/download/${KATAGO_TAG}"
@@ -225,6 +226,20 @@ prepare_windows_bundle() {
   copy_matching_files "$source_dir" "$dest_dir" "katago.exe" "*.dll" "cacert.pem"
 }
 
+verify_windows_nvidia50_cuda_executable() {
+  local executable="$WINDOWS_NVIDIA50_CUDA_ROOT/katago.exe"
+  if [[ ! -f "$executable" ]]; then
+    echo "Prepared NVIDIA 50 CUDA bundle is missing katago.exe: $executable"
+    exit 1
+  fi
+  local actual_sha256
+  actual_sha256="$(sha256_file "$executable")"
+  if [[ "$actual_sha256" != "$HUMAN_SL_CUDA_COMPANION_SHA256" ]]; then
+    echo "NVIDIA 50 CUDA katago.exe checksum mismatch: expected $HUMAN_SL_CUDA_COMPANION_SHA256, got $actual_sha256"
+    exit 1
+  fi
+}
+
 prepare_linux_bundle() {
   local source_dir="$1"
   local dest_dir="$2"
@@ -286,6 +301,7 @@ Windows bundle: $WINDOWS_ASSET
 Windows OpenCL bundle: $WINDOWS_OPENCL_ASSET
 Windows NVIDIA bundle: $WINDOWS_NVIDIA_ASSET
 Windows NVIDIA 50 CUDA bundle: $WINDOWS_NVIDIA50_CUDA_ASSET
+Windows NVIDIA 50 CUDA executable SHA-256: $HUMAN_SL_CUDA_COMPANION_SHA256
 Linux bundle: $LINUX_ASSET
 Linux OpenCL bundle: $LINUX_OPENCL_ASSET
 Linux NVIDIA bundle: $LINUX_NVIDIA_ASSET
@@ -337,6 +353,7 @@ main() {
   prepare_windows_bundle "$windows_opencl_src" "$WINDOWS_OPENCL_ROOT"
   prepare_windows_bundle "$windows_nvidia_src" "$WINDOWS_NVIDIA_ROOT"
   prepare_windows_bundle "$windows_nvidia50_cuda_src" "$WINDOWS_NVIDIA50_CUDA_ROOT"
+  verify_windows_nvidia50_cuda_executable
   prepare_linux_bundle "$linux_src" "$LINUX_ROOT"
   prepare_linux_bundle "$linux_opencl_src" "$LINUX_OPENCL_ROOT"
   prepare_linux_bundle "$linux_nvidia_src" "$LINUX_NVIDIA_ROOT"

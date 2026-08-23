@@ -41,6 +41,8 @@ public class ZhiziGtpTransport implements EngineTransport {
   private final SocketCommandOutputStream stdin;
   private final AtomicBoolean open = new AtomicBoolean(false);
   private final AtomicBoolean closed = new AtomicBoolean(true);
+  private final AtomicBoolean gracefulCloseStarted = new AtomicBoolean(false);
+  private final AtomicBoolean abortStarted = new AtomicBoolean(false);
   private final AtomicBoolean recoveryRequested = new AtomicBoolean(false);
   private final SessionLifecycle lifecycle = new SessionLifecycle();
   private final ScheduledExecutorService reconnectExecutor =
@@ -51,8 +53,8 @@ public class ZhiziGtpTransport implements EngineTransport {
             return thread;
           });
   private final AnalysisResponseWatchdog analysisWatchdog;
-  private Socket socket;
-  private OkHttpClient socketHttpClient;
+  private volatile Socket socket;
+  private volatile OkHttpClient socketHttpClient;
 
   public ZhiziGtpTransport(ZhiziApiClient apiClient, String accountToken, String args)
       throws IOException {
@@ -80,6 +82,9 @@ public class ZhiziGtpTransport implements EngineTransport {
 
   @Override
   public void start() throws IOException {
+    if (gracefulCloseStarted.get() || abortStarted.get()) {
+      throw new IOException("智子云算力传输已经关闭。");
+    }
     IOException lastFailure = null;
     for (int attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
       try {
@@ -309,24 +314,43 @@ public class ZhiziGtpTransport implements EngineTransport {
 
   @Override
   public void close() {
+    if (abortStarted.get() || !gracefulCloseStarted.compareAndSet(false, true)) {
+      return;
+    }
+    terminateTransport(true);
+  }
+
+  @Override
+  public void abort() {
+    if (!abortStarted.compareAndSet(false, true)) {
+      return;
+    }
+    terminateTransport(false);
+  }
+
+  private void terminateTransport(boolean sendQuit) {
     closed.set(true);
     open.set(false);
     lifecycle.close();
     analysisWatchdog.cancel();
-    disposeSocketSession(true);
+    disposeSocketSession(sendQuit);
     stdin.closeForShutdown();
     reconnectExecutor.shutdownNow();
     closeQuietly(stdout);
     closeQuietly(stderr);
   }
 
-  private void disposeSocketSession(boolean sendQuit) {
+  void disposeSocketSession(boolean sendQuit) {
     open.set(false);
     analysisWatchdog.suspend();
     stdin.bind(new SocketCommandEmitter(null));
     Socket current = socket;
-    socket = null;
     if (current != null) {
+      if (!sendQuit) {
+        // Break the physical client first so a concurrently blocked graceful emit can unwind.
+        socket = null;
+        closeSocketHttpClient();
+      }
       try {
         current.io().reconnection(false);
         if (sendQuit) {
@@ -338,6 +362,9 @@ public class ZhiziGtpTransport implements EngineTransport {
       current.off();
       current.disconnect();
       current.close();
+      if (socket == current) {
+        socket = null;
+      }
     }
     if (!closed.get()) {
       lifecycle.retireAttempt();

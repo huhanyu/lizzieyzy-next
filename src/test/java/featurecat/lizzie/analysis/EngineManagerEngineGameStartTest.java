@@ -148,6 +148,11 @@ class EngineManagerEngineGameStartTest {
     private boolean inputRestored;
 
     @Override
+    public boolean isInputRoutingInitialized() {
+      return true;
+    }
+
+    @Override
     public void addInput(boolean shouldAdd) {
       inputRestored = shouldAdd;
     }

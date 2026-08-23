@@ -5,7 +5,6 @@ import argparse
 import fnmatch
 import hashlib
 import json
-import os
 import shutil
 import ssl
 import sys
@@ -23,20 +22,25 @@ CUDA_12_1_MANIFEST_URL = "https://developer.download.nvidia.com/compute/cuda/red
 CUDA_12_8_MANIFEST_URL = "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.0.json"
 CUDNN_8_MANIFEST_URL = "https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_8.9.7.29.json"
 CUDNN_9_MANIFEST_URL = "https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.8.0.json"
+CUDA_12_8_NVRTC_VERSION = "12.8.61"
+CUDA_12_8_NVRTC_SHA256 = "e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d"
 TENSORRT_10_9_URL = (
     "https://developer.download.nvidia.com/compute/machine-learning/tensorrt/10.9.0/zip/"
     "TensorRT-10.9.0.34.Windows.win10.cuda-12.8.zip"
 )
+TENSORRT_10_9_SHA256 = "c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d"
 TENSORRT_10_9_SIZE_BYTES = 1_845_842_538
 CUDA_12_1_SPECS = (
     ("CUDA Runtime", CUDA_12_1_MANIFEST_URL, "cuda_cudart", "windows-x86_64"),
     ("CUDA cuBLAS", CUDA_12_1_MANIFEST_URL, "libcublas", "windows-x86_64"),
     ("CUDA nvJitLink", CUDA_12_1_MANIFEST_URL, "libnvjitlink", "windows-x86_64"),
+    ("CUDA NVRTC", CUDA_12_1_MANIFEST_URL, "cuda_nvrtc", "windows-x86_64"),
 )
 CUDA_12_8_SPECS = (
     ("CUDA Runtime", CUDA_12_8_MANIFEST_URL, "cuda_cudart", "windows-x86_64"),
     ("CUDA cuBLAS", CUDA_12_8_MANIFEST_URL, "libcublas", "windows-x86_64"),
     ("CUDA nvJitLink", CUDA_12_8_MANIFEST_URL, "libnvjitlink", "windows-x86_64"),
+    ("CUDA NVRTC", CUDA_12_8_MANIFEST_URL, "cuda_nvrtc", "windows-x86_64"),
 )
 RUNTIME_PROFILES = {
     "cuda12.1-cudnn8": {
@@ -67,7 +71,7 @@ RUNTIME_PROFILES = {
                 "key": "tensorrt",
                 "version": "10.9.0.34",
                 "url": TENSORRT_10_9_URL,
-                "sha256_env": "TENSORRT_10_9_SHA256",
+                "sha256": TENSORRT_10_9_SHA256,
                 "size_bytes": TENSORRT_10_9_SIZE_BYTES,
                 "dll_patterns": ("*.dll",),
             },
@@ -203,14 +207,20 @@ def load_manifest_package_specs(
 def load_direct_package_specs(direct_specs: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
     packages: list[dict[str, object]] = []
     for direct in direct_specs:
-        sha_env = str(direct.get("sha256_env", "")).strip()
+        sha256_value = str(direct.get("sha256", "")).strip().lower()
+        if len(sha256_value) != 64 or any(
+            character not in "0123456789abcdef" for character in sha256_value
+        ):
+            raise RuntimeErrorWithContext(
+                f"Missing or invalid pinned SHA-256 for {direct['display_name']}"
+            )
         packages.append(
             {
                 "display_name": str(direct["display_name"]),
                 "key": str(direct["key"]),
                 "version": str(direct["version"]),
                 "url": str(direct["url"]),
-                "sha256": os.environ.get(sha_env, "").strip().lower(),
+                "sha256": sha256_value,
                 "size_bytes": int(direct.get("size_bytes", 0)),
                 "dll_patterns": tuple(direct.get("dll_patterns", ("*.dll",))),
             }
@@ -223,37 +233,32 @@ def ensure_archive(package: dict[str, object], archives_dir: Path) -> Path:
     file_name = Path(urlparse(url).path).name
     destination = archives_dir / file_name
     expected_sha = str(package["sha256"])
-    if expected_sha and destination.exists() and sha256(destination) == expected_sha:
+    expected_size = int(package.get("size_bytes", 0))
+    if not expected_sha:
+        raise RuntimeErrorWithContext(
+            f"Missing pinned SHA-256 for {package['display_name']}"
+        )
+    if (
+        destination.exists()
+        and (expected_size <= 0 or destination.stat().st_size == expected_size)
+        and sha256(destination) == expected_sha
+    ):
         print(f"Using cached NVIDIA runtime archive: {destination}", flush=True)
         return destination
-    if not expected_sha and destination.exists():
-        expected_size = int(package.get("size_bytes", 0))
-        if expected_size <= 0 or destination.stat().st_size == expected_size:
-            print(f"Using cached NVIDIA runtime archive: {destination}", flush=True)
-            return destination
     if destination.exists():
         destination.unlink()
     download_file(url, destination)
     actual_sha = sha256(destination)
-    if expected_sha:
-        if actual_sha != expected_sha:
-            destination.unlink(missing_ok=True)
-            raise RuntimeErrorWithContext(
-                f"SHA-256 mismatch for {package['display_name']}: expected {expected_sha}, got {actual_sha}"
-            )
-    else:
-        expected_size = int(package.get("size_bytes", 0))
-        actual_size = destination.stat().st_size
-        if expected_size > 0 and actual_size != expected_size:
-            destination.unlink(missing_ok=True)
-            raise RuntimeErrorWithContext(
-                f"Size mismatch for {package['display_name']}: expected {expected_size}, got {actual_size}"
-            )
-        package["sha256"] = actual_sha
-        print(
-            f"Recorded SHA-256 for {package['display_name']}: {actual_sha}. "
-            "Set the matching *_SHA256 environment variable to make this check strict.",
-            flush=True,
+    if actual_sha != expected_sha:
+        destination.unlink(missing_ok=True)
+        raise RuntimeErrorWithContext(
+            f"SHA-256 mismatch for {package['display_name']}: expected {expected_sha}, got {actual_sha}"
+        )
+    actual_size = destination.stat().st_size
+    if expected_size > 0 and actual_size != expected_size:
+        destination.unlink(missing_ok=True)
+        raise RuntimeErrorWithContext(
+            f"Size mismatch for {package['display_name']}: expected {expected_size}, got {actual_size}"
         )
     return destination
 
@@ -310,17 +315,38 @@ def write_manifest(
     manifest_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def main() -> int:
-    args = parse_args()
-    profile = RUNTIME_PROFILES[args.profile]
-    cache_dir = Path(args.cache_dir).resolve()
-    output_dir = Path(args.output_dir).resolve()
+def validate_profile_packages(profile_name: str, packages: list[dict[str, object]]) -> None:
+    if not profile_name.startswith("cuda12.8-"):
+        return
+    nvrtc_packages = [package for package in packages if package.get("key") == "cuda_nvrtc"]
+    if len(nvrtc_packages) != 1:
+        raise RuntimeErrorWithContext(
+            f"{profile_name} must contain exactly one CUDA NVRTC package"
+        )
+    nvrtc = nvrtc_packages[0]
+    if (
+        nvrtc.get("version") != CUDA_12_8_NVRTC_VERSION
+        or nvrtc.get("sha256") != CUDA_12_8_NVRTC_SHA256
+    ):
+        raise RuntimeErrorWithContext(
+            f"{profile_name} requires CUDA NVRTC {CUDA_12_8_NVRTC_VERSION} "
+            f"with SHA-256 {CUDA_12_8_NVRTC_SHA256}"
+        )
+
+
+def prepare_runtime_profile(
+    profile_name: str,
+    profile: dict[str, object],
+    cache_dir: Path,
+    output_dir: Path,
+) -> tuple[list[dict[str, object]], list[str]]:
     archives_dir = cache_dir / "archives"
     output_dir.mkdir(parents=True, exist_ok=True)
     archives_dir.mkdir(parents=True, exist_ok=True)
 
     packages = load_manifest_package_specs(cache_dir, profile["manifest_specs"])
     packages.extend(load_direct_package_specs(profile["direct_specs"]))
+    validate_profile_packages(profile_name, packages)
 
     for child in output_dir.iterdir():
         if child.is_dir():
@@ -336,7 +362,16 @@ def main() -> int:
     if not extracted_names:
         raise RuntimeErrorWithContext("No NVIDIA runtime DLLs were extracted.")
 
-    write_manifest(output_dir, args.profile, packages, extracted_names)
+    write_manifest(output_dir, profile_name, packages, extracted_names)
+    return packages, extracted_names
+
+
+def main() -> int:
+    args = parse_args()
+    profile = RUNTIME_PROFILES[args.profile]
+    cache_dir = Path(args.cache_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    _, extracted_names = prepare_runtime_profile(args.profile, profile, cache_dir, output_dir)
     print(f"Prepared NVIDIA runtime profile {args.profile} in: {output_dir}")
     print(f"DLLs: {len(set(extracted_names))}")
     return 0

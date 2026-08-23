@@ -38,6 +38,13 @@
 
 说明：TensorRT 加速的普通用户路径是软件内按需安装；GitHub Release 同时保留高级可选离线分卷，并校验分卷数量、清单、大小和 SHA-256。真实吞吐、功耗和驱动兼容仍需在对应 RTX 20/30/40/50 Windows 硬件上验证，RTX 50 仍优先验证 CUDA 主包。
 
+### RTX 5090 NVRTC A/B 验证（2026-08-22）
+
+- 环境：Windows、RTX 5090、驱动 `591.86`、Compute Capability `12.0`
+- 原始 `next-2026-08-19.4` RTX 50 CUDA 便携包缺少 NVRTC：`katago version` 等待 30 秒无输出，benchmark 等待 100 秒无输出，未创建 GPU context；停止后无残留进程
+- 从 NVIDIA CUDA 12.8.0 redistrib manifest 下载并以 SHA-256 `e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d` 验证 `12.8.61` NVRTC compiler 与 builtins，复制到同一包后：`katago version` 约 0.6 秒返回 CUDA `12.8.61`，`nvrtcVersion` 为 `12.8`，benchmark 约 6.2 秒完成，识别 RTX 5090 / CC `12.0`、成功加载 b10 模型、约 `212.77 visits/s`，退出无残留进程
+- 这组结果证明缺失 NVRTC 是该包在 RTX 5090 上无法启动的直接原因；新的完整发布资产仍须重新执行同一矩阵，未完成前保持 `Build verified`，不提前标记为完整实机通过
+
 ## 我们重点关心什么
 
 如果你帮忙验证，最有价值的是这些信息：

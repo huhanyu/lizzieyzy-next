@@ -3,9 +3,16 @@ package featurecat.lizzie.analysis.remote;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.logging.DiagnosticModule;
+import featurecat.lizzie.logging.LoggingLimits;
+import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.LoggingSettings;
+import featurecat.lizzie.logging.TraceScope;
+import featurecat.lizzie.logging.WorkDirectoryResolution;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -24,17 +31,71 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class KataGoAnalysisWebSocketTransportTest {
+
+  @Test
+  void analysisPayloadIsTracedOnlyDuringNetworkFullTrace(@TempDir Path tempDir) throws Exception {
+    LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+    LoggingRuntime runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(tempDir, List.of()),
+            new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
+    try {
+      runtime.applySettings(
+          LoggingSettings.defaults()
+              .withDiagnosticsEnabled(true)
+              .withDiagnosticModules(EnumSet.of(DiagnosticModule.NETWORK_REMOTE)));
+      try (TransportHarness harness = TransportHarness.open()) {
+        writeGtp(harness.transport, "7 kata-analyze B 10");
+        runtime.shutdown();
+        assertFalse(Files.exists(tempDir.resolve("logs/network-trace.log")));
+      }
+    } finally {
+      LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+    }
+
+    runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(tempDir, List.of()),
+            new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
+    try {
+      runtime.applySettings(
+          LoggingSettings.defaults()
+              .withDiagnosticsEnabled(true)
+              .withDiagnosticModules(EnumSet.of(DiagnosticModule.NETWORK_REMOTE)));
+      runtime.startFullTrace(EnumSet.of(TraceScope.NETWORK_WEBSOCKET));
+      try (TransportHarness harness = TransportHarness.open()) {
+        writeGtp(harness.transport, "7 kata-analyze B 10");
+        JSONObject query = harness.webSocket.sentJson(0);
+        runtime.shutdown();
+        String app = Files.readString(tempDir.resolve("logs/app.log"), StandardCharsets.UTF_8);
+        String trace =
+            Files.readString(tempDir.resolve("logs/network-trace.log"), StandardCharsets.UTF_8);
+        assertFalse(app.contains("network raw"), app);
+        assertTrue(trace.contains("network raw direction=send payload="), trace);
+        assertTrue(trace.contains(query.getString("id")), trace);
+        assertTrue(trace.contains("Full Trace session started"), trace);
+      }
+    } finally {
+      LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+    }
+  }
+
   @Test
   void streamsNumberedAnalyzeAsOneCompleteGtpResponse() throws Exception {
     try (TransportHarness harness = TransportHarness.open()) {
@@ -48,8 +109,7 @@ public class KataGoAnalysisWebSocketTransportTest {
       harness.webSocket.emit(analysisResponse(queryId, false, "D4", 24));
 
       assertEquals(
-          "info move Q16 visits 12 order 0\n"
-              + "info move D4 visits 24 order 0\n\n",
+          "info move Q16 visits 12 order 0\n" + "info move D4 visits 24 order 0\n\n",
           readAvailable(harness.transport.stdout()));
     }
   }
@@ -467,6 +527,57 @@ public class KataGoAnalysisWebSocketTransportTest {
   }
 
   @Test
+  void abortEscalatesWhileGracefulWebSocketCloseIsBlocked() throws Exception {
+    TransportHarness harness = TransportHarness.open();
+    harness.webSocket.blockClose = true;
+    AtomicReference<Throwable> gracefulFailure = new AtomicReference<>();
+    AtomicReference<Throwable> abortFailure = new AtomicReference<>();
+    Thread graceful =
+        new Thread(
+            () -> {
+              try {
+                harness.transport.close();
+              } catch (Throwable failure) {
+                gracefulFailure.set(failure);
+              }
+            },
+            "blocked-katago-websocket-close");
+    Thread abort =
+        new Thread(
+            () -> {
+              try {
+                harness.transport.abort();
+                harness.transport.abort();
+              } catch (Throwable failure) {
+                abortFailure.set(failure);
+              }
+            },
+            "katago-websocket-force-abort");
+    try {
+      graceful.start();
+      assertTrue(harness.webSocket.closeEntered.await(2, TimeUnit.SECONDS));
+
+      abort.start();
+      abort.join(1_000L);
+
+      assertFalse(abort.isAlive(), "abort must not wait for graceful WebSocket close");
+      assertNull(abortFailure.get());
+      assertEquals(1, harness.webSocket.closeCount);
+      assertEquals(1, harness.webSocket.abortCount);
+      assertEquals(List.of(), harness.webSocket.sentTexts);
+      assertEof(harness.transport.stdout());
+      assertEof(harness.transport.stderr());
+      assertFalse(harness.transport.isOpen());
+    } finally {
+      harness.webSocket.allowClose.countDown();
+      abort.join(2_000L);
+      graceful.join(2_000L);
+      assertFalse(graceful.isAlive());
+      assertNull(gracefulFailure.get());
+    }
+  }
+
+  @Test
   void convertsKataGoAnalysisJsonToGtpInfoLine() {
     JSONObject response = new JSONObject();
     response.put(
@@ -516,6 +627,7 @@ public class KataGoAnalysisWebSocketTransportTest {
     assertTrue(commands.contains("kata-get-rules"));
     assertTrue(commands.contains("set_position"));
     assertTrue(commands.contains("loadsgf"));
+    assertFalse(commands.contains("gogui-setup_player"));
 
     assertEquals("= 0.0\n\n", sendGtp(transport, "kata-get-param playoutDoublingAdvantage"));
     assertEquals("= 0.04\n\n", sendGtp(transport, "kata-get-param analysisWideRootNoise"));
@@ -731,6 +843,23 @@ public class KataGoAnalysisWebSocketTransportTest {
   }
 
   @Test
+  void playBlackPassAfterSetPositionLeavesWhiteToPlay() throws Exception {
+    KataGoAnalysisWebSocketTransport transport =
+        new KataGoAnalysisWebSocketTransport("ws://127.0.0.1:1");
+
+    assertEquals("=\n\n", sendGtp(transport, "set_position B A3 W C3"));
+    assertEquals("=\n\n", sendGtp(transport, "play B pass"));
+
+    JSONObject query = transport.buildAnalysisQuery("test", false, false, 50, "B");
+    assertEquals(
+        java.util.List.of(java.util.List.of("B", "A3"), java.util.List.of("W", "C3")),
+        query.getJSONArray("initialStones").toList());
+    assertEquals(
+        java.util.List.of(java.util.List.of("B", "pass")), query.getJSONArray("moves").toList());
+    assertEquals("B", query.getString("initialPlayer"));
+  }
+
+  @Test
   void loadSgfRestoresGeneratedSnapshotIntoAnalysisQuery() throws Exception {
     KataGoAnalysisWebSocketTransport transport =
         new KataGoAnalysisWebSocketTransport("ws://127.0.0.1:1");
@@ -787,6 +916,7 @@ public class KataGoAnalysisWebSocketTransportTest {
 
     assertTrue(response.startsWith("?42 unknown command"));
     assertTrue(sendGtp(transport, "time_warp 1").startsWith("? unknown command"));
+    assertTrue(sendGtp(transport, "gogui-setup_player W").startsWith("? unknown command"));
     assertTrue(
         sendGtp(transport, "kata-get-param unsupported").startsWith("? unknown parameter"));
   }
@@ -924,8 +1054,7 @@ public class KataGoAnalysisWebSocketTransportTest {
     private final FakeWebSocket webSocket;
     private final KataGoAnalysisWebSocketTransport transport;
 
-    private TransportHarness(
-        FakeWebSocket webSocket, KataGoAnalysisWebSocketTransport transport) {
+    private TransportHarness(FakeWebSocket webSocket, KataGoAnalysisWebSocketTransport transport) {
       this.webSocket = webSocket;
       this.transport = transport;
     }
@@ -1069,6 +1198,10 @@ public class KataGoAnalysisWebSocketTransportTest {
     private boolean outputClosed;
     private boolean inputClosed;
     private int closeCount;
+    private int abortCount;
+    private volatile boolean blockClose;
+    private final CountDownLatch closeEntered = new CountDownLatch(1);
+    private final CountDownLatch allowClose = new CountDownLatch(1);
 
     private JSONObject sentJson(int index) {
       return new JSONObject(sentTexts.get(index));
@@ -1130,6 +1263,17 @@ public class KataGoAnalysisWebSocketTransportTest {
     @Override
     public CompletableFuture<WebSocket> sendClose(int statusCode, String reason) {
       closeCount++;
+      closeEntered.countDown();
+      if (blockClose) {
+        try {
+          if (!allowClose.await(5, TimeUnit.SECONDS)) {
+            throw new AssertionError("timed out waiting to release WebSocket close");
+          }
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError(interrupted);
+        }
+      }
       outputClosed = true;
       return CompletableFuture.completedFuture(this);
     }
@@ -1154,6 +1298,7 @@ public class KataGoAnalysisWebSocketTransportTest {
 
     @Override
     public void abort() {
+      abortCount++;
       outputClosed = true;
       inputClosed = true;
     }

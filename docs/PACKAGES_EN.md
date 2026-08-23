@@ -103,11 +103,13 @@ Current bundled defaults:
 - Default weight: official medium Transformer `b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz`, shown as “Transformer 10B Balanced”
 - Default weight size: `94,281,753` bytes (about 94 MB), SHA-256: `c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995`
 - Standard Windows NVIDIA package: CUDA `12.1` + cuDNN `9.8`; RTX 50 CUDA package: CUDA `12.8` + cuDNN `9.8`
+- Windows NVIDIA runtimes include the matching NVRTC compiler and builtins required for cuDNN runtime-compiled kernels. RTX 50/TensorRT packaging pins the official CUDA `12.8.61` NVRTC archive SHA-256 `e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d` and rejects a release when either DLL or the pinned manifest entry is missing
 - GTX 10 series cards use the Pascal architecture. The [NVIDIA cuDNN 9.8 support matrix](https://docs.nvidia.com/deeplearning/cudnn/backend/v9.8.0/reference/support-matrix.html) requires Windows driver `527.41` or newer for CUDA 12; use the `windows64.opencl` package if KataGo still cannot start after updating the driver
 - Transformer performs best through CUDA or Metal; OpenCL remains fully offline-capable but is normally slower
 - `core-update.zip` updates only the application and does not include KataGo 1.17 or the new weight; install the latest full bundle to upgrade from the old default
 - Full-bundle migration changes only managed engines still using the old bundled `zhizi 28B` / `default.bin.gz`; custom weights, remote compute, and startup modes are preserved
 - TensorRT acceleration: regular users install it on demand from `KataGo Auto Setup`; advanced offline users may download every Release split plus its README, manifest, and SHA-256 file, then extract from `.001`
+- The TensorRT runtime archive is pinned to SHA-256 `c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d`. TensorRT remains the main analysis backend, while a lightweight bundled CUDA companion loads HumanSL for AI Coach; preparation temporarily releases foreground GPU analysis and an idempotent lease restores only the captured engine when it is still current
 - RTX 50 users should still start with the `windows64.nvidia50.cuda` package, with TensorRT as an on-demand acceleration path for the newer architecture
 - The TensorRT install UI uses `nvidia-smi` to detect the local NVIDIA GPU, with a lightweight model-name fallback when Compute Capability is unavailable
 

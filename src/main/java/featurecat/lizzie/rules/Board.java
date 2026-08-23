@@ -35,6 +35,20 @@ import java.util.stream.Stream;
 import javax.swing.*;
 
 public class Board {
+  /** Result of a pure engine-game history commit. */
+  public static final class EngineGameMoveCommit {
+    private final BoardHistoryNode node;
+    private final boolean createdNode;
+
+    private EngineGameMoveCommit(BoardHistoryNode node, boolean createdNode) {
+      this.node = node;
+      this.createdNode = createdNode;
+    }
+
+    public BoardHistoryNode node() {
+      return node;
+    }
+  }
   public static int boardHeight = 19;
   public static int boardWidth = 19;
   public int insertoricurrentMoveNumber = 0;
@@ -97,6 +111,74 @@ public class Board {
   public BoardHistoryNode mouseOnNode;
   private long reviewStartTime = -1;
   public int[] mouseOnStoneCoords = LizzieFrame.outOfBoundCoordinate;
+
+  /**
+   * Exact board-owned state replaced by {@link #clear(boolean)}.
+   *
+   * <p>This token is intentionally opaque. Callers that prepare a mode switch can restore the
+   * same history object (and therefore the same current node and variation tree) if a later UI or
+   * engine handoff fails.
+   */
+  public static final class ClearStateSnapshot {
+    private final Board owner;
+    private final BoardHistoryList history;
+    private final int boardWidth;
+    private final int boardHeight;
+    private final Zobrist.TableSnapshot zobristTables;
+    private final boolean analysisMode;
+    private final boolean setupMode;
+    private final boolean forceRefresh;
+    private final boolean forceRefresh2;
+    private final boolean hasBigBranch;
+    private final boolean neverPassedInGame;
+    private final boolean isPkBoard;
+    private final boolean isGameBoard;
+    private final boolean isPkBoardKataB;
+    private final boolean isPkBoardKataW;
+    private final boolean isKataBoard;
+    private final boolean hasStartStone;
+    private final boolean isExtremlySmallBoard;
+    private final ArrayList<Movelist> startStoneList;
+    private final ArrayList<Movelistwr> moveListWr;
+    private final String boardStateBeforeEdit;
+    private final String boardStateAfterEdit;
+    private final ArrayList<Movelist> tempMoveList;
+    private final ArrayList<Movelist> tempMoveList2;
+    private final boolean isTsumegoMode;
+    private final BoardHistoryNode tsumegoNode;
+
+    private ClearStateSnapshot(Board board) {
+      owner = board;
+      history = board.history;
+      boardWidth = Board.boardWidth;
+      boardHeight = Board.boardHeight;
+      zobristTables = Zobrist.captureTables();
+      analysisMode = board.analysisMode;
+      setupMode = board.setupMode;
+      forceRefresh = board.forceRefresh;
+      forceRefresh2 = board.forceRefresh2;
+      hasBigBranch = board.hasBigBranch;
+      neverPassedInGame = board.neverPassedInGame;
+      isPkBoard = board.isPkBoard;
+      isGameBoard = board.isGameBoard;
+      isPkBoardKataB = board.isPkBoardKataB;
+      isPkBoardKataW = board.isPkBoardKataW;
+      isKataBoard = board.isKataBoard;
+      hasStartStone = board.hasStartStone;
+      isExtremlySmallBoard = board.isExtremlySmallBoard;
+      startStoneList = board.startStonelist;
+      moveListWr =
+          board.movelistwr == null
+              ? new ArrayList<Movelistwr>()
+              : new ArrayList<Movelistwr>(board.movelistwr);
+      boardStateBeforeEdit = board.boardstatbeforeedit;
+      boardStateAfterEdit = board.boardstatafteredit;
+      tempMoveList = board.tempmovelist;
+      tempMoveList2 = board.tempmovelist2;
+      isTsumegoMode = board.isTusmegoMode;
+      tsumegoNode = board.tsumegoNode;
+    }
+  }
 
   public Board() {
     initialize(false);
@@ -1231,6 +1313,184 @@ public class Board {
     pass(color, newBranch, dummy, false);
   }
 
+  /**
+   * Commits one PK-engine pass without invoking the normal interactive-board side effects.
+   *
+   * <p>The engine-game transaction owns the surrounding cancellation/mutation fence. This method
+   * only mutates the captured history node; it deliberately does not send engine commands, touch
+   * countdowns/read-board state, refresh Swing components, or play sounds. Those fallible actions
+   * are issued after the transaction publishes its post-move token.
+   */
+  public synchronized EngineGameMoveCommit commitEngineGamePass(
+      BoardHistoryList expectedHistory,
+      BoardHistoryNode expectedNode,
+      boolean expectedBlackToPlay,
+      Stone color) {
+    return commitEngineGamePass(
+        expectedHistory,
+        expectedNode,
+        expectedBlackToPlay,
+        color,
+        Lizzie.config != null && Lizzie.config.newMoveNumberInBranch);
+  }
+
+  public synchronized EngineGameMoveCommit commitEngineGamePass(
+      BoardHistoryList expectedHistory,
+      BoardHistoryNode expectedNode,
+      boolean expectedBlackToPlay,
+      Stone color,
+      boolean newMoveNumberInBranch) {
+    if (expectedHistory == null) {
+      return null;
+    }
+    synchronized (expectedHistory) {
+      if (setupMode
+          || history != expectedHistory
+          || expectedHistory.getCurrentHistoryNode() != expectedNode
+          || expectedHistory.isBlacksTurn() != expectedBlackToPlay
+          || (color != Stone.BLACK && color != Stone.WHITE)
+          || (color == Stone.BLACK) != expectedBlackToPlay) {
+        return null;
+      }
+      int expectedMoveNumber = expectedHistory.getMoveNumber();
+      List<BoardHistoryNode> previousChildren = new ArrayList<>(expectedNode.variations);
+      expectedHistory.passForEngineGame(color, newMoveNumberInBranch);
+      BoardHistoryNode committed = expectedHistory.getCurrentHistoryNode();
+      boolean valid =
+          committed != expectedNode
+              && expectedHistory.getMoveNumber() == expectedMoveNumber + 1
+              && expectedHistory.isBlacksTurn() != expectedBlackToPlay
+              && committed.getData().isPassNode();
+      if (!valid) {
+        rollbackRejectedEngineGameHistoryAdvance(
+            expectedHistory, expectedNode, committed, previousChildren);
+        return null;
+      }
+      return new EngineGameMoveCommit(committed, !previousChildren.contains(committed));
+    }
+  }
+
+  /** See {@link #commitEngineGamePass(BoardHistoryList, BoardHistoryNode, boolean, Stone)}. */
+  public synchronized EngineGameMoveCommit commitEngineGamePlace(
+      BoardHistoryList expectedHistory,
+      BoardHistoryNode expectedNode,
+      boolean expectedBlackToPlay,
+      int x,
+      int y,
+      Stone color,
+      boolean noCapture,
+      boolean canSuicidal) {
+    return commitEngineGamePlace(
+        expectedHistory,
+        expectedNode,
+        expectedBlackToPlay,
+        x,
+        y,
+        color,
+        noCapture,
+        canSuicidal,
+        Lizzie.config != null && Lizzie.config.newMoveNumberInBranch);
+  }
+
+  public synchronized EngineGameMoveCommit commitEngineGamePlace(
+      BoardHistoryList expectedHistory,
+      BoardHistoryNode expectedNode,
+      boolean expectedBlackToPlay,
+      int x,
+      int y,
+      Stone color,
+      boolean noCapture,
+      boolean canSuicidal,
+      boolean newMoveNumberInBranch) {
+    if (expectedHistory == null) {
+      return null;
+    }
+    synchronized (expectedHistory) {
+      if (setupMode
+          || history != expectedHistory
+          || expectedHistory.getCurrentHistoryNode() != expectedNode
+          || expectedHistory.isBlacksTurn() != expectedBlackToPlay
+          || (color != Stone.BLACK && color != Stone.WHITE)
+          || (color == Stone.BLACK) != expectedBlackToPlay
+          || !isValid(x, y)) {
+        return null;
+      }
+      int expectedMoveNumber = expectedHistory.getMoveNumber();
+      List<BoardHistoryNode> previousChildren = new ArrayList<>(expectedNode.variations);
+      expectedHistory.placeForEngineGame(
+          x, y, color, noCapture, canSuicidal, newMoveNumberInBranch);
+      BoardHistoryNode committed = expectedHistory.getCurrentHistoryNode();
+      Optional<int[]> lastMove = committed == null ? Optional.empty() : committed.getData().lastMove;
+      boolean valid =
+          committed != expectedNode
+              && expectedHistory.getMoveNumber() == expectedMoveNumber + 1
+              && expectedHistory.isBlacksTurn() != expectedBlackToPlay
+              && lastMove.isPresent()
+              && lastMove.get()[0] == x
+              && lastMove.get()[1] == y;
+      if (!valid) {
+        rollbackRejectedEngineGameHistoryAdvance(
+            expectedHistory, expectedNode, committed, previousChildren);
+        return null;
+      }
+      return new EngineGameMoveCommit(committed, !previousChildren.contains(committed));
+    }
+  }
+
+  private void rollbackRejectedEngineGameHistoryAdvance(
+      BoardHistoryList history,
+      BoardHistoryNode expectedNode,
+      BoardHistoryNode rejectedNode,
+      List<BoardHistoryNode> previousChildren) {
+    history.setHead(expectedNode);
+    if (rejectedNode == null
+        || rejectedNode == expectedNode
+        || previousChildren.contains(rejectedNode)) {
+      return;
+    }
+    for (int index = 0; index < expectedNode.variations.size(); index++) {
+      if (expectedNode.variations.get(index) == rejectedNode) {
+        expectedNode.deleteChild(index);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Rolls back a just-committed PK move when its paired PRIMARY publication loses ownership.
+   * The rollback is intentionally exact: it never rewinds a board that another actor advanced.
+   */
+  public synchronized boolean rollbackEngineGameMove(
+      BoardHistoryList expectedHistory,
+      BoardHistoryNode expectedPreviousNode,
+      EngineGameMoveCommit expectedCommit) {
+    if (expectedHistory == null) {
+      return false;
+    }
+    synchronized (expectedHistory) {
+      BoardHistoryNode expectedCommittedNode = expectedCommit == null ? null : expectedCommit.node;
+      if (history != expectedHistory
+          || expectedCommit == null
+          || expectedHistory.getCurrentHistoryNode() != expectedCommittedNode
+          || expectedCommittedNode.previous().orElse(null) != expectedPreviousNode) {
+        return false;
+      }
+      if (!expectedHistory.previous().isPresent()
+          || expectedHistory.getCurrentHistoryNode() != expectedPreviousNode) {
+        return false;
+      }
+      if (expectedCommit.createdNode) {
+        for (int index = 0; index < expectedPreviousNode.variations.size(); index++) {
+          if (expectedPreviousNode.variations.get(index) == expectedCommittedNode) {
+            expectedPreviousNode.deleteChild(index);
+            break;
+          }
+        }
+      }
+      return true;
+    }
+  }
+
   public void editmovelist(ArrayList<Movelist> movelist, int[] coords, int x, int y) {
     //   int lenth = movelist.size();
     //  if (Lizzie.board.hasStartStone) movenum += startStonelist.size();
@@ -1574,6 +1834,206 @@ public class Board {
     return Lizzie.leelaz.submitOrdinaryLiveBoardForwarding(
         EngineManager.OrdinaryLiveBoardForwardingIntent.of(
             this::forwardCurrentPositionToPrimaryEngine));
+  }
+
+  /**
+   * Restores one immutable snapshot of the current position and waits for strict GTP completion.
+   *
+   * <p>This is intended for resource handoffs where merely enqueueing ordinary clear/play
+   * commands is insufficient. The admission is bound to the captured primary-engine generation;
+   * replacement, GTP rejection, or timeout is reported as a failure instead of resuming analysis
+   * on a stale position.
+   */
+  public boolean restoreCurrentPositionToPrimaryEngineExact() {
+    Optional<FrozenPrimaryPosition> frozen = freezeCurrentPositionForPrimaryEngineExactRestore();
+    if (frozen.isEmpty()) {
+      return false;
+    }
+    return frozen.get().execute();
+  }
+
+  /**
+   * Freezes immutable board data and primary identity without acquiring an engine admission.
+   * Admission is deliberately delayed until {@link FrozenPrimaryPosition#execute()}, so a prior
+   * companion-close failure cannot leak a never-executed board-sync lease.
+   */
+  public Optional<FrozenPrimaryPosition> freezeCurrentPositionForPrimaryEngineExactRestore() {
+    Leelaz engine = Lizzie.leelaz;
+    if (engine == null || !isCapturedPrimaryReadyForExactRestore(engine)) {
+      return Optional.empty();
+    }
+    long generation = Lizzie.capturePrimaryEngineGeneration(engine);
+    if (generation < 0) {
+      return Optional.empty();
+    }
+    return freezeCurrentPositionForPrimaryEngineExactRestore(engine, generation);
+  }
+
+  private Optional<FrozenPrimaryPosition> freezeCurrentPositionForPrimaryEngineExactRestore(
+      Leelaz engine, long generation) {
+    if (engine == null
+        || generation < 0
+        || !isCapturedPrimaryReadyForExactRestore(engine)
+        || Lizzie.capturePrimaryEngineGeneration(engine) != generation) {
+      return Optional.empty();
+    }
+    BoardData position;
+    BoardHistoryList capturedHistory;
+    BoardHistoryNode capturedCurrentNode;
+    long capturedContextRevision;
+    int capturedBoardWidth;
+    int capturedBoardHeight;
+    synchronized (this) {
+      if (history == null || history.getData() == null) {
+        return Optional.empty();
+      }
+      capturedHistory = history;
+      capturedCurrentNode = history.getCurrentHistoryNode();
+      capturedContextRevision = contextRevision;
+      capturedBoardWidth = boardWidth;
+      capturedBoardHeight = boardHeight;
+      position = history.getData().clone();
+      if (position.komi == -999) {
+        if (history.getGameInfo() != null) {
+          position.komi = history.getGameInfo().getKomi();
+        } else if (!Float.isNaN(engine.komi)) {
+          position.komi = engine.komi;
+        } else {
+          position.komi = 0.0;
+        }
+      }
+      position.addProperty(
+          "SZ",
+          capturedBoardWidth == capturedBoardHeight
+              ? String.valueOf(capturedBoardWidth)
+              : capturedBoardWidth + ":" + capturedBoardHeight);
+    }
+    if (Lizzie.capturePrimaryEngineGeneration(engine) != generation) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new FrozenPrimaryPosition(
+            this,
+            engine,
+            generation,
+            capturedHistory,
+            capturedCurrentNode,
+            capturedContextRevision,
+            capturedBoardWidth,
+            capturedBoardHeight,
+            position));
+  }
+
+  public static final class FrozenPrimaryPosition {
+    private final Board owner;
+    private final Leelaz engine;
+    private final long primaryGeneration;
+    private final BoardHistoryList capturedHistory;
+    private final BoardHistoryNode capturedCurrentNode;
+    private final long capturedContextRevision;
+    private final int capturedBoardWidth;
+    private final int capturedBoardHeight;
+    private final BoardData position;
+
+    private FrozenPrimaryPosition(
+        Board owner,
+        Leelaz engine,
+        long primaryGeneration,
+        BoardHistoryList capturedHistory,
+        BoardHistoryNode capturedCurrentNode,
+        long capturedContextRevision,
+        int capturedBoardWidth,
+        int capturedBoardHeight,
+        BoardData position) {
+      this.owner = owner;
+      this.engine = engine;
+      this.primaryGeneration = primaryGeneration;
+      this.capturedHistory = capturedHistory;
+      this.capturedCurrentNode = capturedCurrentNode;
+      this.capturedContextRevision = capturedContextRevision;
+      this.capturedBoardWidth = capturedBoardWidth;
+      this.capturedBoardHeight = capturedBoardHeight;
+      this.position = position;
+    }
+
+    /** Captures admission after companion close, then executes a strict ACK-backed restore. */
+    public boolean execute() {
+      if (Lizzie.board != owner
+          || Lizzie.capturePrimaryEngineGeneration(engine) != primaryGeneration) {
+        return false;
+      }
+      Leelaz.ExactSnapshotRestoreAdmission admission =
+          engine.captureHistoryNavigationExactSnapshotRestoreAdmission();
+      ExactSnapshotEngineRestore.PreparedRestore prepared =
+          ExactSnapshotEngineRestore.prepareCurrentPosition(admission, position);
+      if (Lizzie.board != owner
+          || Lizzie.capturePrimaryEngineGeneration(engine) != primaryGeneration) {
+        prepared.discard();
+        return false;
+      }
+      prepared.execute();
+      return true;
+    }
+
+    /**
+     * Returns whether the acknowledged snapshot is still the displayed position.
+     *
+     * <p>The board monitor makes the identity/revision/data comparison atomic with navigation.
+     * Primary identity is checked on both sides without nesting the primary-engine lock under the
+     * board lock.
+     */
+    public boolean matchesCurrentBoardAndPrimary() {
+      if (Lizzie.board != owner
+          || Lizzie.capturePrimaryEngineGeneration(engine) != primaryGeneration) {
+        return false;
+      }
+      boolean matches;
+      synchronized (owner) {
+        BoardHistoryList currentHistory = owner.history;
+        BoardData current = currentHistory == null ? null : currentHistory.getData();
+        matches =
+            currentHistory == capturedHistory
+                && currentHistory != null
+                && currentHistory.getCurrentHistoryNode() == capturedCurrentNode
+                && owner.contextRevision == capturedContextRevision
+                && current != null
+                && current.blackToPlay == position.blackToPlay
+                && Double.compare(resolveKomi(currentHistory, current, engine), position.komi) == 0
+                && java.util.Objects.equals(current.zobrist, position.zobrist)
+                && Arrays.equals(current.stones, position.stones)
+                && Board.boardWidth == capturedBoardWidth
+                && Board.boardHeight == capturedBoardHeight;
+      }
+      return matches
+          && Lizzie.board == owner
+          && Lizzie.capturePrimaryEngineGeneration(engine) == primaryGeneration;
+    }
+
+    /** Captures the latest displayed position while retaining the original primary incarnation. */
+    public Optional<FrozenPrimaryPosition> recaptureCurrentPositionForSamePrimary() {
+      if (Lizzie.board != owner) {
+        return Optional.empty();
+      }
+      return owner.freezeCurrentPositionForPrimaryEngineExactRestore(engine, primaryGeneration);
+    }
+
+    private static double resolveKomi(
+        BoardHistoryList history, BoardData current, Leelaz engine) {
+      if (current.komi != -999) {
+        return current.komi;
+      }
+      if (history.getGameInfo() != null) {
+        return history.getGameInfo().getKomi();
+      }
+      if (!Float.isNaN(engine.komi)) {
+        return engine.komi;
+      }
+      return 0.0;
+    }
+  }
+
+  private boolean isCapturedPrimaryReadyForExactRestore(Leelaz engine) {
+    return engine == Lizzie.leelaz && isPrimaryEngineReady();
   }
 
   private boolean forwardCurrentPositionToPrimaryEngine() {
@@ -4395,6 +4855,54 @@ public class Board {
     return history;
   }
 
+  /** Captures every board-owned value that {@link #clear(boolean)} replaces or resets. */
+  public synchronized ClearStateSnapshot captureClearState() {
+    if (history == null) {
+      throw new IllegalStateException("Cannot snapshot a board without history.");
+    }
+    return new ClearStateSnapshot(this);
+  }
+
+  /** Restores an exact {@link #captureClearState()} token after a failed mode handoff. */
+  public void restoreClearState(ClearStateSnapshot snapshot) {
+    if (snapshot == null || snapshot.owner != this) {
+      throw new IllegalArgumentException("Clear-state snapshot belongs to a different board.");
+    }
+    synchronized (this) {
+      boardWidth = snapshot.boardWidth;
+      boardHeight = snapshot.boardHeight;
+      Zobrist.restoreTables(snapshot.zobristTables);
+      history = snapshot.history;
+      analysisMode = snapshot.analysisMode;
+      setupMode = snapshot.setupMode;
+      forceRefresh = snapshot.forceRefresh;
+      forceRefresh2 = snapshot.forceRefresh2;
+      hasBigBranch = snapshot.hasBigBranch;
+      neverPassedInGame = snapshot.neverPassedInGame;
+      isPkBoard = snapshot.isPkBoard;
+      isGameBoard = snapshot.isGameBoard;
+      isPkBoardKataB = snapshot.isPkBoardKataB;
+      isPkBoardKataW = snapshot.isPkBoardKataW;
+      isKataBoard = snapshot.isKataBoard;
+      hasStartStone = snapshot.hasStartStone;
+      isExtremlySmallBoard = snapshot.isExtremlySmallBoard;
+      startStonelist = snapshot.startStoneList;
+      if (movelistwr == null) {
+        movelistwr = new ArrayList<Movelistwr>();
+      }
+      movelistwr.clear();
+      movelistwr.addAll(snapshot.moveListWr);
+      boardstatbeforeedit = snapshot.boardStateBeforeEdit;
+      boardstatafteredit = snapshot.boardStateAfterEdit;
+      tempmovelist = snapshot.tempMoveList;
+      tempmovelist2 = snapshot.tempMoveList2;
+      isTusmegoMode = snapshot.isTsumegoMode;
+      tsumegoNode = snapshot.tsumegoNode;
+      movelistRefreshGeneration++;
+    }
+    notifyReadBoardHistoryOverwritten();
+  }
+
   public void setHistory(BoardHistoryList newList) {
     synchronized (this) {
       movelistRefreshGeneration++;
@@ -4567,6 +5075,21 @@ public class Board {
       forwarding = clearBoardState(isEngineGame);
     }
     // Engine forwarding runs outside the board monitor (no board -> engine lock nesting).
+    forwarding.forward();
+  }
+
+  /**
+   * Atomically applies an initial engine's board shape and clears board-owned state. Engine and
+   * ReadBoard forwarding deliberately runs after releasing the Board monitor.
+   */
+  public void resizeAndClearForInitialEngineStartup(int width, int height) {
+    EngineForwardingPlan forwarding;
+    synchronized (this) {
+      boardWidth = width;
+      boardHeight = height;
+      Zobrist.init();
+      forwarding = clearBoardState(false);
+    }
     forwarding.forward();
   }
 

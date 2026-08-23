@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupSnapshot;
 import java.awt.CardLayout;
@@ -17,6 +19,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JButton;
@@ -321,26 +325,135 @@ class KataGoAutoSetupDialogLayoutTest {
   }
 
   @Test
+  void appliedWeightWaitsForTheExactEngineSwitchTokenAndFinalActivePhase() {
+    long expectedToken = 41L;
+
+    assertEquals(
+        KataGoAutoSetupDialog.AppliedEngineWaitState.WAITING,
+        KataGoAutoSetupDialog.evaluateAppliedEngineWait(
+            expectedToken,
+            EngineManager.EngineSwitchUiPhase.SWITCHING,
+            0,
+            expectedToken,
+            1));
+    assertEquals(
+        KataGoAutoSetupDialog.AppliedEngineWaitState.ACTIVE,
+        KataGoAutoSetupDialog.evaluateAppliedEngineWait(
+            expectedToken,
+            EngineManager.EngineSwitchUiPhase.ACTIVE,
+            1,
+            expectedToken,
+            1));
+    assertEquals(
+        KataGoAutoSetupDialog.AppliedEngineWaitState.FAILED,
+        KataGoAutoSetupDialog.evaluateAppliedEngineWait(
+            expectedToken,
+            EngineManager.EngineSwitchUiPhase.FAILED,
+            0,
+            expectedToken,
+            1));
+    assertEquals(
+        KataGoAutoSetupDialog.AppliedEngineWaitState.SUPERSEDED,
+        KataGoAutoSetupDialog.evaluateAppliedEngineWait(
+            expectedToken + 1,
+            EngineManager.EngineSwitchUiPhase.ACTIVE,
+            1,
+            expectedToken,
+            1));
+  }
+
+  @Test
+  void acceptedWeightGetsOneEdtPumpBeforeBlockingCatalogWorkStarts() throws Exception {
+    CountDownLatch catalogLoadEntered = new CountDownLatch(1);
+    CountDownLatch releaseCatalogLoad = new CountDownLatch(1);
+    CountDownLatch firstPaintPumpEntered = new CountDownLatch(1);
+    CountDownLatch releaseFirstPaintPump = new CountDownLatch(1);
+
+    SwingUtilities.invokeAndWait(
+        () -> {
+          KataGoAutoSetupDialog.dispatchWeightSwitchReloadWork(
+              () -> {
+                catalogLoadEntered.countDown();
+                try {
+                  assertTrue(releaseCatalogLoad.await(2, TimeUnit.SECONDS));
+                } catch (InterruptedException interrupted) {
+                  Thread.currentThread().interrupt();
+                  throw new AssertionError(interrupted);
+                }
+              },
+              73L,
+              null);
+          SwingUtilities.invokeLater(
+              () -> {
+                firstPaintPumpEntered.countDown();
+                try {
+                  assertTrue(releaseFirstPaintPump.await(2, TimeUnit.SECONDS));
+                } catch (InterruptedException interrupted) {
+                  Thread.currentThread().interrupt();
+                  throw new AssertionError(interrupted);
+                }
+              });
+        });
+    assertTrue(firstPaintPumpEntered.await(2, TimeUnit.SECONDS));
+
+    assertEquals(
+        1L,
+        catalogLoadEntered.getCount(),
+        "the first post-acceptance EDT pump must remain available for painting");
+    releaseFirstPaintPump.countDown();
+    assertTrue(catalogLoadEntered.await(2, TimeUnit.SECONDS));
+    releaseCatalogLoad.countDown();
+  }
+
+  @Test
+  void engineReloadOutcomeCannotCrossManagerIdentity() throws Exception {
+    EngineManager previous = Lizzie.engineManager;
+    EngineManager first = newEngineManager();
+    EngineManager replacement = newEngineManager();
+    try {
+      Lizzie.engineManager = first;
+      assertTrue(KataGoAutoSetupDialog.isCurrentEngineManager(first));
+      Lizzie.engineManager = replacement;
+      assertFalse(
+          KataGoAutoSetupDialog.isCurrentEngineManager(first),
+          "an old switch snapshot must not be paired with a replacement manager");
+      assertTrue(KataGoAutoSetupDialog.isCurrentEngineManager(replacement));
+    } finally {
+      Lizzie.engineManager = previous;
+    }
+  }
+
+  private static EngineManager newEngineManager() throws Exception {
+    java.lang.reflect.Constructor<EngineManager> constructor =
+        EngineManager.class.getDeclaredConstructor(List.class);
+    constructor.setAccessible(true);
+    return constructor.newInstance(List.of());
+  }
+
+  @Test
   void acceptedWeightSwitchPublishesTargetImmediatelyOnTheEventDispatchThread(@TempDir Path tempDir)
       throws IOException {
     SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
     SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
-    AtomicReference<SetupSnapshot> displayed = new AtomicReference<SetupSnapshot>(current);
+    AtomicReference<KataGoAutoSetupDialog.WeightSwitchDisplayState> displayed =
+        new AtomicReference<>(KataGoAutoSetupDialog.WeightSwitchDisplayState.active(current));
     AtomicBoolean updatedOnEdt = new AtomicBoolean(false);
 
     KataGoAutoSetupDialog.runWeightSwitchUiUpdate(
         () -> {
-          displayed.set(
-              KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-                  displayed.get(),
-                  requested,
-                  null,
-                  KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
-                  false));
+          displayed.set(displayed.get().begin(requested));
           updatedOnEdt.set(SwingUtilities.isEventDispatchThread());
         });
 
-    assertSame(requested, displayed.get(), "the target must be visible before readiness polling");
+    assertSame(
+        requested,
+        displayed.get().bannerSnapshot(),
+        "the target must be visible before readiness polling");
+    assertTrue(displayed.get().isPendingWeight(requested.activeWeightPath));
+    assertFalse(
+        displayed.get().isActiveWeight(requested.activeWeightPath),
+        "a requested weight must not be reported active before engine readiness");
+    assertTrue(displayed.get().isActiveWeight(current.activeWeightPath));
     assertTrue(updatedOnEdt.get(), "Swing model and labels must only be updated on the EDT");
   }
 
@@ -351,56 +464,53 @@ class KataGoAutoSetupDialogLayoutTest {
     SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
     SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
     SetupSnapshot authoritative = createSetupSnapshot(tempDir, "authoritative.bin.gz");
-    SetupSnapshot displayed =
-        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-            current,
-            requested,
-            null,
-            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
-            false);
-
-    displayed =
-        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-            displayed,
-            requested,
-            authoritative,
-            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.FAILED,
-            false);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState pending =
+        KataGoAutoSetupDialog.WeightSwitchDisplayState.active(current).begin(requested);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState displayed =
+        pending.fail(pending.token(), authoritative);
 
     assertSame(
         authoritative,
-        displayed,
+        displayed.displayedSnapshot(),
         "a terminal failure must replace the optimistic object with the latest setup");
-    assertEquals("authoritative.bin.gz", displayed.activeWeightPath.getFileName().toString());
+    assertEquals(
+        "authoritative.bin.gz",
+        displayed.displayedSnapshot().activeWeightPath.getFileName().toString());
+    assertTrue(displayed.isFailed());
+    assertFalse(displayed.isActiveWeight(requested.activeWeightPath));
+    assertFalse(displayed.isActiveWeight(authoritative.activeWeightPath));
   }
 
   @Test
-  void timedOutWeightSwitchKeepsAcceptedTargetWhileItRemainsPrimary(@TempDir Path tempDir)
+  void timedOutWeightSwitchNeverClaimsTheUnreadyTargetAsActive(@TempDir Path tempDir)
       throws IOException {
     SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
     SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
     SetupSnapshot staleAuthoritative = createSetupSnapshot(tempDir, "current.bin.gz");
-    SetupSnapshot displayed =
-        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-            current,
-            requested,
-            null,
-            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
-            false);
-
-    displayed =
-        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-            displayed,
-            requested,
-            staleAuthoritative,
-            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.FAILED,
-            true);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState pending =
+        KataGoAutoSetupDialog.WeightSwitchDisplayState.active(current).begin(requested);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState displayed =
+        pending.fail(pending.token(), staleAuthoritative);
 
     assertSame(
-        requested,
-        displayed,
-        "a 35-second soft deadline must not restore stale discovery while the target is still the pending primary");
-    assertEquals("requested.bin.gz", displayed.activeWeightPath.getFileName().toString());
+        staleAuthoritative,
+        displayed.displayedSnapshot(),
+        "the catalog may reconcile with discovery, but no weight is active after readiness timeout");
+    assertFalse(displayed.isActiveWeight(requested.activeWeightPath));
+    assertTrue(displayed.isFailed());
+  }
+
+  @Test
+  void diskDiscoveryAloneNeverClaimsThatAWeightIsActive(@TempDir Path tempDir)
+      throws IOException {
+    SetupSnapshot discovered = createSetupSnapshot(tempDir, "discovered.bin.gz");
+
+    KataGoAutoSetupDialog.WeightSwitchDisplayState displayed =
+        KataGoAutoSetupDialog.WeightSwitchDisplayState.discovered(discovered);
+
+    assertSame(discovered, displayed.displayedSnapshot());
+    assertFalse(displayed.isActive());
+    assertFalse(displayed.isActiveWeight(discovered.activeWeightPath));
   }
 
   @Test
@@ -408,25 +518,42 @@ class KataGoAutoSetupDialogLayoutTest {
       throws IOException {
     SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
     SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
-    SetupSnapshot staleAuthoritative = createSetupSnapshot(tempDir, "current.bin.gz");
-    SetupSnapshot displayed =
-        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-            current,
-            requested,
-            null,
-            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.ACCEPTED,
-            false);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState pending =
+        KataGoAutoSetupDialog.WeightSwitchDisplayState.active(current).begin(requested);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState displayed =
+        pending.succeed(pending.token(), requested);
 
-    displayed =
-        KataGoAutoSetupDialog.advanceWeightSwitchDisplay(
-            displayed,
-            requested,
-            staleAuthoritative,
-            KataGoAutoSetupDialog.WeightSwitchDisplayPhase.SUCCEEDED,
-            false);
+    assertSame(requested, displayed.displayedSnapshot());
+    assertEquals(
+        "requested.bin.gz",
+        displayed.displayedSnapshot().activeWeightPath.getFileName().toString());
+    assertTrue(displayed.isActiveWeight(requested.activeWeightPath));
+    assertEquals(KataGoAutoSetupDialog.WeightSwitchDisplayPhase.SUCCEEDED, displayed.phase());
+  }
 
-    assertSame(requested, displayed);
-    assertEquals("requested.bin.gz", displayed.activeWeightPath.getFileName().toString());
+  @Test
+  void rapidWeightSwitchIgnoresOldCallbacksThatArriveLate(@TempDir Path tempDir)
+      throws IOException {
+    SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
+    SetupSnapshot firstTarget = createSetupSnapshot(tempDir, "first.bin.gz");
+    SetupSnapshot secondTarget = createSetupSnapshot(tempDir, "second.bin.gz");
+    SetupSnapshot authoritative = createSetupSnapshot(tempDir, "authoritative.bin.gz");
+    KataGoAutoSetupDialog.WeightSwitchDisplayState first =
+        KataGoAutoSetupDialog.WeightSwitchDisplayState.active(current).begin(firstTarget);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState failed =
+        first.fail(first.token(), authoritative);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState refreshed = failed.reconcile(authoritative);
+    KataGoAutoSetupDialog.WeightSwitchDisplayState second = refreshed.begin(secondTarget);
+
+    assertTrue(second.token() > first.token(), "refresh must not reset the monotonic token");
+    assertSame(second, second.succeed(first.token(), firstTarget));
+    assertSame(second, second.fail(first.token(), authoritative));
+    assertTrue(second.isPendingWeight(secondTarget.activeWeightPath));
+
+    KataGoAutoSetupDialog.WeightSwitchDisplayState completed =
+        second.succeed(second.token(), secondTarget);
+    assertTrue(completed.isActiveWeight(secondTarget.activeWeightPath));
+    assertFalse(completed.isActiveWeight(firstTarget.activeWeightPath));
   }
 
   private SetupSnapshot createSetupSnapshot(Path tempDir, String weightFileName)

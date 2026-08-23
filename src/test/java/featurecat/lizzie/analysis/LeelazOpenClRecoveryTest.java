@@ -531,6 +531,7 @@ class LeelazOpenClRecoveryTest {
     @Override
     public void startEngine(int index) {
       startCount++;
+      bindCurrentPrimaryEngineGeneration();
       started = true;
       isCheckingName = false;
       transport =

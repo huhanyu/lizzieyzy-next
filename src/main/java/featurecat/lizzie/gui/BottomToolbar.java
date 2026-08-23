@@ -1098,15 +1098,6 @@ public class BottomToolbar extends JPanel {
         });
     if (OS.isWindows()) yike.add(syncBoard);
 
-    JFontMenuItem syncDiagnostics =
-        new JFontMenuItem(Lizzie.resourceBundle.getString("Menu.syncDiagnostics"));
-    syncDiagnostics.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            new SyncDiagnosticsDialog(Lizzie.frame).setVisible(true);
-          }
-        });
-    yike.add(syncDiagnostics);
 
     final JFontMenuItem webBoardToggle =
         new JFontMenuItem(Lizzie.resourceBundle.getString("Menu.webBoardStart"));
@@ -2565,7 +2556,14 @@ public class BottomToolbar extends JPanel {
   }
 
   private String text(String key, String fallback) {
-    return resourceBundle.containsKey(key) ? resourceBundle.getString(key) : fallback;
+    if (resourceBundle == null || key == null) {
+      return fallback;
+    }
+    try {
+      return resourceBundle.containsKey(key) ? resourceBundle.getString(key) : fallback;
+    } catch (RuntimeException unavailable) {
+      return fallback;
+    }
   }
 
   private void setButtonSize(JButton button, boolean widden) {

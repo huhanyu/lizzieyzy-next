@@ -11,6 +11,11 @@ import featurecat.lizzie.analysis.remote.EngineTransport;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.HtmlMessage;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.logging.DiagnosticModule;
+import featurecat.lizzie.logging.LoggingLimits;
+import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.LoggingSettings;
+import featurecat.lizzie.logging.WorkDirectoryResolution;
 import featurecat.lizzie.rules.Board;
 import java.awt.Window;
 import java.io.BufferedReader;
@@ -24,16 +29,28 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LeelazReaderIncarnationTest {
+  @TempDir Path loggingDirectory;
+
+  @AfterEach
+  void resetLogging() {
+    LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+  }
+
   @Test
   void parameterReadTimeoutBelongsToTheEngineThatScheduledIt() throws Exception {
     try (GlobalState ignored = GlobalState.install()) {
@@ -270,14 +287,70 @@ class LeelazReaderIncarnationTest {
   }
 
   @Test
-  void abnormalReaderCleanupQueuesDiagnosticAfterAnEdtRebindWaitIsReleased() throws Exception {
+  void unexpectedStdoutEofIsRecordedAsStructuredTransportFailure() throws Exception {
+    LoggingRuntime runtime = startEngineDiagnostics();
+    try (GlobalState ignored = GlobalState.install()) {
+      Leelaz engine = new Leelaz("");
+      RecoveryTransport transport = new RecoveryTransport();
+      engine.useRemoteCompute = true;
+      setField(engine, "remoteTransport", transport);
+      initializeStreams(engine, bytes(""), bytes(""));
+      Object binding = getField(engine, "readerStreamBinding");
+      Lizzie.leelaz = engine;
+      Lizzie.engineManager = new RecoveryRecordingManager(engine);
+      engine.started = true;
+      engine.isLoaded = true;
+
+      invokeTerminal(engine, binding);
+      awaitLogs(runtime);
+
+      String app = Files.readString(loggingDirectory.resolve("logs/app.log"));
+      assertTrue(app.contains("engine event=transport-failure"), app);
+      assertTrue(app.contains("stream=stdout"), app);
+      assertTrue(app.contains("reason=unexpected-eof"), app);
+      assertTrue(app.contains("errorType=none"), app);
+    }
+  }
+
+  @Test
+  void stdoutIOExceptionIsStructuredWithoutPersistingItsMessage() throws Exception {
+    LoggingRuntime runtime = startEngineDiagnostics();
+    try (GlobalState ignored = GlobalState.install()) {
+      Leelaz engine = new Leelaz("");
+      RecoveryTransport transport = new RecoveryTransport();
+      engine.useRemoteCompute = true;
+      setField(engine, "remoteTransport", transport);
+      initializeStreams(engine, bytes(""), bytes(""));
+      Object binding = getField(engine, "readerStreamBinding");
+      Lizzie.leelaz = engine;
+      Lizzie.engineManager = new RecoveryRecordingManager(engine);
+      engine.started = true;
+      engine.isLoaded = true;
+
+      invokeTerminal(engine, binding, new IOException("secret transport payload"));
+      awaitLogs(runtime);
+
+      String app = Files.readString(loggingDirectory.resolve("logs/app.log"));
+      assertTrue(app.contains("reason=io-error"), app);
+      assertTrue(app.contains("errorType=IOException"), app);
+      assertFalse(app.contains("secret transport payload"), app);
+    }
+  }
+
+  @Test
+  void abnormalReaderCleanupSuppressesStaleDiagnosticAfterAnEdtRebind() throws Exception {
     try (GlobalState ignored = GlobalState.install()) {
       DeferredDiagnosticLeelaz engine = new DeferredDiagnosticLeelaz();
       RecordingProcess process = new RecordingProcess();
       setField(engine, "process", process);
       initializeStreams(engine, bytes(""), bytes(""));
       Object binding = getField(engine, "readerStreamBinding");
-      Lizzie.leelaz = new Leelaz("");
+      int previousCurrentEngineNo = EngineManager.currentEngineNo;
+      Lizzie.engineManager =
+          new EngineManager(new java.util.ArrayList<>(List.of(engine)));
+      EngineManager.currentEngineNo = 0;
+      Lizzie.setPrimaryEngine(engine);
+      engine.bindCurrentPrimaryEngineGeneration();
       boolean previousFirstLaunch = forceFirstLaunchSession(false);
       engine.started = true;
       engine.isLoaded = true;
@@ -325,20 +398,15 @@ class LeelazReaderIncarnationTest {
         terminalThread.join(TimeUnit.SECONDS.toMillis(5));
         assertFalse(terminalThread.isAlive(), "reader cleanup must not wait for the EDT");
         assertTrue(rebindFinished.await(5, TimeUnit.SECONDS), "EDT rebind must be notified");
-        assertTrue(
-            engine.diagnosticShown.await(5, TimeUnit.SECONDS),
-            "the deferred diagnostic must run after rebind completes");
         SwingUtilities.invokeAndWait(() -> {});
 
         assertEquals(null, terminalFailure.get());
         assertEquals(null, rebindFailure.get());
         assertEquals(null, engine.diagnosticFailure.get());
         assertEquals(
-            java.awt.GraphicsEnvironment.isHeadless(),
-            engine.diagnosticRanWithNullConfig.get());
-        assertEquals(1, engine.diagnosticCount.get());
-        assertTrue(engine.diagnosticOnEdt.get());
-        assertFalse(engine.diagnosticModal);
+            0,
+            engine.diagnosticCount.get(),
+            "a terminal diagnostic from the retired reader must not overwrite the rebound runtime");
         assertFalse((boolean) getField(engine, "readerTerminalCleanupInProgress"));
       } finally {
         engine.allowCleanupToFinish.countDown();
@@ -348,6 +416,7 @@ class LeelazReaderIncarnationTest {
         }
         SwingUtilities.invokeAndWait(() -> {});
         forceFirstLaunchSession(previousFirstLaunch);
+        EngineManager.currentEngineNo = previousCurrentEngineNo;
       }
     }
   }
@@ -442,7 +511,7 @@ class LeelazReaderIncarnationTest {
   }
 
   @Test
-  void genmovePkFollowUpReadsFromCapturedStdoutReader() throws Exception {
+  void genmovePkPassingContinuationDoesNotReadInsideParser() throws Exception {
     try (GlobalState ignored = GlobalState.install()) {
       Leelaz engine = new Leelaz("");
       BufferedReader reboundReader =
@@ -461,12 +530,12 @@ class LeelazReaderIncarnationTest {
 
       Method method =
           Leelaz.class.getDeclaredMethod(
-              "parseLineForGenmovePk", String.class, BufferedReader.class);
+              "parseLineForGenmovePk", String.class, BufferedReader.class, Object.class);
       method.setAccessible(true);
-      method.invoke(engine, "= Passing", capturedReader);
+      method.invoke(engine, "= Passing", capturedReader, getField(engine, "readerStreamBinding"));
 
       assertEquals("D4", reboundReader.readLine());
-      assertEquals(null, capturedReader.readLine());
+      assertEquals("not-a-coordinate", capturedReader.readLine());
     }
   }
 
@@ -496,6 +565,25 @@ class LeelazReaderIncarnationTest {
             "initializeStreams", InputStream.class, OutputStream.class, InputStream.class);
     method.setAccessible(true);
     method.invoke(engine, stdout, new ByteArrayOutputStream(), stderr);
+  }
+
+  private LoggingRuntime startEngineDiagnostics() {
+    LoggingRuntime.current().ifPresent(LoggingRuntime::shutdown);
+    LoggingRuntime runtime =
+        LoggingRuntime.initialize(
+            new WorkDirectoryResolution(loggingDirectory, List.of()),
+            new LoggingLimits(64, 32, 32, 32, 7, 1_000_000, 256_000));
+    runtime.applySettings(
+        LoggingSettings.defaults()
+            .withDiagnosticsEnabled(true)
+            .withDiagnosticModules(EnumSet.of(DiagnosticModule.ENGINE)));
+    return runtime;
+  }
+
+  private static void awaitLogs(LoggingRuntime runtime) throws Exception {
+    Method method = LoggingRuntime.class.getDeclaredMethod("awaitIdle");
+    method.setAccessible(true);
+    method.invoke(runtime);
   }
 
   private static void invokeTerminal(Leelaz engine, Object binding) throws Exception {
@@ -833,6 +921,11 @@ class LeelazReaderIncarnationTest {
 
     @Override
     public void close() {
+      closeCount++;
+    }
+
+    @Override
+    public void abort() {
       closeCount++;
     }
   }

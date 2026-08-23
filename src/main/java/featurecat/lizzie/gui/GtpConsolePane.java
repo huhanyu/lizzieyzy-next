@@ -3,6 +3,7 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.logging.ObservationText;
 import featurecat.lizzie.util.DocType;
 import featurecat.lizzie.util.Utils;
 import java.awt.BorderLayout;
@@ -20,11 +21,7 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.ArrayDeque;
-import java.util.NoSuchElementException;
 import java.util.ResourceBundle;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -53,8 +50,7 @@ public class GtpConsolePane extends JDialog {
   private ScheduledExecutorService executor;
   // private int checkCount = 0;
   private Font gtpFont;
-  private ArrayDeque<DocType> docQueue;
-  private FileOutputStream bos;
+  private GtpConsoleBuffer consoleBuffer;
   private int max_length = 30000;
 
   /** Creates a Gtp Console Window */
@@ -74,7 +70,7 @@ public class GtpConsolePane extends JDialog {
       e.printStackTrace();
       gtpFont = new Font(Font.MONOSPACED, Font.PLAIN, Config.frameFontSize);
     }
-    docQueue = new ArrayDeque<>();
+    consoleBuffer = new GtpConsoleBuffer();
     boolean persisted =
         Lizzie.config.persistedUi != null
             && Lizzie.config.persistedUi.optJSONArray("gtp-console-position") != null
@@ -183,14 +179,6 @@ public class GtpConsolePane extends JDialog {
         });
     executor = Executors.newSingleThreadScheduledExecutor();
     executor.execute(this::read);
-    if (Lizzie.config.logGtpToFile) {
-      try {
-        bos = new FileOutputStream("LastGtpLogs_" + Lizzie.nextVersion + ".txt");
-      } catch (FileNotFoundException e1) {
-        // TODO Auto-generated catch block
-        e1.printStackTrace();
-      }
-    }
   }
 
   public void openCommands() {
@@ -210,10 +198,9 @@ public class GtpConsolePane extends JDialog {
       StyleConstants.setFontFamily(attrSet, Lizzie.config.uiFontName);
     }
     StyleConstants.setFontSize(attrSet, doc.fontSize);
-    String insertContent = doc.content;
-    if (insertContent.length() > max_length / 10) {
-      insertContent = insertContent.substring(0, max_length / 10 - 5) + "(...)\n";
-    }
+    String insertContent =
+        ObservationText.boundedUtf8(
+            doc.content, max_length / 10, ObservationText.RAW_EVENT_MAX_LINES);
     insert(insertContent, attrSet);
     console.setCaretPosition(console.getDocument().getLength());
   }
@@ -224,7 +211,7 @@ public class GtpConsolePane extends JDialog {
     doc.contentColor = col;
     doc.isCommand = isCommand;
     doc.fontSize = fontSize;
-    docQueue.addLast(doc);
+    consoleBuffer().offer(doc);
   }
 
   private void checkConsole() {
@@ -255,29 +242,12 @@ public class GtpConsolePane extends JDialog {
       try {
         Thread.sleep(100);
       } catch (InterruptedException e1) {
-        // TODO Auto-generated catch block
         e1.printStackTrace();
       }
-      synchronized (docQueue) {
-        while (!docQueue.isEmpty()) {
-          try {
-            DocType doc = docQueue.removeFirst();
-            addDocs(doc);
-            if (Lizzie.config.logGtpToFile && bos != null) {
-              try {
-                bos.write(doc.content.getBytes());
-              } catch (IOException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-              }
-            }
-            checkConsole();
-          } catch (NoSuchElementException e) {
-            docQueue = new ArrayDeque<>();
-            docQueue.clear();
-            break;
-          }
-        }
+      DocType doc;
+      while ((doc = consoleBuffer().poll()) != null) {
+        addDocs(doc);
+        checkConsole();
       }
       if ((Lizzie.leelaz != null && !Lizzie.leelaz.isLoaded())
           || (EngineManager.isPreEngineGame
@@ -292,17 +262,16 @@ public class GtpConsolePane extends JDialog {
         Lizzie.frame.setCommentEditable(false);
         Lizzie.frame.appendComment();
       }
-      //      checkCount++;
-      //      if (checkCount > 300) {
-      //        checkCount = 0;
-      //      } else {
-      //        int length = console.getDocument().getLength();
-      //        if (length != scrollLength) {
-      //          scrollLength = length;
-      //          console.setCaretPosition(scrollLength);
-      //        }
-      //      }
     }
+  }
+
+  private GtpConsoleBuffer consoleBuffer() {
+    GtpConsoleBuffer buffer = consoleBuffer;
+    if (buffer == null) {
+      buffer = new GtpConsoleBuffer();
+      consoleBuffer = buffer;
+    }
+    return buffer;
   }
 
   //  public void checkConsole() {

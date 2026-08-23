@@ -26,6 +26,12 @@ public interface EngineTransport extends AutoCloseable {
 
   String description();
 
+  /**
+   * Immediately tears down the physical transport without writing an application-level shutdown
+   * command. Implementations must make this operation idempotent.
+   */
+  void abort();
+
   @Override
   void close();
 }

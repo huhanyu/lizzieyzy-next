@@ -507,15 +507,13 @@ public class FoxKifuDownload extends JFrame {
       if (jsonObject.has("chess")) {
         String kifu = jsonObject.getString("chess");
         showProgressNotice(Lizzie.frame.kifuLoadText("KifuLoad.parsing"));
-        boolean loaded =
-            Lizzie.frame.loadDownloadedSgfString(kifu, 0, Lizzie.config.readKomi, false, null);
-        if (loaded) {
-          finishFoxKifuLoadAfterMainPaint();
-        } else {
-          isKifuLoading = false;
-          setTableBusy(false);
-          hideProgressNotice();
-        }
+        Lizzie.frame.loadDownloadedSgfString(
+            kifu,
+            0,
+            Lizzie.config.readKomi,
+            false,
+            null,
+            this::completeFoxKifuLoadRequest);
       }
       if (isFoxPayloadWithoutContent(jsonObject)) {
         failCurrentFoxRequest(jsonObject, jsonObject.optString("resultstr", string));
@@ -523,6 +521,16 @@ public class FoxKifuDownload extends JFrame {
     } catch (Exception e1) {
       e1.printStackTrace();
       failCurrentFoxRequest(null, string);
+    }
+  }
+
+  private void completeFoxKifuLoadRequest(boolean loaded) {
+    if (loaded) {
+      finishFoxKifuLoadAfterMainPaint();
+    } else {
+      isKifuLoading = false;
+      setTableBusy(false);
+      hideProgressNotice();
     }
   }
 

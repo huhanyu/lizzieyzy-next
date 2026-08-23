@@ -76,6 +76,65 @@ class BoardNodeKindHistoryPipelineTest {
   }
 
   @Test
+  void analysisCacheUsesExplicitEngineOwnersAndCorrectSecondaryEstimateSlot() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    boolean previousEngineGame = EngineManager.isEngineGame;
+    try {
+      EngineManager.isEngineGame = false;
+      Lizzie.config.enableLizzieCache = true;
+      Lizzie.config.isAutoAna = false;
+      Lizzie.leelaz.pda = 0;
+      Leelaz secondary = allocate(TrackingLeelaz.class);
+      secondary.pda = 2.0;
+      MoveData move = new MoveData();
+      move.coordinate = "A1";
+      move.playouts = 100;
+      move.winrate = 61.0;
+
+      BoardData pdaRefresh = BoardData.empty(BOARD_SIZE, BOARD_SIZE);
+      pdaRefresh.setPlayouts2(100);
+      pdaRefresh.pda = 0;
+      pdaRefresh.pda2 = 1.0;
+      pdaRefresh.tryToSetBestMoves2FromEngine(
+          new ArrayList<>(List.of(move)), "secondary-pda", secondary, 100, null);
+
+      assertEquals(2.0, pdaRefresh.pda2, 0.0001);
+      assertEquals("secondary-pda", pdaRefresh.engineName2);
+      assertEquals(61.0, pdaRefresh.winrate2, 0.0001);
+
+      Lizzie.leelaz.wrn = 0.1;
+      secondary.wrn = 0.7;
+      BoardData primaryRefresh = BoardData.empty(BOARD_SIZE, BOARD_SIZE);
+      primaryRefresh.setPlayouts(100);
+      primaryRefresh.pda = 0;
+      assertTrue(
+          primaryRefresh.tryToSetBestMovesFromEngine(
+              new ArrayList<>(List.of(move)), "primary-explicit-owner", secondary, 100, null));
+      assertEquals("primary-explicit-owner", primaryRefresh.engineName);
+      assertEquals(61.0, primaryRefresh.winrate, 0.0001);
+      assertEquals(2.0, primaryRefresh.pda, 0.0001);
+      assertEquals(0.7, primaryRefresh.wrn, 0.0001);
+
+      BoardData estimateRefresh = BoardData.empty(BOARD_SIZE, BOARD_SIZE);
+      estimateRefresh.setPlayouts2(100);
+      estimateRefresh.estimateArray = List.of(9.0);
+      secondary.pda = 0;
+      estimateRefresh.tryToSetBestMoves2FromEngine(
+          new ArrayList<>(List.of(move)),
+          "secondary-estimate",
+          secondary,
+          100,
+          List.of(1.0, 2.0));
+
+      assertEquals("secondary-estimate", estimateRefresh.engineName2);
+      assertEquals(List.of(1.0, 2.0), estimateRefresh.estimateArray2);
+    } finally {
+      EngineManager.isEngineGame = previousEngineGame;
+      env.close();
+    }
+  }
+
+  @Test
   void addOrGotoKeepsPassAndSnapshotAsSeparateChildren() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {

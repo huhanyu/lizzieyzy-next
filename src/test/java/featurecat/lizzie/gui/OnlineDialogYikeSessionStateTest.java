@@ -301,6 +301,8 @@ class OnlineDialogYikeSessionStateTest {
 
     YikeSessionDiagnosticsSnapshot snapshot = currentYikeSnapshot();
     assertEquals("live-room:186538", snapshot.getPendingSessionKey());
+    assertEquals("live-room:186538", snapshot.getEventSessionKey());
+    assertTrue(snapshot.getEventTimeMillis() > 0L);
     assertEquals(Boolean.FALSE, snapshot.getPendingSyncReady());
     assertEquals(Boolean.TRUE, snapshot.getPendingGeometryReady());
     assertEquals("none", snapshot.getActiveSessionKey());
@@ -327,6 +329,7 @@ class OnlineDialogYikeSessionStateTest {
 
     YikeSessionDiagnosticsSnapshot snapshot = currentYikeSnapshot();
     assertEquals("live-room:186538", snapshot.getActiveSessionKey());
+    assertEquals("live-room:186538", snapshot.getEventSessionKey());
     assertEquals(Boolean.TRUE, snapshot.getActiveSyncReady());
     assertEquals(Boolean.TRUE, snapshot.getActiveGeometryReady());
     assertEquals(19, snapshot.getActiveBoardSize());
@@ -355,6 +358,7 @@ class OnlineDialogYikeSessionStateTest {
 
     YikeSessionDiagnosticsSnapshot snapshot = currentYikeSnapshot();
     assertEquals("none", snapshot.getActiveSessionKey());
+    assertEquals("live-room:186538", snapshot.getEventSessionKey());
     assertEquals(Boolean.FALSE, snapshot.getActiveGeometryReady());
     assertEquals("none", snapshot.getPendingSessionKey());
     assertEquals(Boolean.FALSE, snapshot.getEffectiveGeometryReady());
@@ -372,6 +376,7 @@ class OnlineDialogYikeSessionStateTest {
 
     YikeSessionDiagnosticsSnapshot snapshot = currentYikeSnapshot();
     assertEquals("live-room:186538", snapshot.getActiveSessionKey());
+    assertEquals("live-room:186538", snapshot.getEventSessionKey());
     assertEquals(Boolean.TRUE, snapshot.getActiveSyncReady());
     assertEquals(Boolean.FALSE, snapshot.getActiveGeometryReady());
     assertEquals(Boolean.FALSE, snapshot.getEffectiveGeometryReady());

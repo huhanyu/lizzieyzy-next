@@ -52,7 +52,7 @@ class EngineStartupDialogPolicyTest {
       Lizzie.config.autoCheckEngineAlive = false;
       Leelaz primary = new Leelaz("");
       Leelaz secondary = new Leelaz("");
-      Lizzie.leelaz = primary;
+      Lizzie.setPrimaryEngine(primary);
       Lizzie.engineManager = new EngineManager(List.of(primary, secondary));
       Lizzie.board = new Board();
       Lizzie.board.isPkBoard = true;
@@ -68,7 +68,7 @@ class EngineStartupDialogPolicyTest {
       assertFalse(Lizzie.board.isPkBoard);
     } finally {
       Lizzie.config = previousConfig;
-      Lizzie.leelaz = previousPrimary;
+      Lizzie.setPrimaryEngine(previousPrimary);
       Lizzie.engineManager = previousManager;
       Lizzie.board = previousBoard;
       Lizzie.frame = previousFrame;
@@ -92,14 +92,14 @@ class EngineStartupDialogPolicyTest {
     Leelaz primary = new Leelaz("");
     Leelaz secondary = new Leelaz("engines/katago/windows-x64-opencl/katago.exe");
     try {
-      Lizzie.leelaz = primary;
+      Lizzie.setPrimaryEngine(primary);
       Lizzie.engineStartupStatus.ready();
 
       invokeBundledStartupStage(secondary);
 
       assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
     } finally {
-      Lizzie.leelaz = previousPrimary;
+      Lizzie.setPrimaryEngine(previousPrimary);
       Lizzie.engineStartupStatus.ready();
     }
   }
@@ -109,14 +109,15 @@ class EngineStartupDialogPolicyTest {
     Leelaz previousPrimary = Lizzie.leelaz;
     Leelaz primary = new Leelaz("engines/katago/windows-x64-opencl/katago.exe");
     try {
-      Lizzie.leelaz = primary;
+      Lizzie.setPrimaryEngine(primary);
+      bindStartupPrimaryGeneration(primary);
       Lizzie.engineStartupStatus.ready();
 
       invokeBundledStartupStage(primary);
 
       assertEquals(EngineStartupStatus.State.CHECKING, Lizzie.engineStartupStatus.snapshot().state);
     } finally {
-      Lizzie.leelaz = previousPrimary;
+      Lizzie.setPrimaryEngine(previousPrimary);
       Lizzie.engineStartupStatus.ready();
     }
   }
@@ -127,7 +128,7 @@ class EngineStartupDialogPolicyTest {
     Leelaz primary = new Leelaz("");
     Leelaz secondary = new Leelaz("engines/katago/windows-x64-opencl/katago.exe");
     try {
-      Lizzie.leelaz = primary;
+      Lizzie.setPrimaryEngine(primary);
       Lizzie.engineStartupStatus.ready();
 
       invokeBundledStartupStatus(
@@ -137,7 +138,34 @@ class EngineStartupDialogPolicyTest {
 
       assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
     } finally {
-      Lizzie.leelaz = previousPrimary;
+      Lizzie.setPrimaryEngine(previousPrimary);
+      Lizzie.engineStartupStatus.ready();
+    }
+  }
+
+  @Test
+  void stalePrimaryGenerationCannotPublishCheckingReadyOrPdaInitialization() throws Exception {
+    Leelaz previousPrimary = Lizzie.leelaz;
+    Leelaz engine = new Leelaz("engines/katago/windows-x64-opencl/katago.exe");
+    try {
+      Lizzie.setPrimaryEngine(engine);
+      long staleGeneration = Lizzie.capturePrimaryEngineGeneration(engine);
+      bindStartupPrimaryGeneration(engine);
+      Lizzie.setPrimaryEngine(engine);
+      Lizzie.engineStartupStatus.failed("failed", "Failed", "new owner failure");
+
+      invokeBundledStartupStatus(
+          engine,
+          "BundledEngineStartup.status.checking",
+          "stale startup must be ignored");
+      Lizzie.initializeAfterVersionCheck(false, engine, false, staleGeneration);
+
+      assertEquals(
+          EngineStartupStatus.State.START_FAILED,
+          Lizzie.engineStartupStatus.snapshot().state,
+          "callbacks captured by the older generation must not publish CHECKING or READY");
+    } finally {
+      Lizzie.setPrimaryEngine(previousPrimary);
       Lizzie.engineStartupStatus.ready();
     }
   }
@@ -211,6 +239,12 @@ class EngineStartupDialogPolicyTest {
             "publishBundledStartupStatus", String.class, String.class);
     method.setAccessible(true);
     method.invoke(engine, statusKey, statusFallback);
+  }
+
+  private static void bindStartupPrimaryGeneration(Leelaz engine) throws Exception {
+    Field field = Leelaz.class.getDeclaredField("startupPrimaryEngineGeneration");
+    field.setAccessible(true);
+    field.setLong(engine, Lizzie.capturePrimaryEngineGeneration(engine));
   }
 
   private static boolean forceFirstLaunchSession(boolean value) throws Exception {

@@ -244,6 +244,44 @@ public class BoardHistoryNode {
     return node;
   }
 
+  /**
+   * Engine-game history insertion with no UI, engine, timer, PDA, or global-board callback.
+   *
+   * <p>The owning transaction has already frozen and validated the turn. Consequently the legacy
+   * root-child turn repair is neither needed nor safe here: changing the parent would make an exact
+   * rollback incomplete. A mismatch is rejected instead of being silently repaired.
+   */
+  BoardHistoryNode addOrGotoForEngineGame(
+      BoardData data, boolean frozenNewMoveNumberInBranch) {
+    if (data == null || !data.isHistoryActionNode()) {
+      throw new IllegalArgumentException("Engine-game history action is required");
+    }
+    for (BoardHistoryNode variation : variations) {
+      if (matchesVariationIdentity(variation, data)) {
+        return variation;
+      }
+    }
+    if (!previous.isPresent()) {
+      data.moveMNNumber = 1;
+    }
+    if (frozenNewMoveNumberInBranch && !variations.isEmpty()) {
+      data.moveNumberList = new int[Board.boardWidth * Board.boardHeight];
+      data.moveMNNumber = -1;
+      if (data.moveNumberList != null && data.lastMove.isPresent()) {
+        int[] move = data.lastMove.get();
+        data.moveNumberList[Board.getIndex(move[0], move[1])] = 1;
+      }
+      data.moveMNNumber = data.dummy ? 0 : 1;
+    }
+    if (this.data.blackToPlay != data.lastMoveColor.isBlack()) {
+      throw new IllegalStateException("Engine-game parent turn changed before history commit");
+    }
+    BoardHistoryNode node = new BoardHistoryNode(data);
+    variations.add(node);
+    node.previous = Optional.of(this);
+    return node;
+  }
+
   Optional<BoardHistoryNode> findDirectChildByMoveIdentity(BoardData candidate) {
     if (candidate == null || !candidate.isHistoryActionNode()) {
       return Optional.empty();

@@ -11,6 +11,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.gui.EngineData;
+import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.DownloadCancelledException;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.DownloadSession;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupResult;
@@ -34,7 +35,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.json.JSONArray;
 import org.json.JSONObject;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class KataGoRuntimeHelperTest {
@@ -42,6 +46,18 @@ public class KataGoRuntimeHelperTest {
   private static final String OS_ARCH_PROPERTY = "os.arch";
   private static final String PATH_SEPARATOR = System.getProperty("path.separator");
   private static final String WINDOWS_OS_NAME = "Windows 11";
+  private static final String EMPTY_FILE_SHA256 =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+  @BeforeEach
+  void acceptEmptyCompanionFixture() {
+    KataGoRuntimeHelper.setHumanSlCompanionSha256ForTests(EMPTY_FILE_SHA256);
+  }
+
+  @AfterEach
+  void restoreProductionCompanionDigest() {
+    KataGoRuntimeHelper.setHumanSlCompanionSha256ForTests(null);
+  }
 
   @Test
   void externalEngineKeepsOriginalDirectory() throws Exception {
@@ -242,6 +258,180 @@ public class KataGoRuntimeHelperTest {
           assertFalse(KataGoRuntimeHelper.isBundledTensorRtPath(markedEngine));
           assertTrue(KataGoRuntimeHelper.isBundledNvidiaCommand(markedEngine.toString()));
         });
+  }
+
+  @Test
+  void humanSlTensorRtLaunchUsesPackagedCudaCompanionAndLightweightProfile() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-humansl-companion");
+          Path engineDir =
+              Files.createDirectories(
+                  tempRoot
+                      .resolve("engines")
+                      .resolve("katago")
+                      .resolve("windows-x64-nvidia-tensorrt"));
+          Path tensorRtEngine = touch(engineDir.resolve("katago.exe"));
+          Path companion =
+              touch(engineDir.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME));
+          writeCurrentTensorRtEngineManifest(engineDir);
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          int originalWidth = Board.boardWidth;
+          int originalHeight = Board.boardHeight;
+          try {
+            Board.boardWidth = 19;
+            Board.boardHeight = 19;
+            withConfig(
+                runtimeWorkDirectory,
+                () -> {
+                  List<String> command =
+                      KataGoRuntimeHelper.prepareBundledLaunchCommand(
+                          Arrays.asList(
+                              tensorRtEngine.toString(),
+                              "analysis",
+                              "-config",
+                              "analysis.cfg",
+                              "-override-config",
+                              "nnMaxBatchSize=64,numAnalysisThreads=2"),
+                          tensorRtEngine,
+                          KataGoRuntimeHelper.LaunchPurpose.HUMAN_SL);
+
+                  assertEquals(normalize(companion).toString(), normalize(Path.of(command.get(0))).toString());
+                  String overrides = command.get(command.indexOf("-override-config") + 1);
+                  assertTrue(overrides.contains("numAnalysisThreads=1"));
+                  assertTrue(overrides.contains("numSearchThreadsPerAnalysisThread=8"));
+                  assertTrue(overrides.contains("nnMaxBatchSize=8"));
+                  assertTrue(overrides.contains("nnCacheSizePowerOfTwo=20"));
+                  assertTrue(overrides.contains("maxBoardXSizeForNNBuffer=19"));
+                  assertTrue(overrides.contains("maxBoardYSizeForNNBuffer=19"));
+                  assertTrue(overrides.contains("requireMaxBoardSize=true"));
+                  assertFalse(KataGoRuntimeHelper.isBundledTensorRtPath(companion));
+                });
+          } finally {
+            Board.boardWidth = originalWidth;
+            Board.boardHeight = originalHeight;
+          }
+        });
+  }
+
+  @Test
+  void humanSlTensorRtLaunchCanReuseConfiguredBundledCudaEngine() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-humansl-configured-cuda");
+          Path tensorRtEngine =
+              touch(
+                  tempRoot
+                      .resolve("engines")
+                      .resolve("katago")
+                      .resolve("windows-x64-nvidia-tensorrt")
+                      .resolve("katago.exe"));
+          Path cudaEngine =
+              touch(
+                  tempRoot
+                      .resolve("engines")
+                      .resolve("katago")
+                      .resolve("windows-x64-nvidia50-cuda")
+                      .resolve("katago.exe"));
+          touchRequiredCuda12_8Dlls(cudaEngine.getParent());
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                Lizzie.config.leelazConfig.put(
+                    "engine-settings-list",
+                    new JSONArray()
+                        .put(new JSONObject().put("command", tensorRtEngine + " gtp"))
+                        .put(new JSONObject().put("command", cudaEngine + " gtp")));
+
+                assertEquals(
+                    normalize(cudaEngine),
+                    normalize(KataGoRuntimeHelper.resolveHumanSlCudaCompanion(tensorRtEngine)));
+              });
+        });
+  }
+
+  @Test
+  void humanSlTensorRtLaunchFailsFastWithoutCudaCompanion() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-humansl-no-companion");
+          Path tensorRtEngine =
+              touch(
+                  tempRoot
+                      .resolve("engines")
+                      .resolve("katago")
+                      .resolve("windows-x64-nvidia-tensorrt")
+                      .resolve("katago.exe"));
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                IllegalStateException error =
+                    assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                            KataGoRuntimeHelper.prepareBundledLaunchCommand(
+                                Arrays.asList(tensorRtEngine.toString(), "analysis"),
+                                tensorRtEngine,
+                                KataGoRuntimeHelper.LaunchPurpose.HUMAN_SL));
+
+                String message = error.getMessage();
+                assertTrue(message.contains("TensorRT"));
+                assertTrue(message.contains("CUDA"));
+                assertTrue(
+                    message.toLowerCase(Locale.ROOT).contains("reinstall")
+                        || message.contains("重新安装")
+                        || message.contains("重新安裝"));
+              });
+        });
+  }
+
+  @Test
+  void cudaAndTensorRtRuntimesRequireNvrtcCompilerAndBuiltins() throws Exception {
+    Path legacyDir = Files.createTempDirectory("katago-helper-cudnn8-required");
+    Path legacyEngine = touch(legacyDir.resolve("katago.exe"));
+    Files.writeString(
+        legacyDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+        "Profile: cuda12.1-cudnn8\n");
+    List<List<String>> legacy =
+        KataGoRuntimeHelper.requiredRuntimeDllGroups(legacyEngine, "nvidia");
+    List<List<String>> standard =
+        KataGoRuntimeHelper.requiredRuntimeDllGroups(
+            Path.of("engines/katago/windows-x64-nvidia/katago.exe"), "nvidia");
+    List<List<String>> rtx50 =
+        KataGoRuntimeHelper.requiredRuntimeDllGroups(
+            Path.of("engines/katago/windows-x64-nvidia50-cuda/katago.exe"),
+            "nvidia50-cuda");
+    List<List<String>> tensorRt =
+        KataGoRuntimeHelper.requiredRuntimeDllGroups(
+            Path.of("engines/katago/windows-x64-nvidia-tensorrt/katago.exe"),
+            "nvidia-tensorrt");
+
+    assertTrue(legacy.contains(List.of("nvrtc64_*.dll")));
+    assertTrue(legacy.contains(List.of("nvrtc-builtins64_*.dll")));
+    assertTrue(standard.contains(List.of("nvrtc64_*.dll")));
+    assertTrue(standard.contains(List.of("nvrtc-builtins64_*.dll")));
+    assertTrue(rtx50.contains(List.of("nvrtc64_120_0.dll")));
+    assertTrue(rtx50.contains(List.of("nvrtc-builtins64_128.dll")));
+    assertTrue(tensorRt.contains(List.of("nvrtc64_120_0.dll")));
+    assertTrue(tensorRt.contains(List.of("nvrtc-builtins64_128.dll")));
+  }
+
+  @Test
+  void tensorRtRuntimeUsesPinnedOfficialArchiveSha256() {
+    assertEquals(
+        "c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d",
+        KataGoRuntimeHelper.TENSORRT_RUNTIME_SHA256);
+    assertEquals("12.8.61", KataGoRuntimeHelper.CUDA_12_8_NVRTC_VERSION);
+    assertEquals(
+        "e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d",
+        KataGoRuntimeHelper.CUDA_12_8_NVRTC_SHA256);
   }
 
   @Test
@@ -512,6 +702,73 @@ public class KataGoRuntimeHelperTest {
   }
 
   @Test
+  void oldStandardNvidiaRuntimeWithoutNvrtcIsNotReady() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-nvidia-missing-nvrtc");
+          Path engineDir =
+              Files.createDirectories(
+                  tempRoot.resolve("engines").resolve("katago").resolve("windows-x64"));
+          Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia");
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+              "Profile: cuda12.1-cudnn9\n");
+          Path enginePath = touch(engineDir.resolve("katago.exe"));
+          touchCuda12CoreWithoutNvrtc(engineDir);
+          touch(engineDir.resolve("cudnn64_9.dll"));
+          touch(engineDir.resolve("z.dll"));
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                KataGoRuntimeHelper.NvidiaRuntimeStatus status =
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+
+                assertFalse(status.ready);
+                assertTrue(status.missingDlls.contains("nvrtc64_*.dll"));
+                assertTrue(status.missingDlls.contains("nvrtc-builtins64_*.dll"));
+              });
+        });
+  }
+
+  @Test
+  void rtx50RuntimeWithoutPinnedNvrtcManifestIsNotReady() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-nvidia50-nvrtc-manifest");
+          Path engineDir =
+              Files.createDirectories(
+                  tempRoot.resolve("engines").resolve("katago").resolve("windows-x64"));
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia50-cuda");
+          Path enginePath = touch(engineDir.resolve("katago.exe"));
+          touchRequiredCuda12_8Dlls(engineDir);
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+              "Profile: cuda12.8-cudnn9\n"
+                  + "- CUDA NVRTC: 12.8.60 | fixture | sha256="
+                  + KataGoRuntimeHelper.CUDA_12_8_NVRTC_SHA256
+                  + "\n");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                KataGoRuntimeHelper.NvidiaRuntimeStatus status =
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+
+                assertFalse(status.ready);
+                assertTrue(
+                    status.missingDlls.contains("CUDA NVRTC 12.8.61 manifest"),
+                    "RTX 50 migration must reject an unpinned NVRTC manifest");
+              });
+        });
+  }
+
+  @Test
   void nvidia50CudaRuntimeAcceptsCudnn9() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
@@ -620,7 +877,7 @@ public class KataGoRuntimeHelperTest {
                     "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6",
                     spec.katagoSha256);
                 assertEquals(7_678_930L, spec.katagoSizeBytes);
-                assertEquals(5, spec.runtimePackageCount);
+                assertEquals(6, spec.runtimePackageCount);
                 assertTrue(spec.totalDownloadBytes > 3_000_000_000L);
                 assertEquals(
                     normalize(
@@ -737,6 +994,11 @@ public class KataGoRuntimeHelperTest {
                         assertEquals("KataGo TensorRT", result.engineName);
                         assertTrue(Files.isRegularFile(targetDir.resolve("katago.exe")));
                         assertTrue(Files.isRegularFile(targetDir.resolve("libz.dll")));
+                        assertTrue(
+                            Files.isRegularFile(
+                                targetDir.resolve(
+                                    KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME)),
+                            "The in-app install must preserve a CUDA HumanSL companion.");
                         assertEquals(
                             "nvidia-tensorrt",
                             Files.readString(targetDir.resolve("lizzieyzy-next-engine-backend.txt"))
@@ -745,6 +1007,10 @@ public class KataGoRuntimeHelperTest {
                             Files.readString(
                                     targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
                                 .contains("KataGo release: v1.17.2"));
+                        assertTrue(
+                            Files.readString(
+                                    targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
+                                .contains("HumanSL companion SHA-256:"));
                         List<EngineData> engines = Utils.getEngineData();
                         assertTrue(
                             engines.stream()
@@ -913,8 +1179,7 @@ public class KataGoRuntimeHelperTest {
                 Path runtimeDir = runtimeWorkDirectory.resolve("nvidia-runtime");
                 touch(targetDir.resolve("katago.exe"));
                 touch(targetDir.resolve("libz.dll"));
-                touchCommonCuda12Dlls(runtimeDir);
-                touch(runtimeDir.resolve("cudnn64_9.dll"));
+                touchRequiredCuda12_8Dlls(runtimeDir);
                 touch(runtimeDir.resolve("nvinfer_10.dll"));
                 touch(runtimeDir.resolve("nvinfer_plugin_10.dll"));
                 Files.writeString(
@@ -960,6 +1225,151 @@ public class KataGoRuntimeHelperTest {
                                 "KataGo TensorRT".equals(engine.name)
                                     && engine.isDefault
                                     && engine.commands.contains("windows-x64-nvidia-tensorrt")));
+              });
+        });
+  }
+
+  @Test
+  void currentTensorRtInstallWithoutCompanionRepairsFromPinnedNvidia50Source()
+      throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-companion-repair");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                Path targetDir =
+                    runtimeWorkDirectory
+                        .resolve("engines")
+                        .resolve("katago")
+                        .resolve("windows-x64-nvidia-tensorrt");
+                Path targetEngine = touch(targetDir.resolve("katago.exe"));
+                Path runtimeDir = runtimeWorkDirectory.resolve("nvidia-runtime");
+                touchRequiredCuda12_8Dlls(runtimeDir);
+                touch(runtimeDir.resolve("nvinfer_10.dll"));
+                touch(runtimeDir.resolve("nvinfer_plugin_10.dll"));
+                Files.writeString(
+                    targetDir.resolve("lizzieyzy-next-engine-backend.txt"),
+                    "nvidia-tensorrt\n");
+                writeCurrentTensorRtEngineManifestWithoutCompanion(targetDir);
+
+                assertFalse(
+                    KataGoRuntimeHelper.inspectTensorRtInstall(snapshot).installed,
+                    "A current TensorRT binary without any usable HumanSL route is incomplete.");
+
+                SetupResult result =
+                    KataGoRuntimeHelper.downloadAndInstallTensorRt(
+                        snapshot, null, new DownloadSession());
+
+                Path repaired =
+                    targetDir.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME);
+                assertTrue(Files.isRegularFile(repaired));
+                assertEquals(EMPTY_FILE_SHA256, sha256(repaired));
+                assertTrue(
+                    Files.readString(
+                            targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
+                        .contains("HumanSL companion SHA-256: " + EMPTY_FILE_SHA256));
+                assertEquals(normalize(targetEngine), normalize(result.snapshot.enginePath));
+                assertTrue(KataGoRuntimeHelper.inspectTensorRtInstall(result.snapshot).active);
+              });
+        });
+  }
+
+  @Test
+  void legacyCudnn8EngineRemainsAnExternalFallbackAndIsNeverCopiedIntoTensorRt()
+      throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-legacy-fallback");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createLegacyNvidiaSnapshot(tempRoot);
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                Path targetDir =
+                    runtimeWorkDirectory
+                        .resolve("engines")
+                        .resolve("katago")
+                        .resolve("windows-x64-nvidia-tensorrt");
+                touch(targetDir.resolve("katago.exe"));
+                Path runtimeDir = runtimeWorkDirectory.resolve("nvidia-runtime");
+                touchRequiredCuda12_8Dlls(runtimeDir);
+                touch(runtimeDir.resolve("nvinfer_10.dll"));
+                touch(runtimeDir.resolve("nvinfer_plugin_10.dll"));
+                Files.writeString(
+                    targetDir.resolve("lizzieyzy-next-engine-backend.txt"),
+                    "nvidia-tensorrt\n");
+                writeCurrentTensorRtEngineManifestWithoutCompanion(targetDir);
+                Lizzie.config.leelazConfig.put(
+                    "engine-settings-list",
+                    new JSONArray()
+                        .put(
+                            new JSONObject()
+                                .put("command", '"' + snapshot.enginePath.toString() + '"' + " gtp")));
+
+                SetupResult result =
+                    KataGoRuntimeHelper.downloadAndInstallTensorRt(
+                        snapshot, null, new DownloadSession());
+
+                assertFalse(
+                    Files.exists(
+                        targetDir.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME)),
+                    "A cuDNN 8 executable must never be copied and relabelled as nvidia50-cuda.");
+                assertEquals(
+                    normalize(snapshot.enginePath),
+                    normalize(
+                        KataGoRuntimeHelper.resolveHumanSlCudaCompanion(
+                            result.snapshot.enginePath)));
+                assertTrue(KataGoRuntimeHelper.inspectTensorRtInstall(result.snapshot).active);
+              });
+        });
+  }
+
+  @Test
+  void unknownNvidia50ExecutableCannotBecomeTensorRtCompanion() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-unknown-companion");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          Files.writeString(snapshot.enginePath, "unknown ABI fixture");
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                Path targetDir =
+                    runtimeWorkDirectory
+                        .resolve("engines")
+                        .resolve("katago")
+                        .resolve("windows-x64-nvidia-tensorrt");
+                touch(targetDir.resolve("katago.exe"));
+                Path runtimeDir = runtimeWorkDirectory.resolve("nvidia-runtime");
+                touchRequiredCuda12_8Dlls(runtimeDir);
+                touch(runtimeDir.resolve("nvinfer_10.dll"));
+                touch(runtimeDir.resolve("nvinfer_plugin_10.dll"));
+                Files.writeString(
+                    targetDir.resolve("lizzieyzy-next-engine-backend.txt"),
+                    "nvidia-tensorrt\n");
+                writeCurrentTensorRtEngineManifestWithoutCompanion(targetDir);
+
+                IOException failure =
+                    assertThrows(
+                        IOException.class,
+                        () ->
+                            KataGoRuntimeHelper.downloadAndInstallTensorRt(
+                                snapshot, null, new DownloadSession()));
+
+                assertFalse(failure.getMessage().trim().isEmpty());
+                assertFalse(
+                    Files.exists(
+                        targetDir.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME)));
               });
         });
   }
@@ -1060,6 +1470,55 @@ public class KataGoRuntimeHelperTest {
                 assertTrue(status.downloaded);
                 assertFalse(status.installed, "Missing TensorRT runtime should not be ready.");
                 assertFalse(status.active);
+                assertTrue(KataGoRuntimeHelper.canInstallTensorRt(snapshot));
+              });
+        });
+  }
+
+  @Test
+  void oldTensorRtInstallWithoutNvrtcRequiresRuntimeMigration() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-missing-nvrtc");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                Path targetDir =
+                    runtimeWorkDirectory
+                        .resolve("engines")
+                        .resolve("katago")
+                        .resolve("windows-x64-nvidia-tensorrt");
+                Path runtimeDir =
+                    Files.createDirectories(runtimeWorkDirectory.resolve("nvidia-runtime"));
+                touch(targetDir.resolve("katago.exe"));
+                Files.writeString(
+                    targetDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia-tensorrt\n");
+                writeCurrentTensorRtEngineManifest(targetDir);
+                touchCuda12CoreWithoutNvrtc(runtimeDir);
+                touch(runtimeDir.resolve("cudnn64_9.dll"));
+                touch(runtimeDir.resolve("nvinfer_10.dll"));
+                touch(runtimeDir.resolve("nvinfer_plugin_10.dll"));
+                touch(runtimeDir.resolve("z.dll"));
+                Files.writeString(
+                    runtimeDir.resolve("manifest.txt"),
+                    "CUDA NVRTC: 12.8.61\nfixture\nSHA-256: "
+                        + KataGoRuntimeHelper.CUDA_12_8_NVRTC_SHA256
+                        + "\n");
+
+                KataGoRuntimeHelper.NvidiaRuntimeStatus runtimeStatus =
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(targetDir.resolve("katago.exe"));
+                KataGoRuntimeHelper.TensorRtInstallStatus installStatus =
+                    KataGoRuntimeHelper.inspectTensorRtInstall(snapshot);
+
+                assertFalse(runtimeStatus.ready);
+                assertTrue(runtimeStatus.missingDlls.contains("nvrtc64_120_0.dll"));
+                assertTrue(runtimeStatus.missingDlls.contains("nvrtc-builtins64_128.dll"));
+                assertTrue(installStatus.downloaded);
+                assertFalse(installStatus.installed);
                 assertTrue(KataGoRuntimeHelper.canInstallTensorRt(snapshot));
               });
         });
@@ -1805,20 +2264,55 @@ public class KataGoRuntimeHelperTest {
     return touch(engineDir.resolve("katago.exe"));
   }
 
-  private static void touchCommonCuda12Dlls(Path directory) throws IOException {
+  private static void touchCuda12CoreWithoutNvrtc(Path directory) throws IOException {
     touch(directory.resolve("cudart64_12.dll"));
     touch(directory.resolve("cublas64_12.dll"));
     touch(directory.resolve("cublasLt64_12.dll"));
     touch(directory.resolve("nvJitLink64_12.dll"));
   }
 
+  private static void touchCommonCuda12Dlls(Path directory) throws IOException {
+    touchCuda12CoreWithoutNvrtc(directory);
+    touch(directory.resolve("nvrtc64_120_0.dll"));
+    touch(directory.resolve("nvrtc-builtins64_128.dll"));
+  }
+
   private static void touchRequiredCuda12_8Dlls(Path directory) throws IOException {
     touchCommonCuda12Dlls(directory);
     touch(directory.resolve("cudnn64_9.dll"));
     touch(directory.resolve("z.dll"));
+    Files.writeString(
+        directory.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+        "Profile: cuda12.8-cudnn9\n"
+            + "- CUDA NVRTC: "
+            + KataGoRuntimeHelper.CUDA_12_8_NVRTC_VERSION
+            + " | fixture | sha256="
+            + KataGoRuntimeHelper.CUDA_12_8_NVRTC_SHA256
+            + "\n");
+  }
+
+  private static void touchRequiredLegacyCudaDlls(Path directory) throws IOException {
+    touchCuda12CoreWithoutNvrtc(directory);
+    touch(directory.resolve("cudnn64_8.dll"));
+    touch(directory.resolve("nvrtc64_120_0.dll"));
+    touch(directory.resolve("nvrtc-builtins64_121.dll"));
+    touch(directory.resolve("z.dll"));
   }
 
   private static void writeCurrentTensorRtEngineManifest(Path directory) throws IOException {
+    touch(directory.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME));
+    writeCurrentTensorRtEngineManifestWithoutCompanion(directory);
+    Files.writeString(
+        directory.resolve("lizzieyzy-next-katago-engine-manifest.txt"),
+        "HumanSL companion: katago-human-sl-cuda.exe\n"
+            + "HumanSL companion SHA-256: "
+            + EMPTY_FILE_SHA256
+            + "\n",
+        StandardOpenOption.APPEND);
+  }
+
+  private static void writeCurrentTensorRtEngineManifestWithoutCompanion(Path directory)
+      throws IOException {
     Files.writeString(
         directory.resolve("lizzieyzy-next-katago-engine-manifest.txt"),
         "KataGo release: v1.17.2\n"
@@ -1835,6 +2329,31 @@ public class KataGoRuntimeHelperTest {
             appRoot.resolve("engines").resolve("katago").resolve("windows-x64-nvidia50-cuda"));
     Path enginePath = touch(engineDir.resolve("katago.exe"));
     Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia50-cuda");
+    Path configDir =
+        Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve("configs"));
+    Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));
+    Path analysisConfigPath = touch(configDir.resolve("analysis.cfg"));
+    Path estimateConfigPath = touch(configDir.resolve("estimate.cfg"));
+    Path weightPath = touch(workingDir.resolve("weights").resolve("default.bin.gz"));
+    return setupSnapshot(
+        workingDir,
+        appRoot,
+        enginePath,
+        gtpConfigPath,
+        analysisConfigPath,
+        estimateConfigPath,
+        weightPath);
+  }
+
+  private static SetupSnapshot createLegacyNvidiaSnapshot(Path tempRoot) throws Exception {
+    Path workingDir = Files.createDirectories(tempRoot.resolve("working"));
+    Path appRoot = Files.createDirectories(tempRoot.resolve("app"));
+    Path engineDir =
+        Files.createDirectories(
+            appRoot.resolve("engines").resolve("katago").resolve("windows-x64-nvidia"));
+    Path enginePath = touch(engineDir.resolve("katago.exe"));
+    Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia");
+    touchRequiredLegacyCudaDlls(engineDir);
     Path configDir =
         Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve("configs"));
     Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));

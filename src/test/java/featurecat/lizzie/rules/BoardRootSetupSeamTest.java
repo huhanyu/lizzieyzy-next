@@ -694,7 +694,7 @@ class BoardRootSetupSeamTest {
   }
 
   @Test
-  void setupModeRoutingPrecedesActiveHumanSlGame() throws Exception {
+  void activeHumanSlGameRoutingPrecedesStaleSetupMode() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
       BoardRenderer previousRenderer = LizzieFrame.boardRenderer;
@@ -707,15 +707,89 @@ class BoardRootSetupSeamTest {
 
         BoardHistoryNode root = Lizzie.board.getHistory().getStart();
         assertEquals(
-            Stone.BLACK,
+            Stone.EMPTY,
             root.getData().stones[Board.getIndex(1, 1)],
-            "setup-mode clicks must not be routed into an active HumanSL game.");
-        assertEquals(0, root.numberOfChildren(), "setup-mode click must stay root-only.");
+            "an active HumanSL game must keep a stale setup-mode flag from rewriting its frozen root.");
+        assertEquals(
+            0,
+            root.numberOfChildren(),
+            "the rejected HumanSL click must not create a move or a setup mutation.");
+
+        assertTrue(
+            Lizzie.frame.onClickedRight(0, 0),
+            "an active HumanSL game must consume right clicks on the owned board.");
+        assertEquals(
+            Stone.EMPTY,
+            root.getData().stones[Board.getIndex(1, 1)],
+            "a right click must not bypass HumanSL ownership through the setup seam.");
+        assertEquals(0, root.numberOfChildren(), "the right click must not create a move node.");
       } finally {
         Lizzie.frame.humanSlGame = null;
         LizzieFrame.boardRenderer = previousRenderer;
       }
     } finally {
+      env.close();
+    }
+  }
+
+  @Test
+  void activeHumanSlGameOwnsInputMousePressBeforeStaleSetupMode() throws Exception {
+    TestEnvironment env = TestEnvironment.open();
+    boolean previousTempDrag = Input.tempDrag;
+    try {
+      BoardRenderer previousRenderer = LizzieFrame.boardRenderer;
+      LizzieFrame.boardRenderer = allocate(FakeBoardRenderer.class);
+      Lizzie.frame.humanSlGame = allocate(HumanSlGameController.class);
+      try {
+        Lizzie.board.setSetupMode(true);
+        Lizzie.frame.setupTool = LizzieFrame.SETUP_TOOL_BLACK;
+        Input.tempDrag = true;
+        Input input = new Input();
+        javax.swing.JComponent source = new javax.swing.JPanel();
+
+        input.mousePressed(
+            new MouseEvent(
+                source,
+                MouseEvent.MOUSE_PRESSED,
+                System.currentTimeMillis(),
+                0,
+                10,
+                10,
+                1,
+                false,
+                MouseEvent.BUTTON1));
+
+        BoardHistoryNode root = Lizzie.board.getHistory().getStart();
+        assertFalse(Input.tempDrag, "HumanSL routing must cancel stale drag ownership.");
+        assertEquals(
+            Stone.EMPTY,
+            root.getData().stones[Board.getIndex(1, 1)],
+            "the real left-button input path must not rewrite HumanSL's frozen root.");
+        assertEquals(0, root.numberOfChildren(), "the left press must not create a move node.");
+
+        input.mousePressed(
+            new MouseEvent(
+                source,
+                MouseEvent.MOUSE_PRESSED,
+                System.currentTimeMillis(),
+                0,
+                10,
+                10,
+                1,
+                false,
+                MouseEvent.BUTTON3));
+
+        assertEquals(
+            Stone.EMPTY,
+            root.getData().stones[Board.getIndex(1, 1)],
+            "the real right-button input path must not enter the setup seam.");
+        assertEquals(0, root.numberOfChildren(), "the right press must not create a move node.");
+      } finally {
+        Lizzie.frame.humanSlGame = null;
+        LizzieFrame.boardRenderer = previousRenderer;
+      }
+    } finally {
+      Input.tempDrag = previousTempDrag;
       env.close();
     }
   }
@@ -771,8 +845,14 @@ class BoardRootSetupSeamTest {
     private final Menu previousMenu;
     private final WinrateGraph previousWinrateGraph;
     private final Leelaz previousLeelaz;
+    private final Leelaz previousLeelaz2;
+    private final EngineManager previousEngineManager;
+    private final int previousCurrentEngineNo;
+    private final int previousCurrentEngineNo2;
+    private final boolean previousEngineEmpty;
     private final Config previousConfig;
     private final boolean previousEngineGame;
+    private final boolean previousPreEngineGame;
     private final EngineFollowController previousEngineFollowController;
 
     private TestEnvironment(
@@ -783,8 +863,14 @@ class BoardRootSetupSeamTest {
         Menu previousMenu,
         WinrateGraph previousWinrateGraph,
         Leelaz previousLeelaz,
+        Leelaz previousLeelaz2,
+        EngineManager previousEngineManager,
+        int previousCurrentEngineNo,
+        int previousCurrentEngineNo2,
+        boolean previousEngineEmpty,
         Config previousConfig,
         boolean previousEngineGame,
+        boolean previousPreEngineGame,
         EngineFollowController previousEngineFollowController) {
       this.previousBoardWidth = previousBoardWidth;
       this.previousBoardHeight = previousBoardHeight;
@@ -793,8 +879,14 @@ class BoardRootSetupSeamTest {
       this.previousMenu = previousMenu;
       this.previousWinrateGraph = previousWinrateGraph;
       this.previousLeelaz = previousLeelaz;
+      this.previousLeelaz2 = previousLeelaz2;
+      this.previousEngineManager = previousEngineManager;
+      this.previousCurrentEngineNo = previousCurrentEngineNo;
+      this.previousCurrentEngineNo2 = previousCurrentEngineNo2;
+      this.previousEngineEmpty = previousEngineEmpty;
       this.previousConfig = previousConfig;
       this.previousEngineGame = previousEngineGame;
+      this.previousPreEngineGame = previousPreEngineGame;
       this.previousEngineFollowController = previousEngineFollowController;
     }
 
@@ -806,8 +898,14 @@ class BoardRootSetupSeamTest {
       Menu previousMenu = LizzieFrame.menu;
       WinrateGraph previousWinrateGraph = LizzieFrame.winrateGraph;
       Leelaz previousLeelaz = Lizzie.leelaz;
+      Leelaz previousLeelaz2 = Lizzie.leelaz2;
+      EngineManager previousEngineManager = Lizzie.engineManager;
+      int previousCurrentEngineNo = EngineManager.currentEngineNo;
+      int previousCurrentEngineNo2 = EngineManager.currentEngineNo2;
+      boolean previousEngineEmpty = EngineManager.isEmpty;
       Config previousConfig = Lizzie.config;
       boolean previousEngineGame = EngineManager.isEngineGame;
+      boolean previousPreEngineGame = EngineManager.isPreEngineGame;
       EngineFollowController previousEngineFollowController = Lizzie.engineFollowController;
 
       Board.boardWidth = BOARD_SIZE;
@@ -823,11 +921,20 @@ class BoardRootSetupSeamTest {
       Lizzie.frame = allocate(TrackingFrame.class);
       LizzieFrame.menu = allocate(Menu.class);
       LizzieFrame.menu.txtKomi = new javax.swing.JTextField();
-      Lizzie.leelaz = allocate(TrackingLeelaz.class);
+      TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
+      EngineManager fixtureEngineManager = createFixtureEngineManager(leelaz);
+      // Ordinary board forwarding is gated by this complete foreground-engine authority tuple.
+      EngineManager.currentEngineNo = 0;
+      EngineManager.currentEngineNo2 = -1;
+      EngineManager.isEmpty = false;
+      EngineManager.isEngineGame = false;
+      EngineManager.isPreEngineGame = false;
+      Lizzie.setPrimaryEngine(leelaz);
+      Lizzie.setEngineManager(fixtureEngineManager);
+      Lizzie.leelaz2 = null;
       Config config = allocate(Config.class);
       config.newMoveNumberInBranch = false;
       config.playSound = false;
-      EngineManager.isEngineGame = false;
       Lizzie.engineFollowController = null;
       config.initialMaxScoreLead = 10;
       Lizzie.config = config;
@@ -840,8 +947,14 @@ class BoardRootSetupSeamTest {
           previousMenu,
           previousWinrateGraph,
           previousLeelaz,
+          previousLeelaz2,
+          previousEngineManager,
+          previousCurrentEngineNo,
+          previousCurrentEngineNo2,
+          previousEngineEmpty,
           previousConfig,
           previousEngineGame,
+          previousPreEngineGame,
           previousEngineFollowController);
     }
 
@@ -854,11 +967,24 @@ class BoardRootSetupSeamTest {
       Lizzie.frame = previousFrame;
       LizzieFrame.menu = previousMenu;
       LizzieFrame.winrateGraph = previousWinrateGraph;
-      Lizzie.leelaz = previousLeelaz;
+      Lizzie.setPrimaryEngine(previousLeelaz);
+      Lizzie.setEngineManager(previousEngineManager);
+      Lizzie.leelaz2 = previousLeelaz2;
+      EngineManager.currentEngineNo = previousCurrentEngineNo;
+      EngineManager.currentEngineNo2 = previousCurrentEngineNo2;
+      EngineManager.isEmpty = previousEngineEmpty;
       Lizzie.config = previousConfig;
       EngineManager.isEngineGame = previousEngineGame;
+      EngineManager.isPreEngineGame = previousPreEngineGame;
       Lizzie.engineFollowController = previousEngineFollowController;
     }
+  }
+
+  private static EngineManager createFixtureEngineManager(Leelaz primaryEngine) throws Exception {
+    java.lang.reflect.Constructor<EngineManager> constructor =
+        EngineManager.class.getDeclaredConstructor(List.class);
+    constructor.setAccessible(true);
+    return constructor.newInstance(new ArrayList<>(List.of(primaryEngine)));
   }
 
   private static final class FakeBoardRenderer extends BoardRenderer {

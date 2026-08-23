@@ -7,6 +7,7 @@ public final class YikeSessionDiagnosticsSnapshot {
   private final Boolean listenerEnabled;
   private final String currentRouteKind;
   private final String currentSessionKey;
+  private final String eventSessionKey;
   private final String activeSessionKey;
   private final Boolean activeSyncReady;
   private final Boolean activeGeometryReady;
@@ -29,6 +30,7 @@ public final class YikeSessionDiagnosticsSnapshot {
     this.listenerEnabled = builder.listenerEnabled;
     this.currentRouteKind = SyncDecisionTrace.normalize(builder.currentRouteKind, "unknown");
     this.currentSessionKey = SyncDecisionTrace.normalize(builder.currentSessionKey, "none");
+    this.eventSessionKey = SyncDecisionTrace.normalize(builder.eventSessionKey, "none");
     this.activeSessionKey = SyncDecisionTrace.normalize(builder.activeSessionKey, "none");
     this.activeSyncReady = builder.activeSyncReady;
     this.activeGeometryReady = builder.activeGeometryReady;
@@ -70,6 +72,11 @@ public final class YikeSessionDiagnosticsSnapshot {
 
   public String getCurrentSessionKey() {
     return currentSessionKey;
+  }
+
+  /** Session that owned the event when it occurred, independent of later active/current state. */
+  public String getEventSessionKey() {
+    return eventSessionKey;
   }
 
   public String getActiveSessionKey() {
@@ -132,6 +139,10 @@ public final class YikeSessionDiagnosticsSnapshot {
     return timestampMillis;
   }
 
+  public long getEventTimeMillis() {
+    return timestampMillis;
+  }
+
   public String getSource() {
     return source;
   }
@@ -146,6 +157,7 @@ public final class YikeSessionDiagnosticsSnapshot {
     text.append("  listenerEnabled: ").append(readinessText(listenerEnabled)).append('\n');
     text.append("  currentRouteKind: ").append(currentRouteKind).append('\n');
     text.append("  currentSession: ").append(currentSessionKey).append('\n');
+    text.append("  eventSession: ").append(eventSessionKey).append('\n');
     text.append("  active: ")
         .append(activeSessionKey)
         .append(" syncReady=")
@@ -176,7 +188,7 @@ public final class YikeSessionDiagnosticsSnapshot {
     text.append("  lastSessionSwitchReason: ").append(lastSessionSwitchReason).append('\n');
     text.append("  lastYikeDebugEventSummary: ").append(lastYikeDebugEventSummary).append('\n');
     text.append("  source: ").append(source).append('\n');
-    text.append("  timestampMillis: ").append(timestampMillis).append('\n');
+    text.append("  eventTimeMillis: ").append(timestampMillis).append('\n');
     text.append("  summary: ").append(summary);
     return text.toString();
   }
@@ -189,6 +201,7 @@ public final class YikeSessionDiagnosticsSnapshot {
     private Boolean listenerEnabled;
     private String currentRouteKind;
     private String currentSessionKey;
+    private String eventSessionKey;
     private String activeSessionKey;
     private Boolean activeSyncReady;
     private Boolean activeGeometryReady;
@@ -219,6 +232,11 @@ public final class YikeSessionDiagnosticsSnapshot {
 
     public Builder currentSessionKey(String currentSessionKey) {
       this.currentSessionKey = currentSessionKey;
+      return this;
+    }
+
+    public Builder eventSessionKey(String eventSessionKey) {
+      this.eventSessionKey = eventSessionKey;
       return this;
     }
 
@@ -294,6 +312,11 @@ public final class YikeSessionDiagnosticsSnapshot {
 
     public Builder timestampMillis(long timestampMillis) {
       this.timestampMillis = timestampMillis;
+      return this;
+    }
+
+    public Builder eventTimeMillis(long eventTimeMillis) {
+      this.timestampMillis = eventTimeMillis;
       return this;
     }
 

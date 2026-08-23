@@ -143,7 +143,8 @@ public class EnginePkConfig extends JDialog {
         new JFontCheckBox(resourceBundle.getString("NewEngineGameDialog.checkBoxAllowPonder"));
     chkPkPonder.addActionListener(
         e -> {
-          Lizzie.config.enginePkPonder = chkPkPonder.isSelected();
+          chkPkPonder.setSelected(
+              EngineManager.setEngineGamePonderEnabled(chkPkPonder.isSelected()));
           Lizzie.config.uiConfig.put("engine-pk-ponder", Lizzie.config.enginePkPonder);
         });
     chkPkPonder.setVisible(formToolbar);

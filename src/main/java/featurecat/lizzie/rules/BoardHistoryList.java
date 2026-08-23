@@ -431,10 +431,26 @@ public class BoardHistoryList {
 
   public void pass(
       Stone color, boolean newBranch, boolean dummy, boolean changeMove, boolean addLast) {
+    pass(color, newBranch, dummy, changeMove, addLast, false, false);
+  }
+
+  void passForEngineGame(Stone color, boolean newMoveNumberInBranch) {
+    pass(color, false, false, false, false, true, newMoveNumberInBranch);
+  }
+
+  private void pass(
+      Stone color,
+      boolean newBranch,
+      boolean dummy,
+      boolean changeMove,
+      boolean addLast,
+      boolean engineGamePure,
+      boolean frozenNewMoveNumberInBranch) {
     synchronized (this) {
 
       // check to see if this move is being replayed in history
-      if (!addLast
+      if (!engineGamePure
+          && !addLast
           && this.getNext().map(BoardHistoryList::isReplayablePass).orElse(false)
           && !newBranch) {
         // this is the next move in history. Just increment history so that we don't
@@ -471,8 +487,14 @@ public class BoardHistoryList {
       newState.dummy = dummy;
 
       // update history with pass
-      if (addLast) head.getLast().addAtLast(newState);
-      else this.addOrGoto(newState, newBranch);
+      if (addLast) {
+        head.getLast().addAtLast(newState);
+      } else if (engineGamePure) {
+        this.head =
+            this.head.addOrGotoForEngineGame(newState, frozenNewMoveNumberInBranch);
+      } else {
+        this.addOrGoto(newState, newBranch);
+      }
     }
   }
 
@@ -494,6 +516,71 @@ public class BoardHistoryList {
 
   public void place(
       int x, int y, Stone color, boolean newBranch, boolean changeMove, boolean addLast) {
+    place(
+        x,
+        y,
+        color,
+        newBranch,
+        changeMove,
+        addLast,
+        Lizzie.config.noCapture,
+        Lizzie.leelaz.canSuicidal);
+  }
+
+  /** Places a move using rules frozen by an owning engine-game transaction. */
+  public void place(
+      int x,
+      int y,
+      Stone color,
+      boolean newBranch,
+      boolean changeMove,
+      boolean addLast,
+      boolean noCapture,
+      boolean canSuicidal) {
+    place(
+        x,
+        y,
+        color,
+        newBranch,
+        changeMove,
+        addLast,
+        noCapture,
+        canSuicidal,
+        false,
+        false);
+  }
+
+  void placeForEngineGame(
+      int x,
+      int y,
+      Stone color,
+      boolean noCapture,
+      boolean canSuicidal,
+      boolean newMoveNumberInBranch) {
+    place(
+        x,
+        y,
+        color,
+        false,
+        false,
+        false,
+        noCapture,
+        canSuicidal,
+        true,
+        newMoveNumberInBranch);
+  }
+
+  private void place(
+      int x,
+      int y,
+      Stone color,
+      boolean newBranch,
+      boolean changeMove,
+      boolean addLast,
+      boolean noCapture,
+      boolean canSuicidal,
+      boolean engineGamePure,
+      boolean frozenNewMoveNumberInBranch) {
     synchronized (this) {
       BoardHistoryNode curNode = this.head;
       if (addLast) curNode = head.getLast();
@@ -504,7 +591,7 @@ public class BoardHistoryList {
       if (curNode.getData().winrate >= 0) nextWinrate = 100 - curNode.getData().winrate;
 
       // check to see if this coordinate is being replayed in history
-      if (!addLast) {
+      if (!engineGamePure && !addLast) {
         Optional<int[]> nextLast = this.getNext().flatMap(n -> n.lastMove);
         if (nextLast.isPresent()
             && nextLast.get()[0] == x
@@ -542,7 +629,7 @@ public class BoardHistoryList {
       // remove enemy stones
       int capturedStones = 0;
       int isSuicidal = 0;
-      if (!Lizzie.config.noCapture) {
+      if (!noCapture) {
         capturedStones += Board.removeDeadChain(x + 1, y, color.opposite(), stones, zobrist);
         capturedStones += Board.removeDeadChain(x, y + 1, color.opposite(), stones, zobrist);
         capturedStones += Board.removeDeadChain(x - 1, y, color.opposite(), stones, zobrist);
@@ -586,7 +673,7 @@ public class BoardHistoryList {
         //    Lizzie.board.modifyEnd();
         return;
       }
-      if (Lizzie.leelaz.canSuicidal) {
+      if (canSuicidal) {
         if (isSuicidal == 1) {
           //  Lizzie.board.modifyEnd();
           return;
@@ -597,8 +684,14 @@ public class BoardHistoryList {
       }
 
       // update history with this coordinate
-      if (addLast) head.getLast().addAtLast(newState);
-      else this.addOrGoto(newState, newBranch, changeMove);
+      if (addLast) {
+        head.getLast().addAtLast(newState);
+      } else if (engineGamePure) {
+        this.head =
+            this.head.addOrGotoForEngineGame(newState, frozenNewMoveNumberInBranch);
+      } else {
+        this.addOrGoto(newState, newBranch, changeMove);
+      }
       //   Lizzie.board.modifyEnd();
       // Lizzie.frame.renderVarTree(0, 0, false, false);
     }

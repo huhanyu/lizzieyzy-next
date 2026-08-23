@@ -16,13 +16,17 @@ import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.LoadEngine;
 import featurecat.lizzie.gui.Menu;
 import featurecat.lizzie.gui.web.WebBoardManager;
+import featurecat.lizzie.logging.CrashHandlers;
+import featurecat.lizzie.logging.LogCategories;
+import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.WorkDirectoryResolution;
+import featurecat.lizzie.logging.WorkDirectoryResolver;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupSnapshot;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.LocaleFontSupport;
-import featurecat.lizzie.util.MultiOutputStream;
 import featurecat.lizzie.util.NetworkProxy;
 import featurecat.lizzie.util.Utils;
 import java.awt.Font;
@@ -31,26 +35,29 @@ import java.awt.Image;
 import java.awt.Window;
 import java.awt.geom.AffineTransform;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.plaf.FontUIResource;
 import org.jdesktop.swingx.util.OS;
 import org.json.JSONException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Main class. */
 public class Lizzie {
@@ -60,6 +67,8 @@ public class Lizzie {
     // scanners out of the image loading path.
     ImageIO.setUseCache(false);
   }
+
+  private static final Logger APP = LoggerFactory.getLogger(LogCategories.APP);
 
   public static ResourceBundle resourceBundle = ResourceBundle.getBundle("l10n.DisplayStrings");
   public static final EngineStartupStatus engineStartupStatus = new EngineStartupStatus();
@@ -72,12 +81,129 @@ public class Lizzie {
   public static Leelaz leelaz;
   public static Leelaz leelaz2;
   private static final Object PRIMARY_ENGINE_LOCK = new Object();
+  private static final ReentrantReadWriteLock ENGINE_AUTHORITY_PRESENTATION_LOCK =
+      new ReentrantReadWriteLock(true);
+  private static final ThreadLocal<Integer> ENGINE_AUTHORITY_PRESENTATION_DEPTH =
+      ThreadLocal.withInitial(() -> 0);
   private static long primaryEngineGeneration;
 
   public static void setPrimaryEngine(Leelaz engine) {
-    synchronized (PRIMARY_ENGINE_LOCK) {
-      leelaz = engine;
-      primaryEngineGeneration++;
+    runWithEngineAuthorityMutation(
+        () -> {
+          synchronized (PRIMARY_ENGINE_LOCK) {
+            leelaz = engine;
+            primaryEngineGeneration++;
+          }
+          return null;
+        });
+  }
+
+  /** Atomically replaces only the exact primary generation captured by a deferred action. */
+  public static boolean setPrimaryEngineIfCurrent(
+      Leelaz expected, long expectedGeneration, Leelaz replacement) {
+    return runWithEngineAuthorityMutation(
+        () -> {
+          synchronized (PRIMARY_ENGINE_LOCK) {
+            if (leelaz != expected || primaryEngineGeneration != expectedGeneration) {
+              return false;
+            }
+            leelaz = replacement;
+            primaryEngineGeneration++;
+            return true;
+          }
+        });
+  }
+
+  public static void setBoard(Board replacement) {
+    runWithEngineAuthorityMutation(
+        () -> {
+          board = replacement;
+          return null;
+        });
+  }
+
+  public static void setEngineManager(EngineManager replacement) {
+    runWithEngineAuthorityMutation(
+        () -> {
+          engineManager = replacement;
+          return null;
+        });
+  }
+
+  public static <T> T runWithEngineAuthorityMutation(Supplier<T> mutation) {
+    if (mutation == null) {
+      throw new IllegalArgumentException("mutation");
+    }
+    if (ENGINE_AUTHORITY_PRESENTATION_DEPTH.get() > 0) {
+      throw new IllegalStateException(
+          "Engine authority cannot be mutated by its active presentation owner");
+    }
+    ReentrantReadWriteLock.WriteLock writeLock =
+        ENGINE_AUTHORITY_PRESENTATION_LOCK.writeLock();
+    writeLock.lock();
+    try {
+      return mutation.get();
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  public static EngineAuthorityPresentationLease claimEngineAuthorityPresentation(
+      Board expectedBoard,
+      EngineManager expectedManager,
+      Leelaz expectedPrimary,
+      long expectedPrimaryGeneration) {
+    ReentrantReadWriteLock.ReadLock readLock =
+        ENGINE_AUTHORITY_PRESENTATION_LOCK.readLock();
+    readLock.lock();
+    boolean claimed = false;
+    try {
+      synchronized (PRIMARY_ENGINE_LOCK) {
+        if (board != expectedBoard
+            || engineManager != expectedManager
+            || leelaz != expectedPrimary
+            || primaryEngineGeneration != expectedPrimaryGeneration) {
+          return null;
+        }
+      }
+      ENGINE_AUTHORITY_PRESENTATION_DEPTH.set(
+          ENGINE_AUTHORITY_PRESENTATION_DEPTH.get() + 1);
+      claimed = true;
+      return new EngineAuthorityPresentationLease(Thread.currentThread());
+    } finally {
+      if (!claimed) {
+        readLock.unlock();
+      }
+    }
+  }
+
+  public static final class EngineAuthorityPresentationLease implements AutoCloseable {
+    private final Thread owner;
+    private final AtomicBoolean released = new AtomicBoolean();
+
+    private EngineAuthorityPresentationLease(Thread owner) {
+      this.owner = owner;
+    }
+
+    @Override
+    public void close() {
+      if (Thread.currentThread() != owner) {
+        throw new IllegalStateException(
+            "Engine authority presentation lease must be released by its owner");
+      }
+      if (!released.compareAndSet(false, true)) {
+        return;
+      }
+      int depth = ENGINE_AUTHORITY_PRESENTATION_DEPTH.get();
+      if (depth <= 0) {
+        throw new IllegalStateException("Engine authority presentation lease depth underflow");
+      }
+      if (depth == 1) {
+        ENGINE_AUTHORITY_PRESENTATION_DEPTH.remove();
+      } else {
+        ENGINE_AUTHORITY_PRESENTATION_DEPTH.set(depth - 1);
+      }
+      ENGINE_AUTHORITY_PRESENTATION_LOCK.readLock().unlock();
     }
   }
 
@@ -97,6 +223,52 @@ public class Lizzie {
       return true;
     }
   }
+
+  /**
+   * Runs a short state-only mutation while the exact PRIMARY generation remains current.
+   *
+   * <p>The authority write lock is held across both the generation check and the supplied action,
+   * so an active presentation lease freezes PRIMARY until its presentation is complete. The
+   * capability lets callers replace PRIMARY without re-entering its monitor from an engine
+   * endpoint callback. The supplied action must not perform I/O or invoke arbitrary UI callbacks.
+   */
+  public static boolean runIfPrimaryEngineWithMutation(
+      Leelaz expected,
+      long expectedGeneration,
+      Consumer<PrimaryEngineMutation> action) {
+    if (action == null) {
+      return false;
+    }
+    return runWithEngineAuthorityMutation(
+        () -> {
+          synchronized (PRIMARY_ENGINE_LOCK) {
+            if (leelaz != expected || primaryEngineGeneration != expectedGeneration) {
+              return false;
+            }
+            boolean[] active = {true};
+            try {
+              action.accept(
+                  replacement -> {
+                    if (!active[0] || !Thread.holdsLock(PRIMARY_ENGINE_LOCK)) {
+                      throw new IllegalStateException(
+                          "PRIMARY mutation capability used outside its ownership scope");
+                    }
+                    leelaz = replacement;
+                    primaryEngineGeneration++;
+                  });
+            } finally {
+              active[0] = false;
+            }
+            return true;
+          }
+        });
+  }
+
+  @FunctionalInterface
+  public interface PrimaryEngineMutation {
+    void replaceWith(Leelaz replacement);
+  }
+
   public static String appName = "LizzieYzy Next";
   public static String lizzieVersion = "2.5.3";
   private static final String DEFAULT_NEXT_VERSION = "next-dev";
@@ -151,28 +323,14 @@ public class Lizzie {
     if (System.getProperty("swing.aatext") == null) {
       System.setProperty("swing.aatext", "true");
     }
-    ensureWritableWorkingDir();
+    bootstrapLogging();
     config = new Config();
+    LoggingRuntime.current().ifPresent(runtime -> runtime.applySettings(config.loggingSettings));
+    logPersistedLoggingSettingsApplied();
     firstLaunchSession = config.isNewProfile() || config.firstTimeLoad;
     resourceBundle = AppLocale.loadBundle(config.useLanguage);
     NetworkProxy.installSystemProxyPropertyFromSavedConfig();
     Utils.applyMaintainedDefaultSettings();
-    if (config.logConsoleToFile) {
-      PrintStream oldPrintStream = System.out;
-      FileOutputStream bos = new FileOutputStream("LastConsoleLogs_" + nextVersion + ".txt", true);
-      MultiOutputStream multi = new MultiOutputStream(new PrintStream(bos), oldPrintStream);
-      System.setOut(new PrintStream(multi));
-
-      PrintStream oldErrorPrintStream = System.err;
-      FileOutputStream bosError =
-          new FileOutputStream("LastErrorLogs_" + nextVersion + ".txt", true);
-      MultiOutputStream multiError =
-          new MultiOutputStream(new PrintStream(bosError), oldErrorPrintStream);
-      System.setErr(new PrintStream(multiError));
-      String sf = new SimpleDateFormat("yyyy-MM-dd-HH:mm:ss").format(new Date());
-      bos.write((sf + "\n").getBytes());
-      bosError.write((sf + "\n").getBytes());
-    }
     // -Dsun.java2d.uiScale.enabled=false
     // -Dsun.java2d.win.uiScaleX=1.25 -Dsun.java2d.win.uiScaleY=1.25
     // -Dsun.java2d.win.uiScaleX=125% -Dsun.java2d.win.uiScaleY=125%
@@ -194,7 +352,6 @@ public class Lizzie {
     } catch (Exception e) {
       javaVersion = 8;
     }
-    System.out.println("java version:" + javaVersionString);
     installApplicationIcon();
     leelaz = new Leelaz("");
     isMultiScreen = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length > 1;
@@ -286,6 +443,7 @@ public class Lizzie {
         startConfiguredEngine(defaultEngine, true);
       } else {
         loadEngine = LoadEngine.createDialog();
+        APP.info("application startup engine-selection");
         loadEngine.setVisible(true);
       }
     }
@@ -294,6 +452,61 @@ public class Lizzie {
     scheduleAutoSetupSmokeProbe();
     scheduleYikeWebSmokeProbe();
     scheduleRemoteComputeSmokeProbe();
+  }
+
+  public static WorkDirectoryResolution bootstrapLogging() {
+    WorkDirectoryResolution workDirectory = WorkDirectoryResolver.resolve();
+    try {
+      Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+      if (!Files.isWritable(cwd)) {
+        System.setProperty("user.dir", workDirectory.directory().toString());
+      }
+    } catch (Exception ignored) {
+    }
+    try {
+      LoggingRuntime.initialize(workDirectory);
+    } catch (Throwable t) {
+      System.err.println(
+          LoggingRuntime.STDERR_PREFIX + "bootstrap " + t.getClass().getSimpleName());
+    }
+    CrashHandlers.install();
+    logStartupIdentity();
+    return workDirectory;
+  }
+
+  public static void logStartupIdentity() {
+    if (!APP.isInfoEnabled()) {
+      return;
+    }
+    APP.info(
+        "application version={} java.vendor={} java.version={} java.runtime={}",
+        nextVersion,
+        System.getProperty("java.vendor"),
+        System.getProperty("java.version"),
+        System.getProperty("java.runtime.version"));
+  }
+
+  public static void logPersistedLoggingSettingsApplied() {
+    LoggingRuntime.current()
+        .ifPresent(
+            runtime -> {
+              if (!APP.isInfoEnabled()) {
+                return;
+              }
+              APP.info(
+                  "persisted logging settings applied diagnostics={} modules={} scopes={}",
+                  runtime.settings().diagnosticsEnabled(),
+                  runtime.settings().diagnosticModules().size(),
+                  runtime.settings().preferredTraceScopes().size());
+            });
+  }
+
+  public static void logApplicationReady() {
+    APP.info("application ready");
+  }
+
+  public static void logShutdownRequested() {
+    APP.info("application shutdown requested");
   }
 
   /**
@@ -562,21 +775,6 @@ public class Lizzie {
     return trimmed.isEmpty() ? null : trimmed;
   }
 
-  private static void ensureWritableWorkingDir() {
-    try {
-      Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath();
-      if (Files.isWritable(cwd)) {
-        return;
-      }
-      Path fallback = Config.resolveWritableFallbackDir();
-      System.setProperty("user.dir", fallback.toString());
-      System.out.println("switch user.dir to writable path: " + fallback);
-    } catch (Exception e) {
-      // Keep default behavior if we fail to switch directory.
-      e.printStackTrace();
-    }
-  }
-
   private static void installApplicationIcon() {
     if (!System.getProperty("os.name", "").contains("Mac")) {
       return;
@@ -602,7 +800,7 @@ public class Lizzie {
       applicationIcon = ImageIO.read(iconStream);
       return applicationIcon;
     } catch (IOException e) {
-      e.printStackTrace();
+      APP.error("failed to load application icon", e);
       return null;
     }
   }
@@ -727,7 +925,7 @@ public class Lizzie {
       }
       return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      APP.error("failed to read configured engines", e);
       return false;
     }
   }
@@ -743,7 +941,7 @@ public class Lizzie {
         KataGoAutoSetupHelper.applyAutoSetup(snapshot.withActiveWeight(snapshot.activeWeightPath));
       }
     } catch (Exception e) {
-      e.printStackTrace();
+      APP.error("automatic engine profile setup failed", e);
     }
   }
 
@@ -756,18 +954,19 @@ public class Lizzie {
       config.save();
       return true;
     } catch (IOException e) {
-      e.printStackTrace();
+      APP.error("failed to save first-run profile", e);
       return false;
     }
   }
 
   public static void start(int index, boolean loadDefault) {
-    board = new Board();
+    setBoard(new Board());
     frame = new LizzieFrame();
     LizzieFrame.toolbar.setPopupMenu();
     LizzieFrame.menu.doubleMenu(true);
     frame.reSetLoc();
     frame.showMainPanel();
+    logApplicationReady();
     frame.addResizeLis();
     // 引擎跟随控制器：试下期间让引擎跟随 displayNode 实时分析
     EngineCommandSink sink = new LeelazEngineCommandSink();
@@ -788,7 +987,7 @@ public class Lizzie {
             if (config.isShowingIndependentSub) frame.openIndependentSubBoard();
             if (config.isCtrlOpened) frame.openController();
             try {
-              Lizzie.engineManager = new EngineManager(Lizzie.config, index, loadDefault);
+              new EngineManager(Lizzie.config, index, loadDefault);
             } catch (Exception e) {
               e.printStackTrace();
               engineStartupStatus.failed(
@@ -796,7 +995,7 @@ public class Lizzie {
                   "AI failed to start - click to repair",
                   e.getMessage());
               try {
-                Lizzie.engineManager = new EngineManager(Lizzie.config, -1, false);
+                new EngineManager(Lizzie.config, -1, false);
               } catch (JSONException e1) {
                 // TODO Auto-generated catch block
                 e1.printStackTrace();
@@ -844,16 +1043,24 @@ public class Lizzie {
         });
   }
 
-  public static synchronized void markEngineReady() {
+  public static void markEngineReady() {
+    if (!prepareEngineReadyPersistence()) {
+      return;
+    }
+    engineStartupStatus.prepareReady().run();
+  }
+
+  /** Performs the retryable persistence step without publishing READY or notifying listeners. */
+  public static synchronized boolean prepareEngineReadyPersistence() {
     if (startupProfileSaveFailed) {
       try {
         config.save();
         startupProfileSaveFailed = false;
       } catch (IOException e) {
-        return;
+        return false;
       }
     }
-    engineStartupStatus.ready();
+    return true;
   }
 
   public static void setLookAndFeel() {
@@ -885,14 +1092,8 @@ public class Lizzie {
       }
       AppleStyleSupport.applyUiDefaults();
       applyOptionPaneLocalization(resourceBundle);
-    } catch (IllegalAccessException e) {
-      e.printStackTrace();
-    } catch (ClassNotFoundException e) {
-      e.printStackTrace();
-    } catch (InstantiationException e) {
-      e.printStackTrace();
-    } catch (UnsupportedLookAndFeelException e) {
-      e.printStackTrace();
+    } catch (ReflectiveOperationException | UnsupportedLookAndFeelException e) {
+      APP.error("failed to set look and feel", e);
     }
   }
 
@@ -907,14 +1108,8 @@ public class Lizzie {
       }
       AppleStyleSupport.applyUiDefaults();
       applyOptionPaneLocalization(resourceBundle);
-    } catch (IllegalAccessException e) {
-      e.printStackTrace();
-    } catch (ClassNotFoundException e) {
-      e.printStackTrace();
-    } catch (InstantiationException e) {
-      e.printStackTrace();
-    } catch (UnsupportedLookAndFeelException e) {
-      e.printStackTrace();
+    } catch (ReflectiveOperationException | UnsupportedLookAndFeelException e) {
+      APP.error("failed to reset look and feel", e);
     }
   }
 
@@ -949,18 +1144,73 @@ public class Lizzie {
 
   public static void initializeAfterVersionCheck(
       boolean isEngineGame, Leelaz engine, boolean startPondering) {
+    if (engine == null) {
+      return;
+    }
+    long primaryGeneration = capturePrimaryEngineGeneration(engine);
+    initializeAfterVersionCheck(isEngineGame, engine, startPondering, primaryGeneration);
+  }
+
+  public static void initializeAfterVersionCheck(
+      boolean isEngineGame,
+      Leelaz engine,
+      boolean startPondering,
+      long primaryGeneration) {
+    PreparedEngineReadyPublication publication =
+        prepareInitializeAfterVersionCheck(
+            isEngineGame, engine, startPondering, primaryGeneration);
+    if (publication == null) {
+      return;
+    }
+    if (!publication.readyPublicationEnabled()) {
+      return;
+    }
+    final EngineStartupStatus.PreparedNotification[] notification =
+        new EngineStartupStatus.PreparedNotification[1];
+    if (runIfPrimaryEngine(
+        engine,
+        primaryGeneration,
+        () -> notification[0] = publication.prepareReadyStatus())) {
+      publication.publishForPrimary(notification[0]);
+    }
+  }
+
+  /**
+   * Performs every failure-prone engine initialization step while deferring READY and its UI.
+   * Update-engine replacement uses this capability so lifecycle close and exact incarnation
+   * settlement can finish before the terminal READY publication becomes observable.
+   */
+  public static PreparedEngineReadyPublication prepareInitializeAfterVersionCheck(
+      boolean isEngineGame,
+      Leelaz engine,
+      boolean startPondering,
+      long primaryGeneration) {
+    return prepareInitializeAfterVersionCheck(
+        isEngineGame, engine, startPondering, primaryGeneration, false);
+  }
+
+  /**
+   * Prepares engine readiness while optionally deferring PDA presentation until the lifecycle
+   * owner has closed successfully. Ordinary engine switches use this form so a late detach failure
+   * cannot leave UI belonging to a rolled-back target.
+   */
+  public static PreparedEngineReadyPublication prepareInitializeAfterVersionCheck(
+      boolean isEngineGame,
+      Leelaz engine,
+      boolean startPondering,
+      long primaryGeneration,
+      boolean deferPdaPresentation) {
+    if (engine == null) {
+      return null;
+    }
     Menu currentMenu = LizzieFrame.menu;
     LizzieFrame currentFrame = frame;
     BottomToolbar currentToolbar = LizzieFrame.toolbar;
     engine.canRestoreDymPda = true;
-    if (EngineManager.isEngineGame()) {
-      if (currentMenu != null) {
-        currentMenu.showPda(
-            engineManager.engineList.get(EngineManager.engineGameInfo.firstEngineIndex).isKataGoPda
-                || engineManager.engineList.get(EngineManager.engineGameInfo.secondEngineIndex)
-                    .isKataGoPda);
-      }
-    } else {
+    // Engine-local time setup historically precedes primary-owner publication. It must target the
+    // exact engine argument (for human games), while global READY/PDA/ponder/UI effects below stay
+    // fenced to the captured primary generation.
+    if (!EngineManager.isEngineGame()) {
       boolean readBoardGmaActive =
           currentFrame != null
               && currentFrame.readBoard != null
@@ -971,49 +1221,201 @@ public class Lizzie {
               currentFrame.isAnaPlayingAgainstLeelaz && !readBoardGmaActive)) {
         LizzieFrame.sendAiTime(false, engine, false);
       }
-      if (currentMenu != null) currentMenu.showPda(engine.isKataGoPda);
     }
-    if (engine != leelaz) return;
-    markEngineReady();
+    if (primaryGeneration < 0L) {
+      return null;
+    }
+    Runnable pdaPresentation =
+        () -> {
+          if (EngineManager.isEngineGame()) {
+            EngineManager manager = engineManager;
+            if (currentMenu != null
+                && manager != null
+                && manager.engineList != null
+                && EngineManager.engineGameInfo.firstEngineIndex >= 0
+                && EngineManager.engineGameInfo.secondEngineIndex >= 0
+                && EngineManager.engineGameInfo.firstEngineIndex < manager.engineList.size()
+                && EngineManager.engineGameInfo.secondEngineIndex < manager.engineList.size()) {
+              currentMenu.showPdaForEngine(
+                  engine,
+                  primaryGeneration,
+                  manager.engineList.get(EngineManager.engineGameInfo.firstEngineIndex).isKataGoPda
+                      || manager.engineList
+                          .get(EngineManager.engineGameInfo.secondEngineIndex)
+                          .isKataGoPda);
+            }
+          } else if (currentMenu != null) {
+            currentMenu.showPdaForEngine(engine, primaryGeneration, engine.isKataGoPda);
+          }
+        };
+    if (!runIfPrimaryEngine(
+        engine,
+        primaryGeneration,
+        () -> {
+          if (!deferPdaPresentation) {
+            pdaPresentation.run();
+          }
+          if (!isEngineGame && currentFrame != null && !currentFrame.isPlayingAgainstLeelaz) {
+            if (startPondering && !Lizzie.config.notStartPondering) {
+              engine.ponder();
+              engine.setResponseUpToDate();
+            } else {
+              engine.notPondering();
+              engine.setResponseUpToDate();
+              if (Lizzie.config.notStartPondering) {
+                Lizzie.config.notStartPondering = false;
+              }
+            }
+          }
+        })) {
+      return null;
+    }
+    boolean readyPublicationEnabled = prepareEngineReadyPersistence();
+    return new PreparedEngineReadyPublication(
+        isEngineGame,
+        engine,
+        primaryGeneration,
+        currentMenu,
+        currentFrame,
+        currentToolbar,
+        readyPublicationEnabled,
+        deferPdaPresentation
+            ? () -> runIfPrimaryEngine(engine, primaryGeneration, pdaPresentation)
+            : null);
+  }
 
-    if (!isEngineGame && currentFrame != null && !currentFrame.isPlayingAgainstLeelaz) {
-      if (startPondering && !Lizzie.config.notStartPondering) {
-        leelaz.ponder();
-        leelaz.setResponseUpToDate();
-      } else {
-        leelaz.notPondering();
-        leelaz.setResponseUpToDate();
-        if (Lizzie.config.notStartPondering) {
-          Lizzie.config.notStartPondering = false;
+  public static final class PreparedEngineReadyPublication {
+    private final boolean engineGame;
+    private final Leelaz engine;
+    private final long primaryGeneration;
+    private final Menu menu;
+    private final LizzieFrame frame;
+    private final BottomToolbar toolbar;
+    private final boolean readyPublicationEnabled;
+    private final Runnable deferredPdaPresentation;
+    private final AtomicBoolean statusPrepared = new AtomicBoolean();
+    private final AtomicBoolean presentationPublished = new AtomicBoolean();
+    private final AtomicBoolean pdaPresentationPublished = new AtomicBoolean();
+
+    private PreparedEngineReadyPublication(
+        boolean engineGame,
+        Leelaz engine,
+        long primaryGeneration,
+        Menu menu,
+        LizzieFrame frame,
+        BottomToolbar toolbar,
+        boolean readyPublicationEnabled,
+        Runnable deferredPdaPresentation) {
+      this.engineGame = engineGame;
+      this.engine = engine;
+      this.primaryGeneration = primaryGeneration;
+      this.menu = menu;
+      this.frame = frame;
+      this.toolbar = toolbar;
+      this.readyPublicationEnabled = readyPublicationEnabled;
+      this.deferredPdaPresentation = deferredPdaPresentation;
+    }
+
+    public Leelaz engine() {
+      return engine;
+    }
+
+    public long primaryGeneration() {
+      return primaryGeneration;
+    }
+
+    public boolean readyPublicationEnabled() {
+      return readyPublicationEnabled;
+    }
+
+    /** Logical state commit only; arbitrary listener callbacks remain deferred. */
+    public EngineStartupStatus.PreparedNotification prepareReadyStatus() {
+      if (!statusPrepared.compareAndSet(false, true)) {
+        throw new IllegalStateException("Engine READY publication was already prepared");
+      }
+      if (!readyPublicationEnabled) {
+        return null;
+      }
+      return engineStartupStatus.prepareReady();
+    }
+
+    /** Normal startup publication, fenced to the primary owner generation captured at prepare. */
+    public void publishForPrimary(EngineStartupStatus.PreparedNotification notification) {
+      if (notification == null) {
+        runDeferredPdaPresentation();
+        return;
+      }
+      try {
+        notification.run();
+      } catch (RuntimeException | Error listenerFailure) {
+        listenerFailure.printStackTrace();
+      }
+      Runnable presentation =
+          () -> {
+            if (!notification.isCurrent()) {
+              return;
+            }
+            runIfPrimaryEngine(
+                engine,
+                primaryGeneration,
+                () -> {
+                  if (notification.isCurrent()) {
+                    runPresentation();
+                  }
+                });
+          };
+      try {
+        if (SwingUtilities.isEventDispatchThread()) {
+          presentation.run();
+        } else {
+          SwingUtilities.invokeLater(presentation);
         }
+      } catch (RuntimeException | Error presentationFailure) {
+        presentationFailure.printStackTrace();
       }
     }
-    SwingUtilities.invokeLater(
-        () -> {
-          if (engine != leelaz) return;
-          if (currentMenu != null) currentMenu.updateMenuStatusForEngine();
-          if (currentFrame != null && !currentFrame.syncBoard) currentFrame.reSetLoc();
-          if (currentToolbar != null) currentToolbar.reSetButtonLocation();
-          if (!isEngineGame
-              && currentFrame != null
-              && currentFrame.resetMovelistFrameandAnalysisFrame()) {
-            currentFrame.setVisible(true);
-          }
-        });
+
+    /** Caller supplies the exact manager/slot/incarnation fence at UI execution time. */
+    public void runPresentation() {
+      if (!presentationPublished.compareAndSet(false, true)) {
+        return;
+      }
+      runDeferredPdaPresentation();
+      runReadyPresentationStep(() -> {
+        if (menu != null) menu.updateMenuStatusForEngine();
+      });
+      runReadyPresentationStep(() -> {
+        if (frame != null && !frame.syncBoard) frame.reSetLoc();
+      });
+      runReadyPresentationStep(() -> {
+        if (toolbar != null) toolbar.reSetButtonLocation();
+      });
+      runReadyPresentationStep(
+          () -> {
+            if (!engineGame && frame != null && frame.resetMovelistFrameandAnalysisFrame()) {
+              frame.setVisible(true);
+            }
+          });
+    }
+
+    private void runDeferredPdaPresentation() {
+      if (deferredPdaPresentation != null
+          && pdaPresentationPublished.compareAndSet(false, true)) {
+        runReadyPresentationStep(deferredPdaPresentation);
+      }
+    }
+
+    private static void runReadyPresentationStep(Runnable action) {
+      try {
+        action.run();
+      } catch (RuntimeException | Error failure) {
+        failure.printStackTrace();
+      }
+    }
   }
 
   public static void shutdown() {
-    //    if (config.config.getJSONObject("ui").getBoolean("confirm-exit")) {
-    //      int ret =
-    //          JOptionPane.showConfirmDialog(
-    //              Lizzie.frame,
-    //              resourceBundle.getString("Lizzie.askOnExit1"),
-    //              resourceBundle.getString("Lizzie.askOnExit2"),
-    //              JOptionPane.OK_CANCEL_OPTION);
-    //      if (ret == JOptionPane.OK_OPTION) {
-    //        frame.saveFile(false);
-    //      }
-    //    }
+    logShutdownRequested();
     if (config.autoSaveOnExit) frame.saveAutoGame(1);
     if (Lizzie.config.uiConfig.optBoolean("autoload-last", false)) {
       Lizzie.config.uiConfig.put("last-engine", EngineManager.currentEngineNo);
@@ -1032,7 +1434,7 @@ public class Lizzie {
               + resourceBundle.getString("Lizzie.save.path")
               + config.getPersistFilePath()
               + "</html>");
-      e.printStackTrace();
+      APP.error("failed to persist UI state", e);
     }
     try {
       config.save();
@@ -1045,7 +1447,7 @@ public class Lizzie {
               + resourceBundle.getString("Lizzie.save.path")
               + config.getConfigFilePath()
               + "</html>");
-      e.printStackTrace();
+      APP.error("failed to save config on shutdown", e);
     }
     try {
       frame.closeContributeEngine();
@@ -1066,7 +1468,7 @@ public class Lizzie {
     try {
       frame.shutdownClockHelper();
     } catch (Exception e) {
-      e.printStackTrace();
+      APP.error("failed to shut down clock helper", e);
     }
     Lizzie.frame.destroyEstimateEngine();
     Lizzie.frame.destroyAnalysisEngine();
@@ -1077,7 +1479,22 @@ public class Lizzie {
         e.printStackTrace();
       }
     }
-    System.exit(0);
+    shutdownLoggingThenExit(System::exit);
+  }
+
+  public static void shutdownLoggingThenExit(IntConsumer exit) {
+    try {
+      LoggingRuntime.current()
+          .ifPresent(
+              runtime -> {
+                if (APP.isInfoEnabled()) {
+                  APP.info("logging shutdown begin");
+                }
+                runtime.shutdown();
+              });
+    } catch (RuntimeException ignored) {
+    }
+    exit.accept(0);
   }
 
   public static void resetAllHints() {

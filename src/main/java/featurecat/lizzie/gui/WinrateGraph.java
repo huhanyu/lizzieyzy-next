@@ -1962,6 +1962,14 @@ public class WinrateGraph {
     maxScoreLead = Lizzie.config.initialMaxScoreLead;
   }
 
+  double maxScoreLeadForModeHandoff() {
+    return maxScoreLead;
+  }
+
+  void restoreMaxScoreLeadAfterFailedModeHandoff(double value) {
+    maxScoreLead = value;
+  }
+
   private BoardHistoryNode currentGraphNode() {
     if (Lizzie.board == null || Lizzie.board.getHistory() == null) {
       return null;

@@ -168,9 +168,20 @@ public class SyncDiagnosticsDialog extends JDialog {
 
   private void exportDiagnosticsPackage() {
     try {
+      featurecat.lizzie.logging.LoggingRuntime runtime =
+          featurecat.lizzie.logging.LoggingRuntime.current()
+              .orElseThrow(() -> new IOException("logging runtime unavailable"));
       Path zip =
-          new SyncDiagnosticsExporter(SyncDiagnosticsExporter.defaultOutputDirectory())
-              .export(SyncDiagnosticsRecorder.getDefault().exportSnapshot());
+          new featurecat.lizzie.logging.DiagnosticBundleExporter(
+                  featurecat.lizzie.logging.DiagnosticBundleExporter.defaultOutputDirectory(
+                      runtime.logsDirectory().getParent()))
+              .export(
+                  new featurecat.lizzie.logging.DiagnosticBundleRequest(
+                      runtime,
+                      java.util.EnumSet.noneOf(featurecat.lizzie.logging.TraceScope.class),
+                      Lizzie.config == null ? new org.json.JSONObject() : Lizzie.config.config,
+                      SyncDiagnosticsRecorder.getDefault().exportSnapshot(),
+                      Lizzie.nextVersion == null ? "unknown" : Lizzie.nextVersion));
       refreshSummary();
       setStatus(exportSuccessStatus(text("SyncDiagnostics.exportSuccess", "Exported to:"), zip));
     } catch (IOException | RuntimeException ex) {
@@ -254,6 +265,10 @@ public class SyncDiagnosticsDialog extends JDialog {
     text.append("  currentSession: ")
         .append(sanitizer.sessionAlias(yike.getCurrentSessionKey()))
         .append('\n');
+    text.append("  eventSession: ")
+        .append(sanitizer.sessionAlias(yike.getEventSessionKey()))
+        .append('\n');
+    text.append("  eventTimeMillis: ").append(yike.getEventTimeMillis()).append('\n');
     text.append("  active: ")
         .append(sanitizer.sessionAlias(yike.getActiveSessionKey()))
         .append(" syncReady=")
@@ -290,7 +305,6 @@ public class SyncDiagnosticsDialog extends JDialog {
         .append(sanitizer.text(yike.getLastYikeDebugEventSummary()))
         .append('\n');
     text.append("  source: ").append(sanitizer.text(yike.getSource())).append('\n');
-    text.append("  timestampMillis: ").append(yike.getTimestampMillis()).append('\n');
     text.append("  summary: ").append(sanitizer.text(yike.getSummary()));
     return text.toString();
   }

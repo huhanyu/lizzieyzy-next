@@ -1181,6 +1181,13 @@ class ReadBoardGmaSessionContractTest {
         },
         new Object[] {
           new ExactSnapshotEngineRestore.Failure(
+              ExactSnapshotEngineRestore.FailureCategory.UNSUPPORTED_REMOTE_POSITION,
+              "Remote exact snapshot restore cannot represent a white-to-play position with an "
+                  + "empty real tail"),
+          ReadBoardGmaSession.FailureCategory.UNSUPPORTED_REMOTE_POSITION
+        },
+        new Object[] {
+          new ExactSnapshotEngineRestore.Failure(
               ExactSnapshotEngineRestore.FailureCategory.SEND_FAILED,
               "Exact snapshot restore loadsgf command was rejected: loadsgf /tmp/lizzie-snapshot-1.sgf"),
           ReadBoardGmaSession.FailureCategory.SEND_FAILED

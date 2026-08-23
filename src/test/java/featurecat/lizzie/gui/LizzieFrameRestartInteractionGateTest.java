@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -7,8 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
+import java.awt.DefaultKeyboardFocusManager;
 import java.awt.EventQueue;
 import java.awt.GraphicsEnvironment;
+import java.awt.KeyEventDispatcher;
+import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
@@ -18,7 +22,11 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.AbstractAction;
 import javax.swing.JButton;
 import javax.swing.JDialog;
@@ -279,6 +287,212 @@ class LizzieFrameRestartInteractionGateTest {
     }
   }
 
+  @Test
+  void gateRollsBackEveryPartialMutationWhenDirectEdtDisableThrowsError() throws Exception {
+    Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+    KeyboardFocusManager previousFocusManager =
+        KeyboardFocusManager.getCurrentKeyboardFocusManager();
+    InspectingKeyboardFocusManager focusManager = new InspectingKeyboardFocusManager();
+    InspectingKeyboardFocusManager.install(focusManager);
+    JFrame frame = new JFrame();
+    AssertionError disableFailure = new AssertionError("controlled disable error");
+    AssertionError restoreFailure = new AssertionError("controlled rollback error");
+    ErrorOnDisableDialog dialog =
+        new ErrorOnDisableDialog(frame, disableFailure, restoreFailure);
+    try {
+      SwingUtilities.invokeAndWait(
+          () -> {
+            frame.setEnabled(true);
+            dialog.setEnabled(true);
+            dialog.arm();
+          });
+      int dispatcherCount = focusManager.dispatcherCount();
+      AtomicReference<AssertionError> observed = new AtomicReference<>();
+
+      SwingUtilities.invokeAndWait(
+          () ->
+              observed.set(
+                  assertThrows(
+                      AssertionError.class,
+                      () -> LizzieFrame.beginRestartInteractionGate(frame))));
+
+      assertSame(disableFailure, observed.get());
+      assertEquals(1, disableFailure.getSuppressed().length);
+      assertSame(restoreFailure, disableFailure.getSuppressed()[0]);
+      assertTrue(frame.isEnabled());
+      assertTrue(dialog.isEnabled());
+      assertEquals(dispatcherCount, focusManager.dispatcherCount());
+    } finally {
+      dialog.disarm();
+      SwingUtilities.invokeAndWait(
+          () -> {
+            dialog.dispose();
+            frame.dispose();
+          });
+      InspectingKeyboardFocusManager.install(previousFocusManager);
+    }
+  }
+
+  @Test
+  void gateCloseRestoresRemainingResourcesAndRemovesDispatcherAfterErrors() throws Exception {
+    Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+    KeyboardFocusManager previousFocusManager =
+        KeyboardFocusManager.getCurrentKeyboardFocusManager();
+    InspectingKeyboardFocusManager focusManager = new InspectingKeyboardFocusManager();
+    InspectingKeyboardFocusManager.install(focusManager);
+    JFrame frame = new JFrame();
+    AssertionError windowRestoreFailure = new AssertionError("controlled window restore error");
+    AssertionError transferRestoreFailure =
+        new AssertionError("controlled transfer-handler restore error");
+    ErrorOnRestoreDialog dialog = new ErrorOnRestoreDialog(frame, windowRestoreFailure);
+    ErrorOnRestorePanel board = new ErrorOnRestorePanel(transferRestoreFailure);
+    TransferHandler transferHandler = new TransferHandler("name");
+    try {
+      SwingUtilities.invokeAndWait(
+          () -> {
+            frame.add(board);
+            frame.setEnabled(true);
+            dialog.setEnabled(true);
+            board.setTransferHandler(transferHandler);
+            dialog.arm();
+            board.arm();
+          });
+      int dispatcherCount = focusManager.dispatcherCount();
+      LizzieFrame.RestartInteractionGate gate =
+          LizzieFrame.beginRestartInteractionGate(frame);
+      assertFalse(frame.isEnabled());
+      assertFalse(dialog.isEnabled());
+      assertNull(board.getTransferHandler());
+      AtomicReference<AssertionError> observed = new AtomicReference<>();
+
+      SwingUtilities.invokeAndWait(
+          () -> observed.set(assertThrows(AssertionError.class, gate::close)));
+
+      assertSame(windowRestoreFailure, observed.get());
+      assertEquals(1, windowRestoreFailure.getSuppressed().length);
+      assertSame(transferRestoreFailure, windowRestoreFailure.getSuppressed()[0]);
+      assertTrue(frame.isEnabled());
+      assertTrue(dialog.isEnabled());
+      assertSame(transferHandler, board.getTransferHandler());
+      assertEquals(dispatcherCount, focusManager.dispatcherCount());
+      gate.close();
+    } finally {
+      dialog.disarm();
+      board.disarm();
+      SwingUtilities.invokeAndWait(
+          () -> {
+            dialog.dispose();
+            frame.dispose();
+          });
+      InspectingKeyboardFocusManager.install(previousFocusManager);
+    }
+  }
+
+  @Test
+  void interruptedBeginWaitsForItsPostedMutationAndRollsBackTheAbandonedGate()
+      throws Exception {
+    Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+    CountingEnabledFrame frame = new CountingEnabledFrame();
+    JPanel board = new JPanel();
+    TransferHandler transferHandler = new TransferHandler("text");
+    CountDownLatch edtBlocked = new CountDownLatch(1);
+    CountDownLatch releaseEdt = new CountDownLatch(1);
+    AtomicReference<Throwable> beginFailure = new AtomicReference<>();
+    AtomicBoolean interruptPreserved = new AtomicBoolean();
+    Thread beginWorker =
+        new Thread(
+            () -> {
+              try {
+                LizzieFrame.beginRestartInteractionGate(frame);
+              } catch (Throwable failure) {
+                beginFailure.set(failure);
+                interruptPreserved.set(Thread.currentThread().isInterrupted());
+              }
+            },
+            "controlled-restart-gate-begin");
+    try {
+      SwingUtilities.invokeAndWait(
+          () -> {
+            board.setTransferHandler(transferHandler);
+            frame.add(board);
+            frame.setEnabled(true);
+            frame.armTransitionCounting();
+          });
+      SwingUtilities.invokeLater(
+          () -> {
+            edtBlocked.countDown();
+            try {
+              releaseEdt.await();
+            } catch (InterruptedException interrupted) {
+              Thread.currentThread().interrupt();
+            }
+          });
+      assertTrue(edtBlocked.await(2, TimeUnit.SECONDS));
+
+      beginWorker.start();
+      assertTrue(awaitThreadState(beginWorker, Thread.State.WAITING, 2, TimeUnit.SECONDS));
+      beginWorker.interrupt();
+      beginWorker.join(150L);
+      assertTrue(
+          beginWorker.isAlive(),
+          "an interrupted caller must retain cleanup ownership until the posted begin completes");
+
+      releaseEdt.countDown();
+      beginWorker.join(TimeUnit.SECONDS.toMillis(2));
+      assertFalse(beginWorker.isAlive());
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertTrue(beginFailure.get() instanceof IllegalStateException);
+      assertTrue(interruptPreserved.get());
+      assertTrue(frame.isEnabled());
+      assertSame(transferHandler, board.getTransferHandler());
+      assertEquals(1, frame.disableTransitions.get(), "disable transitions");
+      assertEquals(1, frame.enableTransitions.get(), "enable transitions");
+    } finally {
+      releaseEdt.countDown();
+      beginWorker.interrupt();
+      beginWorker.join(TimeUnit.SECONDS.toMillis(2));
+      SwingUtilities.invokeAndWait(frame::dispose);
+    }
+  }
+
+  private static boolean awaitThreadState(
+      Thread thread, Thread.State expected, long timeout, TimeUnit unit)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + unit.toNanos(timeout);
+    while (System.nanoTime() < deadline) {
+      if (thread.getState() == expected) {
+        return true;
+      }
+      Thread.sleep(5L);
+    }
+    return thread.getState() == expected;
+  }
+
+  private static final class CountingEnabledFrame extends JFrame {
+    private final AtomicInteger disableTransitions = new AtomicInteger();
+    private final AtomicInteger enableTransitions = new AtomicInteger();
+    private boolean countTransitions;
+
+    private void armTransitionCounting() {
+      countTransitions = true;
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+      boolean changed = enabled != isEnabled();
+      super.setEnabled(enabled);
+      if (!countTransitions || !changed) {
+        return;
+      }
+      if (enabled) {
+        enableTransitions.incrementAndGet();
+      } else {
+        disableTransitions.incrementAndGet();
+      }
+    }
+  }
+
   private static final class FailingDisableDialog extends JDialog {
     private boolean failNextDisable = true;
 
@@ -293,6 +507,113 @@ class LizzieFrameRestartInteractionGateTest {
         failNextDisable = false;
         throw new IllegalStateException("controlled gate failure");
       }
+    }
+  }
+
+  private static final class ErrorOnDisableDialog extends JDialog {
+    private final AssertionError disableFailure;
+    private final AssertionError restoreFailure;
+    private boolean armed;
+    private boolean failDisable = true;
+    private boolean failRestore = true;
+
+    private ErrorOnDisableDialog(
+        JFrame owner, AssertionError disableFailure, AssertionError restoreFailure) {
+      super(owner);
+      this.disableFailure = disableFailure;
+      this.restoreFailure = restoreFailure;
+    }
+
+    private void arm() {
+      armed = true;
+    }
+
+    private void disarm() {
+      armed = false;
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+      super.setEnabled(enabled);
+      if (armed && !enabled && failDisable) {
+        failDisable = false;
+        throw disableFailure;
+      }
+      if (armed && enabled && failRestore) {
+        failRestore = false;
+        throw restoreFailure;
+      }
+    }
+  }
+
+  private static final class ErrorOnRestoreDialog extends JDialog {
+    private final AssertionError restoreFailure;
+    private boolean armed;
+    private boolean disabledByGate;
+
+    private ErrorOnRestoreDialog(JFrame owner, AssertionError restoreFailure) {
+      super(owner);
+      this.restoreFailure = restoreFailure;
+    }
+
+    private void arm() {
+      armed = true;
+    }
+
+    private void disarm() {
+      armed = false;
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+      super.setEnabled(enabled);
+      if (armed && !enabled) {
+        disabledByGate = true;
+      } else if (armed && enabled && disabledByGate) {
+        disabledByGate = false;
+        throw restoreFailure;
+      }
+    }
+  }
+
+  private static final class ErrorOnRestorePanel extends JPanel {
+    private final AssertionError restoreFailure;
+    private boolean armed;
+    private boolean clearedByGate;
+
+    private ErrorOnRestorePanel(AssertionError restoreFailure) {
+      this.restoreFailure = restoreFailure;
+    }
+
+    private void arm() {
+      armed = true;
+    }
+
+    private void disarm() {
+      armed = false;
+    }
+
+    @Override
+    public void setTransferHandler(TransferHandler handler) {
+      super.setTransferHandler(handler);
+      if (armed && handler == null) {
+        clearedByGate = true;
+      } else if (armed && handler != null && clearedByGate) {
+        clearedByGate = false;
+        throw restoreFailure;
+      }
+    }
+  }
+
+  private static final class InspectingKeyboardFocusManager
+      extends DefaultKeyboardFocusManager {
+    private static void install(KeyboardFocusManager focusManager) {
+      setCurrentKeyboardFocusManager(focusManager);
+    }
+
+    private int dispatcherCount() {
+      List<KeyEventDispatcher> dispatchers = getKeyEventDispatchers();
+      return dispatchers == null ? 0 : dispatchers.size();
     }
   }
 

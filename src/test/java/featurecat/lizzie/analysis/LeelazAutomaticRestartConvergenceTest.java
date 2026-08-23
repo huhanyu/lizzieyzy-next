@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -164,7 +165,10 @@ class LeelazAutomaticRestartConvergenceTest {
       ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
       engine.useRemoteCompute = true;
       engine.delayReadyAfterStart = true;
-      BoardHistoryList history = snapshotHistoryWithTail(false);
+      // Keep both the frozen and catch-up targets remotely representable. A single-tail history
+      // would navigate back to the white-to-play snapshot root with no real tail, which exact
+      // snapshot restore intentionally rejects before dispatch.
+      BoardHistoryList history = snapshotHistoryWithTwoMoves();
       Board board = boardWithHistory(history);
       env.publish(engine, board);
       engine.started = true;
@@ -226,7 +230,9 @@ class LeelazAutomaticRestartConvergenceTest {
       ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
       engine.useRemoteCompute = true;
       engine.delayReadyAfterStart = true;
-      BoardHistoryList history = snapshotHistoryWithTail(false);
+      // Navigate between two supported real-tail targets so this test reaches the lifecycle fence;
+      // the unsupported white-to-play empty-tail branch has dedicated fail-closed coverage.
+      BoardHistoryList history = snapshotHistoryWithTwoMoves();
       Board board = boardWithHistory(history);
       env.publish(engine, board);
       engine.started = true;
@@ -340,6 +346,139 @@ class LeelazAutomaticRestartConvergenceTest {
   }
 
   @Test
+  void finalInitializationErrorFailsClosedAndReleasesClaimBeforeObservers() throws Exception {
+    try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
+      ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
+      engine.finalInitializationError =
+          new AssertionError("controlled automatic-restart final initialization error");
+      Board board = boardWithHistory(snapshotHistoryWithTail(false));
+      env.publish(engine, board);
+
+      Leelaz.AutomaticRestartAttempt attempt = engine.beginAutomaticEngineRestartAttempt();
+      assertNotNull(attempt);
+      CountDownLatch completed = new CountDownLatch(1);
+      AtomicInteger completionCount = new AtomicInteger();
+      AtomicInteger failureCount = new AtomicInteger();
+      AtomicBoolean admissionOpenInCompletion = new AtomicBoolean(false);
+      attempt.restartClosedEngine(
+          0,
+          () -> {
+            completionCount.incrementAndGet();
+            admissionOpenInCompletion.set(engineModeAdmissionOpen(engine));
+            completed.countDown();
+          },
+          detail -> failureCount.incrementAndGet());
+
+      assertTrue(waitForRawCommandPrefix(engine.transport, "name", 2, TimeUnit.SECONDS));
+      assertDoesNotThrow(() -> invokeFenceResponse(engine));
+
+      assertTrue(completed.await(1, TimeUnit.SECONDS));
+      assertEquals(1, failureCount.get());
+      assertEquals(1, completionCount.get());
+      assertFalse(engine.isLoaded(), "failed final initialization must retire the runtime");
+      assertEquals(0, engine.readyCount.get());
+      assertTrue(
+          admissionOpenInCompletion.get(),
+          "completion observes lifecycle claim and reservation already released");
+      assertOrdinaryForwardingReopened(engine);
+      engine.finalInitializationError = null;
+      assertAutomaticRestartRetryAvailable(engine);
+    }
+  }
+
+  @Test
+  void barrierSetupErrorPreservesOriginalAndReleasesDualEndpointOwnersDespiteQueueDrainError()
+      throws Exception {
+    try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
+      ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
+      ConvergingRestartLeelaz mirror = new ConvergingRestartLeelaz();
+      Board board = boardWithHistory(snapshotHistoryWithTail(false));
+      env.publish(engine, board);
+      Lizzie.leelaz2 = mirror;
+      Lizzie.config.extraMode = ExtraMode.Double_Engine;
+      mirror.started = true;
+      mirror.isLoaded = true;
+      AssertionError setupError = new AssertionError("controlled board-barrier setup error");
+      AssertionError queueDrainError = new AssertionError("controlled queued-send release error");
+      engine.initialBoardSynchronizationError = setupError;
+      enqueueTrackedCommandWithoutSending(engine, "name", failure -> {});
+      engine.installCommandOutputForTest(new ErrorOutputStream(queueDrainError));
+
+      AssertionError thrown =
+          assertThrows(AssertionError.class, engine::beginAutomaticEngineRestartAttempt);
+
+      assertSame(setupError, thrown, "cleanup must not mask the original barrier setup Error");
+      assertEquals(1, thrown.getSuppressed().length);
+      assertSame(queueDrainError, thrown.getSuppressed()[0]);
+      assertTrue(engineModeAdmissionOpen(engine));
+      assertTrue(engineModeAdmissionOpen(mirror));
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      engine.initialBoardSynchronizationError = null;
+      assertAutomaticRestartRetryAvailable(engine);
+    }
+  }
+
+  @Test
+  void queuedLoadSgfFailureObserverErrorCannotSkipBarrierClaimOrCompletionSettlement()
+      throws Exception {
+    try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
+      ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
+      ConvergingRestartLeelaz mirror = new ConvergingRestartLeelaz();
+      engine.finalInitializationError =
+          new AssertionError("controlled final initialization before command reset");
+      Board board = boardWithHistory(snapshotHistoryWithTail(false));
+      env.publish(engine, board);
+      Lizzie.leelaz2 = mirror;
+      Lizzie.config.extraMode = ExtraMode.Double_Engine;
+      mirror.started = true;
+      mirror.isLoaded = true;
+      setField(engine, "engineStateUnrestored", true);
+
+      Leelaz.AutomaticRestartAttempt attempt = beginAutomaticRestartAttempt(engine, true);
+      assertNotNull(attempt);
+      CountDownLatch completed = new CountDownLatch(1);
+      AtomicInteger commandFailureObserverCount = new AtomicInteger();
+      AtomicInteger failureCount = new AtomicInteger();
+      AtomicInteger completionCount = new AtomicInteger();
+      attempt.restartClosedEngine(
+          0,
+          () -> {
+            completionCount.incrementAndGet();
+            completed.countDown();
+          },
+          detail -> failureCount.incrementAndGet());
+
+      assertTrue(waitForRawCommandPrefix(engine.transport, "name", 2, TimeUnit.SECONDS));
+      assertTrue(waitForRawCommandPrefix(mirror.transport, "name", 2, TimeUnit.SECONDS));
+      assertDoesNotThrow(() -> invokeFenceResponse(engine));
+      enqueueTrackedCommandWithoutSending(
+          engine,
+          "loadsgf controlled-pending.sgf",
+          failure -> {
+            commandFailureObserverCount.incrementAndGet();
+            throw new AssertionError("controlled queued loadsgf failure observer error");
+          });
+
+      assertDoesNotThrow(() -> invokeFenceResponse(mirror));
+
+      assertTrue(completed.await(1, TimeUnit.SECONDS));
+      assertEquals(1, commandFailureObserverCount.get());
+      assertEquals(1, failureCount.get());
+      assertEquals(1, completionCount.get());
+      assertFalse(engine.isLoaded());
+      assertFalse(mirror.isLoaded());
+      setField(engine, "engineStateUnrestored", false);
+      assertTrue(engineModeAdmissionOpen(engine));
+      assertTrue(engineModeAdmissionOpen(mirror));
+      assertOrdinaryForwardingReopened(engine);
+      assertOrdinaryForwardingReopened(mirror);
+      engine.finalInitializationError = null;
+      assertAutomaticRestartRetryAvailable(engine);
+    }
+  }
+
+  @Test
   void benchmarkSuppressedRestartCompletionObservesReleasedClaimWithoutFence() throws Exception {
     try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
       try {
@@ -362,6 +501,7 @@ class LeelazAutomaticRestartConvergenceTest {
               completionCount.incrementAndGet();
               admissionOpenInCompletion.set(engineModeAdmissionOpen(engine));
               completed.countDown();
+              throw new AssertionError("controlled no-fence completion observer error");
             },
             detail -> failureCount.incrementAndGet());
 
@@ -1384,7 +1524,12 @@ class LeelazAutomaticRestartConvergenceTest {
   }
 
   private static void invokeLoadSgfResponse(ConvergingRestartLeelaz engine) throws Exception {
-    String response = numberedResponseFor(engine.transport.rawCommands(), "loadsgf ");
+    String response;
+    try {
+      response = numberedResponseFor(engine.transport.rawCommands(), "loadsgf ");
+    } catch (IllegalArgumentException missingLoadSgf) {
+      response = numberedResponseFor(engine.transport.rawCommands(), "set_position");
+    }
     engine.processCommandResponseLineForTest(response);
   }
 
@@ -1642,6 +1787,37 @@ class LeelazAutomaticRestartConvergenceTest {
     }
   }
 
+  private static Leelaz.AutomaticRestartAttempt beginAutomaticRestartAttempt(
+      Leelaz engine, boolean allowUnrestoredState) throws Exception {
+    Method method =
+        Leelaz.class.getDeclaredMethod("beginAutomaticRestartAttempt", boolean.class);
+    method.setAccessible(true);
+    return (Leelaz.AutomaticRestartAttempt) method.invoke(engine, allowUnrestoredState);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static void enqueueTrackedCommandWithoutSending(
+      Leelaz engine, String command, Leelaz.CommandSendFailureHandler failureHandler)
+      throws Exception {
+    Method queueMethod = Leelaz.class.getDeclaredMethod("commandQueue");
+    queueMethod.setAccessible(true);
+    java.util.ArrayDeque<Object> queue =
+        (java.util.ArrayDeque<Object>) queueMethod.invoke(engine);
+    Class<?> queuedCommandType =
+        Class.forName("featurecat.lizzie.analysis.Leelaz$QueuedCommand");
+    java.lang.reflect.Constructor<?> constructor =
+        queuedCommandType.getDeclaredConstructor(
+            String.class,
+            Runnable.class,
+            Leelaz.CommandSendFailureHandler.class,
+            boolean.class);
+    constructor.setAccessible(true);
+    Object queuedCommand = constructor.newInstance(command, null, failureHandler, true);
+    synchronized (queue) {
+      queue.addLast(queuedCommand);
+    }
+  }
+
   private static void assertAutomaticRestartRetryAvailable(ConvergingRestartLeelaz engine) {
     Leelaz.AutomaticRestartAttempt retry = engine.beginAutomaticEngineRestartAttempt();
     assertNotNull(retry, "a later automatic restart must be admissible after fail-closed");
@@ -1651,11 +1827,11 @@ class LeelazAutomaticRestartConvergenceTest {
   private static void assertEngineMatchesBoard(
       ConvergingRestartLeelaz engine, Board board, int expectedWidth, int expectedHeight) {
     BoardData application = board.getHistory().getData();
-    assertEquals(application.blackToPlay, engine.engineBlackToPlay, "side-to-play must match");
     assertEquals(expectedWidth, engine.engineBoardWidth, "board width must match");
     assertEquals(expectedHeight, engine.engineBoardHeight, "board height must match");
     assertEquals(
         board.getHistory().getGameInfo().getKomi(), engine.engineKomi, 0.0001, "komi must match");
+    assertEquals(application.blackToPlay, engine.engineBlackToPlay, "side-to-play must match");
     for (int x = 0; x < expectedWidth; x++) {
       for (int y = 0; y < expectedHeight; y++) {
         assertEquals(
@@ -1723,6 +1899,8 @@ class LeelazAutomaticRestartConvergenceTest {
     private boolean shortStartupTimeout;
     private boolean shortFenceTimeout;
     private boolean processDead;
+    private AssertionError finalInitializationError;
+    private AssertionError initialBoardSynchronizationError;
     private int engineBoardWidth = 19;
     private int engineBoardHeight = 19;
     private double engineKomi = -1.0;
@@ -1767,15 +1945,21 @@ class LeelazAutomaticRestartConvergenceTest {
                   engineBlackToPlay = true;
                 } else if (command.startsWith("komi ")) {
                   engineKomi = Double.parseDouble(command.substring("komi ".length()).trim());
-                } else if (command.startsWith("loadsgf ")) {
+                } else if (command.startsWith("loadsgf ")
+                    || command.equals("set_position")
+                    || command.startsWith("set_position ")) {
                   int count = loadSgfCount.incrementAndGet();
                   if (count >= failLoadSgfAt) {
                     return ExactSnapshotRestoreProtocolFixture.Response.error(
                         "controlled catch-up restore failure");
                   }
-                  String sgfPath = command.substring("loadsgf ".length()).trim();
-                  String sgf = Files.readString(Path.of(sgfPath));
-                  applySnapshotSgf(sgf);
+                  if (command.startsWith("loadsgf ")) {
+                    String sgfPath = command.substring("loadsgf ".length()).trim();
+                    String sgf = Files.readString(Path.of(sgfPath));
+                    applySnapshotSgf(sgf);
+                  } else {
+                    applySetPosition(command);
+                  }
                   if (blockFirstLoadSgf && count == 1) {
                     // Hold the frozen route in flight so the test can navigate deterministically.
                     return null;
@@ -1804,6 +1988,7 @@ class LeelazAutomaticRestartConvergenceTest {
 
     @Override
     public void startEngine(int index) {
+      bindCurrentPrimaryEngineGeneration();
       started = true;
       isLoaded = !delayReadyAfterStart;
       isCheckingName = delayReadyAfterStart;
@@ -1844,6 +2029,9 @@ class LeelazAutomaticRestartConvergenceTest {
 
     @Override
     void resumeClosedEngineAfterBoardSynchronization(boolean resumePonder) {
+      if (finalInitializationError != null) {
+        throw finalInitializationError;
+      }
       readyCount.incrementAndGet();
       if (productionReadyHandoff) {
         // Exercise the real production readiness handoff (markEngineReady / EngineStartupStatus).
@@ -1859,6 +2047,14 @@ class LeelazAutomaticRestartConvergenceTest {
 
     @Override
     public void notPondering() {}
+
+    @Override
+    public void beginInitialBoardSynchronization() {
+      if (initialBoardSynchronizationError != null) {
+        throw initialBoardSynchronizationError;
+      }
+      super.beginInitialBoardSynchronization();
+    }
 
     @Override
     protected long readBoardGmaRestoreResponseTimeoutMillis() {
@@ -1882,6 +2078,24 @@ class LeelazAutomaticRestartConvergenceTest {
     private Stone stoneAt(int x, int y) {
       return engineStones.getOrDefault(
           Board.convertCoordinatesToName(x, y).toUpperCase(Locale.ROOT), Stone.EMPTY);
+    }
+
+    private void applySetPosition(String command) {
+      engineStones.clear();
+      engineBlackToPlay = true;
+      String payload =
+          command.startsWith("set_position")
+              ? command.substring("set_position".length()).trim()
+              : "";
+      if (payload.isEmpty()) {
+        return;
+      }
+      String[] tokens = payload.split("\\s+");
+      for (int index = 0; index + 1 < tokens.length; index += 2) {
+        engineStones.put(
+            tokens[index + 1].toUpperCase(Locale.ROOT),
+            "B".equalsIgnoreCase(tokens[index]) ? Stone.BLACK : Stone.WHITE);
+      }
     }
 
     private void applySnapshotSgf(String sgf) {
@@ -1939,6 +2153,24 @@ class LeelazAutomaticRestartConvergenceTest {
     }
   }
 
+  private static final class ErrorOutputStream extends OutputStream {
+    private final AssertionError failure;
+
+    private ErrorOutputStream(AssertionError failure) {
+      this.failure = failure;
+    }
+
+    @Override
+    public void write(int value) {
+      throw failure;
+    }
+
+    @Override
+    public void write(byte[] bytes, int offset, int length) {
+      throw failure;
+    }
+  }
+
   private static final class RestartTestEnvironment implements AutoCloseable {
     private final Config previousConfig = Lizzie.config;
     private final LizzieFrame previousFrame = Lizzie.frame;
@@ -1966,7 +2198,7 @@ class LeelazAutomaticRestartConvergenceTest {
     }
 
     private void publish(ConvergingRestartLeelaz engine, Board board) {
-      Lizzie.leelaz = engine;
+      Lizzie.setPrimaryEngine(engine);
       Lizzie.board = board;
       EngineManager.isEmpty = false;
       EngineManager.currentEngineNo = 0;
@@ -1977,7 +2209,7 @@ class LeelazAutomaticRestartConvergenceTest {
       Lizzie.config = previousConfig;
       Lizzie.frame = previousFrame;
       Lizzie.gtpConsole = previousConsole;
-      Lizzie.leelaz = previousPrimary;
+      Lizzie.setPrimaryEngine(previousPrimary);
       Lizzie.leelaz2 = previousSecondary;
       Lizzie.board = previousBoard;
       Board.boardWidth = previousBoardWidth;
