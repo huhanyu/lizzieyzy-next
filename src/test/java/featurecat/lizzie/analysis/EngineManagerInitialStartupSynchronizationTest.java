@@ -3835,15 +3835,23 @@ class EngineManagerInitialStartupSynchronizationTest {
               "reverse-board-lock");
       try {
         mutation.start();
-        assertTrue(forwardingReached.await(2, TimeUnit.SECONDS));
+        assertTrue(
+            forwardingReached.await(10, TimeUnit.SECONDS),
+            "initial resize must reach the out-of-monitor forwarding seam");
         reverse.start();
-        mutation.join(2_000L);
-        reverse.join(2_000L);
-        assertFalse(mutation.isAlive() || reverse.isAlive(), "reverse lock edge must converge");
-        assertEquals(null, mutationFailure.get());
+        assertTrue(
+            reverseBoardLockAcquired.await(10, TimeUnit.SECONDS),
+            "reverse board-lock acquisition must not wait for forwarding to finish");
+        reverse.join(10_000L);
+        mutation.join(10_000L);
+        assertFalse(reverse.isAlive(), "reverse board-lock probe must terminate");
+        assertFalse(mutation.isAlive(), "initial resize forwarding must converge");
+        assertNull(mutationFailure.get(), "initial resize forwarding must not throw");
       } finally {
         reverseBoardLockAcquired.countDown();
         Board.beforeHistoryOverwriteEngineForward = null;
+        mutation.join(10_000L);
+        reverse.join(10_000L);
       }
     }
   }

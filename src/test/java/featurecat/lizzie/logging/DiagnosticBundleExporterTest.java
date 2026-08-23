@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
@@ -104,7 +105,12 @@ class DiagnosticBundleExporterTest {
                     emptySnapshot(),
                     "next-dev"));
 
-    assertTrue(zip.startsWith(diagnostics), zip.toString());
+    assertTrue(
+        Files.isSameFile(diagnostics, zip.getParent()),
+        "published package must remain in the requested output directory: " + zip);
+    assertTrue(
+        Files.isRegularFile(zip, LinkOption.NOFOLLOW_LINKS),
+        "published package must remain a real regular file: " + zip);
     assertTrue(zip.getFileName().toString().startsWith("lizzie-diagnostics-"));
     assertTrue(zip.getFileName().toString().endsWith(".zip"));
     assertFalse(Files.exists(Path.of(zip + ".partial")));
