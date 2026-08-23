@@ -79,10 +79,12 @@ public class EngineGameInfo {
   }
 
   public void exChangeBlackWhite() {
-
-    int temp = blackEngineIndex;
-    blackEngineIndex = whiteEngineIndex;
-    whiteEngineIndex = temp;
+    EngineManager.runEngineGameStateMutation(
+        () -> {
+          int temp = blackEngineIndex;
+          blackEngineIndex = whiteEngineIndex;
+          whiteEngineIndex = temp;
+        });
     LizzieFrame.toolbar.enginePkBlack.setEnabled(true);
     LizzieFrame.toolbar.enginePkWhite.setEnabled(true);
     LizzieFrame.toolbar.enginePkBlack.setSelectedIndex(blackEngineIndex);

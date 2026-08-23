@@ -1319,8 +1319,10 @@ class LizzieFrameRegressionTest {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze(false);
-      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      AnalysisSyncBoard board = analysisSyncBoardWith(historyWithUnanalyzedMove());
+      Lizzie.board = board;
       TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
+      board.events = leelaz.commands();
       Lizzie.leelaz = leelaz;
       EngineManager.isEmpty = false;
       EngineManager.isEngineGame = false;
@@ -1332,9 +1334,9 @@ class LizzieFrameRegressionTest {
 
       assertEquals(0, frame.flashAnalyzeGameCount);
       assertEquals(
-          List.of("komi 7.5", "boardsize 2", "clear_board", "play B A2", "ponder"),
+          List.of("sync", "ponder"),
           leelaz.commands(),
-          "foreground analysis should replay the loaded SGF komi and position before pondering.");
+          "foreground analysis must synchronize the loaded position before pondering.");
     } finally {
       env.close();
     }
@@ -1345,8 +1347,10 @@ class LizzieFrameRegressionTest {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze(false);
-      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      AnalysisSyncBoard board = analysisSyncBoardWith(historyWithUnanalyzedMove());
+      Lizzie.board = board;
       TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
+      board.events = leelaz.commands();
       Lizzie.leelaz = leelaz;
       EngineManager.isEmpty = false;
       EngineManager.isEngineGame = false;
@@ -1357,9 +1361,9 @@ class LizzieFrameRegressionTest {
       frame.togglePonderMannul();
 
       assertEquals(
-          List.of("komi 7.5", "boardsize 2", "clear_board", "play B A2", "ponder"),
+          List.of("sync", "ponder"),
           leelaz.commands(),
-          "manual resume should align the engine to the current SGF komi and position.");
+          "manual resume must synchronize the current position before pondering.");
     } finally {
       env.close();
     }
@@ -1371,7 +1375,8 @@ class LizzieFrameRegressionTest {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze();
-      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      AnalysisSyncBoard board = analysisSyncBoardWith(historyWithUnanalyzedMove());
+      Lizzie.board = board;
       TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
       Lizzie.leelaz = leelaz;
       EngineManager.isEmpty = false;
@@ -1414,6 +1419,7 @@ class LizzieFrameRegressionTest {
           1,
           leelaz.ponderCount,
           "foreground candidate analysis should restart immediately after fast curve completion.");
+      assertEquals(1, board.syncCount);
       assertEquals(1, frame.refreshCount);
     } finally {
       env.close();
@@ -1549,7 +1555,8 @@ class LizzieFrameRegressionTest {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze();
-      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      AnalysisSyncBoard board = analysisSyncBoardWith(historyWithUnanalyzedMove());
+      Lizzie.board = board;
       TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
       Lizzie.leelaz = leelaz;
       EngineManager.isEmpty = false;
@@ -1596,6 +1603,7 @@ class LizzieFrameRegressionTest {
           1,
           leelaz.ponderCount,
           "foreground analysis should restart after navigation-triggered curve completion.");
+      assertEquals(1, board.syncCount);
     } finally {
       env.close();
     }
@@ -1606,22 +1614,28 @@ class LizzieFrameRegressionTest {
     TestEnvironment env = TestEnvironment.open();
     try {
       Lizzie.config = configWithAutoQuickAnalyze();
-      Lizzie.board = boardWith(historyWithUnanalyzedMove());
+      AnalysisSyncBoard board = analysisSyncBoardWith(historyWithUnanalyzedMove());
+      Lizzie.board = board;
       TrackingLeelaz leelaz = allocate(TrackingLeelaz.class);
       Lizzie.leelaz = leelaz;
       EngineManager.isEmpty = false;
       EngineManager.isEngineGame = false;
       EngineManager.isPreEngineGame = false;
       QuickAnalysisResumeFrame frame = allocate(QuickAnalysisResumeFrame.class);
-      NavigationQuickAnalysisEngine engine = allocate(NavigationQuickAnalysisEngine.class);
-      frame.analysisEngine = engine;
-      Lizzie.frame = frame;
+      try {
+        NavigationQuickAnalysisEngine engine = allocate(NavigationQuickAnalysisEngine.class);
+        frame.analysisEngine = engine;
+        Lizzie.frame = frame;
 
-      SwingUtilities.invokeAndWait(frame::continueQuickAnalysisAfterHistoryNavigationWhenIdle);
-      assertTrue(engine.failureCallback != null);
-      SwingUtilities.invokeAndWait(engine.failureCallback);
+        SwingUtilities.invokeAndWait(frame::continueQuickAnalysisAfterHistoryNavigationWhenIdle);
+        assertTrue(engine.failureCallback != null);
+        SwingUtilities.invokeAndWait(engine.failureCallback);
 
-      assertEquals(1, leelaz.ponderCount);
+        assertEquals(1, leelaz.ponderCount);
+        assertEquals(1, board.syncCount);
+      } finally {
+        invokeStopLoadedGameQuickAnalysisRetry(frame);
+      }
     } finally {
       env.close();
     }
@@ -2341,6 +2355,14 @@ class LizzieFrameRegressionTest {
     return board;
   }
 
+  private static AnalysisSyncBoard analysisSyncBoardWith(BoardHistoryList history)
+      throws Exception {
+    AnalysisSyncBoard board = allocate(AnalysisSyncBoard.class);
+    board.setHistory(history);
+    board.events = new ArrayList<>();
+    return board;
+  }
+
   private static Config configWithAutoQuickAnalyze() throws Exception {
     return configWithAutoQuickAnalyze(true);
   }
@@ -2908,6 +2930,22 @@ class LizzieFrameRegressionTest {
       } else {
         ponder();
       }
+    }
+  }
+
+  private static final class AnalysisSyncBoard extends Board {
+    private int syncCount;
+    private List<String> events;
+
+    private AnalysisSyncBoard() {
+      super();
+    }
+
+    @Override
+    public boolean resendCurrentPositionToPrimaryEngine() {
+      syncCount++;
+      events.add("sync");
+      return true;
     }
   }
 

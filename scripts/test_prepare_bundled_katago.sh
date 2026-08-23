@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/prepare_bundled_katago.sh"
 
 [[ "$KATAGO_TAG" == "v1.17.1" ]]
+[[ "$HUMAN_SL_CUDA_COMPANION_SHA256" == \
+  "4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5" ]]
 [[ "$(expected_asset_sha256 "$WINDOWS_ASSET")" == \
   "3a7538ecb6facefcfe16d649fd695c29e44f8372cb7de8c316eee5779865f379" ]]
 [[ "$(expected_asset_sha256 "$WINDOWS_OPENCL_ASSET")" == \

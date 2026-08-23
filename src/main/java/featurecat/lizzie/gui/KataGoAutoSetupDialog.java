@@ -152,6 +152,7 @@ public class KataGoAutoSetupDialog extends JDialog {
   private volatile Thread activeWorkerThread;
   private javax.swing.Timer pendingWeightSwitchTimer;
   private boolean pendingWeightSwitchShouldResumeQuickAnalysis;
+  private WeightSwitchDisplayState weightSwitchDisplayState;
   private volatile NvidiaGpuDetector.DetectionResult nvidiaGpuDetection;
   private volatile boolean nvidiaGpuDetectionRunning;
   private volatile EngineValidationResult engineValidationResult;
@@ -367,7 +368,17 @@ public class KataGoAutoSetupDialog extends JDialog {
     if (!nvidiaGpuDetectionRunning) {
       nvidiaGpuDetection = null;
     }
-    snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+    SetupSnapshot discoveredSnapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+    boolean discoveredSetupIsActive =
+        isDiscoveredSetupActive(discoveredSnapshot, Lizzie.engineManager, Lizzie.leelaz);
+    weightSwitchDisplayState =
+        weightSwitchDisplayState == null
+            ? (discoveredSetupIsActive
+                ? WeightSwitchDisplayState.active(discoveredSnapshot)
+                : WeightSwitchDisplayState.discovered(discoveredSnapshot))
+            : weightSwitchDisplayState.reconcileWithEngineState(
+                discoveredSnapshot, discoveredSetupIsActive);
+    snapshot = weightSwitchDisplayState.displayedSnapshot();
     engineValidationResult = null;
     renderSnapshot();
     validateDiscoveredEngineAsync();
@@ -1448,6 +1459,46 @@ public class KataGoAutoSetupDialog extends JDialog {
     return path != null && Files.isRegularFile(path);
   }
 
+  static boolean isDiscoveredSetupActive(
+      SetupSnapshot discovered,
+      EngineManager manager,
+      Leelaz runningEngine) {
+    if (discovered == null
+        || discovered.activeWeightPath == null
+        || manager == null
+        || runningEngine == null) {
+      return false;
+    }
+    EngineManager.EngineSwitchUiSnapshot engineState = manager.engineSwitchUiSnapshot(true);
+    if (engineState.phase() != EngineManager.EngineSwitchUiPhase.ACTIVE
+        || !manager.isEngineSwitchActive(engineState.activeIndex(), true)
+        || Lizzie.leelaz != runningEngine) {
+      return false;
+    }
+    List<String> command = Utils.splitCommand(runningEngine.getEngineCommand());
+    for (int index = 0; index + 1 < command.size(); index++) {
+      if (!"-model".equalsIgnoreCase(command.get(index))) {
+        continue;
+      }
+      try {
+        Path configured = Path.of(command.get(index + 1));
+        if (!configured.isAbsolute() && discovered.workingDir != null) {
+          configured = discovered.workingDir.resolve(configured);
+        }
+        Path expected = discovered.activeWeightPath.toAbsolutePath().normalize();
+        Path actual = configured.toAbsolutePath().normalize();
+        try {
+          return Files.isSameFile(actual, expected);
+        } catch (IOException unavailable) {
+          return actual.equals(expected);
+        }
+      } catch (RuntimeException invalidPath) {
+        return false;
+      }
+    }
+    return false;
+  }
+
   private void renderSetupStatus() {
     lblStatus.setToolTipText(null);
     PackageFlavor flavor =
@@ -1479,14 +1530,33 @@ public class KataGoAutoSetupDialog extends JDialog {
   }
 
   private void renderCurrentWeightBanner() {
-    if (snapshot != null && snapshot.hasWeight()) {
-      String displayName = formatWeightModel(snapshot);
+    SetupSnapshot bannerSnapshot =
+        weightSwitchDisplayState == null
+            ? snapshot
+            : weightSwitchDisplayState.bannerSnapshot();
+    if (bannerSnapshot != null && bannerSnapshot.hasWeight()) {
+      String displayName = formatWeightModel(bannerSnapshot);
       lblCurrentWeightName.setText(displayName);
       lblCurrentWeightName.setToolTipText(
-          snapshot.activeWeightPath.toAbsolutePath().normalize().toString());
+          bannerSnapshot.activeWeightPath.toAbsolutePath().normalize().toString());
       lblCurrentWeightName.setForeground(TEXT_PRIMARY);
-      lblCurrentWeightStatus.setText(text("AutoSetup.currentlyUsingShort"));
-      lblCurrentWeightStatus.setForeground(OK_COLOR);
+      if (weightSwitchDisplayState != null && weightSwitchDisplayState.isPending()) {
+        lblCurrentWeightStatus.setText(text("LizzieFrame.prompt.switching"));
+        lblCurrentWeightStatus.setForeground(WARN_COLOR);
+      } else if (weightSwitchDisplayState != null && weightSwitchDisplayState.isFailed()) {
+        lblCurrentWeightStatus.setText(text("Leelaz.engineFailed"));
+        lblCurrentWeightStatus.setForeground(ERROR_COLOR);
+      } else if (weightSwitchDisplayState != null && !weightSwitchDisplayState.isActive()) {
+        lblCurrentWeightStatus.setText(text("AutoSetup.notReady"));
+        lblCurrentWeightStatus.setForeground(WARN_COLOR);
+      } else {
+        lblCurrentWeightStatus.setText(text("AutoSetup.currentlyUsingShort"));
+        lblCurrentWeightStatus.setForeground(OK_COLOR);
+      }
+      AccessibilitySupport.named(
+          lblCurrentWeightName,
+          displayName,
+          displayName + " · " + lblCurrentWeightStatus.getText());
       return;
     }
     lblCurrentWeightName.setText(text("AutoSetup.notFound"));
@@ -2261,6 +2331,7 @@ public class KataGoAutoSetupDialog extends JDialog {
       return;
     }
 
+    long weightSwitchToken = beginWeightSwitchDisplay(requestedSnapshot);
     boolean resumeQuickAnalysis =
         silentAnalysis && Lizzie.config != null && Lizzie.config.autoQuickAnalyzeOnLoad;
     pendingWeightSwitchShouldResumeQuickAnalysis = resumeQuickAnalysis;
@@ -2271,10 +2342,11 @@ public class KataGoAutoSetupDialog extends JDialog {
       }
     }
     if (preparation == WeightSwitchPreparation.WAIT_FOR_QUICK_ANALYSIS) {
-      waitForQuickAnalysisRelease(foregroundEngine, requestedSnapshot, resumeQuickAnalysis);
+      waitForQuickAnalysisRelease(
+          foregroundEngine, requestedSnapshot, resumeQuickAnalysis, weightSwitchToken);
       return;
     }
-    startWeightEngineSetup(requestedSnapshot, resumeQuickAnalysis);
+    startWeightEngineSetup(requestedSnapshot, resumeQuickAnalysis, weightSwitchToken);
   }
 
   static WeightSwitchPreparation decideWeightSwitchPreparation(
@@ -2298,9 +2370,12 @@ public class KataGoAutoSetupDialog extends JDialog {
   }
 
   private void waitForQuickAnalysisRelease(
-      Leelaz foregroundEngine, SetupSnapshot requestedSnapshot, boolean resumeQuickAnalysis) {
+      Leelaz foregroundEngine,
+      SetupSnapshot requestedSnapshot,
+      boolean resumeQuickAnalysis,
+      long weightSwitchToken) {
     if (foregroundEngine == null) {
-      startWeightEngineSetup(requestedSnapshot, resumeQuickAnalysis);
+      startWeightEngineSetup(requestedSnapshot, resumeQuickAnalysis, weightSwitchToken);
       return;
     }
     setBusy(true, text("AutoSetup.weightSwitchStoppingQuickAnalysis"), 0, -1);
@@ -2316,18 +2391,27 @@ public class KataGoAutoSetupDialog extends JDialog {
               }
               if (Lizzie.leelaz != foregroundEngine) {
                 finishWeightSwitchWait(
-                    source, text("AutoSetup.weightSwitchEngineChanged"), ERROR_COLOR);
+                    source,
+                    text("AutoSetup.weightSwitchEngineChanged"),
+                    ERROR_COLOR,
+                    weightSwitchToken);
                 return;
               }
               if (!foregroundEngine.hasExclusiveGtpWorkInProgress()) {
                 source.stop();
                 pendingWeightSwitchTimer = null;
-                startWeightEngineSetup(requestedSnapshot, resumeQuickAnalysis);
+                if (isPendingWeightSwitch(weightSwitchToken)) {
+                  startWeightEngineSetup(
+                      requestedSnapshot, resumeQuickAnalysis, weightSwitchToken);
+                }
                 return;
               }
               if (System.currentTimeMillis() >= deadline) {
                 finishWeightSwitchWait(
-                    source, text("AutoSetup.weightSwitchWaitTimeout"), ERROR_COLOR);
+                    source,
+                    text("AutoSetup.weightSwitchWaitTimeout"),
+                    ERROR_COLOR,
+                    weightSwitchToken);
               }
             });
     timer.setInitialDelay(WEIGHT_SWITCH_POLL_MILLIS);
@@ -2336,11 +2420,14 @@ public class KataGoAutoSetupDialog extends JDialog {
     timer.start();
   }
 
-  private void finishWeightSwitchWait(javax.swing.Timer timer, String message, Color statusColor) {
+  private void finishWeightSwitchWait(
+      javax.swing.Timer timer, String message, Color statusColor, long weightSwitchToken) {
     timer.stop();
     if (pendingWeightSwitchTimer == timer) {
       pendingWeightSwitchTimer = null;
     }
+    failWeightSwitchDisplay(
+        weightSwitchToken, KataGoAutoSetupHelper.inspectLocalSetup());
     setBusy(false, message, 0, 0);
     lblStatus.setText(message);
     lblStatus.setForeground(statusColor);
@@ -2922,11 +3009,8 @@ public class KataGoAutoSetupDialog extends JDialog {
     worker.start();
   }
 
-  private void startWeightEngineSetup(SetupSnapshot state) {
-    startWeightEngineSetup(state, false);
-  }
-
-  private void startWeightEngineSetup(SetupSnapshot state, boolean resumeQuickAnalysis) {
+  private void startWeightEngineSetup(
+      SetupSnapshot state, boolean resumeQuickAnalysis, long weightSwitchToken) {
     setBusy(true, text("AutoSetup.settingUp"), 0, -1);
     Thread worker =
         new Thread(
@@ -2936,17 +3020,26 @@ public class KataGoAutoSetupDialog extends JDialog {
                 SwingUtilities.invokeLater(
                     () -> {
                       activeWorkerThread = null;
+                      if (!isPendingWeightSwitch(weightSwitchToken)) {
+                        return;
+                      }
                       onSetupApplied(
                           result,
                           text("AutoSetup.weightInUseMessage") + " " + result.engineName,
                           false,
                           false,
-                          resumeQuickAnalysis);
+                          resumeQuickAnalysis,
+                          weightSwitchToken);
                     });
               } catch (IOException e) {
                 SwingUtilities.invokeLater(
                     () -> {
                       activeWorkerThread = null;
+                      if (!isPendingWeightSwitch(weightSwitchToken)) {
+                        return;
+                      }
+                      failWeightSwitchDisplay(
+                          weightSwitchToken, KataGoAutoSetupHelper.inspectLocalSetup());
                       onBackgroundError(e);
                       resumeQuickAnalysisAfterWeightSwitchIfNeeded();
                     });
@@ -2979,48 +3072,160 @@ public class KataGoAutoSetupDialog extends JDialog {
       boolean showSuccessPopup,
       boolean includeWeightPathInPopup,
       boolean resumeQuickAnalysis) {
-    pendingWeightSwitchShouldResumeQuickAnalysis |= resumeQuickAnalysis;
-    String reloadWarning = reloadRunningEngine(result.engineIndex);
-    if (reloadWarning != null && !reloadWarning.trim().isEmpty()) {
-      finishSetupApplied(
-          result, message, reloadWarning, showSuccessPopup, includeWeightPathInPopup);
-      return;
-    }
-    publishAcceptedWeightSwitch(result);
-    if (Lizzie.engineManager != null
-        && result.engineIndex >= 0
-        && !isAppliedEngineReady(result.engineIndex)) {
-      waitForAppliedEngine(result, message, showSuccessPopup, includeWeightPathInPopup);
-      return;
-    }
-    finishSetupApplied(result, message, null, showSuccessPopup, includeWeightPathInPopup);
+    onSetupApplied(
+        result,
+        message,
+        showSuccessPopup,
+        includeWeightPathInPopup,
+        resumeQuickAnalysis,
+        0L);
   }
 
-  private void publishAcceptedWeightSwitch(SetupResult result) {
-    // EngineManager publishes currentEngineNo only after startup synchronization. The switch has
-    // already been accepted here, so render the requested weight instead of leaving the old
-    // "currently using" badge visible throughout the readiness poll.
-    runWeightSwitchUiUpdate(
+  private void onSetupApplied(
+      SetupResult result,
+      String message,
+      boolean showSuccessPopup,
+      boolean includeWeightPathInPopup,
+      boolean resumeQuickAnalysis,
+      long requestedWeightSwitchToken) {
+    pendingWeightSwitchShouldResumeQuickAnalysis |= resumeQuickAnalysis;
+    long weightSwitchToken =
+        publishAcceptedWeightSwitch(result, requestedWeightSwitchToken);
+    EngineManager expectedManager = Lizzie.engineManager;
+    dispatchRunningEngineReload(
+        result,
+        message,
+        showSuccessPopup,
+        includeWeightPathInPopup,
+        weightSwitchToken,
+        expectedManager);
+  }
+
+  private void dispatchRunningEngineReload(
+      SetupResult result,
+      String message,
+      boolean showSuccessPopup,
+      boolean includeWeightPathInPopup,
+      long weightSwitchToken,
+      EngineManager expectedManager) {
+    Runnable reloadWork =
         () -> {
-          snapshot =
-              advanceWeightSwitchDisplay(
-                  snapshot,
-                  result == null ? null : result.snapshot,
-                  null,
-                  WeightSwitchDisplayPhase.ACCEPTED,
-                  false);
-          renderSnapshot();
-          selectRemoteWeightByModelName(
-              KataGoAutoSetupHelper.resolveActiveWeightModelName(snapshot));
-          updateSelectedRemoteWeightInfo();
-        });
+          EngineReloadOutcome reload =
+              reloadRunningEngine(result == null ? -1 : result.engineIndex, expectedManager);
+          SwingUtilities.invokeLater(
+              () ->
+                  handleRunningEngineReload(
+                      result,
+                      message,
+                      showSuccessPopup,
+                      includeWeightPathInPopup,
+                      weightSwitchToken,
+                      reload));
+        };
+    dispatchWeightSwitchReloadWork(
+        reloadWork,
+        weightSwitchToken,
+        () ->
+            handleRunningEngineReload(
+                result,
+                message,
+                showSuccessPopup,
+                includeWeightPathInPopup,
+                weightSwitchToken,
+                EngineReloadOutcome.failed(text("AutoSetup.weightSwitchRetry"))));
+  }
+
+  static void dispatchWeightSwitchReloadWork(
+      Runnable reloadWork, long weightSwitchToken, Runnable schedulingFailure) {
+    Thread worker = new Thread(reloadWork, "katago-weight-engine-reload-" + weightSwitchToken);
+    worker.setDaemon(true);
+    Runnable startWorker =
+        () -> {
+          try {
+            worker.start();
+          } catch (RuntimeException | Error failure) {
+            if (schedulingFailure != null) {
+              schedulingFailure.run();
+            }
+          }
+        };
+    if (SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(() -> SwingUtilities.invokeLater(startWorker));
+    } else {
+      startWorker.run();
+    }
+  }
+
+  static boolean isCurrentEngineManager(EngineManager expectedManager) {
+    return expectedManager != null && Lizzie.engineManager == expectedManager;
+  }
+
+  private void handleRunningEngineReload(
+      SetupResult result,
+      String message,
+      boolean showSuccessPopup,
+      boolean includeWeightPathInPopup,
+      long weightSwitchToken,
+      EngineReloadOutcome reload) {
+    if (!isPendingWeightSwitch(weightSwitchToken)) {
+      return;
+    }
+    if (reload.warning != null && !reload.warning.trim().isEmpty()) {
+      finishSetupApplied(
+          result,
+          message,
+          reload.warning,
+          showSuccessPopup,
+          includeWeightPathInPopup,
+          weightSwitchToken);
+      return;
+    }
+    if (reload.switchManager == null || reload.switchManager != Lizzie.engineManager) {
+      finishSetupApplied(
+          result,
+          message,
+          text("AutoSetup.weightSwitchRetry"),
+          showSuccessPopup,
+          includeWeightPathInPopup,
+          weightSwitchToken);
+      return;
+    }
+    if (reload.switchSnapshot != null) {
+      waitForAppliedEngine(
+          result,
+          message,
+          showSuccessPopup,
+          includeWeightPathInPopup,
+          weightSwitchToken,
+          reload.switchManager,
+          reload.switchSnapshot.token());
+      return;
+    }
+    finishSetupApplied(
+        result,
+        message,
+        null,
+        showSuccessPopup,
+        includeWeightPathInPopup,
+        weightSwitchToken);
+  }
+
+  private long publishAcceptedWeightSwitch(SetupResult result, long requestedToken) {
+    SetupSnapshot requestedSnapshot = result == null ? null : result.snapshot;
+    if (requestedToken > 0L && isPendingWeightSwitch(requestedToken)) {
+      return requestedToken;
+    }
+    return beginWeightSwitchDisplay(requestedSnapshot);
   }
 
   private void waitForAppliedEngine(
       SetupResult result,
       String message,
       boolean showSuccessPopup,
-      boolean includeWeightPathInPopup) {
+      boolean includeWeightPathInPopup,
+      long weightSwitchToken,
+      EngineManager expectedManager,
+      long engineSwitchToken) {
     setBusy(true, text("AutoSetup.weightSwitchActivating"), 0, -1);
     final long deadline = System.currentTimeMillis() + WEIGHT_SWITCH_TIMEOUT_MILLIS;
     javax.swing.Timer timer =
@@ -3032,17 +3237,28 @@ public class KataGoAutoSetupDialog extends JDialog {
                 source.stop();
                 return;
               }
-              if (isAppliedEngineReady(result.engineIndex)) {
+              EngineManager manager = Lizzie.engineManager;
+              EngineManager.EngineSwitchUiSnapshot engineState =
+                  manager == null || manager != expectedManager
+                      ? null
+                      : manager.engineSwitchUiSnapshot(true);
+              AppliedEngineWaitState waitState =
+                  evaluateAppliedEngineWait(engineState, engineSwitchToken, result.engineIndex);
+              if (waitState == AppliedEngineWaitState.ACTIVE) {
                 source.stop();
                 pendingWeightSwitchTimer = null;
                 finishSetupApplied(
-                    result, message, null, showSuccessPopup, includeWeightPathInPopup);
+                    result,
+                    message,
+                    null,
+                    showSuccessPopup,
+                    includeWeightPathInPopup,
+                    weightSwitchToken);
                 return;
               }
-              if (System.currentTimeMillis() >= deadline
-                  || (Lizzie.leelaz != null
-                      && Lizzie.leelaz.isDownWithError
-                      && !Lizzie.leelaz.isStarted())) {
+              if (waitState == AppliedEngineWaitState.FAILED
+                  || waitState == AppliedEngineWaitState.SUPERSEDED
+                  || System.currentTimeMillis() >= deadline) {
                 source.stop();
                 pendingWeightSwitchTimer = null;
                 finishSetupApplied(
@@ -3050,7 +3266,8 @@ public class KataGoAutoSetupDialog extends JDialog {
                     message,
                     text("AutoSetup.weightSwitchActivationTimeout"),
                     showSuccessPopup,
-                    includeWeightPathInPopup);
+                    includeWeightPathInPopup,
+                    weightSwitchToken);
               }
             });
     timer.setInitialDelay(WEIGHT_SWITCH_POLL_MILLIS);
@@ -3059,13 +3276,35 @@ public class KataGoAutoSetupDialog extends JDialog {
     timer.start();
   }
 
-  private boolean isAppliedEngineReady(int engineIndex) {
-    return !EngineManager.isEmpty
-        && EngineManager.currentEngineNo == engineIndex
-        && Lizzie.leelaz != null
-        && Lizzie.leelaz.isStarted()
-        && Lizzie.leelaz.isLoaded()
-        && !Lizzie.leelaz.isCheckingName;
+  static AppliedEngineWaitState evaluateAppliedEngineWait(
+      EngineManager.EngineSwitchUiSnapshot snapshot, long expectedToken, int engineIndex) {
+    if (snapshot == null) {
+      return AppliedEngineWaitState.SUPERSEDED;
+    }
+    return evaluateAppliedEngineWait(
+        snapshot.token(), snapshot.phase(), snapshot.activeIndex(), expectedToken, engineIndex);
+  }
+
+  static AppliedEngineWaitState evaluateAppliedEngineWait(
+      long snapshotToken,
+      EngineManager.EngineSwitchUiPhase phase,
+      int activeIndex,
+      long expectedToken,
+      int engineIndex) {
+    if (expectedToken <= 0L || snapshotToken != expectedToken) {
+      return AppliedEngineWaitState.SUPERSEDED;
+    }
+    if (phase == EngineManager.EngineSwitchUiPhase.FAILED) {
+      return AppliedEngineWaitState.FAILED;
+    }
+    if (phase == EngineManager.EngineSwitchUiPhase.ACTIVE) {
+      return activeIndex == engineIndex
+          ? AppliedEngineWaitState.ACTIVE
+          : AppliedEngineWaitState.SUPERSEDED;
+    }
+    return phase == EngineManager.EngineSwitchUiPhase.SWITCHING
+        ? AppliedEngineWaitState.WAITING
+        : AppliedEngineWaitState.SUPERSEDED;
   }
 
   private void finishSetupApplied(
@@ -3073,20 +3312,22 @@ public class KataGoAutoSetupDialog extends JDialog {
       String message,
       String reloadWarning,
       boolean showSuccessPopup,
-      boolean includeWeightPathInPopup) {
+      boolean includeWeightPathInPopup,
+      long weightSwitchToken) {
     SetupSnapshot authoritativeSnapshot = KataGoAutoSetupHelper.inspectLocalSetup();
     boolean succeeded = reloadWarning == null || reloadWarning.trim().isEmpty();
-    boolean requestedEngineIsPendingPrimary = isRequestedEngineStillPendingPrimary(result);
     runWeightSwitchUiUpdate(
         () -> {
+          if (!isPendingWeightSwitch(weightSwitchToken)) {
+            return;
+          }
           setBusy(false, succeeded ? message : reloadWarning, 0, 0);
-          snapshot =
-              advanceWeightSwitchDisplay(
-                  snapshot,
-                  result == null ? null : result.snapshot,
-                  authoritativeSnapshot,
-                  succeeded ? WeightSwitchDisplayPhase.SUCCEEDED : WeightSwitchDisplayPhase.FAILED,
-                  requestedEngineIsPendingPrimary);
+          weightSwitchDisplayState =
+              succeeded
+                  ? weightSwitchDisplayState.succeed(
+                      weightSwitchToken, result == null ? null : result.snapshot)
+                  : weightSwitchDisplayState.fail(weightSwitchToken, authoritativeSnapshot);
+          snapshot = weightSwitchDisplayState.displayedSnapshot();
           renderSnapshot();
           selectRemoteWeightByModelName(
               KataGoAutoSetupHelper.resolveActiveWeightModelName(snapshot));
@@ -3103,7 +3344,7 @@ public class KataGoAutoSetupDialog extends JDialog {
             }
           } else {
             lblStatus.setText(reloadWarning);
-            lblStatus.setForeground(WARN_COLOR);
+            lblStatus.setForeground(ERROR_COLOR);
             if (showSuccessPopup || includeWeightPathInPopup) {
               Utils.showMsg(
                   message
@@ -3117,37 +3358,42 @@ public class KataGoAutoSetupDialog extends JDialog {
         });
   }
 
-  static SetupSnapshot advanceWeightSwitchDisplay(
-      SetupSnapshot currentDisplay,
-      SetupSnapshot requestedSnapshot,
-      SetupSnapshot authoritativeSnapshot,
-      WeightSwitchDisplayPhase phase,
-      boolean requestedEngineIsPendingPrimary) {
-    if (phase == WeightSwitchDisplayPhase.ACCEPTED) {
-      return requestedSnapshot == null ? currentDisplay : requestedSnapshot;
-    }
-    if (phase == WeightSwitchDisplayPhase.SUCCEEDED
-        || (phase == WeightSwitchDisplayPhase.FAILED && requestedEngineIsPendingPrimary)) {
-      return requestedSnapshot == null
-          ? (authoritativeSnapshot == null ? currentDisplay : authoritativeSnapshot)
-          : requestedSnapshot;
-    }
-    return authoritativeSnapshot == null ? currentDisplay : authoritativeSnapshot;
+  private long beginWeightSwitchDisplay(SetupSnapshot requestedSnapshot) {
+    long[] token = new long[1];
+    runWeightSwitchUiUpdate(
+        () -> {
+          if (weightSwitchDisplayState == null) {
+            weightSwitchDisplayState = WeightSwitchDisplayState.active(snapshot);
+          }
+          weightSwitchDisplayState = weightSwitchDisplayState.begin(requestedSnapshot);
+          token[0] = weightSwitchDisplayState.token();
+          snapshot = weightSwitchDisplayState.displayedSnapshot();
+          renderSnapshot();
+          SetupSnapshot bannerSnapshot = weightSwitchDisplayState.bannerSnapshot();
+          selectRemoteWeightByModelName(
+              KataGoAutoSetupHelper.resolveActiveWeightModelName(bannerSnapshot));
+          updateSelectedRemoteWeightInfo();
+        });
+    return token[0];
   }
 
-  private static boolean isRequestedEngineStillPendingPrimary(SetupResult result) {
-    EngineManager manager = Lizzie.engineManager;
-    if (result == null
-        || manager == null
-        || manager.engineList == null
-        || result.engineIndex < 0
-        || result.engineIndex >= manager.engineList.size()) {
-      return false;
-    }
-    Leelaz requestedEngine = manager.engineList.get(result.engineIndex);
-    return requestedEngine != null
-        && Lizzie.capturePrimaryEngineGeneration(requestedEngine) >= 0
-        && !(requestedEngine.isDownWithError && !requestedEngine.isStarted());
+  private void failWeightSwitchDisplay(
+      long weightSwitchToken, SetupSnapshot authoritativeSnapshot) {
+    runWeightSwitchUiUpdate(
+        () -> {
+          if (!isPendingWeightSwitch(weightSwitchToken)) {
+            return;
+          }
+          weightSwitchDisplayState =
+              weightSwitchDisplayState.fail(weightSwitchToken, authoritativeSnapshot);
+          snapshot = weightSwitchDisplayState.displayedSnapshot();
+          renderSnapshot();
+        });
+  }
+
+  private boolean isPendingWeightSwitch(long weightSwitchToken) {
+    return weightSwitchDisplayState != null
+        && weightSwitchDisplayState.isPending(weightSwitchToken);
   }
 
   static void runWeightSwitchUiUpdate(Runnable update) {
@@ -3183,26 +3429,45 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
   }
 
-  private String reloadRunningEngine(int engineIndex) {
-    if (Lizzie.engineManager == null) {
-      return null;
+  private EngineReloadOutcome reloadRunningEngine(
+      int engineIndex, EngineManager expectedManager) {
+    if (!isCurrentEngineManager(expectedManager)) {
+      return EngineReloadOutcome.failed(text("AutoSetup.weightSwitchRetry"));
     }
     try {
       // Adding a weight must not tear down every running engine. Refresh the catalog in place and
       // switch only after the interruptible quick-analysis lease has been released.
-      Lizzie.engineManager.refreshEngineCatalog();
+      expectedManager.refreshEngineCatalog();
+      if (!isCurrentEngineManager(expectedManager)) {
+        return EngineReloadOutcome.failed(text("AutoSetup.weightSwitchRetry"));
+      }
       if (engineIndex >= 0
-          && (EngineManager.isEmpty || EngineManager.currentEngineNo != engineIndex)) {
-        if (!Lizzie.engineManager.switchEngineIfAvailable(engineIndex, true)) {
-          return text("AutoSetup.weightSwitchRetry");
+          && !expectedManager.isEngineSwitchActive(engineIndex, true)) {
+        java.util.Optional<EngineManager.EngineSwitchUiSnapshot> submitted =
+            expectedManager.switchEngineTrackedIfAvailable(engineIndex, true);
+        if (!isCurrentEngineManager(expectedManager)) {
+          return EngineReloadOutcome.failed(text("AutoSetup.weightSwitchRetry"));
         }
+        if (submitted.isEmpty()) {
+          return EngineReloadOutcome.failed(text("AutoSetup.weightSwitchRetry"));
+        }
+        return EngineReloadOutcome.switching(expectedManager, submitted.orElseThrow());
+      }
+      if (!isCurrentEngineManager(expectedManager)) {
+        return EngineReloadOutcome.failed(text("AutoSetup.weightSwitchRetry"));
       }
       if (Lizzie.frame != null) {
-        Lizzie.frame.refresh();
+        SwingUtilities.invokeLater(
+            () -> {
+              if (Lizzie.engineManager == expectedManager && Lizzie.frame != null) {
+                Lizzie.frame.refresh();
+              }
+            });
       }
-      return null;
+      return EngineReloadOutcome.ready(expectedManager);
     } catch (Exception e) {
-      return text("AutoSetup.reloadFailed") + "\n" + e.getMessage();
+      return EngineReloadOutcome.failed(
+          text("AutoSetup.reloadFailed") + "\n" + e.getMessage());
     }
   }
 
@@ -3236,6 +3501,10 @@ public class KataGoAutoSetupDialog extends JDialog {
     if (pendingWeightSwitchTimer != null) {
       pendingWeightSwitchTimer.stop();
       pendingWeightSwitchTimer = null;
+      if (weightSwitchDisplayState != null && weightSwitchDisplayState.isPending()) {
+        failWeightSwitchDisplay(
+            weightSwitchDisplayState.token(), KataGoAutoSetupHelper.inspectLocalSetup());
+      }
       setBusy(false, "", 0, 0);
       resumeQuickAnalysisAfterWeightSwitchIfNeeded();
     }
@@ -3486,6 +3755,9 @@ public class KataGoAutoSetupDialog extends JDialog {
   }
 
   private boolean isCurrentLocalWeight(Path weightPath) {
+    if (weightSwitchDisplayState != null) {
+      return weightSwitchDisplayState.isActiveWeight(weightPath);
+    }
     return weightPath != null
         && snapshot != null
         && snapshot.activeWeightPath != null
@@ -3494,6 +3766,11 @@ public class KataGoAutoSetupDialog extends JDialog {
             .toAbsolutePath()
             .normalize()
             .equals(weightPath.toAbsolutePath().normalize());
+  }
+
+  private boolean isPendingLocalWeight(Path weightPath) {
+    return weightSwitchDisplayState != null
+        && weightSwitchDisplayState.isPendingWeight(weightPath);
   }
 
   private void updateSelectedLocalWeightInfo() {
@@ -3521,9 +3798,11 @@ public class KataGoAutoSetupDialog extends JDialog {
     if (entry.remoteInfo != null) {
       RemoteWeightInfo info = entry.remoteInfo;
       boolean downloaded = entry.localPath != null;
+      boolean pending = downloaded && isPendingLocalWeight(entry.localPath);
       boolean current = downloaded && isCurrentLocalWeight(entry.localPath);
       lblSelectedWeightName.setText(formatRemoteModelName(info));
-      lblSelectedWeightMeta.setText(formatSelectedRemoteMetadata(info, downloaded, current));
+      lblSelectedWeightMeta.setText(
+          formatSelectedRemoteMetadata(info, downloaded, current, pending));
       String tooltip =
           weightTooltip(
               formatRemoteModelName(info),
@@ -3539,20 +3818,23 @@ public class KataGoAutoSetupDialog extends JDialog {
       btnUseWeight.setVisible(downloaded);
       boolean requiresUpgrade = downloaded && requiresKataGo117(entry.localPath);
       btnUseWeight.setText(
-          current
+          pending
+              ? text("LizzieFrame.prompt.switching")
+              : current
               ? text("AutoSetup.currentlyUsingShort")
               : requiresUpgrade
                   ? text("AutoSetup.transformerRequires117Short")
                   : text("AutoSetup.useWeight"));
       btnUseWeight.setToolTipText(
           requiresUpgrade ? text("AutoSetup.transformerRequires117") : null);
-      btnUseWeight.setEnabled(downloaded && !current && canUseSelectedLocalWeight());
+      btnUseWeight.setEnabled(downloaded && !pending && !current && canUseSelectedLocalWeight());
     } else {
       Path path = entry.localPath;
       String displayName = KataGoAutoSetupHelper.resolveWeightDisplayName(path);
+      boolean pending = isPendingLocalWeight(path);
       boolean current = isCurrentLocalWeight(path);
       lblSelectedWeightName.setText(displayName);
-      lblSelectedWeightMeta.setText(formatSelectedLocalMetadata(path, current));
+      lblSelectedWeightMeta.setText(formatSelectedLocalMetadata(path, current, pending));
       String tooltip = weightTooltip(displayName, path.toAbsolutePath().normalize().toString());
       lblSelectedWeightName.setToolTipText(tooltip);
       lblSelectedWeightMeta.setToolTipText(tooltip);
@@ -3560,14 +3842,16 @@ public class KataGoAutoSetupDialog extends JDialog {
       btnUseWeight.setVisible(true);
       boolean requiresUpgrade = requiresKataGo117(path);
       btnUseWeight.setText(
-          current
+          pending
+              ? text("LizzieFrame.prompt.switching")
+              : current
               ? text("AutoSetup.currentlyUsingShort")
               : requiresUpgrade
                   ? text("AutoSetup.transformerRequires117Short")
                   : text("AutoSetup.useWeight"));
       btnUseWeight.setToolTipText(
           requiresUpgrade ? text("AutoSetup.transformerRequires117") : null);
-      btnUseWeight.setEnabled(!current && canUseSelectedLocalWeight());
+      btnUseWeight.setEnabled(!pending && !current && canUseSelectedLocalWeight());
     }
     selectedWeightActions.revalidate();
     selectedWeightActions.repaint();
@@ -3799,7 +4083,7 @@ public class KataGoAutoSetupDialog extends JDialog {
   }
 
   private String formatSelectedRemoteMetadata(
-      RemoteWeightInfo info, boolean downloaded, boolean current) {
+      RemoteWeightInfo info, boolean downloaded, boolean current, boolean pending) {
     StringBuilder value = new StringBuilder();
     if (info.isTransformer()) {
       appendMetadata(value, text("AutoSetup.transformerBadge"));
@@ -3814,7 +4098,9 @@ public class KataGoAutoSetupDialog extends JDialog {
     if (!releaseDate.isEmpty()) {
       appendMetadata(value, text("AutoSetup.releasedShort") + " " + releaseDate);
     }
-    if (current) {
+    if (pending) {
+      appendMetadata(value, text("LizzieFrame.prompt.switching"));
+    } else if (current) {
       appendMetadata(value, text("AutoSetup.currentlyUsingShort"));
     } else if (downloaded) {
       appendMetadata(value, text("AutoSetup.downloaded"));
@@ -3840,14 +4126,16 @@ public class KataGoAutoSetupDialog extends JDialog {
     return value.toString();
   }
 
-  private String formatSelectedLocalMetadata(Path path, boolean current) {
+  private String formatSelectedLocalMetadata(Path path, boolean current, boolean pending) {
     StringBuilder value = new StringBuilder();
     appendMetadata(value, text("AutoSetup.importedWeight"));
     String date = formatLocalWeightDate(path);
     if (!date.isEmpty()) {
       appendMetadata(value, text("AutoSetup.importedShort") + " " + date);
     }
-    if (current) {
+    if (pending) {
+      appendMetadata(value, text("LizzieFrame.prompt.switching"));
+    } else if (current) {
       appendMetadata(value, text("AutoSetup.currentlyUsingShort"));
     }
     return value.toString();
@@ -4185,7 +4473,11 @@ public class KataGoAutoSetupDialog extends JDialog {
   }
 
   private boolean matchesCurrentWeight(RemoteWeightInfo info) {
-    return matchesModelName(info, KataGoAutoSetupHelper.resolveActiveWeightModelName(snapshot));
+    SetupSnapshot committed =
+        weightSwitchDisplayState == null
+            ? snapshot
+            : weightSwitchDisplayState.committedSnapshot();
+    return matchesModelName(info, KataGoAutoSetupHelper.resolveActiveWeightModelName(committed));
   }
 
   private boolean canDownloadSelectedRemoteWeight() {
@@ -4317,10 +4609,212 @@ public class KataGoAutoSetupDialog extends JDialog {
     BLOCKED_BY_ENGINE_TASK
   }
 
+  enum AppliedEngineWaitState {
+    WAITING,
+    ACTIVE,
+    FAILED,
+    SUPERSEDED
+  }
+
+  private static final class EngineReloadOutcome {
+    private final String warning;
+    private final EngineManager switchManager;
+    private final EngineManager.EngineSwitchUiSnapshot switchSnapshot;
+
+    private EngineReloadOutcome(
+        String warning,
+        EngineManager switchManager,
+        EngineManager.EngineSwitchUiSnapshot switchSnapshot) {
+      this.warning = warning;
+      this.switchManager = switchManager;
+      this.switchSnapshot = switchSnapshot;
+    }
+
+    private static EngineReloadOutcome ready(EngineManager switchManager) {
+      return new EngineReloadOutcome(null, switchManager, null);
+    }
+
+    private static EngineReloadOutcome switching(
+        EngineManager switchManager, EngineManager.EngineSwitchUiSnapshot switchSnapshot) {
+      return new EngineReloadOutcome(null, switchManager, switchSnapshot);
+    }
+
+    private static EngineReloadOutcome failed(String warning) {
+      return new EngineReloadOutcome(warning, null, null);
+    }
+  }
+
   enum WeightSwitchDisplayPhase {
+    DISCOVERED,
     ACCEPTED,
     SUCCEEDED,
     FAILED
+  }
+
+  static final class WeightSwitchDisplayState {
+    private final long token;
+    private final WeightSwitchDisplayPhase phase;
+    private final SetupSnapshot committedSnapshot;
+    private final SetupSnapshot targetSnapshot;
+    private final SetupSnapshot displayedSnapshot;
+
+    private WeightSwitchDisplayState(
+        long token,
+        WeightSwitchDisplayPhase phase,
+        SetupSnapshot committedSnapshot,
+        SetupSnapshot targetSnapshot,
+        SetupSnapshot displayedSnapshot) {
+      this.token = token;
+      this.phase = phase;
+      this.committedSnapshot = committedSnapshot;
+      this.targetSnapshot = targetSnapshot;
+      this.displayedSnapshot = displayedSnapshot;
+    }
+
+    static WeightSwitchDisplayState active(SetupSnapshot snapshot) {
+      return new WeightSwitchDisplayState(
+          0L, WeightSwitchDisplayPhase.SUCCEEDED, snapshot, null, snapshot);
+    }
+
+    static WeightSwitchDisplayState discovered(SetupSnapshot snapshot) {
+      return new WeightSwitchDisplayState(
+          0L, WeightSwitchDisplayPhase.DISCOVERED, null, null, snapshot);
+    }
+
+    WeightSwitchDisplayState begin(SetupSnapshot requestedSnapshot) {
+      return new WeightSwitchDisplayState(
+          token + 1L,
+          WeightSwitchDisplayPhase.ACCEPTED,
+          phase == WeightSwitchDisplayPhase.SUCCEEDED
+                  || phase == WeightSwitchDisplayPhase.ACCEPTED
+              ? committedSnapshot
+              : null,
+          requestedSnapshot,
+          requestedSnapshot == null ? displayedSnapshot : requestedSnapshot);
+    }
+
+    WeightSwitchDisplayState reconcile(SetupSnapshot authoritativeSnapshot) {
+      if (isPending()) {
+        return this;
+      }
+      if (isFailed()) {
+        return new WeightSwitchDisplayState(
+            token,
+            WeightSwitchDisplayPhase.FAILED,
+            null,
+            targetSnapshot,
+            authoritativeSnapshot == null ? displayedSnapshot : authoritativeSnapshot);
+      }
+      return new WeightSwitchDisplayState(
+          token,
+          WeightSwitchDisplayPhase.SUCCEEDED,
+          authoritativeSnapshot,
+          null,
+          authoritativeSnapshot == null ? displayedSnapshot : authoritativeSnapshot);
+    }
+
+    WeightSwitchDisplayState reconcileWithEngineState(
+        SetupSnapshot authoritativeSnapshot, boolean activeInEngine) {
+      if (isPending()) {
+        return this;
+      }
+      if (!activeInEngine) {
+        return new WeightSwitchDisplayState(
+            token,
+            WeightSwitchDisplayPhase.DISCOVERED,
+            null,
+            null,
+            authoritativeSnapshot == null ? displayedSnapshot : authoritativeSnapshot);
+      }
+      return new WeightSwitchDisplayState(
+          token,
+          WeightSwitchDisplayPhase.SUCCEEDED,
+          authoritativeSnapshot,
+          null,
+          authoritativeSnapshot == null ? displayedSnapshot : authoritativeSnapshot);
+    }
+
+    WeightSwitchDisplayState succeed(long completedToken, SetupSnapshot requestedSnapshot) {
+      if (!isPending(completedToken)) {
+        return this;
+      }
+      SetupSnapshot committed = requestedSnapshot == null ? targetSnapshot : requestedSnapshot;
+      return new WeightSwitchDisplayState(
+          token,
+          WeightSwitchDisplayPhase.SUCCEEDED,
+          committed,
+          null,
+          committed == null ? displayedSnapshot : committed);
+    }
+
+    WeightSwitchDisplayState fail(long failedToken, SetupSnapshot authoritativeSnapshot) {
+      if (!isPending(failedToken)) {
+        return this;
+      }
+      SetupSnapshot rollback =
+          authoritativeSnapshot == null ? committedSnapshot : authoritativeSnapshot;
+      return new WeightSwitchDisplayState(
+          token, WeightSwitchDisplayPhase.FAILED, null, targetSnapshot, rollback);
+    }
+
+    boolean isPending(long expectedToken) {
+      return phase == WeightSwitchDisplayPhase.ACCEPTED && token == expectedToken;
+    }
+
+    boolean isPending() {
+      return phase == WeightSwitchDisplayPhase.ACCEPTED;
+    }
+
+    boolean isFailed() {
+      return phase == WeightSwitchDisplayPhase.FAILED;
+    }
+
+    boolean isActive() {
+      return phase == WeightSwitchDisplayPhase.SUCCEEDED && committedSnapshot != null;
+    }
+
+    long token() {
+      return token;
+    }
+
+    WeightSwitchDisplayPhase phase() {
+      return phase;
+    }
+
+    SetupSnapshot displayedSnapshot() {
+      return displayedSnapshot;
+    }
+
+    SetupSnapshot bannerSnapshot() {
+      return isPending() && targetSnapshot != null ? targetSnapshot : displayedSnapshot;
+    }
+
+    SetupSnapshot committedSnapshot() {
+      return committedSnapshot;
+    }
+
+    boolean isActiveWeight(Path path) {
+      return committedSnapshot != null
+          && (phase == WeightSwitchDisplayPhase.SUCCEEDED
+              || phase == WeightSwitchDisplayPhase.ACCEPTED)
+          && sameWeight(path, activeWeightPath());
+    }
+
+    boolean isPendingWeight(Path path) {
+      return isPending()
+          && targetSnapshot != null
+          && sameWeight(path, targetSnapshot.activeWeightPath);
+    }
+
+    private Path activeWeightPath() {
+      return committedSnapshot == null ? null : committedSnapshot.activeWeightPath;
+    }
+
+    private static boolean sameWeight(Path first, Path second) {
+      return first != null
+          && second != null
+          && first.toAbsolutePath().normalize().equals(second.toAbsolutePath().normalize());
+    }
   }
 
   private static final class WeightCatalogEntry {
@@ -4883,8 +5377,12 @@ public class KataGoAutoSetupDialog extends JDialog {
       recommendation.setStatus(remoteWeightRecommendation(remote), StatusTagTone.GOLD);
       elo.setText(remote == null ? "-" : compactEloRating(remote.eloRating));
       date.setText(remote == null ? formatLocalWeightDate(local) : formatRemoteReleaseDate(remote));
+      boolean pending = local != null && isPendingLocalWeight(local);
       boolean current = local != null && isCurrentLocalWeight(local);
-      if (current) {
+      if (pending) {
+        status.setStatus(text("LizzieFrame.prompt.switching"), StatusTagTone.GOLD);
+        status.setToolTipText(text("AutoSetup.weightSwitchActivating"));
+      } else if (current) {
         status.setStatus(text("AutoSetup.currentlyUsingShort"), StatusTagTone.TEAL);
         status.setToolTipText(text("AutoSetup.currentlyUsingShort"));
       } else if (remote != null && local == null) {

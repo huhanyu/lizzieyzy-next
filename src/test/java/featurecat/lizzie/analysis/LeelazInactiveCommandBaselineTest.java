@@ -136,7 +136,7 @@ class LeelazInactiveCommandBaselineTest {
   private static void assertOrdinarySendFailureCompletesHandlerAndQueue(boolean noLeelaz2EntryFails)
       throws Exception {
     Leelaz engine = new Leelaz("");
-    FailFirstFlushOutputStream output = new FailFirstFlushOutputStream();
+    FailBeforeFirstByteOutputStream output = new FailBeforeFirstByteOutputStream();
     installOutput(engine, Leelaz.createCommandOutputStream(output));
     AtomicInteger failedCommandHandler = new AtomicInteger();
     AtomicInteger successfulCommandHandler = new AtomicInteger();
@@ -167,7 +167,7 @@ class LeelazInactiveCommandBaselineTest {
   }
 
   private static void installOutput(Leelaz engine, BufferedOutputStream output) throws Exception {
-    setField(engine, "outputStream", output);
+    engine.installCommandOutputForTest(output);
   }
 
   private static void processCommandResponse(Leelaz engine, String line) throws Exception {
@@ -208,30 +208,20 @@ class LeelazInactiveCommandBaselineTest {
     return (T) UnsafeHolder.UNSAFE.allocateInstance(type);
   }
 
-  private static final class FailFirstFlushOutputStream extends OutputStream {
+  private static final class FailBeforeFirstByteOutputStream extends OutputStream {
     private final ByteArrayOutputStream written = new ByteArrayOutputStream();
-    private final ByteArrayOutputStream pending = new ByteArrayOutputStream();
     private boolean failed;
 
     @Override
-    public void write(int value) {
-      pending.write(value);
-    }
-
-    @Override
-    public void write(byte[] buffer, int offset, int length) {
-      pending.write(buffer, offset, length);
-    }
-
-    @Override
-    public void flush() throws IOException {
+    public void write(int value) throws IOException {
       if (!failed) {
         failed = true;
-        pending.reset();
+        // Fail before accepting any byte so the recoverable command stream remains usable by the
+        // next queued command. A failure after accepting bytes is intentionally treated as a
+        // polluted transport and invalidated by production code.
         throw new IOException("controlled ordinary send failure");
       }
-      pending.writeTo(written);
-      pending.reset();
+      written.write(value);
     }
 
     private String writtenText() {

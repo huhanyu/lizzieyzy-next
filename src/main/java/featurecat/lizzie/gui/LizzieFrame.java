@@ -31,6 +31,7 @@ import featurecat.lizzie.analysis.TrackingAnalysisController;
 import featurecat.lizzie.analysis.WholeGameAnalysisPlan;
 import featurecat.lizzie.analysis.WholeGameAnalysisSession;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
+import featurecat.lizzie.logging.SgfObservation;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -85,6 +86,7 @@ import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -127,79 +129,150 @@ public class LizzieFrame extends JFrame {
 
   static RestartInteractionGate beginRestartInteractionGate(Window root) {
     AtomicReference<RestartInteractionGate> result = new AtomicReference<>();
-    runRestartInteractionMutationOnEdt(
-        () -> {
-          List<Window> windows = new ArrayList<>();
-          collectOwnedWindows(root, windows, Collections.newSetFromMap(new IdentityHashMap<>()));
-          Map<Window, Boolean> enabledStates = new IdentityHashMap<>();
-          Map<JComponent, TransferHandler> transferHandlers = new IdentityHashMap<>();
-          for (Window window : windows) {
-            enabledStates.put(window, window.isEnabled());
-            collectTransferHandlers(window, transferHandlers);
-          }
-          Component focusOwner =
-              KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-          KeyboardFocusManager focusManager =
-              KeyboardFocusManager.getCurrentKeyboardFocusManager();
-          KeyEventDispatcher keyboardGate =
-              event -> {
-                Component source = event.getComponent();
-                Window sourceWindow =
-                    source == null
-                        ? focusManager.getFocusedWindow()
-                        : SwingUtilities.getWindowAncestor(source);
-                if (sourceWindow != null && windows.contains(sourceWindow)) {
-                  event.consume();
-                  return true;
-                }
-                return false;
-              };
-          try {
-            focusManager.addKeyEventDispatcher(keyboardGate);
-            for (JComponent component : transferHandlers.keySet()) {
-              component.setTransferHandler(null);
-            }
+    try {
+      runRestartInteractionMutationOnEdt(
+          () -> {
+            List<Window> windows = new ArrayList<>();
+            collectOwnedWindows(
+                root, windows, Collections.newSetFromMap(new IdentityHashMap<>()));
+            Map<Window, Boolean> enabledStates = new IdentityHashMap<>();
+            Map<JComponent, TransferHandler> transferHandlers = new IdentityHashMap<>();
             for (Window window : windows) {
-              window.setEnabled(false);
+              enabledStates.put(window, window.isEnabled());
+              collectTransferHandlers(window, transferHandlers);
             }
-          } catch (RuntimeException failure) {
-            focusManager.removeKeyEventDispatcher(keyboardGate);
-            for (Map.Entry<JComponent, TransferHandler> entry : transferHandlers.entrySet()) {
-              entry.getKey().setTransferHandler(entry.getValue());
+            Component focusOwner =
+                KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            KeyboardFocusManager focusManager =
+                KeyboardFocusManager.getCurrentKeyboardFocusManager();
+            KeyEventDispatcher keyboardGate =
+                event -> {
+                  Component source = event.getComponent();
+                  Window sourceWindow =
+                      source == null
+                          ? focusManager.getFocusedWindow()
+                          : SwingUtilities.getWindowAncestor(source);
+                  if (sourceWindow != null && windows.contains(sourceWindow)) {
+                    event.consume();
+                    return true;
+                  }
+                  return false;
+                };
+            try {
+              focusManager.addKeyEventDispatcher(keyboardGate);
+              for (JComponent component : transferHandlers.keySet()) {
+                component.setTransferHandler(null);
+              }
+              for (Window window : windows) {
+                window.setEnabled(false);
+              }
+            } catch (RuntimeException | Error failure) {
+              restoreRestartInteractionState(
+                  windows,
+                  enabledStates,
+                  transferHandlers,
+                  focusManager,
+                  keyboardGate,
+                  focusOwner,
+                  failure);
+              throw failure;
             }
-            for (Window window : windows) {
-              window.setEnabled(Boolean.TRUE.equals(enabledStates.get(window)));
-            }
-            if (focusOwner != null && focusOwner.isDisplayable()) {
-              focusOwner.requestFocusInWindow();
-            }
-            throw failure;
+            AtomicBoolean closed = new AtomicBoolean(false);
+            result.set(
+                () -> {
+                  if (!closed.compareAndSet(false, true)) {
+                    return;
+                  }
+                  runRestartInteractionMutationOnEdt(
+                      () ->
+                          restoreRestartInteractionState(
+                              windows,
+                              enabledStates,
+                              transferHandlers,
+                              focusManager,
+                              keyboardGate,
+                              focusOwner,
+                              null));
+                });
+          });
+    } catch (RuntimeException | Error failure) {
+      RestartInteractionGate abandonedGate = result.get();
+      if (abandonedGate != null) {
+        boolean restoreInterrupt = Thread.interrupted();
+        try {
+          abandonedGate.close();
+        } catch (RuntimeException | Error cleanupFailure) {
+          addRestartInteractionCleanupFailure(failure, cleanupFailure);
+        } finally {
+          if (restoreInterrupt) {
+            Thread.currentThread().interrupt();
           }
-          AtomicBoolean closed = new AtomicBoolean(false);
-          result.set(
-              () -> {
-                if (!closed.compareAndSet(false, true)) {
-                  return;
-                }
-                runRestartInteractionMutationOnEdt(
-                    () -> {
-                      for (Window window : windows) {
-                        if (Boolean.TRUE.equals(enabledStates.get(window))) {
-                          window.setEnabled(true);
-                        }
-                      }
-                      for (Map.Entry<JComponent, TransferHandler> entry :
-                          transferHandlers.entrySet()) {
-                        entry.getKey().setTransferHandler(entry.getValue());
-                      }
-                      focusManager.removeKeyEventDispatcher(keyboardGate);
-                      if (focusOwner != null && focusOwner.isDisplayable()) {
-                        focusOwner.requestFocusInWindow();
-                      }
-                    });
-              });
-        });
+        }
+      }
+      throw failure;
+    }
     return result.get();
+  }
+
+  private static void restoreRestartInteractionState(
+      List<Window> windows,
+      Map<Window, Boolean> enabledStates,
+      Map<JComponent, TransferHandler> transferHandlers,
+      KeyboardFocusManager focusManager,
+      KeyEventDispatcher keyboardGate,
+      Component focusOwner,
+      Throwable primaryFailure) {
+    AtomicReference<Throwable> cleanupFailure = new AtomicReference<>(primaryFailure);
+    for (Window window : windows) {
+      runRestartInteractionCleanup(
+          cleanupFailure,
+          () -> window.setEnabled(Boolean.TRUE.equals(enabledStates.get(window))));
+    }
+    for (Map.Entry<JComponent, TransferHandler> entry : transferHandlers.entrySet()) {
+      runRestartInteractionCleanup(
+          cleanupFailure, () -> entry.getKey().setTransferHandler(entry.getValue()));
+    }
+    runRestartInteractionCleanup(
+        cleanupFailure, () -> focusManager.removeKeyEventDispatcher(keyboardGate));
+    runRestartInteractionCleanup(
+        cleanupFailure,
+        () -> {
+          if (focusOwner != null && focusOwner.isDisplayable()) {
+            focusOwner.requestFocusInWindow();
+          }
+        });
+    Throwable failure = cleanupFailure.get();
+    if (primaryFailure == null && failure != null) {
+      rethrowRestartInteractionFailure(failure);
+    }
+  }
+
+  private static void runRestartInteractionCleanup(
+      AtomicReference<Throwable> failure, Runnable cleanup) {
+    try {
+      cleanup.run();
+    } catch (RuntimeException | Error cleanupFailure) {
+      Throwable primary = failure.get();
+      if (primary == null) {
+        failure.set(cleanupFailure);
+      } else {
+        addRestartInteractionCleanupFailure(primary, cleanupFailure);
+      }
+    }
+  }
+
+  private static void addRestartInteractionCleanupFailure(
+      Throwable primary, Throwable cleanupFailure) {
+    if (primary != null && cleanupFailure != null && primary != cleanupFailure) {
+      primary.addSuppressed(cleanupFailure);
+    }
+  }
+
+  private static void rethrowRestartInteractionFailure(Throwable failure) {
+    if (failure instanceof Error) {
+      throw (Error) failure;
+    }
+    throw (RuntimeException) failure;
   }
 
   private static void collectOwnedWindows(
@@ -234,13 +307,46 @@ public class LizzieFrame extends JFrame {
       action.run();
       return;
     }
+    AtomicReference<Throwable> actionFailure = new AtomicReference<>();
+    CountDownLatch completed = new CountDownLatch(1);
     try {
-      SwingUtilities.invokeAndWait(action);
-    } catch (InterruptedException interrupted) {
+      SwingUtilities.invokeLater(
+          () -> {
+            try {
+              action.run();
+            } catch (RuntimeException | Error failure) {
+              actionFailure.set(failure);
+            } finally {
+              completed.countDown();
+            }
+          });
+    } catch (RuntimeException | Error schedulingFailure) {
+      throw new IllegalStateException(
+          "Failed to schedule restart interaction gate update", schedulingFailure);
+    }
+    InterruptedException interruption = null;
+    while (true) {
+      try {
+        completed.await();
+        break;
+      } catch (InterruptedException interrupted) {
+        if (interruption == null) {
+          interruption = interrupted;
+        } else if (interruption != interrupted) {
+          interruption.addSuppressed(interrupted);
+        }
+      }
+    }
+    Throwable failure = actionFailure.get();
+    if (interruption != null) {
+      if (failure != null && failure != interruption) {
+        interruption.addSuppressed(failure);
+      }
       Thread.currentThread().interrupt();
       throw new IllegalStateException(
-          "Interrupted while updating restart interaction gate", interrupted);
-    } catch (Exception failure) {
+          "Interrupted while updating restart interaction gate", interruption);
+    }
+    if (failure != null) {
       throw new IllegalStateException("Failed to update restart interaction gate", failure);
     }
   }
@@ -332,7 +438,7 @@ public class LizzieFrame extends JFrame {
   // public static EditToolbar editToolbar;
   public Optional<List<String>> variationOpt;
 
-  public static boolean urlSgf = false;
+  public static volatile boolean urlSgf = false;
   public boolean syncBoard = false;
   public boolean bothSync = false;
   int maxMvNum;
@@ -713,8 +819,8 @@ public class LizzieFrame extends JFrame {
   public boolean ponderStatusBeforeScore = false;
   private KeyListener gtpShortKey;
 
-  private boolean WRNStatusBeforeGame = Lizzie.config.chkKataEngineWRN;
-  private boolean autoWRNStatusBeforeGame = Lizzie.config.autoLoadKataEngineWRN;
+  private boolean WRNStatusBeforeGame = false;
+  private boolean autoWRNStatusBeforeGame = false;
   private double WRNValueBeforeGenmove = 0;
   private boolean WRNSelectedBeforeGenmove = false;
 
@@ -2757,6 +2863,15 @@ public class LizzieFrame extends JFrame {
     if (forEngineGame) mainPanel.removeKeyListener(gtpShortKey);
   }
 
+  /** Whether lifecycle recovery may safely restore the frame's input routing. */
+  public boolean isInputRoutingInitialized() {
+    return mainPanel != null
+        && varTreeScrollPane != null
+        && input != null
+        && input2 != null
+        && gtpShortKey != null;
+  }
+
   public void removeInput(boolean forEngineGame) {
     if (!noInput) {
       mainPanel.removeKeyListener(input);
@@ -3980,10 +4095,16 @@ public class LizzieFrame extends JFrame {
           Lizzie.resourceBundle.getString("Contribute.tips.contributingAndStartAnotherLizzieYzy"));
       return;
     }
+    if (deferUntilHumanSlExit(this::startNewGame)) {
+      return;
+    }
     startRetainedEngineMode(RetainedEngineModeTarget.startNewGame(this));
   }
 
   protected void startNewGameReserved() {
+    if (deferUntilHumanSlExit(this::startNewGame)) {
+      return;
+    }
     Lizzie.frame.stopAiPlayingAndPolicy();
     boolean isPondering = false;
     if (Lizzie.leelaz.isPondering()) {
@@ -4269,8 +4390,7 @@ public class LizzieFrame extends JFrame {
       try {
         SGFParser.save(Lizzie.board, curFile.getPath());
       } catch (IOException e) {
-        // TODO Auto-generated catch block
-        e.printStackTrace();
+        // SgfObservation already recorded the save failure.
       }
     } else {
       saveFile(false);
@@ -4765,7 +4885,8 @@ public class LizzieFrame extends JFrame {
         resetAnalysisWindows,
         afterFirstPaint,
         true,
-        false);
+        false,
+        null);
   }
 
   public boolean loadSgfString(
@@ -4782,7 +4903,8 @@ public class LizzieFrame extends JFrame {
         resetAnalysisWindows,
         afterLoad,
         false,
-        false);
+        false,
+        null);
   }
 
   public boolean loadDownloadedSgfString(
@@ -4791,6 +4913,32 @@ public class LizzieFrame extends JFrame {
       boolean readKomi,
       boolean resetAnalysisWindows,
       Runnable afterLoad) {
+    return loadDownloadedSgfString(
+        sgfContent,
+        resumeDelayMillis,
+        readKomi,
+        resetAnalysisWindows,
+        afterLoad,
+        null);
+  }
+
+  /**
+   * Loads a downloaded SGF and reports the actual parse/load result.
+   *
+   * <p>The boolean return retains the legacy synchronous contract: when AI Coach is active it only
+   * means that the request left the immediate load path for teardown handling. {@code completion}
+   * is invoked on the EDT after deferred execution succeeds or fails, including failure to own the
+   * single teardown continuation.
+   */
+  public boolean loadDownloadedSgfString(
+      String sgfContent,
+      int resumeDelayMillis,
+      boolean readKomi,
+      boolean resetAnalysisWindows,
+      Runnable afterLoad,
+      Consumer<Boolean> completion) {
+    Consumer<Boolean> singleShotCompletion =
+        completion == null ? null : new SingleShotSgfLoadCompletion(completion);
     return loadSgfStringInternal(
         sgfContent,
         null,
@@ -4799,7 +4947,24 @@ public class LizzieFrame extends JFrame {
         resetAnalysisWindows,
         afterLoad,
         false,
-        true);
+        true,
+        singleShotCompletion);
+  }
+
+  private static final class SingleShotSgfLoadCompletion implements Consumer<Boolean> {
+    private final Consumer<Boolean> delegate;
+    private final AtomicBoolean completed = new AtomicBoolean();
+
+    private SingleShotSgfLoadCompletion(Consumer<Boolean> delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public void accept(Boolean loaded) {
+      if (completed.compareAndSet(false, true)) {
+        delegate.accept(Boolean.TRUE.equals(loaded));
+      }
+    }
   }
 
   private boolean loadSgfStringInternal(
@@ -4810,7 +4975,8 @@ public class LizzieFrame extends JFrame {
       boolean resetAnalysisWindows,
       Runnable afterLoad,
       boolean showFeedback,
-      boolean forceAutoQuickAnalyzeAfterLoad) {
+      boolean forceAutoQuickAnalyzeAfterLoad,
+      Consumer<Boolean> completion) {
     if (!SwingUtilities.isEventDispatchThread()) {
       final boolean[] loaded = new boolean[] {false};
       try {
@@ -4826,57 +4992,108 @@ public class LizzieFrame extends JFrame {
                         resetAnalysisWindows,
                         afterLoad,
                         showFeedback,
-                        forceAutoQuickAnalyzeAfterLoad);
+                        forceAutoQuickAnalyzeAfterLoad,
+                        completion);
               }
             });
       } catch (Exception e) {
-        e.printStackTrace();
-        showKifuLoadError(e);
+        SgfObservation.record("import", "failed", null, e);
+        try {
+          showKifuLoadError(e);
+        } finally {
+          notifySgfLoadCompletion(completion, false);
+        }
       }
       return loaded[0];
+    }
+    if (deferUntilHumanSlExit(
+        () ->
+            loadSgfStringInternal(
+                sgfContent,
+                initialMessage,
+                resumeDelayMillis,
+                readKomi,
+                resetAnalysisWindows,
+                afterLoad,
+                showFeedback,
+                forceAutoQuickAnalyzeAfterLoad,
+                completion),
+        () -> notifySgfLoadCompletion(completion, false))) {
+      // Legacy callers treat teardown handling as true; completion distinguishes actual outcome.
+      return true;
     }
     if (showFeedback) {
       beginKifuLoad(initialMessage);
     }
-    endHumanSlGameIfActive();
     boolean oriReadKomi = Lizzie.config.readKomi;
+    boolean loaded = false;
     try {
       if (showFeedback) {
         updateKifuLoad(kifuLoadText("KifuLoad.parsing"));
       }
       Lizzie.config.readKomi = readKomi;
-      SGFParser.loadFromString(sgfContent);
-      if (showFeedback) {
-        updateKifuLoad(kifuLoadText("KifuLoad.refreshing"));
-      }
-      scheduleMovelistRefreshAfterKifuLoad();
-      if (resetAnalysisWindows) {
-        resetMovelistFrameandAnalysisFrame();
-      }
-      setVisible(true);
-      if (forceAutoQuickAnalyzeAfterLoad) {
-        scheduleResumeAnalysisAfterLoad(
-            resumeDelayMillis, this::resumeAnalysisAfterDownloadedKifuLoad);
+      if (!SGFParser.loadFromString(sgfContent)) {
+        if (showFeedback) {
+          failKifuLoad(kifuLoadText("KifuLoad.failed"));
+        } else {
+          showKifuLoadError(null);
+        }
       } else {
-        scheduleResumeAnalysisAfterLoad(resumeDelayMillis);
+        if (showFeedback) {
+          updateKifuLoad(kifuLoadText("KifuLoad.refreshing"));
+        }
+        scheduleMovelistRefreshAfterKifuLoad();
+        if (resetAnalysisWindows) {
+          resetMovelistFrameandAnalysisFrame();
+        }
+        setVisible(true);
+        if (forceAutoQuickAnalyzeAfterLoad) {
+          scheduleResumeAnalysisAfterLoad(
+              resumeDelayMillis, this::resumeAnalysisAfterDownloadedKifuLoad);
+        } else {
+          scheduleResumeAnalysisAfterLoad(resumeDelayMillis);
+        }
+        refresh();
+        if (showFeedback) {
+          finishKifuLoad(afterLoad);
+        } else if (afterLoad != null) {
+          afterLoad.run();
+        }
+        loaded = true;
       }
-      refresh();
-      if (showFeedback) {
-        finishKifuLoad(afterLoad);
-      } else if (afterLoad != null) {
-        afterLoad.run();
-      }
-      return true;
     } catch (Exception e) {
-      e.printStackTrace();
+      SgfObservation.record("import", "failed", null, e);
       if (showFeedback) {
         failKifuLoad(kifuLoadText("KifuLoad.failed") + e.getMessage());
       } else {
         showKifuLoadError(e);
       }
-      return false;
     } finally {
-      Lizzie.config.readKomi = oriReadKomi;
+      try {
+        Lizzie.config.readKomi = oriReadKomi;
+      } finally {
+        notifySgfLoadCompletion(completion, loaded);
+      }
+    }
+    return loaded;
+  }
+
+  private void notifySgfLoadCompletion(Consumer<Boolean> completion, boolean loaded) {
+    if (completion == null) {
+      return;
+    }
+    Runnable notify =
+        () -> {
+          try {
+            completion.accept(loaded);
+          } catch (RuntimeException | Error failure) {
+            SgfObservation.record("import-completion", "failed", null, failure);
+          }
+        };
+    if (SwingUtilities.isEventDispatchThread()) {
+      notify.run();
+    } else {
+      SwingUtilities.invokeLater(notify);
     }
   }
 
@@ -4982,7 +5199,9 @@ public class LizzieFrame extends JFrame {
       Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.openFileFailed.inGame"));
       return;
     }
-    endHumanSlGameIfActive();
+    if (deferUntilHumanSlExit(() -> loadFile(file, fromTemp, showHint))) {
+      return;
+    }
     boolean oriSound = Lizzie.config.playSound;
     boolean originalCanGoAfterload = canGoAfterload;
     canGoAfterload = false;
@@ -5037,7 +5256,7 @@ public class LizzieFrame extends JFrame {
     scheduleResumeAnalysisAfterLoad(0);
   }
 
-  private void scheduleMovelistRefreshAfterKifuLoad() {
+  protected void scheduleMovelistRefreshAfterKifuLoad() {
     scheduleMovelistRefreshAfterKifuLoad(900);
   }
 
@@ -7269,7 +7488,7 @@ public class LizzieFrame extends JFrame {
           score = -score;
         }
         scoreLead = score;
-        scoreStdev = Lizzie.leelaz.scoreStdev;
+        scoreStdev = curData.scoreStdev;
       } // +"目差:""复杂度:"
 
       text +=
@@ -7994,6 +8213,9 @@ public class LizzieFrame extends JFrame {
     }
     if (boardCoordinates.isPresent()) {
       int[] coords = boardCoordinates.get();
+      if (hasActiveHumanSlGame()) {
+        return true;
+      }
       if (Lizzie.board.isSetupMode()) {
         handleSetupBoardClick(coords, true);
         return true;
@@ -8029,6 +8251,23 @@ public class LizzieFrame extends JFrame {
       showTrialBlockedHint();
       return;
     }
+    // AI Coach owns the live board even if the starting position was created in setup mode. Keep
+    // routing through the controller until teardownComplete so its frozen exact replay cannot be
+    // invalidated while close/resync/restore is in flight.
+    if (hasActiveHumanSlGame()) {
+      Optional<int[]> humanSlCoords;
+      if (Lizzie.config.isThinkingMode()) {
+        humanSlCoords = boardRenderer2.convertScreenToCoordinates(x, y);
+        if (!humanSlCoords.isPresent())
+          humanSlCoords = boardRenderer.convertScreenToCoordinates(x, y);
+      } else {
+        humanSlCoords = boardRenderer.convertScreenToCoordinates(x, y);
+      }
+      if (humanSlCoords.isPresent()) {
+        humanSlGame.onBoardClicked(humanSlCoords.get()[0], humanSlCoords.get()[1]);
+      }
+      return;
+    }
     if (Lizzie.board.isSetupMode()) {
       Optional<int[]> setupBoardCoordinates;
       if (Lizzie.config.isThinkingMode()) {
@@ -8040,20 +8279,6 @@ public class LizzieFrame extends JFrame {
       }
       if (setupBoardCoordinates.isPresent()) {
         handleSetupBoardClick(setupBoardCoordinates.get(), false);
-      }
-      return;
-    }
-    if (humanSlGame != null && !humanSlGame.isFinished()) {
-      Optional<int[]> humanSlCoords;
-      if (Lizzie.config.isThinkingMode()) {
-        humanSlCoords = boardRenderer2.convertScreenToCoordinates(x, y);
-        if (!humanSlCoords.isPresent())
-          humanSlCoords = boardRenderer.convertScreenToCoordinates(x, y);
-      } else {
-        humanSlCoords = boardRenderer.convertScreenToCoordinates(x, y);
-      }
-      if (humanSlCoords.isPresent()) {
-        humanSlGame.onBoardClicked(humanSlCoords.get()[0], humanSlCoords.get()[1]);
       }
       return;
     }
@@ -8116,6 +8341,10 @@ public class LizzieFrame extends JFrame {
         && !EngineManager.isEngineGame) {
       variationTreeBig.onClicked(x, y);
     }
+  }
+
+  public boolean hasActiveHumanSlGame() {
+    return humanSlGame != null && !humanSlGame.isFinished();
   }
 
   public int getmovenumber(int x, int y) {
@@ -9221,6 +9450,11 @@ public class LizzieFrame extends JFrame {
     //  updateTitle();
   }
 
+  @Override
+  public void setTitle(String title) {
+    super.setTitle(WindowTitleDecorator.decorate(title));
+  }
+
   public void updateTitle() {
     if (isTrying) {
       return;
@@ -9366,15 +9600,13 @@ public class LizzieFrame extends JFrame {
 
   public void copySgf() {
     try {
-      // Get sgf content from game
       String sgfContent = SGFParser.saveToString(false);
-
-      // Save to clipboard
       Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
       Transferable transferableString = new StringSelection(sgfContent);
       clipboard.setContents(transferableString, null);
+      SgfObservation.record("export", "ok", "clipboard", null);
     } catch (Exception e) {
-      e.printStackTrace();
+      SgfObservation.record("export", "failed", "clipboard", e);
     }
   }
 
@@ -11258,9 +11490,39 @@ public class LizzieFrame extends JFrame {
   }
 
   public void endHumanSlGameIfActive() {
-    if (humanSlGame != null && !humanSlGame.isFinished()) {
-      humanSlGame.abort();
+    deferUntilHumanSlExit(null);
+  }
+
+  /** Returns true when the action was deferred behind an active AI Coach teardown. */
+  private boolean deferUntilHumanSlExit(Runnable continuation) {
+    return deferUntilHumanSlExit(continuation, null);
+  }
+
+  private boolean deferUntilHumanSlExit(Runnable continuation, Runnable rejectedContinuation) {
+    HumanSlGameController active = humanSlGame;
+    if (active == null || active.isFinished()) {
+      return false;
     }
+    boolean accepted = true;
+    try {
+      if (continuation == null) {
+        active.abort();
+      } else {
+        accepted = active.tryAbortAndThen(continuation);
+      }
+    } catch (RuntimeException | Error ignored) {
+      // The controller retains ownership and the queued continuation on lifecycle failure. Keep
+      // the EDT alive so the recovery bar can retry the same transaction.
+    }
+    try {
+      updateHumanSlTrainingBar();
+    } catch (RuntimeException | Error ignored) {
+      // A paint/update failure must not release board or mode ownership.
+    }
+    if (!accepted && rejectedContinuation != null) {
+      rejectedContinuation.run();
+    }
+    return true;
   }
 
   public void startHumanSlGameDialog() {
@@ -11355,10 +11617,16 @@ public class LizzieFrame extends JFrame {
   }
 
   public void startEngineGameDialog() {
+    if (deferUntilHumanSlExit(this::startEngineGameDialog)) {
+      return;
+    }
     runWithForegroundEngineModeReservation(this::startEngineGameDialogReserved);
   }
 
   protected void startEngineGameDialogReserved() {
+    if (deferUntilHumanSlExit(this::startEngineGameDialog)) {
+      return;
+    }
     if (EngineManager.isEngineGame) {
       Utils.showMsg(
           Lizzie.resourceBundle.getString(
@@ -11367,7 +11635,6 @@ public class LizzieFrame extends JFrame {
     }
     // Opening another mode is an explicit ownership transfer; cancelling its dialog does not
     // resume the previous coaching session.
-    endHumanSlGameIfActive();
     showEngineGameDialogAfterModeTransition();
   }
 
@@ -11392,10 +11659,16 @@ public class LizzieFrame extends JFrame {
   }
 
   public void startAnalyzeGameDialog() {
+    if (deferUntilHumanSlExit(this::startAnalyzeGameDialog)) {
+      return;
+    }
     startRetainedEngineMode(RetainedEngineModeTarget.startAnalyzeGame(this));
   }
 
   protected void startAnalyzeGameDialogReserved() {
+    if (deferUntilHumanSlExit(this::startAnalyzeGameDialog)) {
+      return;
+    }
     if (Lizzie.frame.isContributing) {
       Utils.showMsg(
           Lizzie.resourceBundle.getString("Contribute.tips.contributingAndStartAnotherLizzieYzy"));
@@ -11441,6 +11714,10 @@ public class LizzieFrame extends JFrame {
 
   public void continueAiPlaying(
       boolean isGenmove, boolean continueNow, boolean playerIsB, boolean fromShortCut) {
+    if (deferUntilHumanSlExit(
+        () -> continueAiPlaying(isGenmove, continueNow, playerIsB, fromShortCut))) {
+      return;
+    }
     startRetainedEngineMode(
         RetainedEngineModeTarget.continuePlaying(
             this, isGenmove, continueNow, playerIsB, fromShortCut));
@@ -11448,6 +11725,10 @@ public class LizzieFrame extends JFrame {
 
   protected void continueAiPlayingReserved(
       boolean isGenmove, boolean continueNow, boolean playerIsB, boolean fromShortCut) {
+    if (deferUntilHumanSlExit(
+        () -> continueAiPlaying(isGenmove, continueNow, playerIsB, fromShortCut))) {
+      return;
+    }
     if (Lizzie.frame.isContributing) {
       Utils.showMsg(
           Lizzie.resourceBundle.getString("Contribute.tips.contributingAndStartAnotherLizzieYzy"));
@@ -12043,7 +12324,10 @@ public class LizzieFrame extends JFrame {
     boolean wasHumanSlGame =
         Lizzie.frame.humanSlGame != null && !Lizzie.frame.humanSlGame.isFinished();
     if (wasHumanSlGame) {
-      Lizzie.frame.endHumanSlGameIfActive();
+      // This method historically completed synchronously. Preserve that contract for ordinary
+      // engine modes, but defer every mutation when AI Coach still owns a companion/restore lease.
+      deferUntilHumanSlExit(this::stopAiPlayingAndPolicy);
+      return true;
     }
     toolbar.isPkStop = false;
     Lizzie.leelaz.isGamePaused = false;
@@ -15182,6 +15466,9 @@ public class LizzieFrame extends JFrame {
   private void updateEngineStartupStatus(EngineStartupStatus.Snapshot snapshot) {
     SwingUtilities.invokeLater(
         () -> {
+          if (snapshot == null || !snapshot.isCurrent()) {
+            return;
+          }
           if (engineStartupStatusButton == null) {
             return;
           }
@@ -19003,6 +19290,10 @@ public class LizzieFrame extends JFrame {
         }
       }
     }
+  }
+
+  public void discardWRNRestoreSnapshot() {
+    WRNStatusBeforeGame = false;
   }
 
   public void restoreWRN(boolean isGenmove) {

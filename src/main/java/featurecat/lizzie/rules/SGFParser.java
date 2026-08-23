@@ -7,6 +7,7 @@ import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.logging.SgfObservation;
 import featurecat.lizzie.util.EncodingDetector;
 import featurecat.lizzie.util.Utils;
 import java.io.*;
@@ -51,6 +52,7 @@ public class SGFParser {
     Lizzie.board.clear(false);
     File file = new File(filename);
     if (!file.exists() || !file.canRead()) {
+      SgfObservation.record("open", "unreadable", filename, null);
       return false;
     }
 
@@ -67,10 +69,12 @@ public class SGFParser {
     }
     if (value.isEmpty()) {
       Lizzie.board.isLoadingFile = false;
+      SgfObservation.record("open", "empty", filename, null);
       return false;
     }
 
     boolean returnValue = parse(value);
+    SgfObservation.record("open", returnValue ? "ok" : "failed", filename, null);
     if (returnValue) {
       applySgfKomiForSetupGameWhenReadKomiDisabled();
       discardImportedAnalysisIfGameKomiDiffersFromEngineDefault();
@@ -110,6 +114,7 @@ public class SGFParser {
     isExtraMode2 = false;
     Lizzie.board.isLoadingFile = true;
     boolean result = parse(sgfString);
+    SgfObservation.record("import", result ? "ok" : "failed", null, null);
     if (result) {
       applySgfKomiForSetupGameWhenReadKomiDisabled();
       discardImportedAnalysisIfGameKomiDiffersFromEngineDefault();
@@ -155,8 +160,7 @@ public class SGFParser {
     if (history == null) {
       return;
     }
-    double gameKomi =
-        parsedRootKomi(history.getStart()).orElse(history.getGameInfo().getKomi());
+    double gameKomi = parsedRootKomi(history.getStart()).orElse(history.getGameInfo().getKomi());
     if (!isSetupOrHandicapGame(history)) {
       return;
     }
@@ -225,7 +229,8 @@ public class SGFParser {
     return normalizeSgfKomi(komi, null);
   }
 
-  private static Optional<Double> normalizeSgfKomi(Double komi, Map<String, String> rootProperties) {
+  private static Optional<Double> normalizeSgfKomi(
+      Double komi, Map<String, String> rootProperties) {
     if (komi == null) {
       return Optional.empty();
     }
@@ -848,7 +853,15 @@ public class SGFParser {
   public static String saveToString(boolean forUpload) throws IOException {
     try (StringWriter writer = new StringWriter()) {
       saveToStream(Lizzie.board, writer, forUpload, false);
+      if (forUpload) {
+        SgfObservation.record("export", "ok", null, null);
+      }
       return writer.toString();
+    } catch (IOException e) {
+      if (forUpload) {
+        SgfObservation.record("export", "failed", null, e);
+      }
+      throw e;
     }
   }
 
@@ -1027,8 +1040,14 @@ public class SGFParser {
   }
 
   public static void save(Board board, String filename, boolean isAutoSave) throws IOException {
-    try (Writer writer = new OutputStreamWriter(new FileOutputStream(filename), "utf-8")) {
-      saveToStream(board, writer, false, isAutoSave);
+    try {
+      try (Writer writer = new OutputStreamWriter(new FileOutputStream(filename), "utf-8")) {
+        saveToStream(board, writer, false, isAutoSave);
+      }
+      SgfObservation.record("save", "ok", filename, null);
+    } catch (IOException e) {
+      SgfObservation.record("save", "failed", filename, e);
+      throw e;
     }
   }
 
@@ -1385,9 +1404,14 @@ public class SGFParser {
 
   /** Generate node with variations */
   public static void appendComment() {
+    appendComment(false);
+  }
+
+  /** Generates a comment, optionally using the PK formatter for an exact retired game owner. */
+  public static void appendComment(boolean forceEngineGame) {
     // if (!Lizzie.config.showComment) return;
     // if (!Lizzie.leelaz.isLoaded()) return;
-    if (EngineManager.isEngineGame || EngineManager.isSaveingEngineSGF) {
+    if (forceEngineGame || EngineManager.isEngineGame || EngineManager.isSaveingEngineSGF) {
       if (Lizzie.board.getHistory().getCurrentHistoryNode().getData().getPlayouts() > 0) {
         Lizzie.board.getHistory().getData().comment =
             formatCommentPk(Lizzie.board.getHistory().getCurrentHistoryNode());
@@ -2864,8 +2888,7 @@ public class SGFParser {
     return header.append('\n').append(detailLine).toString();
   }
 
-  private static String formatAnalysisDetailLine(
-      String bestMoves, List<Double> estimateArray) {
+  private static String formatAnalysisDetailLine(String bestMoves, List<Double> estimateArray) {
     StringBuilder detailLine = new StringBuilder();
     if (!Utils.isBlank(bestMoves)) {
       detailLine.append(bestMoves);

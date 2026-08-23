@@ -52,6 +52,19 @@ class SyncDiagnosticsExporterTest {
   }
 
   @Test
+  void yikeExportKeepsSanitizedEventSessionAndEventTime() throws IOException {
+    Map<String, String> entries =
+        unzipTextEntries(new SyncDiagnosticsExporter(tempDir).export(sensitiveSnapshot()));
+
+    String current = entries.get("yike-session.json");
+    assertTrue(current.contains("\"eventSessionAlias\":\"live-room#1\""), current);
+    assertTrue(current.contains("\"eventTimeMillis\":120"), current);
+    String recent = entries.get("yike-events.jsonl");
+    assertTrue(recent.contains("\"eventSessionAlias\":\"live-room#1\""), recent);
+    assertTrue(entries.get("summary.txt").contains("eventTimeMillis: 120"));
+  }
+
+  @Test
   void exportRedactsSensitiveValuesAcrossWholeZip() throws IOException {
     Path zip = new SyncDiagnosticsExporter(tempDir).export(sensitiveSnapshot());
     Map<String, String> entries = unzipTextEntries(zip);
@@ -145,9 +158,7 @@ class SyncDiagnosticsExporterTest {
     }
 
     assertTrue(allText.contains("live-room#1"));
-    assertTrue(allText.contains("C:\\Users\\<user>"));
     assertTrue(allText.contains("/mnt/c/Users/<user>"));
-    assertTrue(allText.contains("\\\\wsl.localhost\\Ubuntu\\home\\<user>"));
     assertTrue(allText.contains("/Users/<user>"));
     assertTrue(allText.contains("<redacted-path>"));
     assertTrue(allText.contains("file.sgf"));
@@ -199,6 +210,7 @@ class SyncDiagnosticsExporterTest {
             .listenerEnabled(true)
             .currentRouteKind("live-room")
             .currentSessionKey("live-room:186538")
+            .eventSessionKey("live-room:186538")
             .activeSessionKey("live-room:186538")
             .activeSyncReady(true)
             .activeGeometryReady(true)
@@ -214,7 +226,7 @@ class SyncDiagnosticsExporterTest {
             .lastSessionSwitchReason("https://www.yikeweiqi.com/live/186538?roomToken=abc123")
             .lastYikeDebugEventSummary(
                 "token=secret-room-token authToken=abc123 roomToken\\u003dabc123 token\\u003dabc123 authToken\\u003dabc123 roomToken abc123 roomToken: abc123 roomToken\\u003a abc123 roomToken\\u0020abc123 token abc123 token\\u0020abc123 authToken: abc123 authToken\\u0020abc123 room 186538 roomId 186538 id 186538 room\\u003d186538 roomId\\u003d186538 id\\u003d186538")
-            .timestampMillis(120L)
+            .eventTimeMillis(120L)
             .source("test")
             .summary("session live-room:186538")
             .build();

@@ -25,6 +25,7 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import java.awt.Window;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -1327,7 +1328,8 @@ class LeelazReadBoardGmaTest {
             "a loadsgf cancelled before registration must never reach the engine.");
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         loadThread.interrupt();
         loadThread.join(1000L);
@@ -1383,7 +1385,8 @@ class LeelazReadBoardGmaTest {
         assertFalse(loadThread.isAlive());
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         output.releaseFirstFlush.countDown();
         loadThread.interrupt();
@@ -1433,7 +1436,8 @@ class LeelazReadBoardGmaTest {
         assertFalse(loadThread.isAlive());
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         loadThread.interrupt();
         loadThread.join(1000L);
@@ -1489,7 +1493,8 @@ class LeelazReadBoardGmaTest {
         assertFalse(loadThread.isAlive());
         assertEquals(1, consumed.get());
         assertTrue(loadFailure.get() instanceof IllegalStateException);
-        assertTrue(loadFailure.get().getMessage().contains("loadsgf"));
+        assertTrue(loadFailure.get().getMessage().contains("pending protocol work"));
+        assertTrue(loadFailure.get().getMessage().contains("controlled restore failure"));
       } finally {
         loadThread.interrupt();
         loadThread.join(1000L);
@@ -1711,8 +1716,6 @@ class LeelazReadBoardGmaTest {
         loadThread.start();
         assertTrue(blockedOutput.firstFlushStarted.await(1, TimeUnit.SECONDS));
         engine.failReadBoardGmaEngineRestore("controlled restore failure");
-        RecordingOutputStream recoveryOutput = new RecordingOutputStream();
-        setOutputStream(engine, recoveryOutput);
         engine.sendCommand("name");
         engine.sendCommand("version");
         engine.sendCommand("protocol_version");
@@ -1723,9 +1726,9 @@ class LeelazReadBoardGmaTest {
         invokeProcessCommandResponseLine(engine, "=");
 
         assertFalse(
-            recoveryOutput.commands().contains("version"),
+            blockedOutput.commands().contains("version"),
             "post-reset send failure must not retire the old loadsgf outstanding twice.");
-        assertFalse(recoveryOutput.commands().contains("protocol_version"));
+        assertFalse(blockedOutput.commands().contains("protocol_version"));
         assertTrue(loadFailure.get() instanceof IllegalStateException);
       } finally {
         blockedOutput.releaseFirstFlush.countDown();
@@ -3183,7 +3186,7 @@ class LeelazReadBoardGmaTest {
 
 
   @Test
-  void readBoardGmaSessionTailEnqueuedBeforeSuccessAndAckNotWaited() throws Exception {
+  void readBoardGmaSessionTailAckGatesExactSuccessAndRuntimeRestore() throws Exception {
     try (Harness harness = Harness.open()) {
       // An anchored board (usable snapshot root with a stone, black to play) makes the session
       // capture a real MOVE tail for the black final play.
@@ -3217,21 +3220,6 @@ class LeelazReadBoardGmaTest {
           beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, board);
       AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
       CountDownLatch tailEnqueued = new CountDownLatch(1);
-      ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(
-              engine,
-              command -> {
-                if (command.startsWith("loadsgf ")) {
-                  return ExactSnapshotRestoreProtocolFixture.Response.success();
-                }
-                if (command.startsWith("play ")) {
-                  // The captured tail is accepted into the ordinary queue; its ordinary GTP ACK
-                  // is deliberately never delivered by the fixture.
-                  tailEnqueued.countDown();
-                  return null;
-                }
-                return null;
-              });
 
       // The final play advances the authoritative board while the request is still in flight; the
       // latest-wins restore intent is re-captured from the advanced node, so the isolation
@@ -3240,6 +3228,21 @@ class LeelazReadBoardGmaTest {
       Lizzie.board.placeFromReadBoardGma(coords[0], coords[1], Stone.BLACK);
       invokeUpdateReadBoardGmaRestoreIntent(
           readBoard, Lizzie.board.getHistory().getCurrentHistoryNode());
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command -> {
+                if (command.startsWith("loadsgf ")) {
+                  return ExactSnapshotRestoreProtocolFixture.Response.success();
+                }
+                if (command.startsWith("play ")) {
+                  // Hold the numbered tail ACK so the test can prove that exact success and the
+                  // runtime participant remain gated behind it.
+                  tailEnqueued.countDown();
+                  return null;
+                }
+                return null;
+              });
       // A retired session runs the runtime participant after exact success.
       engine.retireReadBoardGmaSession();
 
@@ -3247,24 +3250,29 @@ class LeelazReadBoardGmaTest {
 
       assertTrue(
           tailEnqueued.await(1, TimeUnit.SECONDS),
-          "the captured MOVE/PASS tail must be enqueued before exact success is reported; commands="
+          "the captured MOVE/PASS tail must be dispatched before exact success is reported; commands="
               + transport.commands());
+      assertFalse(
+          waitForFixtureCommandPrefix(transport, "kata-set-param ", 100, TimeUnit.MILLISECONDS),
+          "the runtime participant must not start before the numbered tail ACK");
+      String tailAck = successResponseForPrefix(transport.rawCommands(), "play B D4");
+      invokeProcessCommandResponseLine(engine, tailAck);
       assertTrue(
           waitForFixtureCommandPrefix(transport, "kata-set-param ", 1, TimeUnit.SECONDS),
-          "the runtime participant must start after exact success");
+          "the runtime participant must start after the numbered tail ACK completes exact restore");
       acknowledgeReadBoardGmaRuntimeRestore(engine, transport);
       ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
       assertEquals(
           ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminal.outcome(),
-          "exact success must not wait for the tail's ordinary GTP ACK");
+          "exact success must wait for both the tail ACK and runtime restore ACKs");
       assertTrue(
           transport.commands().stream().anyMatch(command -> command.equals("play B D4")),
           "the captured tail command must have been accepted into the ordinary queue");
       assertNull(engine.currentReadBoardGmaReservation());
 
-      // A late ordinary tail ACK arrives after the session terminal: it must be absorbed with no
-      // state change, no re-publication and no re-release.
-      invokeProcessCommandResponseLine(engine, "=");
+      // A late duplicate numbered tail ACK arrives after the session terminal: it must be absorbed
+      // with no state change, no re-publication and no re-release.
+      invokeProcessCommandResponseLine(engine, tailAck);
       // A late duplicate runtime restore ACK is absorbed the same way.
       invokeProcessCommandResponseLine(
           engine, successResponseFor(transport.rawCommands(), "maxTime"));
@@ -3275,7 +3283,7 @@ class LeelazReadBoardGmaTest {
   }
 
   @Test
-  void readBoardGmaSessionTailRejectionFailsClosed() throws Exception {
+  void readBoardGmaSessionStaleTailAdmissionFailsClosedBeforeDispatch() throws Exception {
     try (Harness harness = Harness.open()) {
       // An anchored board (usable snapshot root with a stone, black to play) makes the session
       // capture a real MOVE tail for the black final play.
@@ -3307,18 +3315,6 @@ class LeelazReadBoardGmaTest {
       ReadBoard readBoard = allocate(ReadBoard.class);
       ReadBoardGmaSession session = beginReadBoardGmaSessionHand(readBoard, engine, output, Stone.BLACK, board);
       AtomicReference<ReadBoardGmaSession> sessionRef = new AtomicReference<>(session);
-      ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(
-              engine,
-              command -> {
-                if (command.startsWith("loadsgf ")) {
-                  // The engine becomes unrecoverable after the loadsgf consumed: the captured
-                  // tail replay is then rejected by the arbitration admission fail-closed.
-                  setBooleanField(engine, "engineStateUnrestored", true);
-                  return ExactSnapshotRestoreProtocolFixture.Response.success();
-                }
-                return null;
-              });
 
       // The final play advances the authoritative board while the request is still in flight; the
       // latest-wins restore intent is re-captured from the advanced node, so the isolation
@@ -3327,18 +3323,31 @@ class LeelazReadBoardGmaTest {
       Lizzie.board.placeFromReadBoardGma(coords[0], coords[1], Stone.BLACK);
       invokeUpdateReadBoardGmaRestoreIntent(
           readBoard, Lizzie.board.getHistory().getCurrentHistoryNode());
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command -> {
+                if (command.startsWith("loadsgf ")) {
+                  // The engine becomes unrecoverable after the loadsgf is consumed: the captured
+                  // tail admission must then fail closed before another command is dispatched.
+                  setBooleanField(engine, "engineStateUnrestored", true);
+                  return ExactSnapshotRestoreProtocolFixture.Response.success();
+                }
+                return null;
+              });
 
       invokeParseLine(engine, "play pass");
 
       ReadBoardGmaSession.Terminal terminal = awaitGmaSessionTerminal(sessionRef);
       assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
       assertEquals(
-          ReadBoardGmaSession.FailureCategory.TAIL_REJECTED, terminal.firstFailure().category());
+          ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
+          terminal.firstFailure().category());
       assertNull(engine.currentReadBoardGmaReservation());
       assertTrue(engine.hasUnrestoredReadBoardGmaState());
       assertTrue(
-          transport.commands().stream().anyMatch(command -> command.equals("play B D4")),
-          "the rejected captured tail must be attempted before the exact participant fails");
+          transport.commands().stream().noneMatch(command -> command.equals("play B D4")),
+          "a stale tail admission must fail before dispatching another command to the engine");
     }
   }
 
@@ -4028,8 +4037,18 @@ class LeelazReadBoardGmaTest {
     Field remoteTransport = bindingClass.getDeclaredField("remoteTransport");
     Field javaSSH = bindingClass.getDeclaredField("javaSSH");
     Field incarnation = bindingClass.getDeclaredField("incarnation");
+    Field startupPrimaryEngineGeneration =
+        bindingClass.getDeclaredField("startupPrimaryEngineGeneration");
     for (Field field :
-        List.of(stdout, stderr, output, process, remoteTransport, javaSSH, incarnation)) {
+        List.of(
+            stdout,
+            stderr,
+            output,
+            process,
+            remoteTransport,
+            javaSSH,
+            incarnation,
+            startupPrimaryEngineGeneration)) {
       field.setAccessible(true);
     }
     java.lang.reflect.Constructor<?> constructor =
@@ -4040,6 +4059,7 @@ class LeelazReadBoardGmaTest {
             process.getType(),
             remoteTransport.getType(),
             javaSSH.getType(),
+            long.class,
             long.class);
     constructor.setAccessible(true);
     Object replacement =
@@ -4050,7 +4070,8 @@ class LeelazReadBoardGmaTest {
             process.get(current),
             remoteTransport.get(current),
             javaSSH.get(current),
-            incarnation.getLong(current) + 1L);
+            incarnation.getLong(current) + 1L,
+            startupPrimaryEngineGeneration.getLong(current));
     bindingField.set(engine, replacement);
     return current;
   }
@@ -4257,9 +4278,7 @@ class LeelazReadBoardGmaTest {
   }
 
   private static void setOutputStream(Leelaz engine, OutputStream stream) throws Exception {
-    Field outputField = Leelaz.class.getDeclaredField("outputStream");
-    outputField.setAccessible(true);
-    outputField.set(engine, Leelaz.createCommandOutputStream(stream));
+    engine.installCommandOutputForTest(stream);
   }
 
   private static void setInputStream(Leelaz engine, String input) throws Exception {
@@ -4811,23 +4830,49 @@ class LeelazReadBoardGmaTest {
     }
   }
 
-  private static final class BlockingFailingFirstFlushOutputStream extends OutputStream {
+  /**
+   * Keeps one coherent physical output binding while the first command is in WRITE_CLAIMED. The
+   * first flush discards its still-local bytes before failing, so successors can safely use the
+   * same stream after the blocked writer settles; replacing a live writer would violate the test
+   * seam's quiescence contract.
+   */
+  private static final class BlockingFailingFirstFlushOutputStream
+      extends BufferedOutputStream {
+    private final RecordingOutputStream recordingOutput;
     private final CountDownLatch firstFlushStarted = new CountDownLatch(1);
     private final CountDownLatch releaseFirstFlush = new CountDownLatch(1);
+    private boolean failFirstFlush = true;
+
+    private BlockingFailingFirstFlushOutputStream() {
+      this(new RecordingOutputStream());
+    }
+
+    private BlockingFailingFirstFlushOutputStream(RecordingOutputStream recordingOutput) {
+      super(recordingOutput);
+      this.recordingOutput = recordingOutput;
+    }
 
     @Override
-    public void write(int value) {}
-
-    @Override
-    public void flush() throws IOException {
+    public synchronized void flush() throws IOException {
+      if (!failFirstFlush) {
+        super.flush();
+        return;
+      }
+      failFirstFlush = false;
       firstFlushStarted.countDown();
       try {
         releaseFirstFlush.await();
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
+        count = 0;
         throw new IOException("controlled blocked flush interrupted", ex);
       }
+      count = 0;
       throw new IOException("controlled blocked flush failure");
+    }
+
+    private List<String> commands() {
+      return recordingOutput.commands();
     }
   }
 

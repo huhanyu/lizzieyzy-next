@@ -34,6 +34,7 @@ class YikeSessionDiagnosticsSnapshotTest {
             .listenerEnabled(true)
             .currentRouteKind("live-room")
             .currentSessionKey("room-current")
+            .eventSessionKey("room-event")
             .activeSessionKey("room-active")
             .activeSyncReady(true)
             .activeGeometryReady(true)
@@ -48,16 +49,20 @@ class YikeSessionDiagnosticsSnapshotTest {
             .lastGeometryClearReason("route-change")
             .lastSessionSwitchReason("pending-not-sync-ready")
             .lastYikeDebugEventSummary("geometry-captured")
-            .timestampMillis(22L)
+            .eventTimeMillis(22L)
             .source("online-dialog")
             .build();
 
     assertEquals(Boolean.FALSE, snapshot.getPendingSyncReady());
     assertEquals(Boolean.TRUE, snapshot.getPendingGeometryReady());
     assertEquals(Boolean.FALSE, snapshot.getPlacementGeometryAllowed());
+    assertEquals("room-event", snapshot.getEventSessionKey());
+    assertEquals(22L, snapshot.getEventTimeMillis());
 
     String text = snapshot.toSummaryText();
     assertTrue(text.contains("active: room-active syncReady=true geometryReady=true"));
+    assertTrue(text.contains("eventSession: room-event"));
+    assertTrue(text.contains("eventTimeMillis: 22"));
     assertTrue(text.contains("pending: room-pending syncReady=false geometryReady=true"));
     assertTrue(text.contains("effectiveGeometry: room-pending ready=true"));
     assertTrue(text.contains("placementGeometryAllowed: false"));

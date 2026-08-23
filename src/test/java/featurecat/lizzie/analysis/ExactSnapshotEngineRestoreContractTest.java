@@ -25,7 +25,9 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,6 +70,602 @@ class ExactSnapshotEngineRestoreContractTest {
           List.of("play B " + Board.convertCoordinatesToName(2, 2), "play W pass"),
           collectPlayCommands(output.commands()),
           "history restore should replay only real MOVE/PASS nodes after the nearest snapshot.");
+    }
+  }
+
+  @Test
+  void remoteComputeSnapshotAnchorRestoreDoesNotEmitHostLoadSgf() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      board.resendMoveToEngine(engine, false);
+
+      List<String> commands = transport.commands();
+      assertTrue(
+          commands.stream().noneMatch(ExactSnapshotEngineRestoreContractTest::isHostLoadSgfCommand),
+          "remote snapshot-anchor restore must not emit a host-only loadsgf path: " + commands);
+
+      String setPosition =
+          commands.stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand)
+              .findFirst()
+              .orElseThrow(
+                  () ->
+                      new AssertionError(
+                          "remote snapshot restore must represent setup stones in-band: "
+                              + commands));
+      Set<String> placed = setPositionPlacements(setPosition);
+      assertTrue(
+          placed.contains("B " + Board.convertCoordinatesToName(0, 0)),
+          "black setup stone missing from in-band restore: " + setPosition);
+      assertTrue(
+          placed.contains("W " + Board.convertCoordinatesToName(1, 0)),
+          "white setup stone missing from in-band restore: " + setPosition);
+      assertTrue(
+          commands.stream()
+              .noneMatch(ExactSnapshotEngineRestoreContractTest::isGoguiSetupPlayerCommand),
+          "remote restore must not emit gogui-setup_player: " + commands);
+      assertEquals(
+          List.of("play B " + Board.convertCoordinatesToName(2, 2)),
+          collectPlayCommands(commands),
+          "sequential tail after the snapshot must still be replayed with play");
+    }
+  }
+
+  @Test
+  void remoteComputeEmptyTailWhiteToPlayFailsClosedAndReleasesBoardSyncLease()
+      throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      Lizzie.setPrimaryEngine(engine);
+
+      Object owner = new Object();
+      Leelaz.LifecycleCompletionClaim claim = engine.tryBeginLifecycleCompletion(owner, null);
+      assertNotNull(claim);
+      Leelaz.ExactSnapshotRestoreAdmission admission =
+          engine.captureBoardSyncExactSnapshotRestoreAdmission();
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepareCurrentPosition(admission, snapshotRoot(false));
+      AtomicInteger completionCount = new AtomicInteger();
+      claim.completeSuccess(completionCount::incrementAndGet, detail -> {});
+      assertEquals(0, completionCount.get(), "the live board-sync lease must defer completion.");
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(ExactSnapshotEngineRestore.Failure.class, preparedRestore::execute);
+
+      assertEquals(
+          ExactSnapshotEngineRestore.FailureCategory.UNSUPPORTED_REMOTE_POSITION,
+          thrown.category());
+      assertTrue(thrown.getMessage().contains("white-to-play"));
+      assertTrue(
+          transport.commands().isEmpty(),
+          "unsupported remote state must fail before preclear or restore commands: "
+              + transport.commands());
+      assertEquals(1, completionCount.get(), "failure must release the board-sync lease.");
+      Leelaz.LifecycleCompletionClaim nextClaim =
+          engine.tryBeginLifecycleCompletion(new Object(), null);
+      assertNotNull(nextClaim, "failure must release lifecycle-completion admission.");
+      nextClaim.completeSuccess(() -> {}, detail -> {});
+    }
+  }
+
+  @Test
+  void remoteComputeEmptyTailBlackToPlaySnapshotRestoreSetsEngineSideToPlay() throws Exception {
+    assertRemoteEmptyTailBlackToPlayRestore();
+  }
+
+  @Test
+  void remoteComputeTailGtpErrorFailsRestoreInsteadOfReportingSuccess() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
+
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.equals(tailCommand)
+                      ? ExactSnapshotRestoreProtocolFixture.Response.error(
+                          "controlled tail failure")
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(
+              ExactSnapshotEngineRestore.Failure.class,
+              () -> executeHistoryRestore(engine, history.getCurrentHistoryNode()));
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.GTP_ERROR, thrown.category());
+      assertTrue(thrown.getMessage().contains(tailCommand));
+      assertTrue(thrown.getMessage().contains("controlled tail failure"));
+      assertEquals(List.of(tailCommand), collectPlayCommands(transport.commands()));
+    }
+  }
+
+  @Test
+  void remoteComputeTailResponseTimeoutFailsRestoreInsteadOfReportingSuccess() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
+
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.equals(tailCommand)
+                      ? null
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(
+              ExactSnapshotEngineRestore.Failure.class,
+              () -> executeHistoryRestore(engine, history.getCurrentHistoryNode()));
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.TIMEOUT, thrown.category());
+      assertTrue(thrown.getMessage().contains(tailCommand));
+      assertTrue(thrown.getMessage().contains("Timed out"));
+      assertEquals(List.of(tailCommand), collectPlayCommands(transport.commands()));
+    }
+  }
+
+  @Test
+  void remoteComputeKomiErrorRemainsFailureAfterSetPositionSucceeds() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardData position = snapshotRoot(true);
+      position.komi = 6.5;
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      engine.komi = 7.5f;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.startsWith("komi ")
+                      ? ExactSnapshotRestoreProtocolFixture.Response.error("illegal komi")
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(
+              ExactSnapshotEngineRestore.Failure.class,
+              () -> executePositionRestore(engine, position));
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.GTP_ERROR, thrown.category());
+      assertTrue(thrown.getMessage().contains("komi 6.5"));
+      assertTrue(thrown.getMessage().contains("illegal komi"));
+      assertEquals("boardsize 3", transport.commands().get(0));
+      assertEquals("komi 6.5", transport.commands().get(1));
+      assertTrue(
+          transport.commands().stream()
+              .anyMatch(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand),
+          "set_position success must not erase the earlier komi failure: " + transport.commands());
+      assertTrue(
+          transport.rawCommands().stream()
+              .filter(command -> commandPayload(command).startsWith("komi "))
+              .allMatch(ExactSnapshotEngineRestoreContractTest::hasNumericCommandId));
+      assertTrue(
+          transport.rawCommands().stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand)
+              .allMatch(ExactSnapshotEngineRestoreContractTest::hasNumericCommandId));
+      assertEquals(
+          7.5f,
+          engine.komi,
+          0.0001f,
+          "failed remote komi must not be published into the Java-side cache.");
+    }
+  }
+
+  @Test
+  void remoteComputeBoardSizeErrorStopsBeforeSetPositionAndPreservesCaches() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardData position = snapshotRoot(true);
+      position.komi = 6.5;
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      engine.width = 19;
+      engine.height = 19;
+      engine.komi = 7.5f;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.startsWith("boardsize ")
+                      ? ExactSnapshotRestoreProtocolFixture.Response.error("unsupported size")
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(
+              ExactSnapshotEngineRestore.Failure.class,
+              () -> executePositionRestore(engine, position));
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.GTP_ERROR, thrown.category());
+      assertTrue(thrown.getMessage().contains("boardsize 3"));
+      assertTrue(thrown.getMessage().contains("unsupported size"));
+      assertEquals(List.of("boardsize 3"), transport.commands());
+      assertFalse(
+          transport.commands().stream()
+              .anyMatch(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand),
+          "set_position must not be sent until board-size synchronization succeeds.");
+      String rawBoardSize = transport.rawCommands().get(0);
+      assertTrue(hasNumericCommandId(rawBoardSize));
+      assertEquals(19, engine.width);
+      assertEquals(19, engine.height);
+      assertEquals(7.5f, engine.komi, 0.0001f);
+    }
+  }
+
+  @Test
+  void remoteComputeRectangularBoardSizeIsConfirmedBeforeCacheCommit() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      Board.boardWidth = 4;
+      Board.boardHeight = 3;
+      Zobrist.init();
+      BoardData position = rectangularSnapshot(4, 3);
+      position.komi = 6.5;
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      engine.width = 19;
+      engine.height = 19;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      executePositionRestore(engine, position);
+
+      assertEquals("rectangular_boardsize 4 3", transport.commands().get(0));
+      assertTrue(hasNumericCommandId(transport.rawCommands().get(0)));
+      assertTrue(
+          transport.commands().stream()
+              .anyMatch(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand));
+      assertEquals(4, engine.width);
+      assertEquals(3, engine.height);
+    }
+  }
+
+  @Test
+  void remoteComputeKomiTimeoutFailsClosedAndReleasesBoardSyncLease() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardData position = snapshotRoot(true);
+      position.komi = 6.5;
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      engine.komi = 7.5f;
+      engine.width = 19;
+      engine.height = 19;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.startsWith("komi ")
+                      ? null
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+      Lizzie.setPrimaryEngine(engine);
+
+      Object owner = new Object();
+      Leelaz.LifecycleCompletionClaim claim = engine.tryBeginLifecycleCompletion(owner, null);
+      assertNotNull(claim);
+      Leelaz.ExactSnapshotRestoreAdmission admission =
+          engine.captureBoardSyncExactSnapshotRestoreAdmission();
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepareCurrentPosition(admission, position);
+      AtomicInteger completionCount = new AtomicInteger();
+      claim.completeSuccess(completionCount::incrementAndGet, detail -> {});
+      assertEquals(0, completionCount.get());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(ExactSnapshotEngineRestore.Failure.class, preparedRestore::execute);
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.TIMEOUT, thrown.category());
+      assertTrue(thrown.getMessage().contains("komi 6.5"));
+      assertTrue(
+          transport.commands().stream()
+              .anyMatch(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand),
+          "the successful set_position response must not mask a missing komi response.");
+      assertEquals(7.5f, engine.komi, 0.0001f);
+      assertEquals(1, completionCount.get(), "timeout must release the board-sync lease.");
+      Leelaz.LifecycleCompletionClaim nextClaim =
+          engine.tryBeginLifecycleCompletion(new Object(), null);
+      assertNotNull(nextClaim, "timeout must release lifecycle-completion admission.");
+      nextClaim.completeSuccess(() -> {}, detail -> {});
+    }
+  }
+
+  @Test
+  void remoteComputeBoardSizeKomiAndSetPositionCommitOnlyAfterAllNumberedResponses()
+      throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardData position = snapshotRoot(true);
+      position.komi = 6.5;
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      engine.komi = 7.5f;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(engine, command -> null);
+      AtomicReference<Throwable> thrownRef = new AtomicReference<>();
+      Thread restoreThread =
+          new Thread(
+              () -> {
+                try {
+                  executePositionRestore(engine, position);
+                } catch (Throwable failure) {
+                  thrownRef.set(failure);
+                }
+              },
+              "remote-komi-numbered-response-barrier");
+      restoreThread.setDaemon(true);
+      restoreThread.start();
+
+      waitForCommandCount(transport, 1);
+      String rawBoardSize =
+          transport.rawCommands().stream()
+              .filter(command -> commandPayload(command).startsWith("boardsize "))
+              .findFirst()
+              .orElseThrow();
+
+      try {
+        assertTrue(hasNumericCommandId(rawBoardSize));
+        assertEquals(
+            List.of("boardsize 3"),
+            transport.commands(),
+            "komi and set_position must remain gated on board-size success.");
+        assertTrue(restoreThread.isAlive(), "restore must wait for board-size confirmation.");
+        assertEquals(7.5f, engine.komi, 0.0001f);
+        assertEquals(19, engine.width);
+        assertEquals(19, engine.height);
+
+        engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawBoardSize));
+        waitForCommandCount(transport, 3);
+        String rawKomi =
+            transport.rawCommands().stream()
+                .filter(command -> commandPayload(command).startsWith("komi "))
+                .findFirst()
+                .orElseThrow();
+        String rawSetPosition =
+            transport.rawCommands().stream()
+                .filter(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand)
+                .findFirst()
+                .orElseThrow();
+        assertTrue(hasNumericCommandId(rawKomi));
+        assertTrue(hasNumericCommandId(rawSetPosition));
+        assertFalse(
+            commandId(rawKomi).equals(commandId(rawSetPosition)),
+            "komi and set_position require distinct response bindings.");
+        assertFalse(commandId(rawBoardSize).equals(commandId(rawKomi)));
+        assertFalse(commandId(rawBoardSize).equals(commandId(rawSetPosition)));
+        assertEquals(7.5f, engine.komi, 0.0001f);
+        assertEquals(19, engine.width);
+        assertEquals(19, engine.height);
+
+        engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawSetPosition));
+        assertTrue(
+            restoreThread.isAlive(),
+            "out-of-order set_position success must still wait for the komi response.");
+        assertEquals(
+            7.5f,
+            engine.komi,
+            0.0001f,
+            "set_position success alone must not publish the target komi cache.");
+
+        engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawKomi));
+        restoreThread.join(2000L);
+      } finally {
+        if (restoreThread.isAlive()) {
+          engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawBoardSize));
+          for (String command : transport.rawCommands()) {
+            if (commandPayload(command).startsWith("komi ")
+                || isSetPositionCommand(command)) {
+              engine.processCommandResponseLineForTest(buildSuccessResponseLine(command));
+            }
+          }
+          restoreThread.join(7000L);
+        }
+      }
+
+      assertFalse(restoreThread.isAlive(), "restore should finish after all responses.");
+      assertTrue(thrownRef.get() == null, "successful numbered responses must complete restore.");
+      assertEquals(6.5f, engine.komi, 0.0001f);
+      assertEquals(3, engine.width);
+      assertEquals(3, engine.height);
+    }
+  }
+
+  @Test
+  void localTailMirrorIllegalMoveFailsRestoreAndPreservesBothKomiCaches() throws Exception {
+    try (TestHarness harness = TestHarness.open(true)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+      String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
+      Leelaz primary = new Leelaz("");
+      Leelaz mirror = new Leelaz("");
+      primary.komi = 7.5f;
+      mirror.komi = 7.5f;
+      Lizzie.leelaz = primary;
+      Lizzie.leelaz2 = mirror;
+      ExactSnapshotRestoreProtocolFixture.Transport primaryTransport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              primary, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      ExactSnapshotRestoreProtocolFixture.Transport mirrorTransport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              mirror,
+              command ->
+                  command.equals(tailCommand)
+                      ? ExactSnapshotRestoreProtocolFixture.Response.error("illegal move")
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(
+              ExactSnapshotEngineRestore.Failure.class,
+              () -> executeHistoryRestore(primary, history.getCurrentHistoryNode()));
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.GTP_ERROR, thrown.category());
+      assertTrue(thrown.getMessage().contains(tailCommand));
+      assertTrue(thrown.getMessage().contains("illegal move"));
+      assertEquals(List.of(tailCommand), collectPlayCommands(primaryTransport.commands()));
+      assertEquals(List.of(tailCommand), collectPlayCommands(mirrorTransport.commands()));
+      assertTrue(
+          primaryTransport.rawCommands().stream()
+              .filter(command -> commandPayload(command).startsWith("play "))
+              .allMatch(ExactSnapshotEngineRestoreContractTest::hasNumericCommandId));
+      assertTrue(
+          mirrorTransport.rawCommands().stream()
+              .filter(command -> commandPayload(command).startsWith("play "))
+              .allMatch(ExactSnapshotEngineRestoreContractTest::hasNumericCommandId));
+      assertEquals(7.5f, primary.komi, 0.0001f);
+      assertEquals(7.5f, mirror.komi, 0.0001f);
+      String loadCommand =
+          primaryTransport.commands().stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isLoadSgfCommand)
+              .findFirst()
+              .orElseThrow();
+      assertEventuallyDeleted(extractLoadSgfPath(loadCommand));
+    }
+  }
+
+  @Test
+  void localTailTimeoutFailsClosedAndReleasesBoardSyncLease() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+      String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
+      Leelaz engine = new Leelaz("");
+      engine.komi = 7.5f;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.equals(tailCommand)
+                      ? null
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+      Lizzie.setPrimaryEngine(engine);
+
+      Object owner = new Object();
+      Leelaz.LifecycleCompletionClaim claim = engine.tryBeginLifecycleCompletion(owner, null);
+      assertNotNull(claim);
+      Leelaz.ExactSnapshotRestoreAdmission admission =
+          engine.captureBoardSyncExactSnapshotRestoreAdmission();
+      ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
+          ExactSnapshotEngineRestore.prepare(admission, history.getCurrentHistoryNode())
+              .orElseThrow();
+      AtomicInteger completionCount = new AtomicInteger();
+      claim.completeSuccess(completionCount::incrementAndGet, detail -> {});
+      assertEquals(0, completionCount.get());
+
+      ExactSnapshotEngineRestore.Failure thrown =
+          assertThrows(ExactSnapshotEngineRestore.Failure.class, preparedRestore::execute);
+
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.TIMEOUT, thrown.category());
+      assertTrue(thrown.getMessage().contains(tailCommand));
+      assertEquals(List.of(tailCommand), collectPlayCommands(transport.commands()));
+      assertEquals(7.5f, engine.komi, 0.0001f);
+      assertEquals(1, completionCount.get(), "tail timeout must release the board-sync lease.");
+      Leelaz.LifecycleCompletionClaim nextClaim =
+          engine.tryBeginLifecycleCompletion(new Object(), null);
+      assertNotNull(nextClaim, "tail timeout must release lifecycle-completion admission.");
+      nextClaim.completeSuccess(() -> {}, detail -> {});
+      String loadCommand =
+          transport.commands().stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isLoadSgfCommand)
+              .findFirst()
+              .orElseThrow();
+      assertEventuallyDeleted(extractLoadSgfPath(loadCommand));
+    }
+  }
+
+  @Test
+  void localTailSuccessPublishesKomiOnlyAfterItsNumberedResponse() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot());
+      history.getGameInfo().setKomiNoMenu(6.5);
+      history.add(moveNode(2, 2, Stone.BLACK, true, 4));
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      board.setHistory(history);
+      Lizzie.board = board;
+      String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
+      Leelaz engine = new Leelaz("");
+      engine.komi = 7.5f;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine,
+              command ->
+                  command.equals(tailCommand)
+                      ? null
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
+      AtomicReference<Throwable> thrownRef = new AtomicReference<>();
+      Thread restoreThread =
+          new Thread(
+              () -> {
+                try {
+                  executeHistoryRestore(engine, history.getCurrentHistoryNode());
+                } catch (Throwable failure) {
+                  thrownRef.set(failure);
+                }
+              },
+              "local-tail-numbered-response-barrier");
+      restoreThread.setDaemon(true);
+      restoreThread.start();
+
+      waitForCommandCount(transport, 2);
+      String rawTail =
+          transport.rawCommands().stream()
+              .filter(command -> commandPayload(command).equals(tailCommand))
+              .findFirst()
+              .orElseThrow();
+      try {
+        assertTrue(hasNumericCommandId(rawTail));
+        assertTrue(restoreThread.isAlive(), "local restore must wait for the tail response.");
+        assertEquals(7.5f, engine.komi, 0.0001f);
+        engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawTail));
+        restoreThread.join(2000L);
+      } finally {
+        if (restoreThread.isAlive()) {
+          engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawTail));
+          restoreThread.join(7000L);
+        }
+      }
+
+      assertFalse(restoreThread.isAlive(), "local restore should finish after tail success.");
+      assertTrue(thrownRef.get() == null, "successful tail response must complete restore.");
+      assertEquals(6.5f, engine.komi, 0.0001f);
+      String loadCommand =
+          transport.commands().stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isLoadSgfCommand)
+              .findFirst()
+              .orElseThrow();
+      assertEventuallyDeleted(extractLoadSgfPath(loadCommand));
     }
   }
 
@@ -200,14 +798,15 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
-  void preclearFailureUpdatesOnlyTargetsThatAcceptedTheCommand() throws Exception {
+  void preclearFailureInvalidatesAnalysisForEveryAttemptedTarget() throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
+      Lizzie.board.setHistory(new BoardHistoryList(snapshotRoot()));
       Leelaz primary = new Leelaz("");
       Leelaz mirror = new Leelaz("");
       primary.isKatago = true;
       mirror.isKatago = true;
-      primary.getBestMoves().add(new MoveData());
-      mirror.getBestMoves().add(new MoveData());
+      primary.setBestMovesForEngineGameTest(List.of(new MoveData()));
+      mirror.setBestMovesForEngineGameTest(List.of(new MoveData()));
       primary.scoreMean = 12.0;
       mirror.scoreMean = 34.0;
       Lizzie.leelaz = primary;
@@ -229,8 +828,10 @@ class ExactSnapshotEngineRestoreContractTest {
       assertEquals(List.of("clear_board"), mirrorOutput.commands());
       assertTrue(primary.getBestMoves().isEmpty());
       assertEquals(0.0, primary.scoreMean);
-      assertEquals(1, mirror.getBestMoves().size());
-      assertEquals(34.0, mirror.scoreMean);
+      assertTrue(
+          mirror.getBestMoves().isEmpty(),
+          "state invalidation precedes the first command byte and therefore survives flush failure");
+      assertEquals(0.0, mirror.scoreMean);
       assertEquals(0, primaryOutput.loadSgfCommandCount());
       assertEquals(0, mirrorOutput.loadSgfCommandCount());
     }
@@ -347,6 +948,13 @@ class ExactSnapshotEngineRestoreContractTest {
           primary, buildSuccessResponseLine(primaryOutput.commands().get(0)));
       invokeResponseHandlerForLine(
           secondary, buildSuccessResponseLine(secondaryOutput.commands().get(0)));
+
+      waitForCommandCount(primaryOutput, 2);
+      waitForCommandCount(secondaryOutput, 2);
+      invokeResponseHandlerForLine(
+          primary, buildSuccessResponseLine(primaryOutput.commands().get(1)));
+      invokeResponseHandlerForLine(
+          secondary, buildSuccessResponseLine(secondaryOutput.commands().get(1)));
 
       restoreThread.join(2000L);
       assertFalse(restoreThread.isAlive(), "restore should finish after captured targets respond.");
@@ -480,12 +1088,12 @@ class ExactSnapshotEngineRestoreContractTest {
       TailRejectingOutputStream output = new TailRejectingOutputStream(engine);
       setOutputStream(engine, output);
 
-      IllegalStateException thrown =
+      ExactSnapshotEngineRestore.Failure thrown =
           assertThrows(
-              IllegalStateException.class,
+              ExactSnapshotEngineRestore.Failure.class,
               () -> executeHistoryRestore(engine, history.getCurrentHistoryNode()));
 
-      assertTrue(thrown.getMessage().contains("tail"));
+      assertEquals(ExactSnapshotEngineRestore.FailureCategory.ADMISSION_STALE, thrown.category());
       assertEquals(1, output.commands().size());
       assertTrue(isLoadSgfCommand(output.commands().get(0)));
       assertTrue(
@@ -1056,13 +1664,24 @@ class ExactSnapshotEngineRestoreContractTest {
       invokeResponseHandlerForLine(
           primary, buildSuccessResponseLine(primaryOutput.commands().get(1)));
 
+      waitForCommandCount(secondaryOutput, 3);
+      waitForCommandCount(primaryOutput, 3);
+      invokeResponseHandlerForLine(
+          secondary, buildSuccessResponseLine(secondaryOutput.commands().get(2)));
+      invokeResponseHandlerForLine(
+          primary, buildSuccessResponseLine(primaryOutput.commands().get(2)));
+
+      waitForCommandCount(secondaryOutput, 4);
+      waitForCommandCount(primaryOutput, 4);
+      invokeResponseHandlerForLine(
+          secondary, buildSuccessResponseLine(secondaryOutput.commands().get(3)));
+      invokeResponseHandlerForLine(
+          primary, buildSuccessResponseLine(primaryOutput.commands().get(3)));
+
       restoreThread.join(2000L);
       assertFalse(
           restoreThread.isAlive(), "secondary restore entry should finish after responses.");
       assertTrue(thrownRef.get() == null, "secondary restore entry should not fail.");
-
-      waitForCommandCount(secondaryOutput, 4);
-      waitForCommandCount(primaryOutput, 4);
 
       List<String> expectedReplay =
           List.of("play B " + Board.convertCoordinatesToName(2, 2), "play W pass");
@@ -1381,6 +2000,82 @@ class ExactSnapshotEngineRestoreContractTest {
     return prepareCurrentPositionRestore(engine, positionData).execute();
   }
 
+  private static void assertRemoteEmptyTailBlackToPlayRestore() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      Board board = allocate(Board.class);
+      board.startStonelist = new ArrayList<>();
+      board.hasStartStone = false;
+      BoardHistoryList history = new BoardHistoryList(snapshotRoot(true));
+      board.setHistory(history);
+      Lizzie.board = board;
+
+      Leelaz engine = new Leelaz("");
+      engine.useRemoteCompute = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+
+      board.resendMoveToEngine(engine, false);
+
+      List<String> commands = transport.commands();
+      assertTrue(
+          commands.stream().noneMatch(ExactSnapshotEngineRestoreContractTest::isHostLoadSgfCommand),
+          "remote snapshot-anchor restore must not emit a host-only loadsgf path: " + commands);
+      assertTrue(
+          commands.stream()
+              .noneMatch(ExactSnapshotEngineRestoreContractTest::isGoguiSetupPlayerCommand),
+          "remote restore must not emit gogui-setup_player: " + commands);
+      assertEquals(
+          List.of(),
+          collectPlayCommands(commands),
+          "B-to-play empty-tail must not invent a play command: " + commands);
+
+      String setPosition =
+          commands.stream()
+              .filter(ExactSnapshotEngineRestoreContractTest::isSetPositionCommand)
+              .findFirst()
+              .orElseThrow(
+                  () ->
+                      new AssertionError(
+                          "remote snapshot restore must represent setup stones in-band: "
+                              + commands));
+      Set<String> placed = setPositionPlacements(setPosition);
+      assertTrue(
+          placed.contains("B " + Board.convertCoordinatesToName(0, 0)),
+          "black setup stone missing from in-band restore: " + setPosition);
+      assertTrue(
+          placed.contains("W " + Board.convertCoordinatesToName(1, 0)),
+          "white setup stone missing from in-band restore: " + setPosition);
+      assertTrue(
+          replayRemoteEngineBlackToPlay(commands),
+          "empty-tail remote restore must leave engine side-to-play matching snapshot PL: "
+              + commands);
+    }
+  }
+
+  private static boolean replayRemoteEngineBlackToPlay(List<String> commands) {
+    boolean engineBlackToPlay = true;
+    for (String rawCommand : commands) {
+      String command = commandPayload(rawCommand);
+      if (command.isEmpty()) {
+        continue;
+      }
+      if (command.equals("clear_board")
+          || command.startsWith("boardsize ")
+          || command.startsWith("rectangular_boardsize ")) {
+        engineBlackToPlay = true;
+      } else if (isSetPositionCommand(command)) {
+        engineBlackToPlay = true;
+      } else if (command.startsWith("play ")) {
+        String[] parts = command.split("\\s+");
+        if (parts.length >= 2) {
+          engineBlackToPlay = "W".equalsIgnoreCase(parts[1]);
+        }
+      }
+    }
+    return engineBlackToPlay;
+  }
+
   private static List<Path> snapshotSgfFiles(Path tempDirectory) throws IOException {
     try (var files = Files.list(tempDirectory)) {
       return files
@@ -1391,6 +2086,10 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   private static BoardData snapshotRoot() {
+    return snapshotRoot(false);
+  }
+
+  private static BoardData snapshotRoot(boolean blackToPlay) {
     Stone[] stones = emptyStones();
     stones[Board.getIndex(0, 0)] = Stone.BLACK;
     stones[Board.getIndex(1, 0)] = Stone.WHITE;
@@ -1401,7 +2100,7 @@ class ExactSnapshotEngineRestoreContractTest {
         stones,
         java.util.Optional.of(new int[] {1, 0}),
         Stone.WHITE,
-        false,
+        blackToPlay,
         zobrist(stones),
         3,
         moveNumberList,
@@ -1409,6 +2108,28 @@ class ExactSnapshotEngineRestoreContractTest {
         0,
         50,
         0);
+  }
+
+  private static BoardData rectangularSnapshot(int width, int height) {
+    Stone[] stones = new Stone[width * height];
+    for (int index = 0; index < stones.length; index++) {
+      stones[index] = Stone.EMPTY;
+    }
+    BoardData snapshot =
+        BoardData.snapshot(
+            stones,
+            java.util.Optional.empty(),
+            Stone.EMPTY,
+            true,
+            new Zobrist(),
+            0,
+            new int[stones.length],
+            0,
+            0,
+            50,
+            0);
+    snapshot.addProperty("SZ", width + ":" + height);
+    return snapshot;
   }
 
   private static BoardData moveNode(
@@ -1474,18 +2195,100 @@ class ExactSnapshotEngineRestoreContractTest {
     assertEquals(expectedCount, output.commands().size(), "expected queued command count.");
   }
 
+  private static void waitForCommandCount(
+      ExactSnapshotRestoreProtocolFixture.Transport transport, int expectedCount) throws Exception {
+    for (int attempt = 0; attempt < 80; attempt++) {
+      if (transport.commands().size() >= expectedCount) {
+        return;
+      }
+      Thread.sleep(25L);
+    }
+    assertEquals(expectedCount, transport.commands().size(), "expected transport command count.");
+  }
+
   private static boolean isLoadSgfCommand(String command) {
     return command != null && command.contains("loadsgf ");
   }
 
+  private static boolean isHostLoadSgfCommand(String command) {
+    if (!isLoadSgfCommand(command)) {
+      return false;
+    }
+    String argument = command.substring(command.indexOf("loadsgf ") + "loadsgf ".length()).trim();
+    return argument.contains("/") || argument.contains("\\") || argument.contains(":");
+  }
+
+  private static boolean isSetPositionCommand(String command) {
+    String payload = commandPayload(command);
+    return payload.equals("set_position") || payload.startsWith("set_position ");
+  }
+
+  private static boolean isGoguiSetupPlayerCommand(String command) {
+    String payload = commandPayload(command);
+    return payload.equals("gogui-setup_player") || payload.startsWith("gogui-setup_player ");
+  }
+
+  private static Set<String> setPositionPlacements(String command) {
+    command = commandPayload(command);
+    String payload =
+        command.startsWith("set_position") ? command.substring("set_position".length()).trim() : "";
+    String[] tokens = payload.isEmpty() ? new String[0] : payload.split("\\s+");
+    Set<String> placements = new LinkedHashSet<>();
+    for (int index = 0; index + 1 < tokens.length; index += 2) {
+      placements.add(tokens[index] + " " + tokens[index + 1]);
+    }
+    return placements;
+  }
+
   private static List<String> collectPlayCommands(List<String> commands) {
     List<String> replay = new ArrayList<>();
-    for (String command : commands) {
-      if (command != null && command.startsWith("play ")) {
+    for (String rawCommand : commands) {
+      String command = commandPayload(rawCommand);
+      if (command.startsWith("play ")) {
         replay.add(command);
       }
     }
     return replay;
+  }
+
+  private static String commandPayload(String commandLine) {
+    if (commandLine == null) {
+      return "";
+    }
+    String trimmed = commandLine.trim();
+    int firstSpace = trimmed.indexOf(' ');
+    if (firstSpace <= 0) {
+      return trimmed;
+    }
+    String firstToken = trimmed.substring(0, firstSpace);
+    for (int index = 0; index < firstToken.length(); index++) {
+      if (!Character.isDigit(firstToken.charAt(index))) {
+        return trimmed;
+      }
+    }
+    return trimmed.substring(firstSpace + 1);
+  }
+
+  private static boolean hasNumericCommandId(String commandLine) {
+    return !commandId(commandLine).isEmpty();
+  }
+
+  private static String commandId(String commandLine) {
+    if (commandLine == null) {
+      return "";
+    }
+    String trimmed = commandLine.trim();
+    int firstSpace = trimmed.indexOf(' ');
+    if (firstSpace <= 0) {
+      return "";
+    }
+    String firstToken = trimmed.substring(0, firstSpace);
+    for (int index = 0; index < firstToken.length(); index++) {
+      if (!Character.isDigit(firstToken.charAt(index))) {
+        return "";
+      }
+    }
+    return firstToken;
   }
 
   private static boolean matchesCommandPrefix(String command, String commandPrefix) {
@@ -1695,6 +2498,9 @@ class ExactSnapshotEngineRestoreContractTest {
         }
       }
       if (!isLoadSgfCommand(command)) {
+        if (commandPayload(command).startsWith("play ")) {
+          invokeResponseHandlerForLine(engine, buildSuccessResponseLine(command));
+        }
         return;
       }
       try {
@@ -1770,6 +2576,10 @@ class ExactSnapshotEngineRestoreContractTest {
         }
         return buildResponseLine(command, loadSgfResponse);
       }
+      if (commandPayload(command).startsWith("play ")
+          && AUTO_ID_RESPONSE.equals(loadSgfResponse)) {
+        return buildSuccessResponseLine(command);
+      }
       return null;
     }
 
@@ -1795,8 +2605,9 @@ class ExactSnapshotEngineRestoreContractTest {
         }
         return;
       }
-      if (command.startsWith("play ") && loadSgfPath != null) {
+      if (commandPayload(command).startsWith("play ") && loadSgfPath != null) {
         tempFileExistedDuringReplay = tempFileExistedDuringReplay || Files.exists(loadSgfPath);
+        invokeResponseHandlerForLine(engine, buildSuccessResponseLine(command));
       }
     }
 

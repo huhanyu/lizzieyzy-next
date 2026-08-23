@@ -1,10 +1,10 @@
 package featurecat.lizzie.rules;
 
-import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
+import java.util.Locale;
 
 public class EngineCountDown {
-  public boolean isPlayBlack;
+  public volatile boolean isPlayBlack;
 
   private int countDownMoves;
   private int countDownTimes;
@@ -43,9 +43,52 @@ public class EngineCountDown {
     kata_Fisher_capped,
   }
 
-  public boolean setEngineCountDown(String line, Leelaz engine) {
-    line = line.toLowerCase();
-    String[] params = line.split(" ");
+  private static final class TimeLeftValue {
+    private final int integralSeconds;
+    private final float fractionalSeconds;
+    private final int moves;
+    private final boolean fractional;
+
+    private TimeLeftValue(int seconds, int moves) {
+      this.integralSeconds = Math.max(0, seconds);
+      this.fractionalSeconds = 0F;
+      this.moves = moves;
+      this.fractional = false;
+    }
+
+    private TimeLeftValue(float seconds, int moves) {
+      this.integralSeconds = 0;
+      this.fractionalSeconds = Math.max(0F, seconds);
+      this.moves = moves;
+      this.fractional = true;
+    }
+
+    private String command(String color) {
+      return "time_left "
+          + color
+          + " "
+          + (fractional
+              ? String.format(Locale.ENGLISH, "%.2f", fractionalSeconds)
+              : Integer.toString(integralSeconds))
+          + " "
+          + moves;
+    }
+
+    private void send(Leelaz engine, String color, boolean isDuringMove) {
+      if (fractional) {
+        engine.timeLeft(color, fractionalSeconds, moves, isDuringMove);
+      } else {
+        engine.timeLeft(color, integralSeconds, moves, isDuringMove);
+      }
+    }
+  }
+
+  public synchronized boolean setEngineCountDown(String line, Leelaz engine) {
+    if (line == null || engine == null) {
+      return false;
+    }
+    line = line.trim().toLowerCase(Locale.ENGLISH);
+    String[] params = line.split("\\s+");
     int paramsLength = params.length;
     if (paramsLength >= 2) {
       if (params[0].equals("time_settings") && paramsLength == 4) {
@@ -144,7 +187,7 @@ public class EngineCountDown {
     return false;
   }
 
-  public void initialize(boolean isPlayBlack) {
+  public synchronized void initialize(boolean isPlayBlack) {
     this.isPlayBlack = isPlayBlack;
     color = isPlayBlack ? "B" : "W";
     if (type == TimeType.Canadian_byoyomi) {
@@ -168,7 +211,18 @@ public class EngineCountDown {
     }
   }
 
-  public void sendTimeLeft(boolean isDuringMove) {
+  /**
+   * Advances this clock to the next move boundary and returns the exact GTP synchronization
+   * command. The caller owns command delivery; no engine I/O occurs while the clock monitor is
+   * held.
+   */
+  public synchronized String claimTimeLeftCommand() {
+    TimeLeftValue value = claimTimeLeftValue();
+    return value == null ? null : value.command(color);
+  }
+
+  private TimeLeftValue claimTimeLeftValue() {
+    if (engine == null || color == null || type == null || type == TimeType.kata_None) return null;
     if (type == TimeType.Canadian_byoyomi) {
       if (currentMainSeconds <= 0) {
         currentCountDownMoves--;
@@ -176,9 +230,9 @@ public class EngineCountDown {
           currentCountDownMoves = countDownMoves;
           currentCountDownSeconds = countDownSeconds;
         }
-        engine.timeLeft(color, currentCountDownSeconds, currentCountDownMoves, isDuringMove);
+        return new TimeLeftValue(currentCountDownSeconds, currentCountDownMoves);
       } else {
-        engine.timeLeft(color, currentMainSeconds, 0, isDuringMove);
+        return new TimeLeftValue(currentMainSeconds, 0);
       }
     } else if (type == TimeType.kata_Canadian_byoyomi) {
       if (currentMainSecondsF <= 0) {
@@ -187,35 +241,59 @@ public class EngineCountDown {
           currentCountDownMoves = countDownMoves;
           currentCountDownSecondsF = countDownSecondsF;
         }
-        engine.timeLeft(color, currentCountDownSecondsF, currentCountDownMoves, isDuringMove);
+        return new TimeLeftValue(currentCountDownSecondsF, currentCountDownMoves);
       } else {
-        engine.timeLeft(color, currentMainSecondsF, 0, isDuringMove);
+        return new TimeLeftValue(currentMainSecondsF, 0);
       }
     } else if (type == TimeType.kata_Traditional_byoyomi) {
       if (currentMainSecondsF <= 0) {
         currentCountDownSecondsF = countDownSecondsF;
-        engine.timeLeft(color, currentCountDownSecondsF, currentCountDownTimes, isDuringMove);
+        return new TimeLeftValue(currentCountDownSecondsF, currentCountDownTimes);
       } else {
-        engine.timeLeft(color, currentMainSecondsF, 0, isDuringMove);
+        return new TimeLeftValue(currentMainSecondsF, 0);
       }
     } else if (type == TimeType.kata_Fisher) {
       currentMainSecondsF = currentMainSecondsF + fischerIcrementSeconds;
-      engine.timeLeft(color, currentMainSecondsF, 0, isDuringMove);
+      return new TimeLeftValue(currentMainSecondsF, 0);
     } else if (type == TimeType.kata_Fisher_capped) {
       currentMainSecondsF = currentMainSecondsF + fischerIcrementSeconds;
       if (MainSecondsLimit > 0)
         currentMainSecondsF = Math.min(currentMainSecondsF, MainSecondsLimit);
       float thisMoveTime = currentMainSecondsF;
       if (MaxSecondsPerMove > 0) thisMoveTime = Math.min(MaxSecondsPerMove, thisMoveTime);
-      engine.timeLeft(color, thisMoveTime, 0, isDuringMove);
+      return new TimeLeftValue(thisMoveTime, 0);
     } else if (type == TimeType.kata_Absolute) {
-      engine.timeLeft(color, currentMainSecondsF, 0, isDuringMove);
+      return new TimeLeftValue(currentMainSecondsF, 0);
     }
+    return null;
   }
 
-  public void countDownCentiseconds() {
+  /** Legacy non-engine-game delivery path. Engine games use the exact post-move permit. */
+  public void sendTimeLeft(boolean isDuringMove) {
+    TimeLeftValue value;
+    Leelaz target;
+    String targetColor;
+    synchronized (this) {
+      value = claimTimeLeftValue();
+      target = engine;
+      targetColor = color;
+    }
+    if (value == null || target == null || targetColor == null) {
+      return;
+    }
+    value.send(target, targetColor, isDuringMove);
+  }
+
+  /** Returns whether this frozen clock belongs to the expected participant and color. */
+  public synchronized boolean belongsTo(Leelaz expectedEngine, boolean expectedBlack) {
+    return engine == expectedEngine
+        && color != null
+        && isPlayBlack == expectedBlack
+        && color.equals(expectedBlack ? "B" : "W");
+  }
+
+  public synchronized void countDownCentiseconds() {
     if (type == TimeType.kata_None) {
-      Lizzie.engineManager.stopCountDown();
       return;
     } else if (type == TimeType.Canadian_byoyomi) {
       tempTimes++;
@@ -243,7 +321,9 @@ public class EngineCountDown {
           currentCountDownSecondsF = currentCountDownSecondsF - 0.01F;
         } else if (currentCountDownTimes > 0) {
           currentCountDownTimes--;
-          sendTimeLeft(true);
+          // A tick may race terminal retirement. It must only advance private memory; the next
+          // exact post-move turn (if any) owns the sole time_left write.
+          currentCountDownSecondsF = countDownSecondsF;
         }
       }
     } else if (type == TimeType.kata_Fisher) {

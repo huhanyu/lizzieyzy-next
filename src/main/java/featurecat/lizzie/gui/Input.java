@@ -26,8 +26,24 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
 
   @Override
   public void mousePressed(MouseEvent e) {
+    boolean boardButton =
+        e.getButton() == MouseEvent.BUTTON1 || e.getButton() == MouseEvent.BUTTON3;
+    if (boardButton && Lizzie.frame.hasActiveHumanSlGame()) {
+      // AI Coach owns the board until its teardown transaction completes. Route before setup,
+      // drag, markup, engine-game, and context-menu handling so no stale mode can mutate the
+      // frozen position that will later be replayed.
+      Input.tempDrag = false;
+      int boardX = Utils.zoomOut(e.getX());
+      int boardY = Utils.zoomOut(e.getY());
+      if (e.getButton() == MouseEvent.BUTTON1) {
+        Lizzie.frame.onClicked(boardX, boardY);
+      } else {
+        Lizzie.frame.onClickedRight(boardX, boardY);
+      }
+      return;
+    }
     if (Lizzie.board.isSetupMode()
-        && (e.getButton() == MouseEvent.BUTTON1 || e.getButton() == MouseEvent.BUTTON3)) {
+        && boardButton) {
       Input.tempDrag = false;
       int setupX = Utils.zoomOut(e.getX());
       int setupY = Utils.zoomOut(e.getY());

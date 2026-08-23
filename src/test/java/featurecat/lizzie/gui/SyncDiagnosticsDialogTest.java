@@ -171,6 +171,7 @@ class SyncDiagnosticsDialogTest {
             .listenerEnabled(true)
             .currentRouteKind("live-room")
             .currentSessionKey("live-room:186538")
+            .eventSessionKey("live-room:186538")
             .activeSessionKey("live-room:186538")
             .activeSyncReady(true)
             .activeGeometryReady(false)
@@ -188,7 +189,7 @@ class SyncDiagnosticsDialogTest {
                 "geometry waiting for https://www.yikeweiqi.com/live/186538?roomToken=abc123")
             .source("online-dialog")
             .summary("yike waiting for live-room:186538")
-            .timestampMillis(1780303912300L)
+            .eventTimeMillis(1780303912300L)
             .build();
     SyncDiagnosticsReport report =
         SyncDiagnosticsReport.builder()
@@ -206,6 +207,8 @@ class SyncDiagnosticsDialogTest {
     assertTrue(sections.readBoard.contains("lastProtocolLine: readBoardUpdateReady captured"));
     assertFalse(sections.readBoard.contains("active: live-room:186538"));
     assertTrue(sections.yike.contains("active: live-room#1"));
+    assertTrue(sections.yike.contains("eventSession: live-room#1"));
+    assertTrue(sections.yike.contains("eventTimeMillis: 1780303912300"));
     assertTrue(sections.yike.contains("placementGeometryAllowed: false"));
     assertTrue(sections.latestDecision.contains("result: FORCE_REBUILD"));
     assertTrue(sections.latestDecision.contains("reason: first_sync_force_rebuild"));

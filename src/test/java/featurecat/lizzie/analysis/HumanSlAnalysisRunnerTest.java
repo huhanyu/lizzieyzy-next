@@ -2,9 +2,11 @@ package featurecat.lizzie.analysis;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
+import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
@@ -20,14 +22,15 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
@@ -37,6 +40,82 @@ import org.junit.jupiter.api.Test;
 class HumanSlAnalysisRunnerTest {
   private static final int BOARD_SIZE = 3;
   private static final int BOARD_AREA = BOARD_SIZE * BOARD_SIZE;
+
+  @Test
+  void closeWaitsUntilTheCompanionProcessHasActuallyExited() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      DelayedExitProcess process =
+          new DelayedExitProcess(
+              request -> new JSONObject().put("id", request.optString("id")));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+      assertTrue(runner.start());
+      java.util.concurrent.atomic.AtomicReference<Throwable> closeFailure =
+          new java.util.concurrent.atomic.AtomicReference<>();
+      Thread closer =
+          new Thread(
+              () -> {
+                try {
+                  runner.close();
+                } catch (Throwable failure) {
+                  closeFailure.set(failure);
+                }
+              });
+
+      closer.start();
+      assertTrue(process.destroyRequested.await(1, TimeUnit.SECONDS));
+      closer.join(100L);
+      assertTrue(closer.isAlive(), "close must not return while the child is still alive");
+
+      process.allowExit.countDown();
+      closer.join(1000L);
+      assertFalse(closer.isAlive());
+      assertNull(closeFailure.get());
+    }
+  }
+
+  @Test
+  void restartWaitsForTheCancelledCompanionToActuallyExit() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      DelayedExitProcess first =
+          new DelayedExitProcess(
+              request -> new JSONObject().put("id", request.optString("id")));
+      FakeProcess replacement =
+          new FakeProcess(request -> new JSONObject().put("id", request.optString("id")));
+      AtomicInteger launches = new AtomicInteger();
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(
+              List.of("katago", "analysis"),
+              ignored -> launches.getAndIncrement() == 0 ? first : replacement);
+      java.util.concurrent.atomic.AtomicReference<Throwable> restartFailure =
+          new java.util.concurrent.atomic.AtomicReference<>();
+
+      assertTrue(runner.start());
+      runner.cancelActiveRequests();
+      assertTrue(first.destroyRequested.await(1, TimeUnit.SECONDS));
+      Thread restarter =
+          new Thread(
+              () -> {
+                try {
+                  assertTrue(runner.start());
+                } catch (Throwable failure) {
+                  restartFailure.set(failure);
+                }
+              });
+
+      restarter.start();
+      restarter.join(100L);
+      assertTrue(restarter.isAlive(), "replacement must wait for the old OS process");
+      assertEquals(1, launches.get(), "a second process must not overlap the terminating one");
+
+      first.allowExit.countDown();
+      restarter.join(1000L);
+      assertFalse(restarter.isAlive());
+      assertNull(restartFailure.get());
+      assertEquals(2, launches.get());
+      runner.close();
+    }
+  }
 
   @Test
   void buildHumanSlCommand_replacesGtpAndAddsHumanModel() {
@@ -301,12 +380,17 @@ class HumanSlAnalysisRunnerTest {
                       .put("humanPolicy", new JSONObject().put("A3", 1.0)));
       HumanSlAnalysisRunner runner =
           new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+      List<HumanSlAnalysisRunner.StartupStage> stages =
+          java.util.Collections.synchronizedList(
+              new ArrayList<HumanSlAnalysisRunner.StartupStage>());
+      runner.setStartupListener((stage, detail) -> stages.add(stage));
 
       assertTrue(
           runner.verifyReady(
               history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1)));
       assertEquals(1, process.sentRequests.size());
       assertEquals(1, process.sentRequests.get(0).getInt("maxVisits"));
+      assertTrue(stages.contains(HumanSlAnalysisRunner.StartupStage.READY));
       runner.close();
     }
   }
@@ -325,6 +409,104 @@ class HumanSlAnalysisRunnerTest {
               history.getCurrentHistoryNode(), "rank_3k", Duration.ofMillis(40)));
       assertFalse(runner.isStarted());
       assertTrue(runner.getUnavailableReason().contains("Timed out"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void startupProgressClassifiesKatagoModelAndGpuStages() {
+    assertEquals(
+        HumanSlAnalysisRunner.StartupStage.LOADING_MODELS,
+        HumanSlAnalysisRunner.startupStageForLine("Analysis Engine starting..."));
+    assertEquals(
+        HumanSlAnalysisRunner.StartupStage.OPTIMIZING_GPU,
+        HumanSlAnalysisRunner.startupStageForLine(
+            "Initializing (may take a long time) TensorRT backend"));
+    assertEquals(
+        HumanSlAnalysisRunner.StartupStage.CACHE_READY,
+        HumanSlAnalysisRunner.startupStageForLine("Saved new timing cache"));
+    assertEquals(
+        HumanSlAnalysisRunner.StartupStage.CACHE_READY,
+        HumanSlAnalysisRunner.startupStageForLine("Started, ready to begin handling requests"));
+  }
+
+  @Test
+  void bundledRuntimeCheckUsesResolvedExecutableWithSpacesAndUnicode() throws Exception {
+    Path tempRoot = Files.createTempDirectory("humansl bundled 路径 ");
+    Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime work"));
+    Path engine =
+        tempRoot
+            .resolve("application with spaces")
+            .resolve("engines")
+            .resolve("katago")
+            .resolve("windows-x64-nvidia50-cuda")
+            .resolve("katago.exe");
+    Files.createDirectories(engine.getParent());
+    Files.write(engine, new byte[0]);
+    Files.writeString(
+        engine.getParent().resolve("lizzieyzy-next-engine-backend.txt"),
+        "nvidia50-cuda\n");
+    Config previousConfig = Lizzie.config;
+    String previousOsName = System.getProperty("os.name");
+    AtomicInteger launches = new AtomicInteger();
+    try {
+      System.setProperty("os.name", "Windows 11");
+      Config config = ConfigTestHelper.createForTests(runtimeWorkDirectory);
+      config.config = new JSONObject();
+      config.leelazConfig = new JSONObject();
+      config.uiConfig = new JSONObject();
+      config.config.put("leelaz", config.leelazConfig);
+      config.config.put("ui", config.uiConfig);
+      Lizzie.config = config;
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(
+              List.of(engine.toString(), "analysis"),
+              ignored -> {
+                launches.incrementAndGet();
+                return new FakeProcess(request -> null);
+              });
+
+      assertFalse(runner.start());
+      assertEquals(0, launches.get());
+      assertTrue(runner.getUnavailableReason().contains("NVRTC"));
+    } finally {
+      if (previousOsName == null) {
+        System.clearProperty("os.name");
+      } else {
+        System.setProperty("os.name", previousOsName);
+      }
+      Lizzie.config = previousConfig;
+    }
+  }
+
+  @Test
+  void readinessTimeoutIncludesRecentKatagoDiagnosticsAndReportsProgress() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      FakeProcess process = new FakeProcess(request -> null);
+      List<HumanSlAnalysisRunner.StartupStage> stages =
+          java.util.Collections.synchronizedList(
+              new ArrayList<HumanSlAnalysisRunner.StartupStage>());
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+      runner.setStartupListener((stage, detail) -> stages.add(stage));
+
+      assertTrue(runner.start());
+      process.emitLine("Initializing (may take a long time) TensorRT backend");
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      while (!stages.contains(HumanSlAnalysisRunner.StartupStage.OPTIMIZING_GPU)
+          && System.nanoTime() < deadline) {
+        Thread.sleep(5L);
+      }
+
+      assertFalse(
+          runner.verifyReady(
+              history.getCurrentHistoryNode(), "rank_3k", Duration.ofMillis(40)));
+      assertTrue(stages.contains(HumanSlAnalysisRunner.StartupStage.STARTING));
+      assertTrue(stages.contains(HumanSlAnalysisRunner.StartupStage.OPTIMIZING_GPU));
+      assertTrue(runner.getUnavailableReason().contains("Timed out"));
+      assertTrue(runner.getUnavailableReason().contains("Initializing (may take a long time)"));
       runner.close();
     }
   }
@@ -544,7 +726,7 @@ class HumanSlAnalysisRunnerTest {
     JSONObject response(JSONObject request) throws IOException;
   }
 
-  private static final class FakeProcess extends Process {
+  private static class FakeProcess extends Process {
     private final PipedInputStream stdout;
     private final PipedOutputStream stdoutWriter;
     private final OutputStream stdin;
@@ -581,6 +763,11 @@ class HumanSlAnalysisRunnerTest {
           };
     }
 
+    private synchronized void emitLine(String line) throws IOException {
+      stdoutWriter.write(((line == null ? "" : line) + "\n").getBytes(StandardCharsets.UTF_8));
+      stdoutWriter.flush();
+    }
+
     @Override
     public OutputStream getOutputStream() {
       return stdin;
@@ -597,7 +784,7 @@ class HumanSlAnalysisRunnerTest {
     }
 
     @Override
-    public int waitFor() {
+    public int waitFor() throws InterruptedException {
       alive = false;
       return 0;
     }
@@ -621,6 +808,51 @@ class HumanSlAnalysisRunnerTest {
     @Override
     public boolean isAlive() {
       return alive;
+    }
+  }
+
+  private static final class DelayedExitProcess extends FakeProcess {
+    private final CountDownLatch destroyRequested = new CountDownLatch(1);
+    private final CountDownLatch allowExit = new CountDownLatch(1);
+    private volatile boolean exited;
+
+    private DelayedExitProcess(ResponseFactory responseFactory) throws IOException {
+      super(responseFactory);
+    }
+
+    @Override
+    public Process destroyForcibly() {
+      destroyRequested.countDown();
+      return this;
+    }
+
+    @Override
+    public int waitFor() throws InterruptedException {
+      allowExit.await();
+      exited = true;
+      return 0;
+    }
+
+    @Override
+    public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+      if (!allowExit.await(timeout, unit)) {
+        return false;
+      }
+      exited = true;
+      return true;
+    }
+
+    @Override
+    public int exitValue() {
+      if (!exited) {
+        throw new IllegalThreadStateException("process is still running");
+      }
+      return 0;
+    }
+
+    @Override
+    public boolean isAlive() {
+      return !exited;
     }
   }
 

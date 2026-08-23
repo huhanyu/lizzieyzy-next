@@ -1,5 +1,6 @@
 package featurecat.lizzie.analysis;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,7 +11,6 @@ import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.Menu;
 import java.awt.Window;
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -40,11 +40,16 @@ class LeelazPonderStateTest {
   void kataNameStartupCommandsDoNotHoldEngineMonitorWhileCommandQueueIsBlocked()
       throws Exception {
     try (TestHarness ignored = TestHarness.open()) {
-      Leelaz engine = new Leelaz("");
-      Lizzie.leelaz = engine;
+      StartupWorkerLeelaz engine = new StartupWorkerLeelaz();
+      engine.installFreshCommandOutputForTest(new ByteArrayOutputStream());
+      Lizzie.engineManager =
+          new EngineManager(new java.util.ArrayList<>(java.util.List.of(engine)));
+      EngineManager.currentEngineNo = 0;
+      Lizzie.setPrimaryEngine(engine);
+      engine.bindCurrentPrimaryEngineGeneration();
+      engine.started = true;
       engine.isCheckingName = true;
       engine.isCheckingVersion = true;
-      setOutputStream(engine, new BufferedOutputStream(new ByteArrayOutputStream()));
       Object commandQueue = commandQueue(engine);
       ExecutorService executor = Executors.newFixedThreadPool(2);
       Future<?> parseFuture = null;
@@ -58,7 +63,11 @@ class LeelazPonderStateTest {
                     invokeParseLineUnchecked(engine, "= KataGo");
                   });
           assertTrue(parseStarted.await(1, TimeUnit.SECONDS));
-          Thread.sleep(200);
+          parseFuture.get(1, TimeUnit.SECONDS);
+          assertTrue(engine.workerStarted.await(1, TimeUnit.SECONDS));
+          assertTrue(
+              awaitThreadState(engine.worker, Thread.State.BLOCKED, 1, TimeUnit.SECONDS),
+              "the startup worker must actually be waiting for the occupied command queue");
 
           CountDownLatch engineLockAcquired = new CountDownLatch(1);
           Future<?> lockFuture =
@@ -72,10 +81,11 @@ class LeelazPonderStateTest {
           assertTrue(
               engineLockAcquired.await(1, TimeUnit.SECONDS),
               "KataGo startup command initialization must not wait for the command queue while holding the engine monitor");
-          assertFalse(parseFuture.isDone());
           lockFuture.get(1, TimeUnit.SECONDS);
         }
-        parseFuture.get(1, TimeUnit.SECONDS);
+        engine.worker.join(TimeUnit.SECONDS.toMillis(2));
+        assertFalse(engine.worker.isAlive());
+        assertEquals(null, engine.workerFailure.get());
       } finally {
         executor.shutdownNow();
       }
@@ -102,11 +112,44 @@ class LeelazPonderStateTest {
     return (ArrayDeque<?>) field.get(engine);
   }
 
-  private static void setOutputStream(Leelaz engine, BufferedOutputStream outputStream)
-      throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, outputStream);
+  private static boolean awaitThreadState(
+      Thread thread, Thread.State expected, long timeout, TimeUnit unit) throws InterruptedException {
+    long deadline = System.nanoTime() + unit.toNanos(timeout);
+    while (System.nanoTime() < deadline) {
+      if (thread != null && thread.getState() == expected) {
+        return true;
+      }
+      Thread.sleep(5L);
+    }
+    return thread != null && thread.getState() == expected;
+  }
+
+  private static final class StartupWorkerLeelaz extends Leelaz {
+    private final CountDownLatch workerStarted = new CountDownLatch(1);
+    private final java.util.concurrent.atomic.AtomicReference<Throwable> workerFailure =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    private volatile Thread worker;
+
+    private StartupWorkerLeelaz() throws Exception {
+      super("");
+    }
+
+    @Override
+    void dispatchStartupPostActionWorker(Runnable action) {
+      worker =
+          new Thread(
+              () -> {
+                workerStarted.countDown();
+                try {
+                  action.run();
+                } catch (Throwable failure) {
+                  workerFailure.set(failure);
+                }
+              },
+              "test-startup-post-action");
+      worker.setDaemon(true);
+      worker.start();
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -149,6 +192,8 @@ class LeelazPonderStateTest {
     private final LizzieFrame previousFrame;
     private final GtpConsolePane previousGtpConsole;
     private final Leelaz previousLeelaz;
+    private final EngineManager previousEngineManager;
+    private final int previousCurrentEngineNo;
     private final Menu previousMenu;
     private final boolean previousEngineGame;
 
@@ -157,6 +202,8 @@ class LeelazPonderStateTest {
       previousFrame = Lizzie.frame;
       previousGtpConsole = Lizzie.gtpConsole;
       previousLeelaz = Lizzie.leelaz;
+      previousEngineManager = Lizzie.engineManager;
+      previousCurrentEngineNo = EngineManager.currentEngineNo;
       previousMenu = LizzieFrame.menu;
       previousEngineGame = EngineManager.isEngineGame;
     }
@@ -179,6 +226,8 @@ class LeelazPonderStateTest {
       Lizzie.frame = previousFrame;
       Lizzie.gtpConsole = previousGtpConsole;
       Lizzie.leelaz = previousLeelaz;
+      Lizzie.engineManager = previousEngineManager;
+      EngineManager.currentEngineNo = previousCurrentEngineNo;
       LizzieFrame.menu = previousMenu;
       EngineManager.isEngineGame = previousEngineGame;
     }

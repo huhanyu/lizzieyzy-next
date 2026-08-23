@@ -2,6 +2,7 @@ package featurecat.lizzie.analysis.remote;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,9 +16,58 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class ZhiziGtpTransportTest {
+  @Test
+  void abortEscalatesWhileGracefulZhiziDisposalIsBlocked() throws Exception {
+    BlockingTerminationTransport transport = new BlockingTerminationTransport();
+    AtomicReference<Throwable> gracefulFailure = new AtomicReference<>();
+    AtomicReference<Throwable> abortFailure = new AtomicReference<>();
+    Thread graceful =
+        new Thread(
+            () -> {
+              try {
+                transport.close();
+              } catch (Throwable failure) {
+                gracefulFailure.set(failure);
+              }
+            },
+            "blocked-zhizi-graceful-close");
+    Thread abort =
+        new Thread(
+            () -> {
+              try {
+                transport.abort();
+                transport.abort();
+              } catch (Throwable failure) {
+                abortFailure.set(failure);
+              }
+            },
+            "zhizi-force-abort");
+    try {
+      graceful.start();
+      assertTrue(transport.gracefulDisposeEntered.await(2, TimeUnit.SECONDS));
+      abort.start();
+      abort.join(1_000L);
+
+      assertFalse(abort.isAlive(), "abort must not wait for graceful application shutdown");
+      assertNull(abortFailure.get());
+      assertEquals(1, transport.abortDisposeCount.get());
+      assertFalse(transport.abortRequestedApplicationQuit);
+    } finally {
+      transport.allowGracefulDispose.countDown();
+      abort.join(2_000L);
+      graceful.join(2_000L);
+      assertFalse(graceful.isAlive());
+      assertNull(gracefulFailure.get());
+    }
+    assertEquals(1, transport.gracefulDisposeCount.get());
+    assertEquals(1, transport.abortDisposeCount.get());
+  }
+
   @Test
   void startupFailurePolicyRetriesCapacityAndNetworkErrors() {
     assertEquals(false, ZhiziGtpTransport.isFatalStartupFailure("no worker available"));
@@ -288,6 +338,37 @@ class ZhiziGtpTransportTest {
     @Override
     public void emit(String command) {
       commands.add(command);
+    }
+  }
+
+  private static final class BlockingTerminationTransport extends ZhiziGtpTransport {
+    private final AtomicInteger gracefulDisposeCount = new AtomicInteger();
+    private final AtomicInteger abortDisposeCount = new AtomicInteger();
+    private final CountDownLatch gracefulDisposeEntered = new CountDownLatch(1);
+    private final CountDownLatch allowGracefulDispose = new CountDownLatch(1);
+    private volatile boolean abortRequestedApplicationQuit = true;
+
+    private BlockingTerminationTransport() throws java.io.IOException {
+      super(new ZhiziApiClient(), "controlled-token", "");
+    }
+
+    @Override
+    void disposeSocketSession(boolean sendQuit) {
+      if (!sendQuit) {
+        abortRequestedApplicationQuit = false;
+        abortDisposeCount.incrementAndGet();
+        return;
+      }
+      gracefulDisposeCount.incrementAndGet();
+      gracefulDisposeEntered.countDown();
+      try {
+        if (!allowGracefulDispose.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("timed out waiting to release Zhizi graceful disposal");
+        }
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError(interrupted);
+      }
     }
   }
 }

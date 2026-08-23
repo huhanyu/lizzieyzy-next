@@ -6,6 +6,7 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.util.Utils;
 import java.awt.*;
@@ -419,8 +420,8 @@ public class NewEngineGameDialog extends JDialog {
     checkBoxAllowPonder.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
-            if (checkBoxAllowPonder.isSelected()) Lizzie.config.enginePkPonder = true;
-            else Lizzie.config.enginePkPonder = false;
+            checkBoxAllowPonder.setSelected(
+                EngineManager.setEngineGamePonderEnabled(checkBoxAllowPonder.isSelected()));
             Lizzie.config.uiConfig.put("engine-pk-ponder", Lizzie.config.enginePkPonder);
           }
         });

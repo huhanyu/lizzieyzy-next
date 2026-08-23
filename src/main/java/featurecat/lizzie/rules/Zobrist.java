@@ -7,6 +7,17 @@ public class Zobrist {
   private static long[] blackZobrist;
   private static long[] whiteZobrist;
 
+  /** Opaque identity-preserving snapshot of the coordinate hash tables. */
+  static final class TableSnapshot {
+    private final long[] black;
+    private final long[] white;
+
+    private TableSnapshot(long[] black, long[] white) {
+      this.black = black;
+      this.white = white;
+    }
+  }
+
   // initialize zobrist hashing
   static {
     init();
@@ -30,7 +41,7 @@ public class Zobrist {
     return new Zobrist(zhash);
   }
 
-  public static void init() {
+  public static synchronized void init() {
 
     Random random = new Random();
     blackZobrist = new long[Board.boardWidth * Board.boardHeight];
@@ -40,6 +51,18 @@ public class Zobrist {
       blackZobrist[i] = random.nextLong();
       whiteZobrist[i] = random.nextLong();
     }
+  }
+
+  static synchronized TableSnapshot captureTables() {
+    return new TableSnapshot(blackZobrist, whiteZobrist);
+  }
+
+  static synchronized void restoreTables(TableSnapshot snapshot) {
+    if (snapshot == null || snapshot.black == null || snapshot.white == null) {
+      throw new IllegalArgumentException("Missing Zobrist table snapshot.");
+    }
+    blackZobrist = snapshot.black;
+    whiteZobrist = snapshot.white;
   }
 
   /**

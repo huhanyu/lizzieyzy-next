@@ -20,13 +20,11 @@ import featurecat.lizzie.rules.Movelist;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.StringReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -226,8 +224,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
   @Test
   void foregroundLeaseInitialStopEofClosesOnceWithoutBecomingReady() throws Exception {
     Leelaz engine = reusableKatagoEngine(false, false);
-    installOutput(engine);
     installInput(engine, "");
+    installOutput(engine);
     AtomicInteger ready = new AtomicInteger();
     AtomicInteger closed = new AtomicInteger();
     try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
@@ -1273,13 +1271,16 @@ class LeelazExclusiveRemoteGtpSessionTest {
           "navigation must wait for the atomic Board/gate handoff");
 
       harness.engine.continueLifecycleRelease.countDown();
-      completionThread.join(1000L);
-      navigationThread.join(1000L);
+      completionThread.join(5_000L);
+      assertTrue(
+          navigationCompleted.await(5, TimeUnit.SECONDS),
+          "navigation must resume after the final-frame handoff");
+      navigationThread.join(1_000L);
 
       assertNull(completionFailure.get());
       assertNull(navigationFailure.get());
       assertEquals(0L, navigationCompleted.getCount());
-      assertTrue(harness.output.toString(StandardCharsets.UTF_8).contains("play B D4"));
+      waitUntil(() -> harness.output.toString(StandardCharsets.UTF_8).contains("play B D4"));
       assertEquals(1, harness.engine.ponderCount);
       assertFalse(harness.engine.lifecycleBusyDuringPonder);
     } finally {
@@ -1789,8 +1790,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
   void exclusiveLineConsumerFailureCannotEscapeReadCleanup() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Leelaz engine = reusableKatagoEngine(false, false);
-    installOutput(engine);
     installInput(engine, "info move D4 visits 1\n");
+    installOutput(engine);
     AtomicInteger consumerCalls = new AtomicInteger();
     try {
       Lizzie.leelaz = engine;
@@ -1921,16 +1922,12 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
   private static ByteArrayOutputStream installOutput(Leelaz engine) throws Exception {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, new BufferedOutputStream(bytes));
+    engine.installCommandOutputForTest(new BufferedOutputStream(bytes));
     return bytes;
   }
 
   private static void installOutput(Leelaz engine, BufferedOutputStream output) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, output);
+    engine.installCommandOutputForTest(output);
   }
 
   private static BufferedOutputStream commandOutputStream(Leelaz engine) throws Exception {
@@ -1982,47 +1979,39 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   private static void installFailOnceOutput(Leelaz engine) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(
-        engine,
-        Leelaz.createCommandOutputStream(
-            new OutputStream() {
-              private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-              private boolean failed;
+    engine.installCommandOutputForTest(
+        new OutputStream() {
+          private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+          private boolean failed;
 
-              @Override
-              public void write(int value) throws IOException {
-                if (!failed) {
-                  failed = true;
-                  throw new IOException("simulated restore write failure");
-                }
-                bytes.write(value);
-              }
+          @Override
+          public void write(int value) throws IOException {
+            if (!failed) {
+              failed = true;
+              throw new IOException("simulated restore write failure");
+            }
+            bytes.write(value);
+          }
 
-              @Override
-              public void write(byte[] buffer, int offset, int length) throws IOException {
-                if (!failed) {
-                  failed = true;
-                  throw new IOException("simulated restore write failure");
-                }
-                bytes.write(buffer, offset, length);
-              }
-            }));
+          @Override
+          public void write(byte[] buffer, int offset, int length) throws IOException {
+            if (!failed) {
+              failed = true;
+              throw new IOException("simulated restore write failure");
+            }
+            bytes.write(buffer, offset, length);
+          }
+        });
   }
 
   private static void installInput(Leelaz engine, String input) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("inputStream");
-    field.setAccessible(true);
-    field.set(engine, new BufferedReader(new StringReader(input)));
+    installInput(
+        engine, new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)));
   }
 
   private static void installInput(Leelaz engine, InputStream input) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("inputStream");
-    field.setAccessible(true);
-    field.set(
-        engine,
-        new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8)));
+    engine.installFreshCommandStreamsForTest(
+        input, new ByteArrayOutputStream(), new ByteArrayInputStream(new byte[0]));
   }
 
   private static void invokeRead(Leelaz engine) throws Exception {

@@ -52,6 +52,41 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
+  void unsafeAllocatedEngineLazilyInitializesOneAnalysisInfoMutationLock() throws Exception {
+    Leelaz engine = allocate(Leelaz.class);
+    Field lockField = Leelaz.class.getDeclaredField("analysisInfoMutationLock");
+    lockField.setAccessible(true);
+    assertEquals(null, lockField.get(engine));
+
+    engine.clearBestMoves();
+
+    Object initializedLock = lockField.get(engine);
+    assertTrue(initializedLock != null);
+    assertEquals(List.of(), engine.getBestMoves());
+    engine.clearBestMoves();
+    assertSame(initializedLock, lockField.get(engine));
+  }
+
+  @Test
+  void testOutputReplacementKeepsReaderIncarnationAndBindingCoherent() throws Exception {
+    Leelaz engine = new Leelaz("");
+    Object incarnation = engine.currentEngineIncarnation();
+    ByteArrayOutputStream replacement = new ByteArrayOutputStream();
+
+    engine.installCommandOutputForTest(replacement);
+
+    assertSame(incarnation, engine.currentEngineIncarnation());
+    Field outerOutputField = Leelaz.class.getDeclaredField("outputStream");
+    outerOutputField.setAccessible(true);
+    Field bindingOutputField = incarnation.getClass().getDeclaredField("output");
+    bindingOutputField.setAccessible(true);
+    Field rawOutputField = incarnation.getClass().getDeclaredField("rawOutput");
+    rawOutputField.setAccessible(true);
+    assertSame(outerOutputField.get(engine), bindingOutputField.get(incarnation));
+    assertSame(replacement, rawOutputField.get(incarnation));
+  }
+
+  @Test
   void trackingLeaseOwnsOnlyItsStreamAndReleasesWithoutBoardRestoreOrPonder() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Board previousBoard = Lizzie.board;
@@ -787,7 +822,7 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
-  void lifecycleReservationClaimsTrackingAndKeepsOrdinaryQueueClosedUntilCallerFinishes()
+  void lifecycleReservationClaimsTrackingAndRejectsOrdinaryCommandBehindQueueGate()
       throws Exception {
     try (TestState state = TestState.open(reusableLocalKatago())) {
       List<Leelaz.TrackingReleaseDisposition> dispositions = new ArrayList<>();
@@ -816,7 +851,10 @@ class LeelazTrackingStreamLeaseTest {
 
       reservation.close();
 
-      assertTrue(state.output.toString(StandardCharsets.UTF_8).endsWith("stop\nstop\n"));
+      assertEquals(
+          "800000000 stop\n800000001 kata-analyze B 10\n800000002 stop\n",
+          state.output.toString(StandardCharsets.UTF_8),
+          "an uncredentialed ordinary command rejected behind the lifecycle gate must not replay");
     }
   }
 
@@ -1684,7 +1722,7 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
-  void boardSizeCompletesRealReopenBeforePersistentMirrorFailureEscapes() throws Exception {
+  void boardSizeRejectsBeforeReopenWhenMirrorLifecycleOwnsAdmission() throws Exception {
     Board previousBoard = Lizzie.board;
     int previousBoardWidth = Board.boardWidth;
     int previousBoardHeight = Board.boardHeight;
@@ -1692,28 +1730,46 @@ class LeelazTrackingStreamLeaseTest {
     WinrateGraph previousWinrateGraph = LizzieFrame.winrateGraph;
     try (TestState state = TestState.open(reusableLocalKatago())) {
       PonderTrackingFrame frame = allocate(PonderTrackingFrame.class);
-      FailingMirrorLeelaz secondEngine = new FailingMirrorLeelaz();
+      Leelaz secondEngine = reusableLocalKatago();
+      ByteArrayOutputStream secondOutput = installOutput(secondEngine);
       Lizzie.frame = frame;
       LizzieFrame.winrateGraph = allocate(WinrateGraph.class);
       Board.boardWidth = 19;
       Board.boardHeight = 19;
       Zobrist.init();
       Lizzie.board = new Board();
-      state.engine.acquireTrackingStreamLease(line -> {}, lease -> {}, lease -> {});
+      Leelaz.TrackingStreamLeaseAcquisition acquisition =
+          state.engine.acquireTrackingStreamLease(line -> {}, lease -> {}, lease -> {});
       processCommandResponse(state.engine, "=800000000");
       assertTrue(dispatch(state.engine, ""));
-      Lizzie.config.extraMode = ExtraMode.Double_Engine;
-      Lizzie.leelaz2 = secondEngine;
+      int originalEngineWidth = state.engine.width;
+      int originalEngineHeight = state.engine.height;
+      try (HeldLifecycleReservation ignored = HeldLifecycleReservation.open(secondEngine)) {
+        Lizzie.config.extraMode = ExtraMode.Double_Engine;
+        Lizzie.leelaz2 = secondEngine;
 
-      RuntimeException failure =
-          assertThrows(RuntimeException.class, () -> state.engine.boardSize(13, 13));
+        state.engine.boardSize(13, 13);
 
-      assertEquals("simulated mirror failure", failure.getMessage());
-      assertEquals(13, Board.boardWidth);
-      assertEquals(13, Board.boardHeight);
-      assertEquals(1, frame.redrawCount);
-      assertEquals(1, frame.refreshCount);
-      assertEquals(5, secondEngine.commandCount);
+        assertEquals(19, Board.boardWidth);
+        assertEquals(19, Board.boardHeight);
+        assertEquals(originalEngineWidth, state.engine.width);
+        assertEquals(originalEngineHeight, state.engine.height);
+        assertEquals(0, frame.redrawCount);
+        assertEquals(0, frame.refreshCount);
+        assertEquals("", secondOutput.toString(StandardCharsets.UTF_8));
+        assertFalse(state.output.toString(StandardCharsets.UTF_8).contains("boardsize 13\n"));
+      }
+      assertTrue(acquisition.lease().release());
+      assertTrue(dispatch(state.engine, "=800000001"));
+      assertTrue(dispatch(state.engine, ""));
+      assertEquals(19, Board.boardWidth);
+      assertEquals(19, Board.boardHeight);
+      assertEquals(originalEngineWidth, state.engine.width);
+      assertEquals(originalEngineHeight, state.engine.height);
+      assertEquals(0, frame.redrawCount);
+      assertEquals(0, frame.refreshCount);
+      assertFalse(state.output.toString(StandardCharsets.UTF_8).contains("boardsize 13\n"));
+      assertEquals("", secondOutput.toString(StandardCharsets.UTF_8));
     } finally {
       Board.boardWidth = previousBoardWidth;
       Board.boardHeight = previousBoardHeight;
@@ -1766,7 +1822,7 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
-  void statefulPublicEntriesCommitAfterPrimaryAdmissionWhenMirrorFails() throws Exception {
+  void statefulPublicEntriesDoNotPublishWhenMirrorRejectsAtomicAdmission() throws Exception {
     Board previousBoard = Lizzie.board;
     Leelaz previousSecondEngine = Lizzie.leelaz2;
     try (TestState state = TestState.open(reusableLocalKatago())) {
@@ -1775,31 +1831,46 @@ class LeelazTrackingStreamLeaseTest {
             @Override
             public void reopen(int width, int height) {}
           };
-      state.engine.acquireTrackingStreamLease(line -> {}, lease -> {}, lease -> {});
+      Leelaz.TrackingStreamLeaseAcquisition acquisition =
+          state.engine.acquireTrackingStreamLease(line -> {}, lease -> {}, lease -> {});
       processCommandResponse(state.engine, "=800000000");
       assertTrue(dispatch(state.engine, ""));
-      Lizzie.config.extraMode = ExtraMode.Double_Engine;
-      Lizzie.leelaz2 = new FailingMirrorLeelaz();
+      Leelaz secondEngine = reusableLocalKatago();
+      ByteArrayOutputStream secondOutput = installOutput(secondEngine);
+      float originalKomi = state.engine.komi;
+      double originalGameKomi = Lizzie.board.getHistory().getGameInfo().getKomi();
+      int originalWidth = state.engine.width;
+      int originalHeight = state.engine.height;
 
-      assertThrows(RuntimeException.class, () -> state.engine.komi(5.5));
-      assertEquals(5.5f, state.engine.komi);
-      assertEquals(5.5, Lizzie.board.getHistory().getGameInfo().getKomi());
+      try (HeldLifecycleReservation ignored = HeldLifecycleReservation.open(secondEngine)) {
+        Lizzie.config.extraMode = ExtraMode.Double_Engine;
+        Lizzie.leelaz2 = secondEngine;
+        state.engine.komi(5.5);
+        state.engine.komiNoMenu(6.5);
+        state.engine.boardSize(13, 13);
 
-      assertThrows(RuntimeException.class, () -> state.engine.komiNoMenu(6.5));
-      assertEquals(6.5f, state.engine.komi);
-      assertEquals(6.5, Lizzie.board.getHistory().getGameInfo().getKomi());
-
-      assertThrows(RuntimeException.class, () -> state.engine.boardSize(13, 13));
-      assertEquals(13, state.engine.width);
-      assertEquals(13, state.engine.height);
-
+        assertEquals(originalKomi, state.engine.komi);
+        assertEquals(originalGameKomi, Lizzie.board.getHistory().getGameInfo().getKomi());
+        assertEquals(originalWidth, state.engine.width);
+        assertEquals(originalHeight, state.engine.height);
+        String primaryCommands = state.output.toString(StandardCharsets.UTF_8);
+        assertFalse(primaryCommands.contains("komi 5.5\n"));
+        assertFalse(primaryCommands.contains("komi 6.5\n"));
+        assertFalse(primaryCommands.contains("boardsize 13\n"));
+        assertEquals("", secondOutput.toString(StandardCharsets.UTF_8));
+      }
+      assertTrue(acquisition.lease().release());
       assertTrue(dispatch(state.engine, "=800000001"));
       assertTrue(dispatch(state.engine, ""));
-      assertTrue(
-          state.output
-              .toString(StandardCharsets.UTF_8)
-              .endsWith("komi 5.5\nkomi 6.5\nboardsize 13\n"),
-          state.output.toString(StandardCharsets.UTF_8));
+      assertEquals(originalKomi, state.engine.komi);
+      assertEquals(originalGameKomi, Lizzie.board.getHistory().getGameInfo().getKomi());
+      assertEquals(originalWidth, state.engine.width);
+      assertEquals(originalHeight, state.engine.height);
+      String primaryCommands = state.output.toString(StandardCharsets.UTF_8);
+      assertFalse(primaryCommands.contains("komi 5.5\n"));
+      assertFalse(primaryCommands.contains("komi 6.5\n"));
+      assertFalse(primaryCommands.contains("boardsize 13\n"));
+      assertEquals("", secondOutput.toString(StandardCharsets.UTF_8));
     } finally {
       Lizzie.board = previousBoard;
       Lizzie.leelaz2 = previousSecondEngine;
@@ -1961,27 +2032,31 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
-  void mirrorFailureLeavesAdmittedPrimaryOrdinaryRequestInOriginalQueue() throws Exception {
+  void mirrorAdmissionRejectionLeavesNeitherOrdinaryQueue() throws Exception {
     Leelaz previousSecondEngine = Lizzie.leelaz2;
     try (TestState state = TestState.open(reusableLocalKatago())) {
       RecordingDispositionObserver observer = new RecordingDispositionObserver();
-      state.engine.acquireTrackingStreamLease(line -> {}, lease -> {}, lease -> {}, observer);
+      Leelaz.TrackingStreamLeaseAcquisition acquisition =
+          state.engine.acquireTrackingStreamLease(line -> {}, lease -> {}, lease -> {}, observer);
       processCommandResponse(state.engine, "=800000000");
       assertTrue(dispatch(state.engine, ""));
-      Lizzie.config.extraMode = ExtraMode.Double_Engine;
-      Lizzie.leelaz2 = new FailingMirrorLeelaz();
+      Leelaz secondEngine = reusableLocalKatago();
+      ByteArrayOutputStream secondOutput = installOutput(secondEngine);
+      try (HeldLifecycleReservation ignored = HeldLifecycleReservation.open(secondEngine)) {
+        Lizzie.config.extraMode = ExtraMode.Double_Engine;
+        Lizzie.leelaz2 = secondEngine;
 
-      RuntimeException failure =
-          assertThrows(RuntimeException.class, () -> state.engine.sendCommand("komi 7.5"));
+        state.engine.sendCommand("komi 7.5");
 
-      assertEquals("simulated mirror failure", failure.getMessage());
-      assertEquals(List.of(Leelaz.TrackingReleaseReason.ORDINARY_OPERATION), observer.reasons);
-      assertEquals(
-          "800000000 stop\n800000001 stop\n", state.output.toString(StandardCharsets.UTF_8));
-
+        assertTrue(observer.reasons.isEmpty());
+        assertEquals("800000000 stop\n", state.output.toString(StandardCharsets.UTF_8));
+        assertEquals("", secondOutput.toString(StandardCharsets.UTF_8));
+      }
+      assertTrue(acquisition.lease().release());
       assertTrue(dispatch(state.engine, "=800000001"));
       assertTrue(dispatch(state.engine, ""));
-      assertTrue(state.output.toString(StandardCharsets.UTF_8).endsWith("komi 7.5\n"));
+      assertFalse(state.output.toString(StandardCharsets.UTF_8).contains("komi 7.5\n"));
+      assertEquals("", secondOutput.toString(StandardCharsets.UTF_8));
     } finally {
       Lizzie.leelaz2 = previousSecondEngine;
     }
@@ -2035,6 +2110,27 @@ class LeelazTrackingStreamLeaseTest {
       ByteArrayOutputStream thirdReboundOutput = new ByteArrayOutputStream();
       initializeStreams(state.engine, thirdReboundOutput);
       assertEquals(List.of(List.of(false, true), List.of(false, false)), state.menu.transitions);
+    }
+  }
+
+  @Test
+  void ordinaryAndExactNormalQuitCancelOutstandingPositionEstimate() throws Exception {
+    for (boolean exactIncarnation : List.of(false, true)) {
+      try (TestState state = TestState.open(reusableLocalKatago())) {
+        ensureReaderStreamBinding(state.engine);
+        assertTrue(state.engine.requestPositionEstimate(ownership -> {}));
+        assertTrue(positionEstimateConsumer(state.engine) != null);
+
+        if (exactIncarnation) {
+          assertTrue(
+              state.engine.normalQuitIfCurrentIncarnation(
+                  state.engine.currentEngineIncarnation()));
+        } else {
+          state.engine.normalQuit();
+        }
+
+        assertEquals(null, positionEstimateConsumer(state.engine));
+      }
     }
   }
 
@@ -2565,16 +2661,12 @@ class LeelazTrackingStreamLeaseTest {
 
   private static ByteArrayOutputStream installOutput(Leelaz engine) throws Exception {
     ByteArrayOutputStream output = new ByteArrayOutputStream();
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, new BufferedOutputStream(output));
+    engine.installCommandOutputForTest(new BufferedOutputStream(output));
     return output;
   }
 
   private static void installOutput(Leelaz engine, BufferedOutputStream output) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, output);
+    engine.installCommandOutputForTest(output);
   }
 
   private static BufferedOutputStream currentOutput(Leelaz engine) throws Exception {
@@ -3047,17 +3139,90 @@ class LeelazTrackingStreamLeaseTest {
     }
   }
 
-  private static final class FailingMirrorLeelaz extends Leelaz {
-    private int commandCount;
+  private static final class HeldLifecycleReservation implements AutoCloseable {
+    private final CountDownLatch acquired = new CountDownLatch(1);
+    private final CountDownLatch release = new CountDownLatch(1);
+    private final AtomicReference<Throwable> failure = new AtomicReference<>();
+    private final Thread owner;
 
-    private FailingMirrorLeelaz() throws Exception {
-      super("");
+    private HeldLifecycleReservation(Leelaz engine) {
+      owner =
+          new Thread(
+              () -> {
+                Leelaz.ExclusiveGtpLifecycleReservation reservation = null;
+                try {
+                  reservation = engine.beginExclusiveGtpLifecycleReservation();
+                  if (reservation == null) {
+                    throw new AssertionError("failed to acquire mirror lifecycle reservation");
+                  }
+                  acquired.countDown();
+                  release.await();
+                } catch (Throwable reservationFailure) {
+                  failure.compareAndSet(null, reservationFailure);
+                } finally {
+                  acquired.countDown();
+                  if (reservation != null) {
+                    try {
+                      reservation.close();
+                    } catch (Throwable closeFailure) {
+                      failure.compareAndSet(null, closeFailure);
+                    }
+                  }
+                }
+              },
+              "held-mirror-lifecycle-reservation");
+      owner.setDaemon(true);
+    }
+
+    private static HeldLifecycleReservation open(Leelaz engine) throws Exception {
+      HeldLifecycleReservation held = new HeldLifecycleReservation(engine);
+      held.owner.start();
+      try {
+        if (!held.acquired.await(2, TimeUnit.SECONDS)) {
+          throw new AssertionError("timed out acquiring mirror lifecycle reservation");
+        }
+        held.rethrowFailure();
+        return held;
+      } catch (Throwable openFailure) {
+        try {
+          held.close();
+        } catch (Throwable cleanupFailure) {
+          if (cleanupFailure != openFailure) {
+            openFailure.addSuppressed(cleanupFailure);
+          }
+        }
+        if (openFailure instanceof Exception) {
+          throw (Exception) openFailure;
+        }
+        if (openFailure instanceof Error) {
+          throw (Error) openFailure;
+        }
+        throw new AssertionError(openFailure);
+      }
     }
 
     @Override
-    public void sendCommand(String command) {
-      commandCount++;
-      throw new RuntimeException("simulated mirror failure");
+    public void close() throws Exception {
+      release.countDown();
+      owner.join(TimeUnit.SECONDS.toMillis(2));
+      if (owner.isAlive()) {
+        throw new AssertionError("mirror lifecycle reservation owner did not stop");
+      }
+      rethrowFailure();
+    }
+
+    private void rethrowFailure() throws Exception {
+      Throwable reservationFailure = failure.get();
+      if (reservationFailure == null) {
+        return;
+      }
+      if (reservationFailure instanceof Exception) {
+        throw (Exception) reservationFailure;
+      }
+      if (reservationFailure instanceof Error) {
+        throw (Error) reservationFailure;
+      }
+      throw new AssertionError(reservationFailure);
     }
   }
 

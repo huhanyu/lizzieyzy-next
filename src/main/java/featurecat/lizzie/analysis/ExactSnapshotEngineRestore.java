@@ -32,6 +32,7 @@ public final class ExactSnapshotEngineRestore {
 
   enum FailureCategory {
     ADMISSION_STALE,
+    UNSUPPORTED_REMOTE_POSITION,
     SEND_FAILED,
     GTP_ERROR,
     TIMEOUT,
@@ -65,7 +66,7 @@ public final class ExactSnapshotEngineRestore {
         admission.completeBoardSync();
       }
       return prepared;
-    } catch (RuntimeException failure) {
+    } catch (RuntimeException | Error failure) {
       admission.completeBoardSync();
       throw failure;
     }
@@ -75,7 +76,7 @@ public final class ExactSnapshotEngineRestore {
       Leelaz.ExactSnapshotRestoreAdmission admission, BoardData positionData) {
     try {
       return new PreparedRestore(RestorePlan.capture(admission, positionData));
-    } catch (RuntimeException failure) {
+    } catch (RuntimeException | Error failure) {
       admission.completeBoardSync();
       throw failure;
     }
@@ -120,29 +121,42 @@ public final class ExactSnapshotEngineRestore {
   }
 
   private static Completion execute(RestorePlan plan) {
-    if (plan.preclear) {
-      clearCapturedTargets(plan);
-    }
-    Path sgfFile = writeSnapshotSgf(plan);
-    RestoreLifecycle lifecycle = new RestoreLifecycle(sgfFile);
+    RestoreLifecycle lifecycle = null;
     try {
+      List<Leelaz> remoteTargets = new ArrayList<>();
+      List<Leelaz> localTargets = new ArrayList<>();
+      for (Leelaz target : plan.targetEngines) {
+        if (target.useRemoteCompute) {
+          remoteTargets.add(target);
+        } else {
+          localTargets.add(target);
+        }
+      }
+      requireSupportedRemotePosition(plan, remoteTargets);
+      if (plan.preclear) {
+        clearCapturedTargets(plan);
+      }
       try {
-        plan.engine.withExactSnapshotRestoreAdmission(
-            plan.admission,
-            () ->
-                plan.engine.loadSgfForExactSnapshotRestore(
-                    sgfFile,
-                    plan.mirrorEngine,
-                    plan.admission,
-                    lifecycle::onLoadSgfConsumed,
-                    lifecycle::onLoadDispatchStarted));
+        if (!remoteTargets.isEmpty()) {
+          restoreRemoteSnapshotInBand(plan, remoteTargets);
+        }
+        if (!localTargets.isEmpty()) {
+          Path sgfFile = writeSnapshotSgf(plan);
+          lifecycle = new RestoreLifecycle(sgfFile);
+          restoreLocalSnapshotSgf(plan, localTargets, lifecycle);
+        }
       } catch (RuntimeException failure) {
-        lifecycle.failBeforeLoadDispatch();
+        if (lifecycle != null) {
+          lifecycle.failBeforeLoadDispatch();
+        }
         throw failure;
       }
       for (TailAction action : plan.tail) {
-        for (Leelaz targetEngine : plan.targetEngines) {
-          sendCapturedRestoreCommand(plan, targetEngine, action.command, "tail");
+        if (!remoteTargets.isEmpty()) {
+          restoreCommandWithResponse(plan, remoteTargets, action.command);
+        }
+        if (!localTargets.isEmpty()) {
+          restoreCommandWithResponse(plan, localTargets, action.command);
         }
       }
       for (Leelaz targetEngine : plan.targetEngines) {
@@ -154,9 +168,99 @@ public final class ExactSnapshotEngineRestore {
       }
       return new Completion();
     } finally {
-      lifecycle.finishTailReplay();
+      if (lifecycle != null) {
+        lifecycle.finishTailReplay();
+      }
       plan.admission.completeBoardSync();
     }
+  }
+
+  private static void requireSupportedRemotePosition(
+      RestorePlan plan, List<Leelaz> remoteTargets) {
+    if (remoteTargets.isEmpty() || plan.snapshotData.blackToPlay || !plan.tail.isEmpty()) {
+      return;
+    }
+    throw new Failure(
+        FailureCategory.UNSUPPORTED_REMOTE_POSITION,
+        "Remote exact snapshot restore cannot represent a white-to-play position with an "
+            + "empty real tail.");
+  }
+
+  private static void restoreRemoteSnapshotInBand(RestorePlan plan, List<Leelaz> remoteTargets) {
+    restoreCommandWithResponse(plan, remoteTargets, buildBoardSizeCommand(plan));
+    List<String> commands = new ArrayList<>(2);
+    if (plan.komi != null) {
+      commands.add("komi " + formatKomi(plan.komi));
+    }
+    commands.add(buildSetPositionCommand(plan));
+    restoreCommandsWithResponse(plan, remoteTargets, commands);
+  }
+
+  private static void restoreCommandWithResponse(
+      RestorePlan plan, List<Leelaz> targets, String command) {
+    restoreCommandsWithResponse(plan, targets, List.of(command));
+  }
+
+  private static void restoreCommandsWithResponse(
+      RestorePlan plan, List<Leelaz> targets, List<String> commands) {
+    Leelaz loadEngine = targets.get(0);
+    Leelaz loadMirror = targets.size() > 1 ? targets.get(1) : null;
+    loadEngine.withExactSnapshotRestoreAdmission(
+        plan.admission,
+        () ->
+            loadEngine.restoreInBandForExactSnapshotRestore(
+                commands, loadMirror, plan.admission, () -> {}, null));
+  }
+
+  private static String buildBoardSizeCommand(RestorePlan plan) {
+    return plan.boardWidth == plan.boardHeight
+        ? "boardsize " + plan.boardWidth
+        : "rectangular_boardsize " + plan.boardWidth + " " + plan.boardHeight;
+  }
+
+  private static void restoreLocalSnapshotSgf(
+      RestorePlan plan, List<Leelaz> localTargets, RestoreLifecycle lifecycle) {
+    Leelaz loadEngine = localTargets.get(0);
+    Leelaz loadMirror = localTargets.size() > 1 ? localTargets.get(1) : null;
+    loadEngine.withExactSnapshotRestoreAdmission(
+        plan.admission,
+        () ->
+            loadEngine.loadSgfForExactSnapshotRestore(
+                lifecycle.sgfFile,
+                loadMirror,
+                plan.admission,
+                lifecycle::onLoadSgfConsumed,
+                lifecycle::onLoadDispatchStarted));
+  }
+
+  private static String buildSetPositionCommand(RestorePlan plan) {
+    StringBuilder command = new StringBuilder("set_position");
+    appendSetPositionStones(command, plan, Stone.BLACK, "B");
+    appendSetPositionStones(command, plan, Stone.WHITE, "W");
+    return command.toString();
+  }
+
+  private static void appendSetPositionStones(
+      StringBuilder command, RestorePlan plan, Stone targetColor, String gtpColor) {
+    Stone[] stones = plan.snapshotData.stones;
+    for (int index = 0; index < stones.length; index++) {
+      if (stones[index] != targetColor) {
+        continue;
+      }
+      int[] coord = toBoardCoord(index, plan.boardHeight);
+      command
+          .append(' ')
+          .append(gtpColor)
+          .append(' ')
+          .append(formatGtpCoord(coord[0], coord[1], plan.boardWidth, plan.boardHeight));
+    }
+  }
+
+  private static String formatGtpCoord(int x, int y, int boardWidth, int boardHeight) {
+    if (boardWidth > 25 || boardHeight > 25) {
+      return String.format(java.util.Locale.ENGLISH, "(%d,%d)", x, y);
+    }
+    return Board.coordsAsName(x) + (boardHeight - y);
   }
 
   private static void clearCapturedTargets(RestorePlan plan) {
@@ -581,10 +685,7 @@ public final class ExactSnapshotEngineRestore {
         return Optional.empty();
       }
       int[] move = data.lastMove.get();
-      String coordinate =
-          boardWidth > 25 || boardHeight > 25
-              ? String.format(java.util.Locale.ENGLISH, "(%d,%d)", move[0], move[1])
-              : Board.coordsAsName(move[0]) + (boardHeight - move[1]);
+      String coordinate = formatGtpCoord(move[0], move[1], boardWidth, boardHeight);
       return Optional.of(new TailAction("play " + color + " " + coordinate));
     }
   }

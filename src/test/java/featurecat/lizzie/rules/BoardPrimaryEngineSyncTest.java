@@ -17,6 +17,7 @@ import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class BoardPrimaryEngineSyncTest {
@@ -250,6 +251,68 @@ class BoardPrimaryEngineSyncTest {
       board.updateIsBest(current);
 
       assertFalse(current.isBest);
+    }
+  }
+
+  @Test
+  void frozenExactRestoreFenceDetectsRevisionAndCurrentNodeChangesAndRecaptures()
+      throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      Board board = Lizzie.board;
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      history.add(moveNode(0, 0, Stone.BLACK, false, 1));
+      board.setHistory(history);
+
+      Leelaz engine = new Leelaz("");
+      engine.isLoaded = true;
+      setStarted(engine, true);
+      setOutputStream(engine, new RecordingOutputStream());
+      Lizzie.leelaz = engine;
+
+      Optional<Board.FrozenPrimaryPosition> initial =
+          board.freezeCurrentPositionForPrimaryEngineExactRestore();
+      assertTrue(initial.isPresent());
+      assertTrue(initial.get().matchesCurrentBoardAndPrimary());
+
+      Field revision = Board.class.getDeclaredField("contextRevision");
+      revision.setAccessible(true);
+      revision.setLong(board, board.getContextRevision() + 1L);
+      assertFalse(initial.get().matchesCurrentBoardAndPrimary());
+
+      Board.FrozenPrimaryPosition revised =
+          initial.get().recaptureCurrentPositionForSamePrimary().orElseThrow();
+      assertTrue(revised.matchesCurrentBoardAndPrimary());
+
+      history.previous();
+      assertFalse(revised.matchesCurrentBoardAndPrimary());
+      assertTrue(
+          revised
+              .recaptureCurrentPositionForSamePrimary()
+              .orElseThrow()
+              .matchesCurrentBoardAndPrimary());
+    }
+  }
+
+  @Test
+  void frozenExactRestoreRejectsReplacedBoardBeforeSendingAdmissionCommands() throws Exception {
+    try (TestHarness harness = TestHarness.open()) {
+      Board original = Lizzie.board;
+      Leelaz engine = new Leelaz("");
+      engine.isLoaded = true;
+      setStarted(engine, true);
+      RecordingOutputStream output = new RecordingOutputStream();
+      setOutputStream(engine, output);
+      Lizzie.leelaz = engine;
+      Board.FrozenPrimaryPosition frozen =
+          original.freezeCurrentPositionForPrimaryEngineExactRestore().orElseThrow();
+
+      Board replacement = allocate(Board.class);
+      replacement.startStonelist = new ArrayList<>();
+      replacement.setHistory(new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE)));
+      Lizzie.board = replacement;
+
+      assertFalse(frozen.execute());
+      assertTrue(output.commands().isEmpty());
     }
   }
 
