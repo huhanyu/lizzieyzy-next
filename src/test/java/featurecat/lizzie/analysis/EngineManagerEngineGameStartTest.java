@@ -72,9 +72,9 @@ class EngineManagerEngineGameStartTest {
           manager.startEngineForPkSynchronization(-1);
 
       assertFalse(manager.finishPkEngineSynchronizations(black, white));
-      assertFalse(Lizzie.board.isPkBoard);
       SwingUtilities.invokeAndWait(() -> {});
 
+      assertFalse(Lizzie.board.isPkBoard);
       assertFalse(EngineManager.isPreEngineGame);
       assertFalse(EngineManager.isEngineGame);
       assertTrue(frame.inputRestored);

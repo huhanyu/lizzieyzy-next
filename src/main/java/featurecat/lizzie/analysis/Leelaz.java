@@ -567,7 +567,7 @@ public class Leelaz {
   private Object leela0110PonderingStateToken;
   private final Object leela0110PonderStateLock = new Object();
   private final ReentrantLock leela0110PonderPhysicalWriteLock = new ReentrantLock();
-  private final Object analysisInfoMutationLock = new Object();
+  private volatile Object analysisInfoMutationLock = new Object();
   private long analysisInfoEpoch;
   private AnalysisInfoTarget analysisInfoPayloadTarget;
   private final AtomicLong analysisOutputGeneration = new AtomicLong();
@@ -3981,8 +3981,8 @@ public class Leelaz {
   private static final class ReaderStreamBinding {
     private final BufferedReader stdout;
     private final BufferedReader stderr;
-    private OutputStream rawOutput;
-    private final BufferedOutputStream output;
+    private volatile OutputStream rawOutput;
+    private volatile BufferedOutputStream output;
     private final Process process;
     private final EngineTransport remoteTransport;
     private final SSHController javaSSH;
@@ -4014,6 +4014,28 @@ public class Leelaz {
     /** The dead carrier's command leases were settled before deferred engine-game recovery. */
     private boolean engineGameCommandStateRetired;
     private volatile boolean terminated;
+
+    private ReaderStreamBinding(
+        BufferedReader stdout,
+        BufferedReader stderr,
+        BufferedOutputStream output,
+        Process process,
+        EngineTransport remoteTransport,
+        SSHController javaSSH,
+        long incarnation,
+        long startupPrimaryEngineGeneration) {
+      this(
+          stdout,
+          stderr,
+          output,
+          process,
+          remoteTransport,
+          javaSSH,
+          incarnation,
+          startupPrimaryEngineGeneration,
+          false,
+          null);
+    }
 
     private ReaderStreamBinding(
         BufferedReader stdout,
@@ -4613,7 +4635,7 @@ public class Leelaz {
           analysisOutputRoute(sourceEngineIncarnation, line);
       long expectedAnalysisInfoEpoch = analysisInfoEpochSnapshot();
       AnalysisInfoTarget analysisInfoTarget = captureAnalysisInfoTarget();
-      boolean responseUpToDate = isAnalysisResponseUpToDateSnapshot();
+      boolean responseUpToDate = isAnalysisResponseUpToDateSnapshot(ingressRoute);
       afterAnalysisOutputRouteCapturedForTest(ingressRoute.kind.name());
       AnalysisOutputRoute currentRoute =
           analysisOutputRoute(sourceEngineIncarnation, line);
@@ -4635,7 +4657,7 @@ public class Leelaz {
       runIfCurrentAnalysisOutputRoute(
           ingressRoute,
           () -> {
-            synchronized (analysisInfoMutationLock) {
+            synchronized (analysisInfoMutationLock()) {
               if (analysisInfoEpoch != expectedAnalysisInfoEpoch
                   || this == Lizzie.leelaz
                   || !responseUpToDate
@@ -4894,6 +4916,22 @@ public class Leelaz {
     parseLineForGenmovePk(line, binding, engineGameResponseHandlerForLine(line, binding));
   }
 
+  /**
+   * Compatibility entry for reader-incarnation tests and integrations compiled against the
+   * original three-argument parser seam. The supplied reader remains deliberately untouched: only
+   * the outer reader loop may consume the next framed response line.
+   */
+  @SuppressWarnings("unused")
+  private void parseLineForGenmovePk(
+      String line, BufferedReader ignoredReader, Object sourceEngineIncarnation)
+      throws IOException {
+    if (!(sourceEngineIncarnation instanceof ReaderStreamBinding)) {
+      return;
+    }
+    ReaderStreamBinding binding = (ReaderStreamBinding) sourceEngineIncarnation;
+    parseLineForGenmovePk(line, binding, engineGameResponseHandlerForLine(line, binding));
+  }
+
   private void continueEngineGameAfterCommittedMove(
       EngineManager.EngineGameMoveResponseContext response,
       EngineManager.EngineGamePostMoveToken postMove,
@@ -4957,7 +4995,7 @@ public class Leelaz {
     return EngineManager.runIfCurrentEngineGameMoveResponse(
         response,
         () -> {
-          synchronized (analysisInfoMutationLock) {
+          synchronized (analysisInfoMutationLock()) {
             if (bestMoves == null || bestMoves.isEmpty()) {
               return;
             }
@@ -5996,21 +6034,41 @@ public class Leelaz {
     }
   }
 
+  /**
+   * Returns the per-engine analysis payload lock. Normal construction initializes it eagerly;
+   * tests that intentionally use {@code Unsafe.allocateInstance} bypass field initializers, so the
+   * null-only path restores the same per-instance ownership without weakening production locking.
+   */
+  private Object analysisInfoMutationLock() {
+    Object lock = analysisInfoMutationLock;
+    if (lock != null) {
+      return lock;
+    }
+    synchronized (this) {
+      lock = analysisInfoMutationLock;
+      if (lock == null) {
+        lock = new Object();
+        analysisInfoMutationLock = lock;
+      }
+      return lock;
+    }
+  }
+
   private long analysisInfoEpochSnapshot() {
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       return analysisInfoEpoch;
     }
   }
 
   private AnalysisInfoSnapshot currentAnalysisInfoSnapshot() {
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       return new AnalysisInfoSnapshot(
           bestMoves, currentTotalPlayouts, analysisInfoEpoch, analysisInfoPayloadTarget);
     }
   }
 
   private AnalysisInfoSnapshot currentAnalysisInfoSnapshot(long expectedEpoch) {
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       return analysisInfoEpoch == expectedEpoch
           ? new AnalysisInfoSnapshot(
               bestMoves, currentTotalPlayouts, analysisInfoEpoch, analysisInfoPayloadTarget)
@@ -6033,7 +6091,7 @@ public class Leelaz {
     return runIfCurrentAnalysisOutputRoute(
             route,
             () -> {
-              synchronized (analysisInfoMutationLock) {
+              synchronized (analysisInfoMutationLock()) {
                 claimed.set(hasCurrentAnalysisInfoSnapshotLocked(expected));
               }
             })
@@ -6046,7 +6104,7 @@ public class Leelaz {
    * cannot revive the old state.
    */
   private void resetAnalysisInfoPayload(boolean resetScore) {
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       if (resetScore && isKatago) {
         scoreMean = 0;
         scoreStdev = 0;
@@ -6082,7 +6140,7 @@ public class Leelaz {
 
   /** Invalidates a retained payload (for example a komi-only BoardData clear). */
   private void advanceAnalysisInfoEpoch() {
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       analysisInfoEpoch++;
     }
   }
@@ -6121,7 +6179,7 @@ public class Leelaz {
     runIfCurrentAnalysisOutputRoute(
             route,
             () -> {
-              synchronized (analysisInfoMutationLock) {
+              synchronized (analysisInfoMutationLock()) {
                 if (analysisInfoEpoch != expectedAnalysisInfoEpoch
                     || !isCurrentAnalysisInfoTarget(analysisInfoTarget)) {
                   return;
@@ -6222,7 +6280,7 @@ public class Leelaz {
     return runIfCurrentAnalysisOutputRoute(
         route,
         () -> {
-          synchronized (analysisInfoMutationLock) {
+          synchronized (analysisInfoMutationLock()) {
             if (Lizzie.config.isAutoAna) {
               currentTotalPlayouts = 0;
               analysisInfoPayloadTarget = null;
@@ -6306,7 +6364,7 @@ public class Leelaz {
                 }
                 completedMoves = List.copyOf(leela0110BestMoves);
               }
-              synchronized (analysisInfoMutationLock) {
+              synchronized (analysisInfoMutationLock()) {
                 if (analysisInfoEpoch != expectedAnalysisInfoEpoch) {
                   return;
                 }
@@ -6499,7 +6557,7 @@ public class Leelaz {
         captureStartupPrimaryGeneration(sourceEngineIncarnation);
     if (line.startsWith("info")) {
         EngineObservation.traceRawStream(loggingEngineId, null, line);
-        boolean upToDate = isAnalysisResponseUpToDateSnapshot();
+        boolean upToDate = isAnalysisResponseUpToDateSnapshot(analysisOutputRouteAtParse);
         afterAnalysisInfoAdmissionSnapshotCapturedForTest();
         treatCurrentInfoAsPrimary = this == primaryAtParse && primaryGenerationAtParse >= 0L;
         if (this == Lizzie.leelaz) {
@@ -7036,7 +7094,7 @@ public class Leelaz {
           if (!hasCurrentAnalysisOutputOwner(route)) {
             return;
           }
-          synchronized (analysisInfoMutationLock) {
+          synchronized (analysisInfoMutationLock()) {
             if (!hasCurrentAnalysisInfoSnapshotLocked(acceptedInfo)) {
               return;
             }
@@ -7439,7 +7497,7 @@ public class Leelaz {
   public void genmoveResign(boolean needPass) {
     // if(resigned)
     //	return;
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       List<MoveData> acceptedMoves = bestMoves;
       if (!acceptedMoves.isEmpty()) {
         int acceptedPlayouts = MoveData.getPlayouts(acceptedMoves);
@@ -8106,7 +8164,8 @@ public class Leelaz {
         isZen ? pendingEngineGameMoveResponseContext(line, binding) : null;
     AnalysisOutputRoute analysisOutputRouteAtParse = analysisOutputRoute(binding, line);
     long analysisInfoEpochAtParse = analysisInfoEpochSnapshot();
-    boolean analysisResponseUpToDateAtParse = isAnalysisResponseUpToDateSnapshot();
+    boolean analysisResponseUpToDateAtParse =
+        isAnalysisResponseUpToDateSnapshot(analysisOutputRouteAtParse);
     AnalysisInfoTarget analysisInfoTargetAtParse = captureAnalysisInfoTarget();
     EngineManager.EngineGamePrimaryContext analysisGameContext =
         analysisOutputRouteAtParse.activeExactContext;
@@ -8216,7 +8275,7 @@ public class Leelaz {
             runIfCurrentAnalysisOutputRoute(
                 analysisOutputRouteAtParse,
                 () -> {
-                  synchronized (analysisInfoMutationLock) {
+                  synchronized (analysisInfoMutationLock()) {
                     if (analysisInfoEpoch == analysisInfoEpochAtParse
                         && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)) {
                       MoveData mv = acceptedMove;
@@ -8252,7 +8311,7 @@ public class Leelaz {
             runIfCurrentAnalysisOutputRoute(
                 analysisOutputRouteAtParse,
                 () -> {
-                  synchronized (analysisInfoMutationLock) {
+                  synchronized (analysisInfoMutationLock()) {
                     if (analysisInfoEpoch == analysisInfoEpochAtParse
                         && analysisResponseUpToDateAtParse
                         && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)
@@ -9076,13 +9135,13 @@ public class Leelaz {
         || batch.moves.isEmpty()
         || batch.route == null
         || batch.route.binding != responseBinding
-        || !isAnalysisResponseUpToDateSnapshot()) {
+        || !isAnalysisResponseUpToDateSnapshot(batch.route)) {
       return;
     }
     runIfCurrentAnalysisOutputRoute(
         batch.route,
         () -> {
-          synchronized (analysisInfoMutationLock) {
+          synchronized (analysisInfoMutationLock()) {
             if (analysisInfoEpoch != batch.analysisInfoEpoch) {
               return;
             }
@@ -10120,7 +10179,35 @@ public class Leelaz {
   }
 
   void installCommandOutputForTest(OutputStream stream) {
-    outputStream = createCommandOutputStream(stream);
+    BufferedOutputStream nextOutputStream =
+        stream instanceof BufferedOutputStream
+            ? (BufferedOutputStream) stream
+            : createCommandOutputStream(stream);
+    synchronized (engineArbitrationLock()) {
+      synchronized (commandQueue()) {
+        if (normalCommandSendInProgress) {
+          throw new IllegalStateException(
+              "test command output replacement requires an idle physical writer");
+        }
+        ReaderStreamBinding binding = readerStreamBinding;
+        if (binding == null) {
+          outputStream = nextOutputStream;
+          binding = currentReaderStreamBinding();
+        }
+        binding.analysisOutputMutationLock.lock();
+        try {
+          // This test seam deliberately keeps the same reader incarnation. Production stream
+          // replacement continues to go through initializeStreams(), which retires the old
+          // binding. Holding the queue fence makes the in-place replacement quiescent for both
+          // analysis/state and ordinary physical writers.
+          binding.rawOutput = stream;
+          binding.output = nextOutputStream;
+          outputStream = nextOutputStream;
+        } finally {
+          binding.analysisOutputMutationLock.unlock();
+        }
+      }
+    }
   }
 
   void installFreshCommandOutputForTest(OutputStream stream) {
@@ -10188,7 +10275,7 @@ public class Leelaz {
   }
 
   void setBestMovesForEngineGameTest(List<MoveData> moves) {
-    synchronized (analysisInfoMutationLock) {
+    synchronized (analysisInfoMutationLock()) {
       List<MoveData> publishedMoves = moves == null ? List.of() : List.copyOf(moves);
       currentTotalPlayouts = MoveData.getPlayouts(publishedMoves);
       analysisInfoPayloadTarget = captureAnalysisInfoTarget();
@@ -10583,8 +10670,7 @@ public class Leelaz {
       if (shouldDropStaleForegroundRestoreCommand()
           || shouldSuppressNormalCommandForForegroundAnalysis()
           || shouldDropCommandDuringInitialBoardSynchronizationAtAdmission(command)
-          || (restartBootstrapReceipt != null
-              && exclusiveGtpLifecycleQueueGate
+          || (exclusiveGtpLifecycleQueueGate
               && !isCurrentRestartBootstrapReceiptLocked(bootstrapReceipt))) {
         return false;
       }
@@ -10670,8 +10756,7 @@ public class Leelaz {
         || shouldRejectCommandDuringLifecycleCompletion(command)
         || (startupTransactionAtAdmission != null
             && !EngineManager.isEngineGameOutputAdmissionOpen(startupTransactionAtAdmission))
-        || (bootstrapReceipt != null
-            && exclusiveGtpLifecycleQueueGate
+        || (exclusiveGtpLifecycleQueueGate
             && !isCurrentRestartBootstrapReceiptLocked(bootstrapReceipt))
         || (readBoardGmaResponseBinding != null
             && (readerStreamBinding != readBoardGmaResponseBinding
@@ -18301,7 +18386,13 @@ public class Leelaz {
     }
   }
 
-  private boolean isAnalysisResponseUpToDateSnapshot() {
+  private boolean isAnalysisResponseUpToDateSnapshot(AnalysisOutputRoute route) {
+    // A physically published analysis owner is the authoritative streaming carrier. Its route is
+    // revalidated under the binding/transaction fence at every mutation, so unrelated queued
+    // state responses must not make current pre-terminal info appear stale.
+    if (route != null && route.acceptsInfoLine()) {
+      return true;
+    }
     synchronized (commandQueue()) {
       return currentCmdNum >= cmdNumber - 1;
     }

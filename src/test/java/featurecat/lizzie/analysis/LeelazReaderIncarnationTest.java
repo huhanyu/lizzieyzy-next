@@ -8,6 +8,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.remote.EngineTransport;
+import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.HtmlMessage;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -424,34 +425,40 @@ class LeelazReaderIncarnationTest {
   @Test
   void parserTriggeredTerminalCleansUpOnceAfterCurrentLineIsReleased() throws Exception {
     try (GlobalState ignored = GlobalState.install()) {
-      Leelaz engine = new Leelaz("");
-      RecordingProcess process = new RecordingProcess();
-      setField(engine, "process", process);
-      initializeStreams(engine, bytes(""), bytes("info parser-triggered shutdown\n"));
-      Object binding = getField(engine, "readerStreamBinding");
-      process.observeReaderLines(engine);
-      Lizzie.leelaz = engine;
-      engine.started = true;
-      engine.isLoaded = true;
-      engine.isNormalEnd = true;
-      engine.isZen = true;
-      EngineManager.isEngineGame = true;
-      EngineManager.engineGameInfo = new EngineGameInfo();
+      BottomToolbar previousToolbar = LizzieFrame.toolbar;
+      try {
+        Lizzie.frame = allocate(SilentFrame.class);
+        LizzieFrame.toolbar = allocate(BottomToolbar.class);
+        Leelaz engine = new Leelaz("");
+        RecordingProcess process = new RecordingProcess();
+        setField(engine, "process", process);
+        initializeStreams(engine, bytes(""), bytes("info parser-triggered shutdown\n"));
+        Object binding = getField(engine, "readerStreamBinding");
+        process.observeReaderLines(engine);
+        Lizzie.leelaz = engine;
+        engine.started = true;
+        engine.isLoaded = true;
+        engine.isNormalEnd = true;
+        engine.isZen = true;
+        engine.sendOrdinaryAnalysisCommandForTest("lz-analyze 1");
 
-      Method readError = Leelaz.class.getDeclaredMethod("readError");
-      readError.setAccessible(true);
-      readError.invoke(engine);
+        Method readError = Leelaz.class.getDeclaredMethod("readError");
+        readError.setAccessible(true);
+        readError.invoke(engine);
 
-      assertEquals(1, process.destroyCount);
-      assertEquals(0, process.readerLinesInProgressAtDestroy);
-      assertFalse(engine.isStarted());
+        assertEquals(1, process.destroyCount);
+        assertEquals(0, process.readerLinesInProgressAtDestroy);
+        assertFalse(engine.isStarted());
 
-      invokeTerminal(engine, binding);
-      assertEquals(1, process.destroyCount);
-      SwingUtilities.invokeAndWait(() -> {});
-      assertFalse(
-          java.util.Arrays.stream(Window.getWindows())
-              .anyMatch(window -> window instanceof HtmlMessage && window.isDisplayable()));
+        invokeTerminal(engine, binding);
+        assertEquals(1, process.destroyCount);
+        SwingUtilities.invokeAndWait(() -> {});
+        assertFalse(
+            java.util.Arrays.stream(Window.getWindows())
+                .anyMatch(window -> window instanceof HtmlMessage && window.isDisplayable()));
+      } finally {
+        LizzieFrame.toolbar = previousToolbar;
+      }
     }
   }
 
@@ -757,6 +764,15 @@ class LeelazReaderIncarnationTest {
 
     @Override
     public void addErrorLine(String line) {}
+  }
+
+  private static final class SilentFrame extends LizzieFrame {
+    private SilentFrame() {}
+
+    @Override
+    public boolean isDisplayable() {
+      return false;
+    }
   }
 
   private static final class BlockingGtpConsole extends GtpConsolePane {

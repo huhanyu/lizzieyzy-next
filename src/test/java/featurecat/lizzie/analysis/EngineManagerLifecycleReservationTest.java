@@ -2661,7 +2661,7 @@ class EngineManagerLifecycleReservationTest {
     Leelaz previousSecondary = Lizzie.leelaz2;
     Menu previousMenu = LizzieFrame.menu;
     EngineStartupStatus.Snapshot previousStartupStatus = Lizzie.engineStartupStatus.snapshot();
-    BlockingPonderExitLeelaz engine = new BlockingPonderExitLeelaz();
+    QuietExitLeelaz engine = new QuietExitLeelaz();
     AssertionError expectedExitFailure =
         normalQuit ? null : new AssertionError("controlled stale force-close failure");
     RecordingSshController retiredSsh =
@@ -2683,6 +2683,9 @@ class EngineManagerLifecycleReservationTest {
                 engine, retiredProcess, retiredStdout, retiredStderr, retiredOutput)
             : installJavaSshReaderBinding(
                 engine, retiredSsh, retiredStdout, retiredStderr, retiredOutput);
+    java.util.concurrent.locks.ReentrantLock retirementFence =
+        (java.util.concurrent.locks.ReentrantLock)
+            getField(retiredBinding, "analysisOutputMutationLock");
     if (!normalQuit && retiredLocal) {
       // Model a graceful claimant that already owns transport close while forceQuit captures this
       // exact stubborn process. The later same-object rebind must remain untouched.
@@ -2721,6 +2724,7 @@ class EngineManagerLifecycleReservationTest {
                 exitFailure.set(failure);
               }
             });
+    boolean retirementFenceHeld = false;
     try {
       Lizzie.setPrimaryEngine(engine);
       Lizzie.leelaz2 = null;
@@ -2730,8 +2734,12 @@ class EngineManagerLifecycleReservationTest {
       engine.isNormalEnd = false;
       engine.bindCurrentPrimaryEngineGeneration();
       Lizzie.engineStartupStatus.checking("replacement.still.starting", "controlled");
+      retirementFence.lock();
+      retirementFenceHeld = true;
       exit.start();
-      assertTrue(engine.stopPonderEntered.await(3, TimeUnit.SECONDS));
+      assertTrue(
+          awaitLockWaiter(retirementFence, exit, 3_000L),
+          "the stale exit must reach the binding-scoped retirement fence");
       if (replacementLocal) {
         engine.useRemoteCompute = false;
         engine.useJavaSSH = false;
@@ -2748,7 +2756,8 @@ class EngineManagerLifecycleReservationTest {
       assertFalse(
           rebindCompleted.await(250, TimeUnit.MILLISECONDS),
           "a production rebind must wait for the exact old-runtime stop claim");
-      engine.allowStopPonder.countDown();
+      retirementFence.unlock();
+      retirementFenceHeld = false;
       assertTrue(
           (retiredLocal ? retiredProcess.cleanupEntered : retiredSsh.closeEntered)
               .await(3, TimeUnit.SECONDS));
@@ -2804,7 +2813,9 @@ class EngineManagerLifecycleReservationTest {
           Lizzie.engineStartupStatus.snapshot().state,
           "stale shutdown must not publish READY for the rebound runtime");
     } finally {
-      engine.allowStopPonder.countDown();
+      if (retirementFenceHeld) {
+        retirementFence.unlock();
+      }
       (retiredLocal ? retiredProcess.allowCleanup : retiredSsh.allowClose).countDown();
       exit.join(3_000L);
       rebind.join(3_000L);
@@ -8290,7 +8301,16 @@ class EngineManagerLifecycleReservationTest {
     engine.useRemoteCompute = false;
     engine.useJavaSSH = false;
     Class<?> bindingType = Class.forName(Leelaz.class.getName() + "$ReaderStreamBinding");
-    java.lang.reflect.Constructor<?> constructor = bindingType.getDeclaredConstructors()[0];
+    java.lang.reflect.Constructor<?> constructor =
+        bindingType.getDeclaredConstructor(
+            java.io.BufferedReader.class,
+            java.io.BufferedReader.class,
+            BufferedOutputStream.class,
+            Process.class,
+            EngineTransport.class,
+            SSHController.class,
+            long.class,
+            long.class);
     constructor.setAccessible(true);
     Object binding =
         constructor.newInstance(
@@ -8329,7 +8349,16 @@ class EngineManagerLifecycleReservationTest {
       long incarnation)
       throws Exception {
     Class<?> bindingType = Class.forName(Leelaz.class.getName() + "$ReaderStreamBinding");
-    java.lang.reflect.Constructor<?> constructor = bindingType.getDeclaredConstructors()[0];
+    java.lang.reflect.Constructor<?> constructor =
+        bindingType.getDeclaredConstructor(
+            java.io.BufferedReader.class,
+            java.io.BufferedReader.class,
+            BufferedOutputStream.class,
+            Process.class,
+            EngineTransport.class,
+            SSHController.class,
+            long.class,
+            long.class);
     constructor.setAccessible(true);
     Object binding =
         constructor.newInstance(null, null, output, null, null, ssh, incarnation, -1L);
@@ -8369,6 +8398,17 @@ class EngineManagerLifecycleReservationTest {
       Thread.sleep(5L);
     }
     return thread.getState() == state;
+  }
+
+  private static boolean awaitLockWaiter(
+      java.util.concurrent.locks.ReentrantLock lock, Thread thread, long timeoutMillis)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+    while (System.nanoTime() < deadline) {
+      if (lock.hasQueuedThread(thread)) return true;
+      Thread.sleep(5L);
+    }
+    return lock.hasQueuedThread(thread);
   }
 
   private static boolean hasRestartBootstrapReceiptContext(Leelaz engine) {
@@ -9770,29 +9810,6 @@ class EngineManagerLifecycleReservationTest {
     @Override
     public boolean isAlive() {
       return alive;
-    }
-  }
-
-  private static final class BlockingPonderExitLeelaz extends Leelaz {
-    private final CountDownLatch stopPonderEntered = new CountDownLatch(1);
-    private final CountDownLatch allowStopPonder = new CountDownLatch(1);
-
-    private BlockingPonderExitLeelaz() throws Exception {
-      super("");
-    }
-
-    @Override
-    public void leela0110StopPonder() {
-      stopPonderEntered.countDown();
-      try {
-        if (!allowStopPonder.await(5, TimeUnit.SECONDS)) {
-          throw new AssertionError("timed out waiting to release controlled stop-ponder");
-        }
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-        throw new AssertionError(interrupted);
-      }
-      super.leela0110StopPonder();
     }
   }
 

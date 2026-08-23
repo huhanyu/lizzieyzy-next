@@ -1924,16 +1924,12 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
   private static ByteArrayOutputStream installOutput(Leelaz engine) throws Exception {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, new BufferedOutputStream(bytes));
+    engine.installCommandOutputForTest(new BufferedOutputStream(bytes));
     return bytes;
   }
 
   private static void installOutput(Leelaz engine, BufferedOutputStream output) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, output);
+    engine.installCommandOutputForTest(output);
   }
 
   private static BufferedOutputStream commandOutputStream(Leelaz engine) throws Exception {
@@ -1985,33 +1981,29 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   private static void installFailOnceOutput(Leelaz engine) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(
-        engine,
-        Leelaz.createCommandOutputStream(
-            new OutputStream() {
-              private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-              private boolean failed;
+    engine.installCommandOutputForTest(
+        new OutputStream() {
+          private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+          private boolean failed;
 
-              @Override
-              public void write(int value) throws IOException {
-                if (!failed) {
-                  failed = true;
-                  throw new IOException("simulated restore write failure");
-                }
-                bytes.write(value);
-              }
+          @Override
+          public void write(int value) throws IOException {
+            if (!failed) {
+              failed = true;
+              throw new IOException("simulated restore write failure");
+            }
+            bytes.write(value);
+          }
 
-              @Override
-              public void write(byte[] buffer, int offset, int length) throws IOException {
-                if (!failed) {
-                  failed = true;
-                  throw new IOException("simulated restore write failure");
-                }
-                bytes.write(buffer, offset, length);
-              }
-            }));
+          @Override
+          public void write(byte[] buffer, int offset, int length) throws IOException {
+            if (!failed) {
+              failed = true;
+              throw new IOException("simulated restore write failure");
+            }
+            bytes.write(buffer, offset, length);
+          }
+        });
   }
 
   private static void installInput(Leelaz engine, String input) throws Exception {

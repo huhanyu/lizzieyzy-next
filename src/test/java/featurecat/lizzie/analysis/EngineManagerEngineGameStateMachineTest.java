@@ -51,6 +51,7 @@ class EngineManagerEngineGameStateMachineTest {
   private Config previousConfig;
   private LizzieFrame previousFrame;
   private BottomToolbar previousToolbar;
+  private Menu previousMenu;
   private JFontMenu previousEngineMenu;
   private Board previousBoard;
   private GtpConsolePane previousGtpConsole;
@@ -75,6 +76,7 @@ class EngineManagerEngineGameStateMachineTest {
     previousConfig = Lizzie.config;
     previousFrame = Lizzie.frame;
     previousToolbar = LizzieFrame.toolbar;
+    previousMenu = LizzieFrame.menu;
     previousEngineMenu = Menu.engineMenu;
     previousBoard = Lizzie.board;
     previousGtpConsole = Lizzie.gtpConsole;
@@ -101,6 +103,7 @@ class EngineManagerEngineGameStateMachineTest {
     toolbar.enableAttempts = new AtomicInteger();
     Lizzie.frame = frame;
     LizzieFrame.toolbar = toolbar;
+    LizzieFrame.menu = allocate(SilentMenu.class);
     Menu.engineMenu = new JFontMenu();
     Lizzie.board = preparedBoard();
     Lizzie.gtpConsole = allocate(SilentGtpConsole.class);
@@ -131,6 +134,7 @@ class EngineManagerEngineGameStateMachineTest {
     Lizzie.config = previousConfig;
     Lizzie.frame = previousFrame;
     LizzieFrame.toolbar = previousToolbar;
+    LizzieFrame.menu = previousMenu;
     Menu.engineMenu = previousEngineMenu;
     Lizzie.board = previousBoard;
     Lizzie.gtpConsole = previousGtpConsole;
@@ -1795,7 +1799,7 @@ class EngineManagerEngineGameStateMachineTest {
     assertTrue(black.getBestMoves().isEmpty());
     assertEquals(0, Lizzie.board.getHistory().getMoveNumber());
     assertEquals(EngineManager.EngineGamePhase.CANCELLED, transaction.phase());
-    int commandId = commandIdFor(output.text(), "genmove B");
+    int commandId = commandIdFor(output.text(), "kata-genmove_analyze B 0");
     black.parseEngineGameLineForTest("?" + commandId + " retired request");
     assertEquals(0, transaction.operationsInFlightForTest());
   }
@@ -1885,7 +1889,9 @@ class EngineManagerEngineGameStateMachineTest {
     black.started = false;
     black.isLoaded = false;
     ImmediateUiEngineManager manager = installManager();
-    EngineManager.EngineGameTransaction transaction = beginPreparing(manager, gameInfo());
+    EngineGameInfo game = gameInfo();
+    game.isGenmove = true;
+    EngineManager.EngineGameTransaction transaction = beginPreparing(manager, game);
 
     black.sendEngineGameStartupCommandForTest("name", transaction);
     int nameId = commandIdFor(black.commandText(), "name");
@@ -2672,8 +2678,8 @@ class EngineManagerEngineGameStateMachineTest {
   void commandStateResetCancelsQueuedMirrorBeforeLaterSecondaryDrain() throws Exception {
     black.requireResponseBeforeSend = true;
     white.requireResponseBeforeSend = true;
-    black.sendCommandNoLeelaz2("name");
-    white.sendCommandNoLeelaz2("name");
+    black.sendCommandWithResponseForTest("name", () -> {});
+    white.sendCommandWithResponseForTest("name", () -> {});
     Lizzie.config.extraMode = ExtraMode.Double_Engine;
     Lizzie.leelaz2 = white;
 
@@ -2688,6 +2694,27 @@ class EngineManagerEngineGameStateMachineTest {
     String secondaryCommands = white.commandText();
     assertFalse(secondaryCommands.contains("play B Q16"), secondaryCommands);
     assertTrue(secondaryCommands.contains("protocol_version"), secondaryCommands);
+  }
+
+  @Test
+  void currentAnalysisOwnerSurvivesUnansweredOrdinaryCommandButNotPhysicalStateSuccessor()
+      throws Exception {
+    installManager();
+    black.isKatago = true;
+    black.sendOrdinaryAnalysisCommandForTest("kata-analyze B 34");
+    black.sendCommandWithResponseForTest("name", () -> {});
+
+    assertEquals("ORDINARY_CURRENT", black.analysisOutputRouteForTest());
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertEquals(1, black.getBestMoves().size());
+    assertEquals("D4", black.getBestMoves().get(0).coordinate);
+
+    black.playMoveNoPonder(Stone.BLACK, "Q16");
+
+    assertEquals("EXACT_RETIRED", black.analysisOutputRouteForTest());
+    black.parseAnalysisLineForTest(kataAnalysisInfo());
+    assertTrue(black.getBestMoves().isEmpty());
+    assertEquals(0, black.getBestMovesPlayouts());
   }
 
   @Test
@@ -3375,10 +3402,10 @@ class EngineManagerEngineGameStateMachineTest {
 
     black.timeLeft("b", 10, 1, true);
 
-    assertTrue(black.commandText().contains("time_left b 10 1"));
+    assertTrue(
+        black.commandText().lines().map(String::trim).anyMatch("time_left b 10 1"::equals));
     assertFalse(black.hasAnalysisOutputOwnershipForTest());
-    int timeCommandId = commandIdFor(black.commandText(), "time_left b 10 1");
-    black.processCommandResponseLineForTest("=" + timeCommandId);
+    black.processCommandResponseLineForTest("=");
     assertTrue(black.genmoveForPk("B", transaction));
     assertEquals("GENMOVE_CURRENT", black.analysisOutputRouteForTest(kataAnalysisInfo()));
     int genmoveId = commandIdFor(black.commandText(), "genmove B");
@@ -3718,6 +3745,9 @@ class EngineManagerEngineGameStateMachineTest {
     assertTrue(ordinaryOutputAdmitted.get());
     EngineManager.EngineGameTransaction successor =
         activeTransaction(manager, gameInfo(), black, 0);
+    black.isKatago = true;
+    black.sendEngineGameStartupCommandForTest("kata-analyze B 20", successor);
+    assertEquals("EXACT_CURRENT", black.analysisOutputRouteForTest(kataAnalysisInfo()));
     black.parseStartupCommandResponseForTest(
         "info move D4 visits 100 winrate 5000 prior 1000 order 0 pv D4");
     assertFalse(black.getBestMoves().isEmpty());
@@ -3771,10 +3801,11 @@ class EngineManagerEngineGameStateMachineTest {
 
     manager.runPendingUi();
     assertTrue(manager.stageEntered(EngineManager.DeferredEngineGameRecoveryStage.START));
-    assertEquals(1, black.deferredOpenClPrepareCount.get());
+    assertEquals(0, black.deferredOpenClPrepareCount.get());
     assertEquals(0, black.deferredRecoveryStartCount.get());
     manager.releaseStage(EngineManager.DeferredEngineGameRecoveryStage.START);
     assertTrue(manager.stageEntered(EngineManager.DeferredEngineGameRecoveryStage.READINESS));
+    assertEquals(1, black.deferredOpenClPrepareCount.get());
     manager.releaseStage(EngineManager.DeferredEngineGameRecoveryStage.READINESS);
     assertTrue(manager.stageEntered(EngineManager.DeferredEngineGameRecoveryStage.CONFIRMATION));
     manager.releaseStage(EngineManager.DeferredEngineGameRecoveryStage.CONFIRMATION);
@@ -4620,12 +4651,14 @@ class EngineManagerEngineGameStateMachineTest {
     private volatile boolean allowDeferredOpenClRecovery;
     private final AtomicInteger deferredRecoveryStartCount = new AtomicInteger();
     private final AtomicInteger deferredOpenClPrepareCount = new AtomicInteger();
+    private volatile ExactSnapshotRestoreProtocolFixture.Transport recoveryTransport;
 
     private StateMachineLeelaz() throws Exception {
       super("");
     }
 
     private void bindLiveRuntime() {
+      recoveryTransport = null;
       commandOutput = new ByteArrayOutputStream();
       installFreshCommandOutputForTest(commandOutput);
       started = true;
@@ -4633,6 +4666,7 @@ class EngineManagerEngineGameStateMachineTest {
     }
 
     private void bindLiveRuntime(OutputStream output) {
+      recoveryTransport = null;
       commandOutput = output instanceof ByteArrayOutputStream ? (ByteArrayOutputStream) output : null;
       installFreshCommandOutputForTest(output);
       started = true;
@@ -4640,6 +4674,10 @@ class EngineManagerEngineGameStateMachineTest {
     }
 
     private String commandText() {
+      ExactSnapshotRestoreProtocolFixture.Transport recoveryOutput = recoveryTransport;
+      if (recoveryOutput != null) {
+        return String.join(System.lineSeparator(), recoveryOutput.rawCommands());
+      }
       return commandOutput == null ? "" : commandOutput.toString();
     }
 
@@ -4651,6 +4689,9 @@ class EngineManagerEngineGameStateMachineTest {
       }
       deferredRecoveryStartCount.incrementAndGet();
       bindLiveRuntime();
+      recoveryTransport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              this, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
       deferredRecoveryIsolationObserved = Leelaz.isDeferredEngineGameRecoveryStartup();
       if (throwAfterDeferredRecoveryBinding) {
         throw new AssertionError("controlled recovery failure after reader publication");
@@ -5036,6 +5077,43 @@ class EngineManagerEngineGameStateMachineTest {
     public void refresh() {}
   }
 
+  private static final class SilentMenu extends Menu {
+    private SilentMenu() {}
+
+    @Override
+    public void toggleEngineMenuStatus(boolean isPondering, boolean isThinking) {}
+
+    @Override
+    public void toggleDoubleMenuGameStatus() {}
+
+    @Override
+    public void updateMenuStatusForEngine() {}
+
+    @Override
+    public void updateEngineMenu() {}
+
+    @Override
+    public void applyEngineSwitchUiState(EngineManager.EngineSwitchUiSnapshot snapshot) {}
+
+    @Override
+    public void changeEngineIcon(int index, int mode) {}
+
+    @Override
+    public void changeEngineIcon2(int index, int mode) {}
+
+    @Override
+    public void changeicon(int index) {}
+
+    @Override
+    public void showPdaForEngine(Leelaz engine, boolean show) {}
+
+    @Override
+    public void showPdaForEngine(Leelaz engine, long primaryGeneration, boolean show) {}
+
+    @Override
+    public void setBtnRankMark() {}
+  }
+
   private static final class TrackingToolbar extends BottomToolbar {
     private AtomicInteger enableAttempts;
     private volatile boolean controlsEnabled;
@@ -5174,12 +5252,22 @@ class EngineManagerEngineGameStateMachineTest {
         new java.util.concurrent.atomic.AtomicBoolean(true);
 
     @Override
+    public void write(int value) {
+      blockFirstWrite();
+      super.write(value);
+    }
+
+    @Override
     public void write(byte[] bytes, int offset, int length) {
+      blockFirstWrite();
+      super.write(bytes, offset, length);
+    }
+
+    private void blockFirstWrite() {
       if (first.compareAndSet(true, false)) {
         writeEntered.countDown();
         await(releaseWrite);
       }
-      super.write(bytes, offset, length);
     }
 
     @Override

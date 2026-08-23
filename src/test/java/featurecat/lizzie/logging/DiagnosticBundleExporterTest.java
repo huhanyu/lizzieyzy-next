@@ -1616,9 +1616,16 @@ class DiagnosticBundleExporterTest {
     Files.createDirectories(rb);
     Path unreadable = rb.resolve("app.log");
     boolean posix = Files.getFileStore(rb).supportsFileAttributeView("posix");
+    boolean unreadableSource = false;
     if (posix) {
       Files.writeString(unreadable, jsonl(Instant.now().toString(), "app", PROCESS_SESSION, "hidden", null));
       Files.setPosixFilePermissions(unreadable, Set.of());
+      unreadableSource = !Files.isReadable(unreadable);
+      if (!unreadableSource) {
+        // Privileged test processes can retain read access despite an empty POSIX mode. Fall back
+        // to the portable missing-source branch instead of asserting a condition we did not make.
+        Files.deleteIfExists(unreadable);
+      }
     }
 
     Map<String, byte[]> detached = unzipEntries(exportDefault(runtime));
@@ -1636,10 +1643,15 @@ class DiagnosticBundleExporterTest {
                         runtime, EnumSet.noneOf(TraceScope.class), false, true, started)));
     JSONObject helperManifest = manifest(helperOn);
     JSONObject rbApp = source(helperManifest, "readboard-app");
-    assertEquals("failed", rbApp.getString("status"));
+    // A discovered source that cannot be read is a per-source read error; a platform on which
+    // POSIX unreadability cannot be created exercises the distinct missing-source path.
+    assertEquals(unreadableSource ? "error" : "failed", rbApp.getString("status"));
     assertTrue(rbApp.getBoolean("failed"));
     assertFalse(rbApp.getBoolean("included"));
-    assertTrue(rbApp.getString("reason").equals("unreadable") || rbApp.getString("reason").equals("missing"));
+    assertEquals(unreadableSource ? "unreadable" : "missing", rbApp.getString("reason"));
+    if (unreadableSource) {
+      assertTrue(rbApp.getInt("readErrors") > 0);
+    }
     assertEquals("missing", source(helperManifest, "readboard-crash").getString("reason"));
     assertEquals("failed", source(helperManifest, "readboard-crash").getString("status"));
     assertEquals("no-current-session", source(helperManifest, "readboard-capture").getString("reason"));

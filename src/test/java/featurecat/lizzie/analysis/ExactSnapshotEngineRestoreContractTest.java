@@ -800,6 +800,7 @@ class ExactSnapshotEngineRestoreContractTest {
   @Test
   void preclearFailureUpdatesOnlyTargetsThatAcceptedTheCommand() throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
+      Lizzie.board.setHistory(new BoardHistoryList(snapshotRoot()));
       Leelaz primary = new Leelaz("");
       Leelaz mirror = new Leelaz("");
       primary.isKatago = true;

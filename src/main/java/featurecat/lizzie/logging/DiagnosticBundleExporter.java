@@ -1238,7 +1238,10 @@ public final class DiagnosticBundleExporter {
         break;
       } catch (IOException e) {
         readErrors++;
-        lastReadError = e.getClass().getSimpleName();
+        // Keep the manifest vocabulary stable and privacy-safe. Runtime exception class names
+        // are an implementation detail; callers only need to distinguish a missing source from
+        // one that was discovered but could not be read.
+        lastReadError = failureReason(e);
       }
       if (selected.remaining() <= 0 && index + 1 < files.size()) {
         truncated = true;

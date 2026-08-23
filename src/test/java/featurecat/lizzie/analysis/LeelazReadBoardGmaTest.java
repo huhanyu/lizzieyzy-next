@@ -4275,9 +4275,7 @@ class LeelazReadBoardGmaTest {
   }
 
   private static void setOutputStream(Leelaz engine, OutputStream stream) throws Exception {
-    Field outputField = Leelaz.class.getDeclaredField("outputStream");
-    outputField.setAccessible(true);
-    outputField.set(engine, Leelaz.createCommandOutputStream(stream));
+    engine.installCommandOutputForTest(stream);
   }
 
   private static void setInputStream(Leelaz engine, String input) throws Exception {

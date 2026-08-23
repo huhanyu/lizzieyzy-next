@@ -136,7 +136,11 @@ class EngineGtpLoggingTest {
 
     runtime.startFullTrace(EnumSet.of(TraceScope.ENGINE_GTP));
     engine.sendCommand("play B " + RAW_MOVE);
-    parseLine(engine, "info move D4 visits 1 " + INFO_CANARY);
+    // Raw-stream persistence is a logging contract, independent of analysis ownership. The
+    // parser now deliberately quarantines an unowned info line, so exercise the observation seam
+    // directly instead of manufacturing an invalid analysis owner in this logging-only test.
+    EngineObservation.traceRawStream(
+        EngineObservation.identityFor(engine), null, "info move D4 visits 1 " + INFO_CANARY);
     awaitLogs(runtime);
     runtime.stopFullTrace();
     awaitLogs(runtime);
@@ -301,12 +305,6 @@ class EngineGtpLoggingTest {
     Method method = LoggingRuntime.class.getDeclaredMethod("awaitIdle");
     method.setAccessible(true);
     method.invoke(runtime);
-  }
-
-  private static void parseLine(Leelaz engine, String line) throws Exception {
-    Method method = Leelaz.class.getDeclaredMethod("parseLine", String.class);
-    method.setAccessible(true);
-    method.invoke(engine, line);
   }
 
   private static void setField(Object target, String name, Object value) throws Exception {

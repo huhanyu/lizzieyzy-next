@@ -125,9 +125,15 @@ public final class ExportSanitizer {
       JSONObject sanitized = new JSONObject();
       Map<String, String> fieldNames = sanitizedFieldNames(object);
       for (String child : sortedFieldNames(object)) {
-        Object rewritten = sanitizeJsonValue(object.get(child), child);
+        String sanitizedField = fieldNames.get(child);
+        // Only a field name that survived sanitization may classify its value. Preserve the raw
+        // key solely for secret-looking fields so they remain fail-closed even though their name
+        // is replaced in the exported object.
+        String valueClassificationKey =
+            sanitizedField.equals(child) || isSecretKey(child) ? child : null;
+        Object rewritten = sanitizeJsonValue(object.get(child), valueClassificationKey);
         if (rewritten != OMIT) {
-          sanitized.put(fieldNames.get(child), rewritten);
+          sanitized.put(sanitizedField, rewritten);
         }
       }
       return sanitized;

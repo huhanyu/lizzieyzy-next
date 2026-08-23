@@ -52,6 +52,41 @@ class LeelazTrackingStreamLeaseTest {
   }
 
   @Test
+  void unsafeAllocatedEngineLazilyInitializesOneAnalysisInfoMutationLock() throws Exception {
+    Leelaz engine = allocate(Leelaz.class);
+    Field lockField = Leelaz.class.getDeclaredField("analysisInfoMutationLock");
+    lockField.setAccessible(true);
+    assertEquals(null, lockField.get(engine));
+
+    engine.clearBestMoves();
+
+    Object initializedLock = lockField.get(engine);
+    assertTrue(initializedLock != null);
+    assertEquals(List.of(), engine.getBestMoves());
+    engine.clearBestMoves();
+    assertSame(initializedLock, lockField.get(engine));
+  }
+
+  @Test
+  void testOutputReplacementKeepsReaderIncarnationAndBindingCoherent() throws Exception {
+    Leelaz engine = new Leelaz("");
+    Object incarnation = engine.currentEngineIncarnation();
+    ByteArrayOutputStream replacement = new ByteArrayOutputStream();
+
+    engine.installCommandOutputForTest(replacement);
+
+    assertSame(incarnation, engine.currentEngineIncarnation());
+    Field outerOutputField = Leelaz.class.getDeclaredField("outputStream");
+    outerOutputField.setAccessible(true);
+    Field bindingOutputField = incarnation.getClass().getDeclaredField("output");
+    bindingOutputField.setAccessible(true);
+    Field rawOutputField = incarnation.getClass().getDeclaredField("rawOutput");
+    rawOutputField.setAccessible(true);
+    assertSame(outerOutputField.get(engine), bindingOutputField.get(incarnation));
+    assertSame(replacement, rawOutputField.get(incarnation));
+  }
+
+  @Test
   void trackingLeaseOwnsOnlyItsStreamAndReleasesWithoutBoardRestoreOrPonder() throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
     Board previousBoard = Lizzie.board;
@@ -2623,16 +2658,12 @@ class LeelazTrackingStreamLeaseTest {
 
   private static ByteArrayOutputStream installOutput(Leelaz engine) throws Exception {
     ByteArrayOutputStream output = new ByteArrayOutputStream();
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, new BufferedOutputStream(output));
+    engine.installCommandOutputForTest(new BufferedOutputStream(output));
     return output;
   }
 
   private static void installOutput(Leelaz engine, BufferedOutputStream output) throws Exception {
-    Field field = Leelaz.class.getDeclaredField("outputStream");
-    field.setAccessible(true);
-    field.set(engine, output);
+    engine.installCommandOutputForTest(output);
   }
 
   private static BufferedOutputStream currentOutput(Leelaz engine) throws Exception {
