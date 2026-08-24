@@ -344,14 +344,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          runnable_engines=(
+          runtime_version_engines=(
             "dist/windows/app-image-with-katago/LizzieYzy Next/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/engines/katago/windows-x64/katago.exe"
-          )
-          standard_packaged_engines=(
-            "${runnable_engines[@]}"
-            "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/katago.exe"
-            "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago-human-sl-cuda.exe"
             "dist/windows/app-image-experimental.directml/LizzieYzy Next DirectML Experimental/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-experimental.openvino/LizzieYzy Next OpenVINO Experimental/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-experimental.rocm.gfx103x/LizzieYzy Next ROCm gfx103x Experimental/app/engines/katago/windows-x64/katago.exe"
@@ -359,23 +354,27 @@ jobs:
             "dist/windows/app-image-experimental.rocm.gfx1151/LizzieYzy Next ROCm gfx1151 Experimental/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-experimental.rocm.gfx120x/LizzieYzy Next ROCm gfx120x Experimental/app/engines/katago/windows-x64/katago.exe"
           )
+          driver_gated_static_engines=(
+            "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/katago.exe"
+            "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago-human-sl-cuda.exe"
+          )
           tensorrt_engine="dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago.exe"
-          for engine in "${runnable_engines[@]}"; do
+          for engine in "${runtime_version_engines[@]}"; do
             test -f "$engine"
             version_output="$("$engine" version 2>&1)"
             printf '%s\n%s\n' "$engine" "$version_output"
             grep -q 'KataGo v1\.18\.1' <<<"$version_output"
           done
-          # GitHub-hosted Windows runners do not have an NVIDIA display driver, so
-          # CUDA/TensorRT executables cannot pass the Windows loader even when every
-          # redistributable DLL is bundled. Audit their embedded version marker after
-          # the runtime-file checks above; real NVIDIA execution is a hardware gate.
+          # CPU, OpenCL, ONNX and ROCm can report their version without initializing a
+          # device. CUDA/TensorRT cannot pass the Windows loader on a hosted runner
+          # without an NVIDIA display driver, so only those binaries use the static
+          # marker audit after the runtime-file checks above.
           python3 scripts/audit_katago_binary_version.py \
             --expected-version 1.18.1 \
             --reject-version 1.17.0 \
             --reject-version 1.17.1 \
             --reject-version 1.17.2 \
-            "${standard_packaged_engines[@]}"
+            "${driver_gated_static_engines[@]}"
           python3 scripts/audit_katago_binary_version.py \
             --expected-version 1.18.1 \
             --reject-version 1.17.0 \
