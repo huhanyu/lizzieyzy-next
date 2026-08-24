@@ -51,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
@@ -1754,6 +1755,8 @@ class EngineManagerInitialStartupSynchronizationTest {
       oldPrimary.isLoaded = true;
       oldSecondary.started = true;
       oldSecondary.isLoaded = true;
+      activePrimary.normalQuitCompleted = new CountDownLatch(1);
+      targetSecondary.normalQuitCompleted = new CountDownLatch(1);
       Lizzie.config.fastChange = true;
       Lizzie.config.extraMode = featurecat.lizzie.ExtraMode.Double_Engine;
       Lizzie.board = boardWithHistory(emptyRootHistory(2));
@@ -1779,6 +1782,12 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(manager.switchEngineIfAvailable(3, false));
       assertTrue(targetSecondary.startCompleted.await(2, TimeUnit.SECONDS));
       assertTrue(manager.secondSynchronizationCompleted.await(2, TimeUnit.SECONDS));
+      assertTrue(
+          activePrimary.normalQuitCompleted.await(2, TimeUnit.SECONDS),
+          "the invalidated primary mirror shutdown must complete before its effects are asserted");
+      assertTrue(
+          targetSecondary.normalQuitCompleted.await(2, TimeUnit.SECONDS),
+          "the failed secondary target shutdown must complete before its effects are asserted");
 
       assertEquals(
           EngineManager.EngineSwitchUiPhase.FAILED,
@@ -3068,10 +3077,12 @@ class EngineManagerInitialStartupSynchronizationTest {
       previous.started = true;
       previous.isLoaded = true;
       previous.Pondering();
+      previous.analysisOutputRecoveryCompleted = new CountDownLatch(1);
       target.ponderFailure = new IllegalStateException("controlled initialization failure");
       target.normalQuitEntered = new CountDownLatch(1);
       target.normalQuitGate = new CountDownLatch(1);
       target.normalQuitCompleted = new CountDownLatch(1);
+      target.normalQuitGateTimeoutMillis = TimeUnit.SECONDS.toMillis(30);
       Lizzie.board = boardWithHistory(emptyRootHistory(1));
       Lizzie.setPrimaryEngine(previous);
       EngineManager.isEmpty = false;
@@ -3081,45 +3092,70 @@ class EngineManagerInitialStartupSynchronizationTest {
               new ArrayList<>(List.of(previous, target, alternative)));
       Lizzie.engineManager = manager;
 
-      assertTrue(manager.switchEngineIfAvailable(1, true));
-      assertTrue(target.normalQuitEntered.await(2, TimeUnit.SECONDS));
-      SwingUtilities.invokeAndWait(() -> {});
-      long rollbackDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-      while (Lizzie.leelaz != previous && System.nanoTime() < rollbackDeadline) {
-        Thread.sleep(10L);
+      Thread failedStopThread = null;
+      try {
+        assertTrue(manager.switchEngineIfAvailable(1, true));
+        assertTrue(target.normalQuitEntered.await(2, TimeUnit.SECONDS));
+        SwingUtilities.invokeAndWait(() -> {});
+        assertTrue(
+            previous.analysisOutputRecoveryCompleted.await(10, TimeUnit.SECONDS),
+            "rollback must atomically promote the recovered analysis-output owner");
+        assertTrue(
+            previous.boardSynchronizationCallbackCompleted.await(10, TimeUnit.SECONDS),
+            "rollback completion must release its lifecycle endpoint before another switch");
+        assertSame(previous, Lizzie.leelaz, "rollback recovery must restore the previous primary");
+        assertNull(managerAtomicReferenceValue(manager, "failedRollbackRecovery"));
+        assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
+        assertFalse(previous.hasExclusiveGtpWorkInProgress());
+
+        failedStopThread = target.normalQuitThread;
+        assertNotNull(failedStopThread);
+        assertTrue(
+            failedStopThread.isAlive(),
+            "the failed process shutdown must still be blocked after rollback completes");
+        assertEquals(
+            1L,
+            target.normalQuitGate.getCount(),
+            "the controlled failed-process shutdown gate must remain closed");
+        assertEquals(
+            1L,
+            target.normalQuitCompleted.getCount(),
+            "the blocked failed-process shutdown must not report completion");
+
+        target.ponderFailure = null;
+        assertFalse(
+            manager.switchEngineIfAvailable(1, true),
+            "the exact failed incarnation must remain quarantined while normalQuit is blocked");
+
+        assertTrue(
+            manager.switchEngineIfAvailable(2, true),
+            "a blocked failed-process shutdown must not hold the manager gate for other identities");
+        assertTrue(alternative.analysisStarted.await(2, TimeUnit.SECONDS));
+        assertTrue(manager.secondSynchronizationCompleted.await(2, TimeUnit.SECONDS));
+        long alternativeDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while ((manager.engineSwitchUiSnapshot(true).phase()
+                    != EngineManager.EngineSwitchUiPhase.ACTIVE
+                || EngineManager.currentEngineNo != 2
+                || alternative.hasExclusiveGtpWorkInProgress())
+            && System.nanoTime() < alternativeDeadline) {
+          Thread.sleep(10L);
+        }
+        assertSame(alternative, Lizzie.leelaz);
+        assertEquals(2, EngineManager.currentEngineNo);
+        assertFalse(alternative.hasExclusiveGtpWorkInProgress());
+        assertFalse(
+            manager.switchEngineIfAvailable(1, true),
+            "other successful switches must not clear the failed incarnation's quarantine");
+      } finally {
+        target.normalQuitGate.countDown();
+        Thread cleanupThread = target.normalQuitThread;
+        if (cleanupThread != null) {
+          cleanupThread.join(TimeUnit.SECONDS.toMillis(10));
+        }
       }
-      assertSame(previous, Lizzie.leelaz, "rollback recovery must release its manager-wide gate");
 
-      target.ponderFailure = null;
-      assertFalse(
-          manager.switchEngineIfAvailable(1, true),
-          "the exact failed incarnation must remain quarantined while normalQuit is blocked");
-
-      assertTrue(
-          manager.switchEngineIfAvailable(2, true),
-          "a blocked failed-process shutdown must not hold the manager gate for other identities");
-      assertTrue(alternative.analysisStarted.await(2, TimeUnit.SECONDS));
-      assertTrue(manager.secondSynchronizationCompleted.await(2, TimeUnit.SECONDS));
-      long alternativeDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-      while ((manager.engineSwitchUiSnapshot(true).phase()
-                  != EngineManager.EngineSwitchUiPhase.ACTIVE
-              || EngineManager.currentEngineNo != 2
-              || alternative.hasExclusiveGtpWorkInProgress())
-          && System.nanoTime() < alternativeDeadline) {
-        Thread.sleep(10L);
-      }
-      assertSame(alternative, Lizzie.leelaz);
-      assertEquals(2, EngineManager.currentEngineNo);
-      assertFalse(alternative.hasExclusiveGtpWorkInProgress());
-      assertFalse(
-          manager.switchEngineIfAvailable(1, true),
-          "other successful switches must not clear the failed incarnation's quarantine");
-
-      target.normalQuitGate.countDown();
       assertTrue(target.normalQuitCompleted.await(2, TimeUnit.SECONDS));
-      Thread failedStopThread = target.normalQuitThread;
       assertNotNull(failedStopThread);
-      failedStopThread.join(2_000L);
       assertFalse(
           failedStopThread.isAlive(),
           "the quarantine capability must finish after the controlled normalQuit returns");
@@ -6537,6 +6573,8 @@ class EngineManagerInitialStartupSynchronizationTest {
     private CountDownLatch normalQuitEntered;
     private CountDownLatch normalQuitGate;
     private CountDownLatch normalQuitCompleted;
+    private long normalQuitGateTimeoutMillis = TimeUnit.SECONDS.toMillis(5);
+    private CountDownLatch analysisOutputRecoveryCompleted;
     private CountDownLatch incarnationRetirementEntered;
     private CountDownLatch incarnationRetirementGate;
     private final ExactSnapshotRestoreProtocolFixture.Transport commandTransport;
@@ -6739,6 +6777,21 @@ class EngineManagerInitialStartupSynchronizationTest {
     }
 
     @Override
+    boolean completeAnalysisOutputRecovery(
+        Object expectedIncarnation,
+        Object recoveryToken,
+        boolean requireFreshOwner,
+        Supplier<Boolean> finalSettlement) {
+      boolean completed =
+          super.completeAnalysisOutputRecovery(
+              expectedIncarnation, recoveryToken, requireFreshOwner, finalSettlement);
+      if (completed && analysisOutputRecoveryCompleted != null) {
+        analysisOutputRecoveryCompleted.countDown();
+      }
+      return completed;
+    }
+
+    @Override
     public void shutdown() {
       started = false;
       isLoaded = false;
@@ -6791,7 +6844,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       CountDownLatch gate = normalQuitGate;
       if (gate != null) {
         try {
-          if (!gate.await(5, TimeUnit.SECONDS)) {
+          if (!gate.await(normalQuitGateTimeoutMillis, TimeUnit.MILLISECONDS)) {
             throw new IllegalStateException("controlled normal-quit gate timed out");
           }
         } catch (InterruptedException interrupted) {
@@ -6822,7 +6875,7 @@ class EngineManagerInitialStartupSynchronizationTest {
           incarnationRetirementGate == null ? normalQuitGate : incarnationRetirementGate;
       if (gate != null) {
         try {
-          if (!gate.await(5, TimeUnit.SECONDS)) {
+          if (!gate.await(normalQuitGateTimeoutMillis, TimeUnit.MILLISECONDS)) {
             throw new IllegalStateException("controlled incarnation-retirement gate timed out");
           }
         } catch (InterruptedException interrupted) {
