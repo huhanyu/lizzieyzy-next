@@ -1136,6 +1136,10 @@ public final class KataGoRuntimeHelper {
   }
 
   public static NvidiaRuntimeStatus inspectNvidiaRuntime(Path enginePath) {
+    return inspectNvidiaRuntime(enginePath, System.getenv("PATH"));
+  }
+
+  static NvidiaRuntimeStatus inspectNvidiaRuntime(Path enginePath, String runtimeSearchPath) {
     Path runtimeDir = getNvidiaRuntimeDir();
     String backend = resolveNvidiaBackend(enginePath);
     if (!isWindowsPlatform() || backend == null) {
@@ -1151,7 +1155,8 @@ public final class KataGoRuntimeHelper {
               "Current engine does not need the NVIDIA runtime."));
     }
 
-    List<Path> searchDirs = collectRuntimeSearchDirs(enginePath, runtimeDir);
+    List<Path> searchDirs =
+        collectRuntimeSearchDirs(enginePath, runtimeDir, runtimeSearchPath);
     List<List<String>> requiredDllGroups = requiredRuntimeDllGroups(enginePath, backend);
     List<String> missing = collectMissingRuntimeGroups(searchDirs, requiredDllGroups);
     if ((NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(backend) || isTensorRtBackend(backend))
@@ -4317,7 +4322,8 @@ public final class KataGoRuntimeHelper {
         });
   }
 
-  private static List<Path> collectRuntimeSearchDirs(Path enginePath, Path runtimeDir) {
+  private static List<Path> collectRuntimeSearchDirs(
+      Path enginePath, Path runtimeDir, String runtimeSearchPath) {
     LinkedHashSet<Path> paths = new LinkedHashSet<Path>();
     if (enginePath != null && enginePath.getParent() != null) {
       paths.add(enginePath.getParent().toAbsolutePath().normalize());
@@ -4325,10 +4331,9 @@ public final class KataGoRuntimeHelper {
     if (runtimeDir != null) {
       paths.add(runtimeDir.toAbsolutePath().normalize());
     }
-    String pathEnv = System.getenv("PATH");
-    if (pathEnv != null && !pathEnv.trim().isEmpty()) {
+    if (runtimeSearchPath != null && !runtimeSearchPath.trim().isEmpty()) {
       String separator = System.getProperty("path.separator", ";");
-      for (String entry : pathEnv.split(Pattern.quote(separator))) {
+      for (String entry : runtimeSearchPath.split(Pattern.quote(separator))) {
         if (entry == null || entry.trim().isEmpty()) {
           continue;
         }
