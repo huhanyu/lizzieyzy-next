@@ -90,6 +90,13 @@ jobs:
           "-Dfailsafe.failIfNoSpecifiedTests=true"
           verify
 
+      - name: Upload JaCoCo coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: jacoco-coverage-report-windows
+          path: target/site/jacoco
+          if-no-files-found: error
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -185,3 +192,10 @@ jobs:
           -Dit.test=LoggingProviderSmokeIT
           -Dfailsafe.failIfNoSpecifiedTests=true
           verify
+
+      - name: Upload JaCoCo coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: jacoco-coverage-report-linux
+          path: target/site/jacoco
+          if-no-files-found: error
