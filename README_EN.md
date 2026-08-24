@@ -47,14 +47,13 @@
 > [!IMPORTANT]
 > If you only want the shortest possible answer, remember these 10 points:
 > - Most Windows users should open [Stable Downloads](https://goagent.top/download/) and download `*windows64.opencl.portable.zip`
-> - If your PC has an RTX 20/30/40 NVIDIA GPU and you want more speed, download `*windows64.nvidia.portable.zip`
-> - RTX 5070/5080/5090 users should try `*windows64.nvidia50.cuda.portable.zip` first; install TensorRT from the in-app KataGo Auto Setup only if needed
-> - TensorRT is not RTX 50-only: RTX 20/30/40/50 NVIDIA users can install it on demand; GTX 10 series and older cards should prefer CUDA/OpenCL
-> - In-app and advanced split TensorRT installs now use the KataGo `v1.17.2` TensorRT fixes; regular CUDA, OpenCL, CPU, and Metal bundles remain on `v1.17.1`, the latest official release that provides those backend assets
+> - RTX 20/30/40/50 NVIDIA users should download the single `*windows64.nvidia.portable.zip`, which bundles CUDA 12.8 + cuDNN 9.8
+> - RTX 40/50 should use CUDA by default. TensorRT is an optional alternative for RTX 30 series and earlier, not a premium edition
+> - CPU, OpenCL, CUDA, TensorRT, Metal, and Linux bundles are upgraded to KataGo `v1.18.1`; Linux NVIDIA stays on CUDA 12.1 for runtime compatibility
 > - `KataGo Auto Setup` detects the NVIDIA GPU and Compute Capability, then recommends whether TensorRT is a good fit; manual install remains available if detection fails
 > - If OpenCL behaves badly on your PC, switch to `*windows64.with-katago.portable.zip`
 > - The app now supports Fox nickname input directly, so most users no longer need the account number first
-> - Full recommended bundles include KataGo `v1.17.1` and the official medium Transformer, shown as “Transformer 10B Balanced” (about 94 MB); the core update package does not contain the engine or weight
+> - Full recommended bundles include the official flagship B11 model `b11c768h12nbt3tflrs-fson-silu.bin.gz` (about 202 MiB). It is stronger per evaluation and in complex positions; an RTX 3070 comparison measured about 40% lower search throughput than B10, which remains available on demand
 > - Main release packages now ship the `readboard_java` helper, so most users do not need a separate readboard repository
 
 ## Why Many Users Start Here
@@ -98,11 +97,12 @@ Users in mainland China are encouraged to choose common stable builds from the [
 | Windows, OpenCL build, installer option | `*windows64.opencl.installer.exe` |
 | Windows, OpenCL is unstable, CPU fallback, no installer | `*windows64.with-katago.portable.zip` |
 | Windows, CPU fallback, installer option | `*windows64.with-katago.installer.exe` |
-| Windows, NVIDIA GPU, faster analysis, no installer | `*windows64.nvidia.portable.zip` |
-| Windows, NVIDIA GPU, installer option | `*windows64.nvidia.installer.exe` |
-| Windows, RTX 5070/5080/5090, CUDA build, no installer | `*windows64.nvidia50.cuda.portable.zip` |
-| Windows, RTX 5070/5080/5090, CUDA installer | `*windows64.nvidia50.cuda.installer.exe` |
-| Windows, RTX 20/30/40/50, optional TensorRT acceleration | Download the matching NVIDIA package first (`*windows64.nvidia50.cuda.portable.zip` for RTX 50), then install TensorRT from `KataGo Auto Setup` |
+| Windows, RTX 20/30/40/50 NVIDIA GPU, no installer | `*windows64.nvidia.portable.zip` |
+| Windows, RTX 20/30/40/50 NVIDIA GPU, installer option | `*windows64.nvidia.installer.exe` |
+| Windows, RTX 30 series and earlier, optional TensorRT | Start with the unified NVIDIA package, then install TensorRT from `KataGo Auto Setup` |
+| Windows, DirectX 12 GPU, DirectML testing | `*windows64.experimental.directml.portable.zip` |
+| Windows, Intel GPU/NPU, OpenVINO testing | `*windows64.experimental.openvino.portable.zip` |
+| Windows, supported AMD GPU, ROCm testing | Pick the matching `*windows64.experimental.rocm.*.portable.zip` |
 | Windows, bring your own engine, no installer | `*windows64.without.engine.portable.zip` |
 | Windows, bring your own engine, installer option | `*windows64.without.engine.installer.exe` |
 | macOS Apple Silicon, then drag the app to Applications | `*mac-apple-silicon.with-katago.dmg` |
@@ -112,9 +112,9 @@ Users in mainland China are encouraged to choose common stable builds from the [
 Quick rule:
 
 - Windows: start with `*windows64.opencl.portable.zip`
-- Windows + RTX 20/30/40 NVIDIA GPU: start with `*windows64.nvidia.portable.zip`
-- Windows + RTX 5070/5080/5090: start with `*windows64.nvidia50.cuda.portable.zip`
-- Windows + RTX 20/30/40/50 and TensorRT testing: regular users should install it on demand from KataGo Auto Setup after launching the matching NVIDIA/CUDA package; advanced offline users may instead download every `*windows64.nvidia.tensorrt.portable.7z.00N` split asset from the Release and extract from `.001`
+- Windows + RTX 20/30/40/50 NVIDIA GPU: use the unified `*windows64.nvidia.portable.zip`
+- Windows + RTX 30 series and earlier TensorRT testing: install it on demand from KataGo Auto Setup; RTX 40/50 should remain on CUDA
+- NVIDIA driver `570.65` or newer loads directly; `528.33–570.64` gets one lightweight real-inference probe; older drivers show a clear repair state
 - GTX 10 series and older NVIDIA cards: prefer CUDA/OpenCL instead of TensorRT
 - OpenCL unstable: switch to `*windows64.with-katago.portable.zip`
 - Mac: choose Apple Silicon or Intel first

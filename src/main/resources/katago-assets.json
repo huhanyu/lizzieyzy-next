@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "katagoVersion": "1.18.1",
+  "katagoReleaseTag": "v1.18.1",
+  "katagoSourceCommit": "92ee95c0a4b25fec214da00951ab69e97e207729",
+  "modelReleaseTag": "v1.17.1",
+  "defaultModelId": "b11-flagship",
+  "models": {
+    "b11-flagship": {
+      "fileName": "b11c768h12nbt3tflrs-fson-silu.bin.gz",
+      "displayFamily": "11B",
+      "tier": "strongest",
+      "architecture": "transformer",
+      "minimumKataGoVersion": "1.17.0",
+      "sizeBytes": 211660960,
+      "sha256": "1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6",
+      "bundled": true
+    },
+    "b10-balanced": {
+      "fileName": "b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz",
+      "displayFamily": "10B",
+      "tier": "balanced",
+      "architecture": "transformer",
+      "minimumKataGoVersion": "1.17.0",
+      "sizeBytes": 94281753,
+      "sha256": "c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995",
+      "bundled": false
+    },
+    "b10-lightweight": {
+      "fileName": "b10c384h6nbttflrs.bin.gz",
+      "displayFamily": "10B",
+      "tier": "lightweight",
+      "architecture": "transformer",
+      "minimumKataGoVersion": "1.17.0",
+      "sizeBytes": 38245488,
+      "sha256": "0ba27eced5180b3e3d0b898b280c541112989765e789d1eb6cd0d31b2b2c1229",
+      "bundled": false
+    }
+  },
+  "assets": {
+    "windows-cpu": {
+      "platform": "windows-x64",
+      "backend": "eigen",
+      "assetName": "katago-v1.18.1-eigen-windows-x64.zip",
+      "sizeBytes": 5903072,
+      "sha256": "074485cf150c38aa3bb14ac9f54f2952ffefbceb44673709bbb8a83650bf95d6",
+      "releaseTier": "stable"
+    },
+    "windows-opencl": {
+      "platform": "windows-x64",
+      "backend": "opencl",
+      "assetName": "katago-v1.18.1-opencl-windows-x64.zip",
+      "sizeBytes": 6004137,
+      "sha256": "1710db1903ab921aa6837a9599c8474f8a59f057650217c5d9bc125ee393a9ff",
+      "releaseTier": "stable"
+    },
+    "windows-nvidia": {
+      "platform": "windows-x64",
+      "backend": "cuda",
+      "assetName": "katago-v1.18.1-cuda12.8-cudnn9.8.0-windows-x64.zip",
+      "sizeBytes": 10135501,
+      "sha256": "8caabc5675950f52d285a686c19727f7a56a982313a7f055ade060ba78df552e",
+      "executableSha256": "e207abb6e2403f0f34e9f4cac6079b988bf853537367d18f899c4b246eeb044c",
+      "runtimeProfile": "cuda12.8-cudnn9",
+      "releaseTier": "stable"
+    },
+    "windows-tensorrt": {
+      "platform": "windows-x64",
+      "backend": "tensorrt",
+      "assetName": "katago-v1.18.1-trt10.9.0-cuda12.8-windows-x64.zip",
+      "sizeBytes": 8375820,
+      "sha256": "49b7229803b2ccee5205cc9d1f7b1a37790469405324de5e5acaafe7a8a9172a",
+      "executableSha256": "e486e45defb5acd098fe4436788476555f667861e3f654f3e2a4bc3598d30fef",
+      "runtimeProfile": "cuda12.8-cudnn9-tensorrt",
+      "releaseTier": "optional"
+    },
+    "windows-directml": {
+      "platform": "windows-x64",
+      "backend": "directml",
+      "assetName": "katago-v1.18.1-onnx1.24.4-directml-windows-x64.zip",
+      "sizeBytes": 23584379,
+      "sha256": "cc5ab3923344a2c35b023307794850b5453f1f7ebbd80b7372bf4485d9ce37ee",
+      "releaseTier": "experimental"
+    },
+    "windows-openvino": {
+      "platform": "windows-x64",
+      "backend": "openvino",
+      "assetName": "katago-v1.18.1-onnx-openvino2026.2.1-windows-x64.zip",
+      "sizeBytes": 86695392,
+      "sha256": "3bde52d034e59949d8527cfafdff5a854425048faca0a448788766dfd79bd039",
+      "releaseTier": "experimental"
+    },
+    "windows-rocm-gfx103x": {
+      "platform": "windows-x64",
+      "backend": "rocm",
+      "gpuFamily": "gfx103X",
+      "assetName": "katago-v1.18.1-rocm7.13-gfx103X-windows-x64.zip",
+      "sizeBytes": 217380864,
+      "sha256": "1786cf55cd474cc240c12f65ba2d9971e35f8d057bd019ae570ec615476c9d59",
+      "releaseTier": "experimental"
+    },
+    "windows-rocm-gfx110x": {
+      "platform": "windows-x64",
+      "backend": "rocm",
+      "gpuFamily": "gfx110X",
+      "assetName": "katago-v1.18.1-rocm7.13-gfx110X-windows-x64.zip",
+      "sizeBytes": 221478994,
+      "sha256": "2b89770a36dafe66ed90731aceb7f6f84ba082f50da39b9ef0d606c4d2af481a",
+      "releaseTier": "experimental"
+    },
+    "windows-rocm-gfx1151": {
+      "platform": "windows-x64",
+      "backend": "rocm",
+      "gpuFamily": "gfx1151",
+      "assetName": "katago-v1.18.1-rocm7.13-gfx1151-windows-x64.zip",
+      "sizeBytes": 176153193,
+      "sha256": "e9c7496825ed88c8312191e6df4ae185e0363014fe6e689856da2144743ec142",
+      "releaseTier": "experimental"
+    },
+    "windows-rocm-gfx120x": {
+      "platform": "windows-x64",
+      "backend": "rocm",
+      "gpuFamily": "gfx120X",
+      "assetName": "katago-v1.18.1-rocm7.13-gfx120X-windows-x64.zip",
+      "sizeBytes": 556862129,
+      "sha256": "f98f20b204d2ebb996959764e94453ccf996099ea6f46f377d6649180c5c38b3",
+      "releaseTier": "experimental"
+    },
+    "linux-cpu": {
+      "platform": "linux-x64",
+      "backend": "eigen",
+      "assetName": "katago-v1.18.1-eigen-linux-x64.zip",
+      "sizeBytes": 41780528,
+      "sha256": "993b642601e806037003d11e43775e7b4fc65281aed9b9469b7122f18fc16811",
+      "releaseTier": "stable"
+    },
+    "linux-opencl": {
+      "platform": "linux-x64",
+      "backend": "opencl",
+      "assetName": "katago-v1.18.1-opencl-linux-x64.zip",
+      "sizeBytes": 41325151,
+      "sha256": "81ecea81526adb412a392ec728dbdf9627e754df7cf1a7a3dbb8ef220182184a",
+      "releaseTier": "stable"
+    },
+    "linux-nvidia": {
+      "platform": "linux-x64",
+      "backend": "cuda",
+      "assetName": "katago-v1.18.1-cuda12.1-cudnn9.8.0-linux-x64.zip",
+      "sizeBytes": 50870294,
+      "sha256": "242e6720e085a67bbb6605408fbcf607812185e40cea5f5fe4090e71201a49c0",
+      "runtimeProfile": "cuda12.1-cudnn9",
+      "releaseTier": "stable"
+    }
+  }
+}

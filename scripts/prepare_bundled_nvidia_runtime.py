@@ -50,13 +50,13 @@ RUNTIME_PROFILES = {
         "direct_specs": (),
     },
     "cuda12.1-cudnn9": {
-        "description": "CUDA 12.1 + cuDNN 9.8 runtime for the standard NVIDIA package",
+        "description": "Legacy CUDA 12.1 + cuDNN 9.8 runtime for existing NVIDIA installs",
         "manifest_specs": CUDA_12_1_SPECS
         + (("NVIDIA cuDNN", CUDNN_9_MANIFEST_URL, "cudnn", "windows-x86_64/cuda12"),),
         "direct_specs": (),
     },
     "cuda12.8-cudnn9": {
-        "description": "CUDA 12.8 + cuDNN 9 runtime for RTX 50 CUDA packages",
+        "description": "CUDA 12.8 + cuDNN 9 runtime for the unified RTX 20/30/40/50 package",
         "manifest_specs": CUDA_12_8_SPECS
         + (("NVIDIA cuDNN", CUDNN_9_MANIFEST_URL, "cudnn", "windows-x86_64/cuda12"),),
         "direct_specs": (),
@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--profile",
         choices=sorted(RUNTIME_PROFILES),
-        default="cuda12.1-cudnn9",
+        default="cuda12.8-cudnn9",
         help="Runtime profile to prepare.",
     )
     return parser.parse_args()

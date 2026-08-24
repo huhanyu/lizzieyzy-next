@@ -55,4 +55,77 @@ class KataGoBenchmarkParserTest {
     assertFalse(observation.hasMetrics());
     assertEquals(4, observation.recommendedThreads());
   }
+
+  @Test
+  void parsesKataGo118FinalGpuRecommendationsWithoutReplacingSearchMetrics() {
+    String output =
+        "You are currently using the CUDA version of KataGo.\n"
+            + "numSearchThreads = 10: 6 / 6 positions, visits/s = 386.0 nnEvals/s = 320.0 "
+            + "nnBatches/s = 42.0 avgBatchSize = 7.6 (10.0 secs)\n"
+            + "numSearchThreads = 10: +72 Elo (recommended)\n"
+            + "Running additional tests of a few other settings at numSearchThreads = 10.\n"
+            + "Re-measuring the current recommendation as a baseline:\n"
+            + "numSearchThreads = 10: 6 / 6 positions, visits/s = 380.0 nnEvals/s = 315.0 "
+            + "nnBatches/s = 41.0 avgBatchSize = 7.7 (10.0 secs)\n"
+            + "Testing 2 NN server threads per GPU. This also uses more GPU memory:\n"
+            + "numSearchThreads = 10: 6 / 6 positions, visits/s = 401.0 nnEvals/s = 330.0 "
+            + "nnBatches/s = 45.0 avgBatchSize = 7.3 (10.0 secs)\n"
+            + "2 NN server threads per GPU was 5.5% faster, will recommend it.\n"
+            + "Testing a max batch size of 5, half the search threads:\n"
+            + "numSearchThreads = 10: 6 / 6 positions, visits/s = 420.0 nnEvals/s = 350.0 "
+            + "nnBatches/s = 49.0 avgBatchSize = 5.0 (10.0 secs)\n"
+            + "Half batch size was 4.7% faster, will recommend it.\n"
+            + "ADDITIONAL RECOMMENDATION: 2 NN server threads per GPU measured faster. "
+            + "To use this, set numNNServerThreadsPerModel = 2 in your config.\n"
+            + "ADDITIONAL RECOMMENDATION: a smaller batch size measured faster. "
+            + "To use this, set nnMaxBatchSize = 5 in your config.\n";
+
+    KataGoBenchmarkObservation observation = KataGoBenchmarkParser.parse(output, 0);
+
+    assertEquals(10, observation.recommendedThreads());
+    assertEquals(2, observation.recommendedNnServerThreadsPerModel());
+    assertEquals(5, observation.recommendedMaxBatchSize());
+    assertTrue(observation.hasAdditionalGpuRecommendation());
+    assertEquals(1, observation.metrics().size());
+    assertEquals(
+        386.0,
+        observation.recommendedMetric().orElseThrow().visitsPerSecond(),
+        "The selected search row must not be overwritten by an extra comparison run.");
+  }
+
+  @Test
+  void rejectedKataGo118ExtraTestsKeepBackendDefaults() {
+    String output =
+        "numSearchThreads = 10: 6 / 6 positions, visits/s = 386.0 nnEvals/s = 320.0 "
+            + "nnBatches/s = 42.0 avgBatchSize = 7.6\n"
+            + "numSearchThreads = 10: +72 Elo (recommended)\n"
+            + "Running additional tests of a few other settings at numSearchThreads = 10.\n"
+            + "2 NN server threads per GPU was not at least 3% faster (measured +0.4%), keeping 1.\n"
+            + "Half batch size was not at least 3% faster (measured +2.8%), keeping the default.\n";
+
+    KataGoBenchmarkObservation observation = KataGoBenchmarkParser.parse(output, 0);
+
+    assertEquals(0, observation.recommendedNnServerThreadsPerModel());
+    assertEquals(0, observation.recommendedMaxBatchSize());
+    assertFalse(observation.hasAdditionalGpuRecommendation());
+  }
+
+  @Test
+  void parsesKataGo118ExplicitMultiGpuServerThreadRecommendationBlock() {
+    String output =
+        "numSearchThreads = 12: +80 Elo (recommended)\n"
+            + "ADDITIONAL RECOMMENDATION: 2 NN server threads per GPU measured faster. "
+            + "To use this, set the following in your config "
+            + "(note that it also increases GPU memory usage):\n"
+            + "  numNNServerThreadsPerModel = 4\n"
+            + "  cudaDeviceToUseThread0 = 0\n"
+            + "  cudaDeviceToUseThread1 = 0\n"
+            + "  cudaDeviceToUseThread2 = 1\n"
+            + "  cudaDeviceToUseThread3 = 1\n";
+
+    KataGoBenchmarkObservation observation = KataGoBenchmarkParser.parse(output, 0);
+
+    assertEquals(12, observation.recommendedThreads());
+    assertEquals(4, observation.recommendedNnServerThreadsPerModel());
+  }
 }

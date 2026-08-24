@@ -114,6 +114,21 @@ class WindowsUpdateServiceTest {
     }
   }
 
+  @Test
+  void legacyNvidia50PackageUsesUnifiedNvidiaUpdateFlavor() throws Exception {
+    Path fromManifest = Files.createDirectories(tempDir.resolve("legacy-manifest").resolve("app"));
+    Files.writeString(
+        fromManifest.resolve("lizzieyzy-next-installed-manifest.json"),
+        "{\"flavor\":\"nvidia50.cuda\"}");
+    assertEquals("nvidia", WindowsUpdatePaths.detectFlavor(fromManifest));
+
+    Path fromBackend = Files.createDirectories(tempDir.resolve("legacy-backend").resolve("app"));
+    Path engineDir =
+        Files.createDirectories(fromBackend.resolve("engines/katago/windows-x64"));
+    Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia50-cuda");
+    assertEquals("nvidia", WindowsUpdatePaths.detectFlavor(fromBackend));
+  }
+
   private void useManualProxy(int port) {
     Lizzie.config = ConfigTestHelper.createForTests(tempDir.resolve("config"));
     Lizzie.config.uiConfig = new JSONObject();

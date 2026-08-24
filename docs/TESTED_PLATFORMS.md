@@ -14,7 +14,7 @@
 - `Build verified`：资产命名、内容结构、工作流和公开 release 已验证，但还缺少真实机器反馈
 - `Needs report`：目前仍缺少足够反馈
 
-当前主推荐列表覆盖 15 个用户向资产；历史兼容包不再放进主推荐区。
+当前主推荐列表覆盖 13 个稳定用户向资产，另有 6 个 Windows 实验便携包；历史兼容包不再放进主推荐区。
 
 ## 当前状态
 
@@ -24,10 +24,8 @@
 | `windows64.opencl.installer.exe` | Windows x64 | `Build verified` | OpenCL 安装器已纳入正式发布矩阵 | 面向更偏好安装流程的 Windows 用户 |
 | `windows64.with-katago.portable.zip` | Windows x64 | `Build verified` | CPU 兜底便携包工作流和公开 release 资产已验证 | OpenCL 不稳定时的兼容兜底 |
 | `windows64.with-katago.installer.exe` | Windows x64 | `Build verified` | CPU 兜底安装器工作流和公开 release 资产已验证 | 面向想安装的 CPU 兜底用户 |
-| `windows64.nvidia.portable.zip` | Windows x64 + NVIDIA | `Build verified` | NVIDIA CUDA 便携包已纳入正式发布矩阵 | 面向不想安装的 NVIDIA 用户 |
-| `windows64.nvidia.installer.exe` | Windows x64 + NVIDIA | `Build verified` | NVIDIA CUDA 整合安装器已纳入正式发布矩阵 | 需要真实 NVIDIA Windows 反馈 |
-| `windows64.nvidia50.cuda.portable.zip` | Windows x64 + RTX 50 | `Build verified` | CUDA 12.8/cuDNN 9 便携包已纳入发布矩阵 | RTX 5070/5080/5090 用户优先反馈 |
-| `windows64.nvidia50.cuda.installer.exe` | Windows x64 + RTX 50 | `Build verified` | CUDA 12.8/cuDNN 9 安装器已纳入发布矩阵 | RTX 5070/5080/5090 用户优先反馈 |
+| `windows64.nvidia.portable.zip` | Windows x64 + RTX 20/30/40/50 | `Maintainer tested` | RTX 3070 已完成统一 CUDA 12.8/cuDNN 9.8 便携包、B11 首次启动、测速、快速曲线和模型切换实测 | RTX 40/50 仍需社区反馈 |
+| `windows64.nvidia.installer.exe` | Windows x64 + RTX 20/30/40/50 | `Build verified` | 统一 NVIDIA CUDA 安装器已纳入发布矩阵 | 安装器和更多显卡型号需要真实反馈 |
 | `windows64.without.engine.portable.zip` | Windows x64 | `Build verified` | 无引擎便携包已纳入正式发布矩阵 | 面向进阶用户 |
 | `windows64.without.engine.installer.exe` | Windows x64 | `Build verified` | 无引擎安装器已纳入正式发布矩阵 | 面向想安装但自己配引擎的用户 |
 | `mac-apple-silicon.with-katago.dmg` | macOS Apple Silicon | `Maintainer tested` | 安装、启动、界面打开、野狐昵称抓谱入口可见 | 当前最完整的实机验证链路 |
@@ -35,8 +33,24 @@
 | `linux64.with-katago.zip` | Linux x64 | `Build verified` | 整合包继续提供 | 需要真实 Linux 桌面反馈 |
 | `linux64.opencl.zip` | Linux x64 + OpenCL | `Build verified` | OpenCL 包继续提供 | 需要真实 Linux OpenCL 反馈 |
 | `linux64.nvidia.zip` | Linux x64 + NVIDIA | `Build verified` | NVIDIA CUDA 包继续提供 | 需要真实 Linux NVIDIA 反馈 |
+| `windows64.experimental.directml.portable.zip` | Windows x64 + DirectX 12 GPU | `Needs report` | 官方资产、包结构和启动器纳入 CI | 需要匹配 GPU 真机反馈 |
+| `windows64.experimental.openvino.portable.zip` | Windows x64 + Intel | `Needs report` | 官方资产、包结构和启动器纳入 CI | 需要 Intel CPU/iGPU/NPU 真机反馈 |
+| `windows64.experimental.rocm.gfx103x.portable.zip` | Windows x64 + AMD RDNA2 | `Needs report` | ROCm 架构包及数据目录纳入 CI | 需要 RDNA2 真机反馈 |
+| `windows64.experimental.rocm.gfx110x.portable.zip` | Windows x64 + AMD RDNA3 | `Needs report` | ROCm 架构包及数据目录纳入 CI | 需要 RDNA3 桌面显卡反馈 |
+| `windows64.experimental.rocm.gfx1151.portable.zip` | Windows x64 + AMD RDNA3.5 | `Needs report` | ROCm 架构包及数据目录纳入 CI | 需要对应 APU/NPU 真机反馈 |
+| `windows64.experimental.rocm.gfx120x.portable.zip` | Windows x64 + AMD RDNA4 | `Needs report` | ROCm 架构包及数据目录纳入 CI | 需要 RDNA4 真机反馈 |
 
-说明：TensorRT 加速的普通用户路径是软件内按需安装；GitHub Release 同时保留高级可选离线分卷，并校验分卷数量、清单、大小和 SHA-256。真实吞吐、功耗和驱动兼容仍需在对应 RTX 20/30/40/50 Windows 硬件上验证，RTX 50 仍优先验证 CUDA 主包。
+说明：TensorRT 是 RTX 30 系及以下 NVIDIA 显卡的可选方案，普通用户从软件内按需安装；RTX 40/50 默认推荐统一 CUDA 包。GitHub Release 同时保留可选离线分卷并校验数量、清单、大小和 SHA-256。没有对应设备的 DirectML/OpenVINO/ROCm 项目只记录构建验证，不标记实机通过。
+
+### RTX 3070 统一 NVIDIA CUDA 实测（2026-08-24）
+
+- 环境：Windows 11、RTX 3070 Laptop、驱动 `560.76`，走首次轻量真实推理兼容探测路径
+- 测试包：临时组装的统一 NVIDIA 便携包，使用官方 KataGo v1.18.1 CUDA 12.8/cuDNN 9.8、完整 NVRTC 运行时和默认 B11 权重
+- 全新配置首次启动约 7 秒创建 KataGo 进程，约 10 秒进入 B11 分析；写入兼容标记后再次启动约 3 秒创建进程、约 7 秒进入分析
+- 官方 benchmark 完整结束，推荐 `numSearchThreads=5`，约 `209.87 visits/s`；进度按实际阶段持续前进，结束后恢复一个主分析进程
+- 310 手棋谱快速胜率曲线约 0.5 秒出现首批结果，约 6 秒完成 31/309，约 20 秒完成 209/309；前台分析保持可用
+- 通过真实界面导入并切换官方 B10，再切回 B11；模型切换会使不匹配的 benchmark 结果失效，匹配模型的结果可正确恢复
+- 本轮没有 RTX 40/50、DirectML、OpenVINO 或 ROCm 对应硬件，因此这些项目仍只保留构建验证或社区验证状态
 
 ### RTX 5090 NVRTC A/B 验证（2026-08-22）
 

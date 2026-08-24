@@ -10,16 +10,16 @@ This document answers three practical questions:
 
 This page describes the public release layout of the maintained `LizzieYzy Next` fork, not the older historical `lizzieyzy` release layout.
 
-- The maintained release page now centers on 15 primary user-facing assets
+- The maintained release page centers on 13 stable first-download assets, plus 6 Windows experimental portable packages
 - On Windows, the default recommendation is now `portable.zip`
 - Most regular users should start with `windows64.opencl.portable.zip`
 - If OpenCL behaves poorly, switch to `windows64.with-katago.portable.zip`
-- If you have an RTX 20/30/40 NVIDIA GPU and want more speed, switch to `windows64.nvidia.portable.zip`
-- RTX 5070/5080/5090 users should try `windows64.nvidia50.cuda.portable.zip` first; TensorRT acceleration is installed on demand from inside the app
-- In-app `KataGo Auto Setup` is the regular TensorRT path; the Release also keeps an advanced optional split offline package. TensorRT is not recommended for GTX 10 series cards; the regular NVIDIA package requires driver `527.41` or newer, and users should switch to the OpenCL package if it still cannot start
+- RTX 20/30/40/50 NVIDIA users share the CUDA 12.8 `windows64.nvidia.portable.zip`
+- RTX 40/50 should use CUDA by default; TensorRT is an optional alternative for RTX 30 series and earlier
+- Driver `570.65` or newer loads directly; `528.33–570.64` runs one lightweight real-inference probe; older drivers show an explicit repair state
 - `KataGo Auto Setup` detects the local NVIDIA GPU / Compute Capability and shows recommended, try, not recommended, or unknown status before TensorRT install
 
-## The 15 Primary Public Release Assets
+## The 13 Stable Public Release Assets
 
 | Package type | Typical filename | Best for |
 | --- | --- | --- |
@@ -27,10 +27,8 @@ This page describes the public release layout of the maintained `LizzieYzy Next`
 | Windows x64 OpenCL installer | `<date>-windows64.opencl.installer.exe` | OpenCL users who prefer an installer |
 | Windows x64 CPU fallback portable | `<date>-windows64.with-katago.portable.zip` | CPU fallback when OpenCL behaves badly |
 | Windows x64 CPU fallback installer | `<date>-windows64.with-katago.installer.exe` | CPU fallback with installer flow |
-| Windows x64 NVIDIA portable | `<date>-windows64.nvidia.portable.zip` | NVIDIA GPU users who want higher analysis speed without an installer |
-| Windows x64 NVIDIA installer | `<date>-windows64.nvidia.installer.exe` | NVIDIA GPU users who prefer an installer |
-| Windows x64 RTX 50 CUDA portable | `<date>-windows64.nvidia50.cuda.portable.zip` | First choice for RTX 5070/5080/5090 users |
-| Windows x64 RTX 50 CUDA installer | `<date>-windows64.nvidia50.cuda.installer.exe` | RTX 5070/5080/5090 users who prefer an installer |
+| Windows x64 NVIDIA CUDA portable | `<date>-windows64.nvidia.portable.zip` | RTX 20/30/40/50 NVIDIA users, unzip and run |
+| Windows x64 NVIDIA CUDA installer | `<date>-windows64.nvidia.installer.exe` | RTX 20/30/40/50 NVIDIA users who prefer an installer |
 | Windows x64 no-engine portable | `<date>-windows64.without.engine.portable.zip` | Custom KataGo setup |
 | Windows x64 no-engine installer | `<date>-windows64.without.engine.installer.exe` | Users who want installer flow with their own engine |
 | macOS Apple Silicon bundle | `<date>-mac-apple-silicon.with-katago.dmg` | M-series Macs |
@@ -42,9 +40,24 @@ This page describes the public release layout of the maintained `LizzieYzy Next`
 Notes:
 
 - `<date>` is the release date, for example `2026-03-21`.
-- The maintained public release page now keeps these 15 user-facing assets as the main list.
+- The maintained public release page keeps these 13 stable user-facing assets as the main list.
 - Windows x64 is portable-first, with matching installers kept as optional alternatives.
 - Older tags may still show compatibility zips, but those are now historical layouts.
+
+### Windows experimental portable packages
+
+These packages are outside the 13 stable recommendations and are published for matching-hardware validation:
+
+| Package | Intended hardware |
+| --- | --- |
+| `<date>-windows64.experimental.directml.portable.zip` | Windows 10/11 GPU with DirectX 12 support |
+| `<date>-windows64.experimental.openvino.portable.zip` | Intel CPU, integrated GPU, or supported Intel NPU |
+| `<date>-windows64.experimental.rocm.gfx103x.portable.zip` | AMD RDNA2 |
+| `<date>-windows64.experimental.rocm.gfx110x.portable.zip` | AMD RDNA3 desktop GPU |
+| `<date>-windows64.experimental.rocm.gfx1151.portable.zip` | AMD RDNA3.5 |
+| `<date>-windows64.experimental.rocm.gfx120x.portable.zip` | AMD RDNA4 |
+
+Each experimental package still contains KataGo v1.18.1, the B11 default weight, Java, and the application components. CI verifies asset integrity and launch structure; real performance and compatibility remain subject to reports from matching hardware.
 
 ## What Each Package Includes
 
@@ -56,8 +69,6 @@ Notes:
 | `windows64.with-katago.installer.exe` | Bundled | Bundled | Bundled | Install, then launch from Start Menu or desktop |
 | `windows64.nvidia.portable.zip` | Bundled | Bundled | Bundled | Unzip and run `LizzieYzy Next NVIDIA.exe` |
 | `windows64.nvidia.installer.exe` | Bundled | Bundled | Bundled | Install, then launch `LizzieYzy Next NVIDIA` |
-| `windows64.nvidia50.cuda.portable.zip` | Bundled | Bundled | Bundled | Unzip and run `LizzieYzy Next NVIDIA 50 CUDA.exe` |
-| `windows64.nvidia50.cuda.installer.exe` | Bundled | Bundled | Bundled | Install, then launch `LizzieYzy Next NVIDIA 50 CUDA` |
 | `windows64.without.engine.portable.zip` | Bundled | Not bundled | Not bundled | Unzip and run `LizzieYzy Next.exe` |
 | `windows64.without.engine.installer.exe` | Bundled | Not bundled | Not bundled | Install, then launch from Start Menu or desktop |
 | `mac-apple-silicon.with-katago.dmg` | App runtime | Bundled | Bundled | Follow the installer artwork, drag to Applications, then eject the DMG |
@@ -71,8 +82,7 @@ Notes:
 If you just want the shortest path:
 
 - Windows: choose `windows64.opencl.portable.zip`
-- Windows with an RTX 20/30/40 NVIDIA GPU: choose `windows64.nvidia.portable.zip`
-- Windows with RTX 5070/5080/5090: choose `windows64.nvidia50.cuda.portable.zip` first
+- Windows with an RTX 20/30/40/50 NVIDIA GPU: choose the unified `windows64.nvidia.portable.zip`
 - macOS: choose the correct `with-katago.dmg` for your chip
 - Linux: choose `linux64.with-katago.zip`
 
@@ -97,20 +107,20 @@ Installers still exist, but they are now secondary to the portable flow.
 
 Current bundled defaults:
 
-- KataGo version: `v1.17.1`
-- The in-app on-demand installer and advanced split package use KataGo `v1.17.2` TensorRT; CUDA, OpenCL, CPU, and Metal remain on `v1.17.1`, the latest release that provides those backend assets
-- macOS release builds pin the official `v1.17.1` commit `5246793f77b480dee91a3b92902d1a9b92860bd0`. If the stable Homebrew formula still lags behind, packaging builds the Metal engine from that commit and verifies the real binary version instead of trusting `VERSION.txt` alone
-- Default weight: official medium Transformer `b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz`, shown as “Transformer 10B Balanced”
-- Default weight size: `94,281,753` bytes (about 94 MB), SHA-256: `c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995`
-- Standard Windows NVIDIA package: CUDA `12.1` + cuDNN `9.8`; RTX 50 CUDA package: CUDA `12.8` + cuDNN `9.8`
-- Windows NVIDIA runtimes include the matching NVRTC compiler and builtins required for cuDNN runtime-compiled kernels. RTX 50/TensorRT packaging pins the official CUDA `12.8.61` NVRTC archive SHA-256 `e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d` and rejects a release when either DLL or the pinned manifest entry is missing
-- GTX 10 series cards use the Pascal architecture. The [NVIDIA cuDNN 9.8 support matrix](https://docs.nvidia.com/deeplearning/cudnn/backend/v9.8.0/reference/support-matrix.html) requires Windows driver `527.41` or newer for CUDA 12; use the `windows64.opencl` package if KataGo still cannot start after updating the driver
+- KataGo version: `v1.18.1` across CPU, OpenCL, CUDA, TensorRT, Metal, and Linux bundles; Linux NVIDIA remains on CUDA `12.1` for runtime compatibility
+- macOS release builds pin the official `v1.18.1` commit `92ee95c0a4b25fec214da00951ab69e97e207729`. If Homebrew lags, packaging builds Metal from that commit and verifies the real binary version instead of trusting `VERSION.txt` alone
+- Default weight: official flagship B11 Transformer `b11c768h12nbt3tflrs-fson-silu.bin.gz`, shown as “Transformer 11B Strength First”
+- Default weight size: `211,660,960` bytes (about 202 MiB), SHA-256: `1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6`
+- B11 makes stronger individual evaluations and performs better in complex positions, but search can be slower; B10 remains available as an on-demand speed-first model and is not duplicated in full packages
+- The single Windows NVIDIA package uses CUDA `12.8` + cuDNN `9.8` for RTX 20/30/40/50; separate `nvidia50` assets are no longer published
+- Windows NVIDIA runtimes include matching NVRTC compiler and builtins; release audits verify exact DLLs, official asset hashes, and manifest records
+- Driver `570.65` or newer loads directly; `528.33–570.64` runs one lightweight real-inference probe; older drivers show an explicit repair state without silently changing backends
 - Transformer performs best through CUDA or Metal; OpenCL remains fully offline-capable but is normally slower
-- `core-update.zip` updates only the application and does not include KataGo 1.17 or the new weight; install the latest full bundle to upgrade from the old default
+- `core-update.zip` updates only the application and does not include KataGo 1.18.1 or B11; old users keep their current weight until they install a full bundle or explicitly download B11
 - Full-bundle migration changes only managed engines still using the old bundled `zhizi 28B` / `default.bin.gz`; custom weights, remote compute, and startup modes are preserved
-- TensorRT acceleration: regular users install it on demand from `KataGo Auto Setup`; advanced offline users may download every Release split plus its README, manifest, and SHA-256 file, then extract from `.001`
+- TensorRT acceleration: RTX 30 series and earlier users may install it on demand from `KataGo Auto Setup`; RTX 40/50 default to CUDA. Offline users may download every Release split plus its README, manifest, and SHA-256 file, then extract from `.001`
 - The TensorRT runtime archive is pinned to SHA-256 `c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d`. TensorRT remains the main analysis backend, while a lightweight bundled CUDA companion loads HumanSL for AI Coach; preparation temporarily releases foreground GPU analysis and an idempotent lease restores only the captured engine when it is still current
-- RTX 50 users should still start with the `windows64.nvidia50.cuda` package, with TensorRT as an on-demand acceleration path for the newer architecture
+- Legacy `nvidia50-cuda` configurations remain recognized, while new downloads use the unified `windows64.nvidia` CUDA package
 - The TensorRT install UI uses `nvidia-smi` to detect the local NVIDIA GPU, with a lightweight model-name fallback when Compute Capability is unavailable
 
 Paths:
@@ -129,9 +139,9 @@ Paths:
 From the new maintained releases onward:
 
 - the main Windows x64 package is `portable.zip`
-- Windows x64 now exposes OpenCL, CPU fallback, NVIDIA, and NVIDIA 50 CUDA variants in both portable and installer forms
+- Windows x64 exposes OpenCL, CPU fallback, and unified NVIDIA CUDA variants in both portable and installer forms
 - the Windows x64 no-engine option now has both an installer and a portable `.zip`
-- the public release page keeps the 15 primary first-download assets above as the main list; TensorRT uses in-app installation by default, while an advanced optional split offline package and its verification metadata remain Release assets
+- the public release page keeps the 13 stable first-download assets above as the main list, plus 6 experimental Windows portable packages; TensorRT uses in-app installation by default, while an optional split offline package and its verification metadata remain Release assets
 - older compatibility zips now stay in historical tags instead of the main recommendation area
 
 ## Related Docs

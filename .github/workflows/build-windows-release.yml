@@ -89,16 +89,10 @@ jobs:
       - name: Prepare bundled KataGo assets
         shell: bash
         env:
-          MODEL_NAME: b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz
-          MODEL_URL: https://github.com/lightvector/KataGo/releases/download/v1.17.1/b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz
-          MODEL_SHA256: c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995
+          PREPARE_WINDOWS_EXPERIMENTAL: 'true'
         run: |
           set -euo pipefail
-          mkdir -p .cache/katago
-          MODEL_SOURCE="$PWD/.cache/katago/$MODEL_NAME"
-          curl -fL --retry 5 --retry-all-errors -o "$MODEL_SOURCE" "$MODEL_URL"
-          PREFERRED_MODEL_NAME="$MODEL_NAME" PREFERRED_MODEL_SHA256="$MODEL_SHA256" \
-            MODEL_SOURCE="$MODEL_SOURCE" ./scripts/prepare_bundled_katago.sh
+          ./scripts/prepare_bundled_katago.sh
 
       - name: Build Windows installer and portable package
         id: release_metadata
@@ -106,6 +100,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          WINDOWS_BUILD_EXPERIMENTAL_PORTABLES: 'true'
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^next-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[1-9][0-9]*$ ]]; then
@@ -152,7 +147,7 @@ jobs:
           grep -q "first launch should work offline" "$note_file"
           grep -q "qiyi71w/readboard v3.0.6" "$note_file"
           grep -q "JCEF browser runtime" "$note_file"
-          grep -q "RTX 5070/5080/5090" "$note_file"
+          grep -q "Unified CUDA 12.8 package for RTX 20/30/40/50" "$note_file"
           test -f "dist/windows/input-with-katago/engines/katago/windows-x64/katago.exe"
           test -f "dist/windows/input-with-katago/PROJECT_INFO.txt"
           test -f "dist/windows/input-with-katago/readboard/readboard.exe"
@@ -167,18 +162,18 @@ jobs:
           grep -qx "release-tag=v3.0.6" "dist/windows/input-with-katago/readboard/lizzieyzy-next-readboard-manifest.txt"
           grep -qx "asset-name=readboard-github-release-v3.0.6.zip" "dist/windows/input-with-katago/readboard/lizzieyzy-next-readboard-manifest.txt"
           grep -qx "sha256=1ba4c265f560cd988be24f4ea0eeb29516883f42ece477bd32b72f8bccf6565d" "dist/windows/input-with-katago/readboard/lizzieyzy-next-readboard-manifest.txt"
-          grep -qx 'KataGo release: v1.17.1' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
-          grep -qx 'Windows bundle: katago-v1.17.1-eigen-windows-x64.zip' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
-          grep -qx 'Model source: b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
+          grep -qx 'KataGo release: v1.18.1' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
+          grep -qx 'Windows bundle: katago-v1.18.1-eigen-windows-x64.zip' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
+          grep -qx 'Model source: b11c768h12nbt3tflrs-fson-silu.bin.gz' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
           grep -qx 'Model architecture: transformer' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
           grep -qx 'Minimum KataGo version: 1.17.0' "dist/windows/input-with-katago/engines/katago/VERSION.txt"
           test "$(sha256sum "dist/windows/input-with-katago/weights/default.bin.gz" | awk '{print $1}')" = \
-            "c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995"
+            "1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6"
           test -f "dist/windows/input-opencl/engines/katago/windows-x64/katago.exe"
           test -f "dist/windows/input-opencl/PROJECT_INFO.txt"
           test -f "dist/windows/input-opencl/readboard/readboard.exe"
           test -f "dist/windows/input-opencl/readboard/lizzieyzy-next-readboard-manifest.txt"
-          grep -qx 'Windows OpenCL bundle: katago-v1.17.1-opencl-windows-x64.zip' "dist/windows/input-opencl/engines/katago/VERSION.txt"
+          grep -qx 'Windows OpenCL bundle: katago-v1.18.1-opencl-windows-x64.zip' "dist/windows/input-opencl/engines/katago/VERSION.txt"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/LizzieYzy Next.exe"
           test -f "dist/windows/app-image-with-katago/LizzieYzy Next/app/PROJECT_INFO.txt"
           grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-with-katago/LizzieYzy Next/app/LizzieYzy Next.cfg"
@@ -211,10 +206,12 @@ jobs:
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/cudnn64_9.dll"
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/z.dll"
           test -f "dist/windows/input-nvidia/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
-          grep -q "Profile: cuda12.1-cudnn9" "dist/windows/input-nvidia/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
+          grep -q "Profile: cuda12.8-cudnn9" "dist/windows/input-nvidia/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
           find "dist/windows/input-nvidia/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvJitLink*.dll' | grep -q .
-          find "dist/windows/input-nvidia/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvrtc64_*.dll' | grep -q .
-          find "dist/windows/input-nvidia/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvrtc-builtins64_*.dll' | grep -q .
+          test -f "dist/windows/input-nvidia/engines/katago/windows-x64/nvrtc64_120_0.dll"
+          test -f "dist/windows/input-nvidia/engines/katago/windows-x64/nvrtc-builtins64_128.dll"
+          grep -Eq '^- CUDA NVRTC: 12\.8\.61 \| .* \| sha256=e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d[[:space:]]*$' \
+            "dist/windows/input-nvidia/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
           grep -qx "nvidia" "dist/windows/input-nvidia/engines/katago/windows-x64/lizzieyzy-next-engine-backend.txt"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/cudart64_12.dll"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/cublas64_12.dll"
@@ -222,66 +219,60 @@ jobs:
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/cudnn64_9.dll"
           test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/z.dll"
           find "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvJitLink*.dll' | grep -q .
-          find "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvrtc64_*.dll' | grep -q .
-          find "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvrtc-builtins64_*.dll' | grep -q .
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/LizzieYzy Next NVIDIA 50 CUDA.exe"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/PROJECT_INFO.txt"
-          grep -q "java-options=-Dlizzie.next.version=$RELEASE_TAG" "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/LizzieYzy Next NVIDIA 50 CUDA.cfg"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/readboard/readboard.exe"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/runtime/bin/java.exe"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/katago.exe"
-          test -f "dist/windows/input-nvidia50.cuda/PROJECT_INFO.txt"
-          test -f "dist/windows/input-nvidia50.cuda/readboard/readboard.exe"
-          test -f "dist/windows/input-nvidia50.cuda/readboard/lizzieyzy-next-readboard-manifest.txt"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/cudart64_12.dll"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/cublas64_12.dll"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/cublasLt64_12.dll"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/cudnn64_9.dll"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/z.dll"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
-          grep -q "Profile: cuda12.8-cudnn9" "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
-          find "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvJitLink*.dll' | grep -q .
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/nvrtc64_120_0.dll"
-          test -f "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/nvrtc-builtins64_128.dll"
-          grep -Eq '^- CUDA NVRTC: 12\.8\.61 \| .* \| sha256=e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d[[:space:]]*$' \
-            "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
-          grep -qx "nvidia50-cuda" "dist/windows/input-nvidia50.cuda/engines/katago/windows-x64/lizzieyzy-next-engine-backend.txt"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/cudart64_12.dll"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/cublas64_12.dll"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/cublasLt64_12.dll"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/cudnn64_9.dll"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/z.dll"
-          find "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64" -maxdepth 1 -type f -name 'nvJitLink*.dll' | grep -q .
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/nvrtc64_120_0.dll"
-          test -f "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/nvrtc-builtins64_128.dll"
+          test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/nvrtc64_120_0.dll"
+          test -f "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/nvrtc-builtins64_128.dll"
+          experimental_specs=(
+            "experimental.directml|LizzieYzy Next DirectML Experimental|directml|windows-directml"
+            "experimental.openvino|LizzieYzy Next OpenVINO Experimental|openvino|windows-openvino"
+            "experimental.rocm.gfx103x|LizzieYzy Next ROCm gfx103x Experimental|rocm-gfx103x|windows-rocm-gfx103x"
+            "experimental.rocm.gfx110x|LizzieYzy Next ROCm gfx110x Experimental|rocm-gfx110x|windows-rocm-gfx110x"
+            "experimental.rocm.gfx1151|LizzieYzy Next ROCm gfx1151 Experimental|rocm-gfx1151|windows-rocm-gfx1151"
+            "experimental.rocm.gfx120x|LizzieYzy Next ROCm gfx120x Experimental|rocm-gfx120x|windows-rocm-gfx120x"
+          )
+          for spec in "${experimental_specs[@]}"; do
+            IFS='|' read -r flavor app_name backend catalog_id <<<"$spec"
+            asset_sha="$(python3 scripts/katago_asset_catalog.py get "assets.${catalog_id}.sha256")"
+            engine_dir="dist/windows/app-image-${flavor}/${app_name}/app/engines/katago/windows-x64"
+            test -f "$engine_dir/katago.exe"
+            test -f "$engine_dir/lizzieyzy-next-katago-engine-manifest.txt"
+            grep -qx "$backend" "$engine_dir/lizzieyzy-next-engine-backend.txt"
+            grep -qx "KataGo release: v1.18.1" "$engine_dir/lizzieyzy-next-katago-engine-manifest.txt"
+            grep -qx "Asset SHA-256: $asset_sha" "$engine_dir/lizzieyzy-next-katago-engine-manifest.txt"
+            test -f "dist/windows/app-image-${flavor}/${app_name}/${app_name}.exe"
+            test -f "dist/release/${RELEASE_DATE_TAG}-windows64.${flavor}.portable.zip"
+            test "$(sha256sum "dist/windows/app-image-${flavor}/${app_name}/app/weights/default.bin.gz" | awk '{print $1}')" = \
+              "1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6"
+          done
+          test -d "dist/windows/app-image-experimental.rocm.gfx103x/LizzieYzy Next ROCm gfx103x Experimental/app/engines/katago/windows-x64/rocblas"
+          test -d "dist/windows/app-image-experimental.rocm.gfx103x/LizzieYzy Next ROCm gfx103x Experimental/app/engines/katago/windows-x64/hipblaslt"
           test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.7z.001"
           test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.README.txt"
           test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.manifest.json"
           test -f "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.sha256.txt"
           test -f "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
           test -f "engines/katago/windows-x64-nvidia-tensorrt/katago-human-sl-cuda.exe"
-          echo "4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5  engines/katago/windows-x64-nvidia-tensorrt/katago-human-sl-cuda.exe" | sha256sum -c -
-          grep -qx "KataGo release: v1.17.2" \
+          echo "e207abb6e2403f0f34e9f4cac6079b988bf853537367d18f899c4b246eeb044c  engines/katago/windows-x64-nvidia-tensorrt/katago-human-sl-cuda.exe" | sha256sum -c -
+          grep -qx "KataGo release: v1.18.1" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
-          grep -qx "Asset SHA-256: be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6" \
+          grep -qx "Asset SHA-256: 49b7229803b2ccee5205cc9d1f7b1a37790469405324de5e5acaafe7a8a9172a" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
           grep -qx "HumanSL companion: katago-human-sl-cuda.exe" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
-          grep -qx "HumanSL companion SHA-256: 4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5" \
+          grep -qx "HumanSL companion SHA-256: e207abb6e2403f0f34e9f4cac6079b988bf853537367d18f899c4b246eeb044c" \
             "engines/katago/windows-x64-nvidia-tensorrt/lizzieyzy-next-katago-engine-manifest.txt"
           test -f "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago-human-sl-cuda.exe"
-          echo "4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5  dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago-human-sl-cuda.exe" | sha256sum -c -
+          echo "e207abb6e2403f0f34e9f4cac6079b988bf853537367d18f899c4b246eeb044c  dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago-human-sl-cuda.exe" | sha256sum -c -
           test -f "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/nvrtc64_120_0.dll"
           test -f "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/nvrtc-builtins64_128.dll"
           grep -Eq '^- CUDA NVRTC: 12\.8\.61 \| .* \| sha256=e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d[[:space:]]*$' \
             "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
           grep -Eq '^- NVIDIA TensorRT: 10\.9\.0\.34 \| .* \| sha256=c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d[[:space:]]*$' \
             "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/lizzieyzy-next-nvidia-runtime-manifest.txt"
-          grep -qx "KataGo release: v1.17.2" \
+          grep -qx "KataGo release: v1.18.1" \
             "dist/windows/input-nvidia.tensorrt/engines/katago/VERSION.txt"
-          grep -qx "Windows TensorRT bundle: katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip" \
+          grep -qx "Windows TensorRT bundle: katago-v1.18.1-trt10.9.0-cuda12.8-windows-x64.zip" \
             "dist/windows/input-nvidia.tensorrt/engines/katago/VERSION.txt"
-          grep -q "Advanced optional TensorRT split package" "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.README.txt"
+          grep -q "Optional TensorRT split package for RTX 30 series and earlier" "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.README.txt"
           grep -q '"engineBackend": "nvidia-tensorrt"' "dist/release/${RELEASE_DATE_TAG}-windows64.nvidia.tensorrt.portable.manifest.json"
           test -f "dist/windows/input-without.engine/PROJECT_INFO.txt"
           test -f "dist/windows/input-without.engine/readboard/readboard.exe"
@@ -311,7 +302,6 @@ jobs:
             "dist/windows/app-image-with-katago/LizzieYzy Next/app/LizzieYzy Next.cfg" \
             "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/LizzieYzy Next OpenCL.cfg" \
             "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/LizzieYzy Next NVIDIA.cfg" \
-            "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/LizzieYzy Next NVIDIA 50 CUDA.cfg" \
             "dist/windows/app-image-without.engine/LizzieYzy Next/app/LizzieYzy Next.cfg"; do
             grep -q -- "java-options=-Xshare:auto" "$app_cfg"
             grep -q -- "java-options=-XX:InitialRAMPercentage=1.0" "$app_cfg"
@@ -326,12 +316,8 @@ jobs:
           test -f "dist/release-meta/${RELEASE_DATE_TAG}-windows64-runtime.json"
           grep -q '"optimized": true' "dist/release-meta/${RELEASE_DATE_TAG}-windows64-runtime.json"
           grep -q '"created": true' "dist/release-meta/${RELEASE_DATE_TAG}-windows64-runtime.json"
-          for app_dir in \
-            "dist/windows/app-image-with-katago/LizzieYzy Next" \
-            "dist/windows/app-image-opencl/LizzieYzy Next OpenCL" \
-            "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA" \
-            "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA" \
-            "dist/windows/app-image-without.engine/LizzieYzy Next"; do
+          for app_dir in dist/windows/app-image-*/*; do
+            test -d "$app_dir"
             test ! -f "$app_dir/app/lizzieyzy-next-cds.jsa"
             test -f "$app_dir/runtime/bin/server/jvm.dll"
             test -f "$app_dir/runtime/bin/jabswitch.exe"
@@ -345,16 +331,8 @@ jobs:
               -version
           done
           for readboard_exe in \
-            "dist/windows/input-with-katago/readboard/readboard.exe" \
-            "dist/windows/input-opencl/readboard/readboard.exe" \
-            "dist/windows/input-nvidia/readboard/readboard.exe" \
-            "dist/windows/input-nvidia50.cuda/readboard/readboard.exe" \
-            "dist/windows/input-without.engine/readboard/readboard.exe" \
-            "dist/windows/app-image-with-katago/LizzieYzy Next/app/readboard/readboard.exe" \
-            "dist/windows/app-image-opencl/LizzieYzy Next OpenCL/app/readboard/readboard.exe" \
-            "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/readboard/readboard.exe" \
-            "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/readboard/readboard.exe" \
-            "dist/windows/app-image-without.engine/LizzieYzy Next/app/readboard/readboard.exe"; do
+            dist/windows/input-*/readboard/readboard.exe \
+            dist/windows/app-image-*/*/app/readboard/readboard.exe; do
             grep -a -q 'level="asInvoker"' "$readboard_exe"
             if grep -a -q 'level="requireAdministrator"' "$readboard_exe"; then
               echo "readboard.exe must not request administrator privileges: $readboard_exe"
@@ -373,35 +351,42 @@ jobs:
           standard_packaged_engines=(
             "${runnable_engines[@]}"
             "dist/windows/app-image-nvidia/LizzieYzy Next NVIDIA/app/engines/katago/windows-x64/katago.exe"
-            "dist/windows/app-image-nvidia50.cuda/LizzieYzy Next NVIDIA 50 CUDA/app/engines/katago/windows-x64/katago.exe"
             "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago-human-sl-cuda.exe"
+            "dist/windows/app-image-experimental.directml/LizzieYzy Next DirectML Experimental/app/engines/katago/windows-x64/katago.exe"
+            "dist/windows/app-image-experimental.openvino/LizzieYzy Next OpenVINO Experimental/app/engines/katago/windows-x64/katago.exe"
+            "dist/windows/app-image-experimental.rocm.gfx103x/LizzieYzy Next ROCm gfx103x Experimental/app/engines/katago/windows-x64/katago.exe"
+            "dist/windows/app-image-experimental.rocm.gfx110x/LizzieYzy Next ROCm gfx110x Experimental/app/engines/katago/windows-x64/katago.exe"
+            "dist/windows/app-image-experimental.rocm.gfx1151/LizzieYzy Next ROCm gfx1151 Experimental/app/engines/katago/windows-x64/katago.exe"
+            "dist/windows/app-image-experimental.rocm.gfx120x/LizzieYzy Next ROCm gfx120x Experimental/app/engines/katago/windows-x64/katago.exe"
           )
           tensorrt_engine="dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/katago.exe"
           for engine in "${runnable_engines[@]}"; do
             test -f "$engine"
             version_output="$("$engine" version 2>&1)"
             printf '%s\n%s\n' "$engine" "$version_output"
-            grep -q 'KataGo v1\.17\.1' <<<"$version_output"
+            grep -q 'KataGo v1\.18\.1' <<<"$version_output"
           done
           # GitHub-hosted Windows runners do not have an NVIDIA display driver, so
           # CUDA/TensorRT executables cannot pass the Windows loader even when every
           # redistributable DLL is bundled. Audit their embedded version marker after
           # the runtime-file checks above; real NVIDIA execution is a hardware gate.
           python3 scripts/audit_katago_binary_version.py \
-            --expected-version 1.17.1 \
+            --expected-version 1.18.1 \
             --reject-version 1.17.0 \
+            --reject-version 1.17.1 \
             --reject-version 1.17.2 \
             "${standard_packaged_engines[@]}"
           python3 scripts/audit_katago_binary_version.py \
-            --expected-version 1.17.2 \
+            --expected-version 1.18.1 \
             --reject-version 1.17.0 \
             --reject-version 1.17.1 \
+            --reject-version 1.17.2 \
             "$tensorrt_engine"
           python3 scripts/audit_katago_package_metadata.py \
             --version-file "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/VERSION.txt" \
             --engine-manifest "dist/windows/app-image-nvidia.tensorrt/LizzieYzy Next NVIDIA TensorRT/app/engines/katago/windows-x64/lizzieyzy-next-katago-engine-manifest.txt" \
-            --expected-version 1.17.2 \
-            --expected-asset katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip
+            --expected-version 1.18.1 \
+            --expected-asset katago-v1.18.1-trt10.9.0-cuda12.8-windows-x64.zip
 
       - name: Smoke test bundled Windows app images
         shell: powershell
@@ -418,8 +403,13 @@ jobs:
             -OpenAutoSetup
           $launcherOnlyApps = @(
             "dist\windows\app-image-opencl\LizzieYzy Next OpenCL\LizzieYzy Next OpenCL.exe",
-            "dist\windows\app-image-nvidia50.cuda\LizzieYzy Next NVIDIA 50 CUDA\LizzieYzy Next NVIDIA 50 CUDA.exe",
-            "dist\windows\app-image-without.engine\LizzieYzy Next\LizzieYzy Next.exe"
+            "dist\windows\app-image-without.engine\LizzieYzy Next\LizzieYzy Next.exe",
+            "dist\windows\app-image-experimental.directml\LizzieYzy Next DirectML Experimental\LizzieYzy Next DirectML Experimental.exe",
+            "dist\windows\app-image-experimental.openvino\LizzieYzy Next OpenVINO Experimental\LizzieYzy Next OpenVINO Experimental.exe",
+            "dist\windows\app-image-experimental.rocm.gfx103x\LizzieYzy Next ROCm gfx103x Experimental\LizzieYzy Next ROCm gfx103x Experimental.exe",
+            "dist\windows\app-image-experimental.rocm.gfx110x\LizzieYzy Next ROCm gfx110x Experimental\LizzieYzy Next ROCm gfx110x Experimental.exe",
+            "dist\windows\app-image-experimental.rocm.gfx1151\LizzieYzy Next ROCm gfx1151 Experimental\LizzieYzy Next ROCm gfx1151 Experimental.exe",
+            "dist\windows\app-image-experimental.rocm.gfx120x\LizzieYzy Next ROCm gfx120x Experimental\LizzieYzy Next ROCm gfx120x Experimental.exe"
           )
           foreach ($relativePath in $launcherOnlyApps) {
             $launcherExe = Join-Path $PWD $relativePath

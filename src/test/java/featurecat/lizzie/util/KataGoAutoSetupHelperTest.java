@@ -650,16 +650,22 @@ public class KataGoAutoSetupHelperTest {
         KataGoAutoSetupHelper.officialTransformerWeights();
 
     assertEquals(3, weights.size());
-    KataGoAutoSetupHelper.RemoteWeightInfo balanced =
+    KataGoAutoSetupHelper.RemoteWeightInfo strongest =
+        weights.stream()
+            .filter(info -> info.transformerTier == KataGoAutoSetupHelper.TransformerTier.STRONGEST)
+            .findFirst()
+            .orElseThrow();
+    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_MODEL, strongest.modelName);
+    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SIZE_BYTES, strongest.sizeBytes);
+    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SHA256, strongest.sha256);
+    assertEquals("1.17.0", strongest.minimumKataGoVersion);
+    assertTrue(strongest.recommended);
+    assertFalse(
         weights.stream()
             .filter(info -> info.transformerTier == KataGoAutoSetupHelper.TransformerTier.BALANCED)
             .findFirst()
-            .orElseThrow();
-    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_MODEL, balanced.modelName);
-    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SIZE_BYTES, balanced.sizeBytes);
-    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SHA256, balanced.sha256);
-    assertEquals("1.17.0", balanced.minimumKataGoVersion);
-    assertTrue(balanced.recommended);
+            .orElseThrow()
+            .recommended);
     assertTrue(weights.stream().allMatch(KataGoAutoSetupHelper.RemoteWeightInfo::isTransformer));
     assertTrue(weights.stream().allMatch(info -> info.downloadUrl.contains("/v1.17.1/")));
   }
@@ -704,7 +710,7 @@ public class KataGoAutoSetupHelperTest {
     assertTrue(KataGoAutoSetupHelper.isTransformerWeight(weight));
     String displayName = KataGoAutoSetupHelper.resolveWeightDisplayName(weight);
     assertTrue(displayName.contains("Transformer"));
-    assertTrue(displayName.contains("10B"));
+    assertTrue(displayName.contains("11B"));
     assertFalse(displayName.equals("default"));
   }
 

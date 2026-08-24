@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import re
 import shutil
@@ -149,24 +150,24 @@ class PrepareBundledNvidiaRuntimeTest(unittest.TestCase):
         companion_pins = Path(__file__).with_name("katago_windows_pins.sh").read_text(
             encoding="utf-8"
         )
-        companion_sha256 = (
-            "4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5"
+        catalog = json.loads(
+            (
+                Path(__file__).parents[1]
+                / "src/main/resources/katago-assets.json"
+            ).read_text(encoding="utf-8")
         )
+        companion_sha256 = catalog["assets"]["windows-nvidia"]["executableSha256"]
 
         self.assertIn('HUMAN_SL_CUDA_COMPANION_NAME="katago-human-sl-cuda.exe"', package_script)
-        shell_digest = re.search(
-            r'^HUMAN_SL_CUDA_COMPANION_SHA256="([0-9a-f]{64})"$',
-            companion_pins,
-            re.MULTILINE,
+        self.assertIn(
+            "assets.windows-nvidia.executableSha256", companion_pins
         )
-        java_digest = re.search(
-            r'HUMAN_SL_CUDA_COMPANION_SHA256\s*=\s*"([0-9a-f]{64})"',
-            java_runtime_helper,
+        self.assertIn(
+            "assets.windows-tensorrt.assetName", companion_pins
         )
-        self.assertIsNotNone(shell_digest)
-        self.assertIsNotNone(java_digest)
-        self.assertEqual(companion_sha256, shell_digest.group(1))
-        self.assertEqual(shell_digest.group(1), java_digest.group(1))
+        self.assertIn("NVIDIA_CUDA_ASSET.executableSha256()", java_runtime_helper)
+        self.assertIn("TENSORRT_KATAGO_ASSET_INFO.sha256()", java_runtime_helper)
+        self.assertEqual(64, len(companion_sha256))
         self.assertIn('source "$ROOT_DIR/scripts/katago_windows_pins.sh"', package_script)
         self.assertIn(NVIDIA_RUNTIME.TENSORRT_10_9_SHA256, package_script)
         self.assertIn(NVIDIA_RUNTIME.CUDA_12_8_NVRTC_SHA256, package_script)
@@ -174,26 +175,23 @@ class PrepareBundledNvidiaRuntimeTest(unittest.TestCase):
         self.assertIn("shutil.copy2(companion_source, companion_target)", package_script)
         self.assertIn(
             'companion_source="$ROOT_DIR/engines/katago/'
-            '$NVIDIA50_CUDA_ENGINE_PLATFORM_DIR/katago.exe"',
+            '$NVIDIA_ENGINE_PLATFORM_DIR/katago.exe"',
             package_script,
         )
         self.assertIn(
             'TensorRT HumanSL CUDA companion source is missing: $companion_source',
             package_script,
         )
-        self.assertNotIn(
-            'companion_source="$ROOT_DIR/engines/katago/$NVIDIA_ENGINE_PLATFORM_DIR/katago.exe"',
-            package_script,
-        )
+        self.assertNotIn("NVIDIA50_CUDA_ENGINE_PLATFORM_DIR", package_script)
 
-    def test_tensorrt_split_support_matrix_requires_nvidia50_cuda(self) -> None:
+    def test_tensorrt_split_support_matrix_requires_unified_nvidia_cuda(self) -> None:
         package_script = Path(__file__).with_name("package_windows_exe.sh").read_text(
             encoding="utf-8"
         )
         gate = re.search(
             r'if \[\[ "\$\{WINDOWS_BUILD_TENSORRT_SPLIT:-true\}" == "true" \]\] \\\n'
             r'  && \[\[ -f "\$ROOT_DIR/weights/default\.bin\.gz" \]\] \\\n'
-            r'  && \[\[ "\$has_nvidia50_cuda_katago_assets" == "true" \]\]; then',
+            r'  && \[\[ "\$has_nvidia_katago_assets" == "true" \]\]; then',
             package_script,
         )
 
@@ -201,16 +199,12 @@ class PrepareBundledNvidiaRuntimeTest(unittest.TestCase):
         required_asset_flags = set(
             re.findall(r'\$has_([a-z0-9_]+)_katago_assets', gate.group(0))
         )
-        self.assertEqual({"nvidia50_cuda"}, required_asset_flags)
-        self.assertNotIn(
-            '"$has_nvidia_katago_assets" == "true" || '
-            '"$has_nvidia50_cuda_katago_assets" == "true"',
-            package_script,
-        )
+        self.assertEqual({"nvidia"}, required_asset_flags)
+        self.assertNotIn("has_nvidia50_cuda_katago_assets", package_script)
         support_matrix = {
             (False, False): False,
-            (True, False): False,
-            (False, True): True,
+            (True, False): True,
+            (False, True): False,
             (True, True): True,
         }
         for (has_standard_nvidia, has_nvidia50_cuda), expected in support_matrix.items():
@@ -220,7 +214,6 @@ class PrepareBundledNvidiaRuntimeTest(unittest.TestCase):
             ):
                 available_assets = {
                     "nvidia": has_standard_nvidia,
-                    "nvidia50_cuda": has_nvidia50_cuda,
                 }
                 actual = all(available_assets[flag] for flag in required_asset_flags)
                 self.assertEqual(expected, actual)

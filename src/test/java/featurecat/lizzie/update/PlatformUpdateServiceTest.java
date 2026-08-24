@@ -36,6 +36,13 @@ class PlatformUpdateServiceTest {
     assertNull(PlatformUpdateService.selectPackage(manifest, "linux", "x64", "nvidia"));
   }
 
+  @Test
+  void legacyNvidia50FlavorSelectsTheUnifiedNvidiaPackage() {
+    assertEquals("nvidia", PlatformUpdateService.normalizeFlavor("nvidia50.cuda"));
+    assertEquals("nvidia", PlatformUpdateService.normalizeFlavor("NVIDIA50-CUDA"));
+    assertEquals("nvidia", PlatformUpdateService.normalizeFlavor("nvidia.50.cuda"));
+  }
+
   private UpdateManifest manifest(JSONObject... packages) {
     JSONObject payload = SignedUpdateEnvelopeTest.validPayload();
     payload.put("packages", new JSONArray(List.of(packages)));

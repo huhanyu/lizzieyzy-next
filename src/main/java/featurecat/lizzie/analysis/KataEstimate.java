@@ -160,7 +160,8 @@ public class KataEstimate {
       Path engineExecutable = KataGoRuntimeHelper.resolveCommandExecutable(commands);
       if (Config.isBundledKataGoCommand(engineCommand)) {
         try {
-          KataGoRuntimeHelper.ensureBundledRuntimeReady(engineExecutable, Lizzie.frame);
+          KataGoRuntimeHelper.ensureBundledRuntimeReady(
+              engineExecutable, commands, Lizzie.frame);
         } catch (IOException e) {
           showErrMsg(e);
           process = null;

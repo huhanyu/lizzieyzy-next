@@ -418,6 +418,87 @@ class KataGoRuntimeLayeredTuningTest {
   }
 
   @Test
+  void currentOfficialGpuRecommendationsAreAppliedButStaleModelResultsAreIgnored()
+      throws Exception {
+    Config previousConfig = Lizzie.config;
+    try {
+      Config config =
+          ConfigTestHelper.createForTests(
+              Files.createDirectories(temporaryDirectory.resolve("gpu-recommendation-config")));
+      Lizzie.config = config;
+      initializeConfigJson(config);
+      SetupSnapshot snapshot = createSnapshot();
+      config.uiConfig.put("katago-benchmark-threads", 8);
+      config.uiConfig.put("katago-benchmark-current-threads", 4);
+      config.uiConfig.put("katago-benchmark-backend", "CUDA");
+      config.uiConfig.put("katago-benchmark-nn-server-threads", 2);
+      config.uiConfig.put("katago-benchmark-batch-size", 4);
+      config.uiConfig.put(
+          "katago-benchmark-signature", KataGoRuntimeHelper.buildBenchmarkSignature(snapshot));
+      List<String> command =
+          List.of(
+              snapshot.enginePath.toString(),
+              "gtp",
+              "-config",
+              snapshot.gtpConfigPath.toString(),
+              "-model",
+              snapshot.activeWeightPath.toString());
+
+      List<String> applied =
+          KataGoRuntimeHelper.applyStoredOfficialBenchmarkGpuSettings(
+              command, snapshot.enginePath);
+      KataGoCommandSpec appliedSpec = KataGoCommandSpec.parse(applied);
+      assertEquals("2", appliedSpec.overrideValue("numNNServerThreadsPerModel").orElseThrow());
+      assertEquals("4", appliedSpec.overrideValue("nnMaxBatchSize").orElseThrow());
+
+      Files.writeString(snapshot.activeWeightPath, "changed-model-content");
+      List<String> stale =
+          KataGoRuntimeHelper.applyStoredOfficialBenchmarkGpuSettings(
+              command, snapshot.enginePath);
+      assertTrue(KataGoCommandSpec.parse(stale).effectiveOverrides().isEmpty());
+    } finally {
+      Lizzie.config = previousConfig;
+    }
+  }
+
+  @Test
+  void explicitGpuTuningOverridesWinOverStoredOfficialRecommendations() throws Exception {
+    Config previousConfig = Lizzie.config;
+    try {
+      Config config =
+          ConfigTestHelper.createForTests(
+              Files.createDirectories(temporaryDirectory.resolve("gpu-override-config")));
+      Lizzie.config = config;
+      initializeConfigJson(config);
+      SetupSnapshot snapshot = createSnapshot();
+      config.uiConfig.put("katago-benchmark-threads", 8);
+      config.uiConfig.put("katago-benchmark-nn-server-threads", 2);
+      config.uiConfig.put("katago-benchmark-batch-size", 4);
+      config.uiConfig.put(
+          "katago-benchmark-signature", KataGoRuntimeHelper.buildBenchmarkSignature(snapshot));
+      List<String> command =
+          List.of(
+              snapshot.enginePath.toString(),
+              "gtp",
+              "-config",
+              snapshot.gtpConfigPath.toString(),
+              "-model",
+              snapshot.activeWeightPath.toString(),
+              "-override-config",
+              "numNNServerThreadsPerModel=1,nnMaxBatchSize=9");
+
+      List<String> applied =
+          KataGoRuntimeHelper.applyStoredOfficialBenchmarkGpuSettings(
+              command, snapshot.enginePath);
+      KataGoCommandSpec appliedSpec = KataGoCommandSpec.parse(applied);
+      assertEquals("1", appliedSpec.overrideValue("numNNServerThreadsPerModel").orElseThrow());
+      assertEquals("9", appliedSpec.overrideValue("nnMaxBatchSize").orElseThrow());
+    } finally {
+      Lizzie.config = previousConfig;
+    }
+  }
+
+  @Test
   void benchmarkDisplayHidesAppleResultAfterSourceTopologyChanges() throws Exception {
     Config previousConfig = Lizzie.config;
     String previousOsName = System.getProperty("os.name");
@@ -618,6 +699,7 @@ class KataGoRuntimeLayeredTuningTest {
             long.class,
             String.class,
             int.class,
+            int.class,
             double.class,
             double.class,
             double.class,
@@ -630,6 +712,7 @@ class KataGoRuntimeLayeredTuningTest {
         "profile",
         123L,
         topology,
+        0,
         batch,
         120.0,
         100.0,

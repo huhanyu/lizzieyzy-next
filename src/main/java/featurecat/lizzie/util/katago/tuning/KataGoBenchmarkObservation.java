@@ -8,6 +8,8 @@ public record KataGoBenchmarkObservation(
     String backend,
     int currentThreads,
     int recommendedThreads,
+    int recommendedNnServerThreadsPerModel,
+    int recommendedMaxBatchSize,
     List<ThreadMetrics> metrics,
     boolean mpsGraphInitialized,
     boolean coreMlInitialized,
@@ -18,7 +20,34 @@ public record KataGoBenchmarkObservation(
     if (currentThreads < 0 || recommendedThreads < 0) {
       throw new IllegalArgumentException("thread counts must not be negative");
     }
+    if (recommendedNnServerThreadsPerModel < 0 || recommendedNnServerThreadsPerModel > 256) {
+      throw new IllegalArgumentException("NN server thread count must be between 0 and 256");
+    }
+    if (recommendedMaxBatchSize < 0 || recommendedMaxBatchSize > 65536) {
+      throw new IllegalArgumentException("max batch size must be between 0 and 65536");
+    }
     metrics = metrics == null ? List.of() : List.copyOf(metrics);
+  }
+
+  /** Backwards-compatible constructor for benchmark output before KataGo 1.18 extra tuning. */
+  public KataGoBenchmarkObservation(
+      String backend,
+      int currentThreads,
+      int recommendedThreads,
+      List<ThreadMetrics> metrics,
+      boolean mpsGraphInitialized,
+      boolean coreMlInitialized,
+      boolean failureDetected) {
+    this(
+        backend,
+        currentThreads,
+        recommendedThreads,
+        0,
+        0,
+        metrics,
+        mpsGraphInitialized,
+        coreMlInitialized,
+        failureDetected);
   }
 
   public boolean hasMetrics() {
@@ -27,6 +56,10 @@ public record KataGoBenchmarkObservation(
 
   public boolean mixedMetalInitialized() {
     return mpsGraphInitialized && coreMlInitialized;
+  }
+
+  public boolean hasAdditionalGpuRecommendation() {
+    return recommendedNnServerThreadsPerModel > 0 || recommendedMaxBatchSize > 0;
   }
 
   public Optional<ThreadMetrics> metricForThreads(int numSearchThreads) {

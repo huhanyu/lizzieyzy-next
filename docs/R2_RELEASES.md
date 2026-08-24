@@ -7,9 +7,9 @@
 ## 固定资源范围
 
 R2 桶名固定为 `lizzieyzy-next-downloads`，只保留一个正式版。发布脚本要求每个正式版恰好
-包含以下 13 个镜像对象，数量或名称不一致会直接停止：
+包含以下 12 个镜像对象，数量或名称不一致会直接停止：
 
-- 5 个 Windows 免安装包：OpenCL、CPU、NVIDIA、RTX 50 CUDA、无引擎
+- 4 个 Windows 免安装包：OpenCL、CPU、统一 NVIDIA CUDA、无引擎
 - `windows64.core-update.zip`
 - macOS Apple Silicon 与 Intel 两个 DMG
 - TensorRT `.7z.001`、`.7z.002`、README、manifest、SHA-256 文件
@@ -92,7 +92,7 @@ GitHub 上的签名 v2 清单，签名、版本、大小或 SHA-256 不正确时
 - `https://goagent.top/download/` 显示正确 stable tag，且没有 pre-release。
 - `https://www.goagent.top/download/`、`https://download.goagent.top/` 与
   `https://download.goagent.top/index.html` 均以 301 跳到统一官网下载页。
-- 13 个对象均返回 HTTPS 200、正确 `Content-Length`、`Accept-Ranges: bytes`、
+- 12 个对象均返回 HTTPS 200、正确 `Content-Length`、`Accept-Ranges: bytes`、
   `Content-Disposition: attachment` 和 immutable 缓存策略。
 - `Range: bytes=0-0` 返回 206 和正确 `Content-Range`。
 - R2 对象总量小于 9 GB，`releases/` 下不存在旧正式版目录。

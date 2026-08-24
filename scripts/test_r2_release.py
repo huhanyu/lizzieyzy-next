@@ -27,7 +27,6 @@ def release():
         f"{DATE}-windows64.opencl.portable.zip",
         f"{DATE}-windows64.with-katago.portable.zip",
         f"{DATE}-windows64.nvidia.portable.zip",
-        f"{DATE}-windows64.nvidia50.cuda.portable.zip",
         f"{DATE}-windows64.without.engine.portable.zip",
         f"{DATE}-windows64.core-update.zip",
         f"{DATE}-mac-apple-silicon.with-katago.dmg",
@@ -55,8 +54,8 @@ class R2ReleaseTest(unittest.TestCase):
     def test_whitelist_is_exact_and_excludes_installers_and_linux(self):
         selected = r2_release.select_r2_assets(release(), r2_release.DEFAULT_PUBLIC_BASE)
 
-        self.assertEqual(13, len(selected))
-        self.assertEqual(13_000, sum(entry.size for entry in selected))
+        self.assertEqual(12, len(selected))
+        self.assertEqual(12_000, sum(entry.size for entry in selected))
         self.assertFalse(any(entry.name.endswith("installer.exe") for entry in selected))
         self.assertFalse(any("linux64" in entry.name for entry in selected))
 

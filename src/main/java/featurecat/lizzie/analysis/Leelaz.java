@@ -884,7 +884,9 @@ public class Leelaz {
                 "First launch on the NVIDIA package may take a little longer.");
           }
           KataGoRuntimeHelper.ensureBundledRuntimeReady(
-              engineExecutable, deferredEngineGameRecovery ? null : Lizzie.frame);
+              engineExecutable,
+              commands,
+              deferredEngineGameRecovery ? null : Lizzie.frame);
         } catch (IOException e) {
           closeBundledStartupDialog();
           String err = e.getLocalizedMessage();

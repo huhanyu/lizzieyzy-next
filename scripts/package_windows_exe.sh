@@ -31,22 +31,28 @@ APP_DESCRIPTION="Maintained LizzieYzy build with Fox nickname fetch and easier K
 OPENCL_APP_NAME="LizzieYzy Next OpenCL"
 OPENCL_APP_DESCRIPTION="Maintained LizzieYzy build with Fox nickname fetch and bundled OpenCL KataGo"
 NVIDIA_APP_NAME="LizzieYzy Next NVIDIA"
-NVIDIA_APP_DESCRIPTION="Maintained LizzieYzy build with bundled NVIDIA CUDA KataGo"
-NVIDIA50_CUDA_APP_NAME="LizzieYzy Next NVIDIA 50 CUDA"
-NVIDIA50_CUDA_APP_DESCRIPTION="Maintained LizzieYzy build with bundled RTX 50 CUDA KataGo"
+NVIDIA_APP_DESCRIPTION="Maintained LizzieYzy build with bundled CUDA 12.8 KataGo for RTX 20/30/40/50"
 NVIDIA_TRT_APP_NAME="LizzieYzy Next NVIDIA TensorRT"
-NVIDIA_TRT_APP_DESCRIPTION="Maintained LizzieYzy build with optional bundled TensorRT acceleration"
+NVIDIA_TRT_APP_DESCRIPTION="Optional TensorRT KataGo build for NVIDIA RTX 30 series and earlier"
+DIRECTML_APP_NAME="LizzieYzy Next DirectML Experimental"
+DIRECTML_APP_DESCRIPTION="Experimental self-contained DirectML KataGo build for DirectX 12 GPUs"
+OPENVINO_APP_NAME="LizzieYzy Next OpenVINO Experimental"
+OPENVINO_APP_DESCRIPTION="Experimental self-contained OpenVINO KataGo build for Intel GPU and NPU"
 MAIN_JAR="$(basename "$JAR_PATH")"
 ICON_PATH="$ROOT_DIR/packaging/icons/app-icon.ico"
 ARCH_TAG="windows64"
 STANDARD_ENGINE_PLATFORM_DIR="windows-x64"
 OPENCL_ENGINE_PLATFORM_DIR="${WINDOWS_OPENCL_ENGINE_PLATFORM_DIR:-windows-x64-opencl}"
 NVIDIA_ENGINE_PLATFORM_DIR="${WINDOWS_NVIDIA_ENGINE_PLATFORM_DIR:-windows-x64-nvidia}"
-NVIDIA50_CUDA_ENGINE_PLATFORM_DIR="${WINDOWS_NVIDIA50_CUDA_ENGINE_PLATFORM_DIR:-windows-x64-nvidia50-cuda}"
 NVIDIA_TRT_ENGINE_PLATFORM_DIR="${WINDOWS_NVIDIA_TRT_ENGINE_PLATFORM_DIR:-windows-x64-nvidia-tensorrt}"
+DIRECTML_ENGINE_PLATFORM_DIR="windows-x64-directml"
+OPENVINO_ENGINE_PLATFORM_DIR="windows-x64-openvino"
+ROCM_GFX103X_ENGINE_PLATFORM_DIR="windows-x64-rocm-gfx103x"
+ROCM_GFX110X_ENGINE_PLATFORM_DIR="windows-x64-rocm-gfx110x"
+ROCM_GFX1151_ENGINE_PLATFORM_DIR="windows-x64-rocm-gfx1151"
+ROCM_GFX120X_ENGINE_PLATFORM_DIR="windows-x64-rocm-gfx120x"
 OPENCL_ARCH_TAG="${ARCH_TAG}.opencl"
 NVIDIA_ARCH_TAG="${ARCH_TAG}.nvidia"
-NVIDIA50_CUDA_ARCH_TAG="${ARCH_TAG}.nvidia50.cuda"
 NVIDIA_TRT_ARCH_TAG="${ARCH_TAG}.nvidia.tensorrt"
 MAX_RELEASE_ASSET_BYTES="${WINDOWS_RELEASE_ASSET_MAX_BYTES:-2000000000}"
 TENSORRT_SPLIT_VOLUME_SIZE="${WINDOWS_TENSORRT_SPLIT_VOLUME_SIZE:-1800m}"
@@ -54,17 +60,11 @@ DIST_DIR="$ROOT_DIR/dist/windows"
 RELEASE_DIR="$ROOT_DIR/dist/release"
 META_DIR="$ROOT_DIR/dist/release-meta"
 WINDOWS_UPGRADE_UUID_NVIDIA="${WINDOWS_UPGRADE_UUID_NVIDIA:-14a4599e-6d5b-4b86-9895-7748266f0c25}"
-WINDOWS_UPGRADE_UUID_NVIDIA50_CUDA="${WINDOWS_UPGRADE_UUID_NVIDIA50_CUDA:-8339893c-59d8-4bb0-9cde-e54d6bb969f5}"
 WINDOWS_UPGRADE_UUID_OPENCL="${WINDOWS_UPGRADE_UUID_OPENCL:-0ec8b17f-06b0-4f6a-9246-cf61953743cf}"
 ENGINE_BACKEND_MARKER_NAME="lizzieyzy-next-engine-backend.txt"
 NVIDIA_RUNTIME_PREPARE_SCRIPT="$ROOT_DIR/scripts/prepare_bundled_nvidia_runtime.py"
-NVIDIA_RUNTIME_STAGE_DIR="$DIST_DIR/nvidia-runtime/cuda12.1-cudnn9"
-NVIDIA50_CUDA_RUNTIME_STAGE_DIR="$DIST_DIR/nvidia-runtime/cuda12.8-cudnn9"
+NVIDIA_RUNTIME_STAGE_DIR="$DIST_DIR/nvidia-runtime/cuda12.8-cudnn9"
 NVIDIA_TRT_RUNTIME_STAGE_DIR="$DIST_DIR/nvidia-runtime/cuda12.8-cudnn9-tensorrt"
-TENSORRT_KATAGO_TAG="${TENSORRT_KATAGO_TAG:-v1.17.2}"
-TENSORRT_KATAGO_ASSET="${TENSORRT_KATAGO_ASSET:-katago-${TENSORRT_KATAGO_TAG}-trt10.9.0-cuda12.8-windows-x64.zip}"
-TENSORRT_KATAGO_SHA256="${TENSORRT_KATAGO_SHA256:-be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6}"
-TENSORRT_KATAGO_URL="${TENSORRT_KATAGO_URL:-https://github.com/lightvector/KataGo/releases/download/${TENSORRT_KATAGO_TAG}/${TENSORRT_KATAGO_ASSET}}"
 CUDA_12_8_NVRTC_VERSION="12.8.61"
 CUDA_12_8_NVRTC_SHA256="e43603b09f8a52d681ceb814c00b655af19da53692ab91671dabbf8071c8f93d"
 TENSORRT_10_9_RUNTIME_SHA256="c2758eb60191f01a47b24f54700e5463f577ebe129cd18fe835d0aa9f1e1a16d"
@@ -83,7 +83,7 @@ READBOARD_ASSET_SHA256="${READBOARD_ASSET_SHA256:-1ba4c265f560cd988be24f4ea0eeb2
 READBOARD_RELEASE_API="${READBOARD_RELEASE_API:-https://api.github.com/repos/${READBOARD_RELEASE_REPO}/releases/tags/${READBOARD_RELEASE_TAG}}"
 READBOARD_CACHE_DIR="$ROOT_DIR/.cache/readboard"
 READBOARD_STAGE_DIR="$DIST_DIR/readboard"
-PYTHON_BIN=""
+PYTHON_BIN="${PYTHON_BIN:-}"
 INSTALLED_UPDATE_MANIFEST_NAME="lizzieyzy-next-installed-manifest.json"
 UPDATE_MANIFEST_NAME="lizzieyzy-next-update-manifest.json"
 RUNTIME_TOOLS_SCRIPT="$ROOT_DIR/scripts/package_runtime_tools.py"
@@ -599,7 +599,7 @@ copy_bundle_nvidia_runtime_assets() {
 prepare_bundled_tensorrt_engine_assets() {
   resolve_python_bin
   local output_dir="$ROOT_DIR/engines/katago/$NVIDIA_TRT_ENGINE_PLATFORM_DIR"
-  local companion_source="$ROOT_DIR/engines/katago/$NVIDIA50_CUDA_ENGINE_PLATFORM_DIR/katago.exe"
+  local companion_source="$ROOT_DIR/engines/katago/$NVIDIA_ENGINE_PLATFORM_DIR/katago.exe"
   if [[ ! -f "$companion_source" ]]; then
     echo "TensorRT HumanSL CUDA companion source is missing: $companion_source" >&2
     exit 1
@@ -879,9 +879,8 @@ write_windows_install_note() {
   local has_with_katago="$1"
   local has_opencl_katago="$2"
   local has_nvidia_katago="$3"
-  local has_nvidia50_cuda_katago="$4"
-  local has_no_engine_installer="$5"
-  local has_tensorrt_split="$6"
+  local has_no_engine_installer="$4"
+  local has_tensorrt_split="$5"
   local note_file="$META_DIR/${DATE_TAG}-${ARCH_TAG}-install.txt"
 
   cat >"$note_file" <<EOF
@@ -918,29 +917,20 @@ EOF
   if [[ "$has_nvidia_katago" == "true" ]]; then
     cat >>"$note_file" <<EOF
 - ${DATE_TAG}-${NVIDIA_ARCH_TAG}.installer.exe
-  Stable NVIDIA package for RTX 20/30/40 series and other CUDA 12.1 compatible PCs.
+  Unified CUDA 12.8 package for RTX 20/30/40/50 series. This is the default NVIDIA choice.
 - ${DATE_TAG}-${NVIDIA_ARCH_TAG}.portable.zip
   NVIDIA-only portable build. Unzip it and open ${NVIDIA_APP_NAME}.exe.
-EOF
-  fi
-
-  if [[ "$has_nvidia50_cuda_katago" == "true" ]]; then
-    cat >>"$note_file" <<EOF
-- ${DATE_TAG}-${NVIDIA50_CUDA_ARCH_TAG}.installer.exe
-  RTX 50 series CUDA package. Choose this first for RTX 5070/5080/5090.
-- ${DATE_TAG}-${NVIDIA50_CUDA_ARCH_TAG}.portable.zip
-  RTX 50 CUDA portable build. Unzip it and open ${NVIDIA50_CUDA_APP_NAME}.exe.
-  Optional TensorRT acceleration for modern NVIDIA GPUs is normally installed inside KataGo Auto Setup after launch.
+  RTX 40/50 users should stay on CUDA. RTX 30 series and earlier may optionally try TensorRT.
 EOF
   fi
 
   if [[ "$has_tensorrt_split" == "true" ]]; then
     cat >>"$note_file" <<EOF
 - ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001, .002, ...
-  Advanced optional TensorRT split package. Download every .7z.00N volume, install 7-Zip, then extract from .7z.001.
-  If you are not sure, do not choose this package; use the normal NVIDIA/CUDA package and the in-app TensorRT installer with resume support instead.
+  Optional TensorRT split package for RTX 30 series and earlier. Download every .7z.00N volume, install 7-Zip, then extract from .7z.001.
+  RTX 40/50 users should use the normal NVIDIA/CUDA package. GTX 16 users may test TensorRT, while GTX 10 is unsupported.
 - ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.README.txt
-  Read this first before using the advanced optional TensorRT split package.
+  Read this first before using the RTX 30 series and earlier optional TensorRT split package.
 EOF
   fi
 
@@ -996,34 +986,23 @@ EOF
 
   if [[ "$has_nvidia_katago" == "true" ]]; then
     cat >>"$note_file" <<'EOF'
-- The NVIDIA assets include the official KataGo CUDA 12.1 Windows build and remain the stable choice for RTX 20/30/40 series users.
+- The NVIDIA assets include the official KataGo CUDA 12.8 / cuDNN 9.8 Windows build for RTX 20/30/40/50 series users.
 - The NVIDIA assets also include the required official NVIDIA runtime files, so first launch should work offline on supported NVIDIA PCs.
-- TensorRT acceleration can be installed explicitly inside KataGo Auto Setup for RTX 20/30/40/50 users; GTX 10 series and older NVIDIA GPUs should use CUDA/OpenCL instead.
+- RTX 40/50 users should use CUDA. TensorRT is an optional choice for RTX 30 series and earlier; GTX 16 may try it, while GTX 10 is unsupported.
 - The in-app TensorRT installer supports resume; this is the default path for most users.
 - KataGo Auto Setup detects the local NVIDIA GPU and Compute Capability before recommending TensorRT.
 - If those NVIDIA runtime files are missing later, reinstall the NVIDIA package instead of downloading extra files at startup.
 EOF
   fi
 
-  if [[ "$has_nvidia50_cuda_katago" == "true" ]]; then
-    cat >>"$note_file" <<'EOF'
-- The NVIDIA 50 CUDA assets include the official KataGo CUDA 12.8 / cuDNN 9.8 Windows build for Blackwell RTX 50 series GPUs.
-- RTX 5070/5080/5090 users should try the NVIDIA 50 CUDA package first.
-- TensorRT acceleration is available as an explicit in-app install from KataGo Auto Setup for RTX 20/30/40/50 users who want to test it.
-- The in-app TensorRT installer supports resume; this is the default path for most users.
-- KataGo Auto Setup detects the local NVIDIA GPU and Compute Capability before recommending TensorRT.
-- GTX 10 series and older NVIDIA GPUs should use CUDA/OpenCL instead of TensorRT.
-EOF
-  fi
-
   if [[ "$has_tensorrt_split" == "true" ]]; then
     cat >>"$note_file" <<'EOF'
-- The advanced optional TensorRT split package is for users who already know how to extract multi-volume 7z archives.
+- The optional TensorRT split package is for RTX 30 series and earlier users who already know how to extract multi-volume 7z archives.
 - It is not the default recommended package. Download both .7z.001 and .7z.002 before extracting.
 EOF
   fi
 
-  if [[ "$has_nvidia_katago" == "true" || "$has_nvidia50_cuda_katago" == "true" ]]; then
+  if [[ "$has_nvidia_katago" == "true" ]]; then
     cat >>"$note_file" <<'EOF'
 - Only choose an NVIDIA package if your PC has an NVIDIA GPU. If you are not sure, use the regular with-katago installer instead.
 EOF
@@ -1059,11 +1038,12 @@ create_portable_zip() {
 write_tensorrt_split_readme() {
   local readme_file="$1"
   cat >"$readme_file" <<EOF
-高级可选：TensorRT 预装分卷包
+RTX 30 系及以下可选：TensorRT 预装分卷包
 ================================
 
-这个分卷包只适合熟悉 7-Zip 的 RTX 20/30/40/50 用户，尤其是想离线测试 TensorRT 的用户。
+这个分卷包只适合熟悉 7-Zip 的 RTX 30 系及以下用户，尤其是想离线测试 TensorRT 的用户。
 不确定怎么选的普通用户，请下载普通 NVIDIA/CUDA 包，然后在软件内「KataGo 一键设置」安装 TensorRT；软件内安装支持断点续传。
+RTX 40/50 用户默认使用 CUDA，不推荐改用 TensorRT。GTX 16 用户可以尝试，GTX 10 不支持。
 
 解压方法：
 1. 下载本次 release 里的 ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001 和 .002。
@@ -1074,14 +1054,15 @@ write_tensorrt_split_readme() {
 
 注意：
 - 这个包不是普通用户的默认推荐下载。
-- GTX 10 系及更老 NVIDIA 显卡不推荐 TensorRT，建议 CUDA/OpenCL。
+- GTX 10 系及更老 NVIDIA 显卡不支持 TensorRT，建议 CUDA/OpenCL。
 - TensorRT 首次启动可能会生成优化缓存，耗时较长；如果失败，可以回退普通 NVIDIA/CUDA 或 OpenCL 包。
 
-Advanced optional TensorRT split package
+Optional TensorRT split package for RTX 30 series and earlier
 ========================================
 
-This package is only for RTX 20/30/40/50 users who are comfortable with 7-Zip and want an offline TensorRT test path.
+This package is only for RTX 30 series and earlier users who are comfortable with 7-Zip and want an offline TensorRT test path.
 Most users should download the regular NVIDIA/CUDA package and install TensorRT from KataGo Auto Setup inside the app; the in-app installer supports resume.
+RTX 40/50 users should stay on CUDA. GTX 16 users may try TensorRT, while GTX 10 is unsupported.
 
 How to extract:
 1. Download ${DATE_TAG}-${NVIDIA_TRT_ARCH_TAG}.portable.7z.001 and .002 from this release.
@@ -1144,7 +1125,7 @@ for raw_path in part_paths:
 payload = {
     "dateTag": date_tag,
     "releaseDisplayVersion": app_display_version,
-    "assetKind": "advanced-optional-tensorrt-split-package",
+    "assetKind": "optional-tensorrt-split-package",
     "archivePrefix": f"{date_tag}-{arch_tag}.portable.7z",
     "volumeSize": volume_size,
     "extractWith": "7-Zip",
@@ -1182,7 +1163,7 @@ create_tensorrt_split_package() {
   native_archive="$(to_native_path "$archive_base.7z")"
 
   printf '%s\n' \
-    "LizzieYzy Next advanced optional TensorRT split package. Keep this file so settings, logs, downloaded weights, and TensorRT stay inside this folder." \
+    "LizzieYzy Next optional TensorRT split package for RTX 30 series and earlier. Keep this file so settings, logs, downloaded weights, and TensorRT stay inside this folder." \
     >"$app_image_root/.lizzie-portable"
   mkdir -p "$app_image_root/user-data"
 
@@ -1492,7 +1473,6 @@ build_no_engine_installer="true"
 has_with_katago_assets="false"
 has_opencl_katago_assets="false"
 has_nvidia_katago_assets="false"
-has_nvidia50_cuda_katago_assets="false"
 has_tensorrt_split_assets="false"
 
 prepare_bundled_readboard_assets
@@ -1533,7 +1513,7 @@ fi
 
 if has_bundled_katago "$NVIDIA_ENGINE_PLATFORM_DIR"; then
   has_nvidia_katago_assets="true"
-  prepare_bundled_nvidia_runtime_assets "cuda12.1-cudnn9" "$NVIDIA_RUNTIME_STAGE_DIR"
+  prepare_bundled_nvidia_runtime_assets "cuda12.8-cudnn9" "$NVIDIA_RUNTIME_STAGE_DIR"
   build_release_variant \
     "nvidia" \
     "true" \
@@ -1549,27 +1529,39 @@ else
   has_nvidia_katago_assets="false"
 fi
 
-if has_bundled_katago "$NVIDIA50_CUDA_ENGINE_PLATFORM_DIR"; then
-  has_nvidia50_cuda_katago_assets="true"
-  prepare_bundled_nvidia_runtime_assets "cuda12.8-cudnn9" "$NVIDIA50_CUDA_RUNTIME_STAGE_DIR"
-  build_release_variant \
-    "nvidia50.cuda" \
-    "true" \
-    "$NVIDIA50_CUDA_APP_NAME" \
-    "$NVIDIA50_CUDA_APP_DESCRIPTION" \
-    "$NVIDIA50_CUDA_ENGINE_PLATFORM_DIR" \
-    "$STANDARD_ENGINE_PLATFORM_DIR" \
-    "nvidia50-cuda" \
-    "$NVIDIA50_CUDA_ARCH_TAG" \
-    "$WINDOWS_UPGRADE_UUID_NVIDIA50_CUDA" \
-    "$NVIDIA50_CUDA_RUNTIME_STAGE_DIR"
-else
-  has_nvidia50_cuda_katago_assets="false"
+if [[ "${WINDOWS_BUILD_EXPERIMENTAL_PORTABLES:-true}" == "true" ]]; then
+  if has_bundled_katago "$DIRECTML_ENGINE_PLATFORM_DIR"; then
+    build_release_variant \
+      "experimental.directml" "true" "$DIRECTML_APP_NAME" "$DIRECTML_APP_DESCRIPTION" \
+      "$DIRECTML_ENGINE_PLATFORM_DIR" "$STANDARD_ENGINE_PLATFORM_DIR" "directml" \
+      "${ARCH_TAG}.experimental.directml" "$WINDOWS_UPGRADE_UUID" "" "false"
+  fi
+  if has_bundled_katago "$OPENVINO_ENGINE_PLATFORM_DIR"; then
+    build_release_variant \
+      "experimental.openvino" "true" "$OPENVINO_APP_NAME" "$OPENVINO_APP_DESCRIPTION" \
+      "$OPENVINO_ENGINE_PLATFORM_DIR" "$STANDARD_ENGINE_PLATFORM_DIR" "openvino" \
+      "${ARCH_TAG}.experimental.openvino" "$WINDOWS_UPGRADE_UUID" "" "false"
+  fi
+  for rocm_spec in \
+    "gfx103x|$ROCM_GFX103X_ENGINE_PLATFORM_DIR|RX 6000 / RDNA2" \
+    "gfx110x|$ROCM_GFX110X_ENGINE_PLATFORM_DIR|RX 7000 / RDNA3" \
+    "gfx1151|$ROCM_GFX1151_ENGINE_PLATFORM_DIR|Ryzen AI Max" \
+    "gfx120x|$ROCM_GFX120X_ENGINE_PLATFORM_DIR|RX 9000 / RDNA4"; do
+    IFS='|' read -r rocm_family rocm_engine_dir rocm_hardware <<<"$rocm_spec"
+    if has_bundled_katago "$rocm_engine_dir"; then
+      build_release_variant \
+        "experimental.rocm.$rocm_family" "true" \
+        "LizzieYzy Next ROCm $rocm_family Experimental" \
+        "Experimental self-contained ROCm KataGo build for $rocm_hardware" \
+        "$rocm_engine_dir" "$STANDARD_ENGINE_PLATFORM_DIR" "rocm-$rocm_family" \
+        "${ARCH_TAG}.experimental.rocm.$rocm_family" "$WINDOWS_UPGRADE_UUID" "" "false"
+    fi
+  done
 fi
 
 if [[ "${WINDOWS_BUILD_TENSORRT_SPLIT:-true}" == "true" ]] \
   && [[ -f "$ROOT_DIR/weights/default.bin.gz" ]] \
-  && [[ "$has_nvidia50_cuda_katago_assets" == "true" ]]; then
+  && [[ "$has_nvidia_katago_assets" == "true" ]]; then
   has_tensorrt_split_assets="true"
   prepare_bundled_tensorrt_engine_assets
   prepare_bundled_nvidia_runtime_assets "cuda12.8-cudnn9-tensorrt" "$NVIDIA_TRT_RUNTIME_STAGE_DIR"
@@ -1600,7 +1592,6 @@ write_windows_install_note \
   "$has_with_katago_assets" \
   "$has_opencl_katago_assets" \
   "$has_nvidia_katago_assets" \
-  "$has_nvidia50_cuda_katago_assets" \
   "$build_no_engine_installer" \
   "$has_tensorrt_split_assets"
 write_sha256_file "$checksum_file" "${artifacts[@]}" "$install_note"
@@ -1620,7 +1611,6 @@ echo "Windows installer version: $WINDOWS_APP_VERSION"
 echo "Windows upgrade UUID: $WINDOWS_UPGRADE_UUID"
 echo "Windows OpenCL upgrade UUID: $WINDOWS_UPGRADE_UUID_OPENCL"
 echo "Windows NVIDIA upgrade UUID: $WINDOWS_UPGRADE_UUID_NVIDIA"
-echo "Windows NVIDIA 50 CUDA upgrade UUID: $WINDOWS_UPGRADE_UUID_NVIDIA50_CUDA"
 echo
 echo "Maintainer metadata:"
 ls -lh "$install_note" "$checksum_file"

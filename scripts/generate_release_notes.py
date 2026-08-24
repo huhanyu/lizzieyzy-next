@@ -13,6 +13,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 VERSION_FILE = ROOT / 'engines' / 'katago' / 'VERSION.txt'
 PREPARE_BUNDLED_KATAGO_SCRIPT = ROOT / 'scripts' / 'prepare_bundled_katago.sh'
+KATAGO_ASSET_CATALOG = ROOT / 'src' / 'main' / 'resources' / 'katago-assets.json'
 
 ASSET_SPECS = [
     ('windows_installer', 'windows64.with-katago.installer.exe', 'Windows 64 位，CPU 兼容版', 'Windows x64, CPU fallback'),
@@ -21,8 +22,12 @@ ASSET_SPECS = [
     ('windows_opencl_portable', 'windows64.opencl.portable.zip', 'Windows 64 位，OpenCL 推荐版，免安装', 'Windows x64, OpenCL recommended, no installer'),
     ('windows_nvidia_installer', 'windows64.nvidia.installer.exe', 'Windows 64 位，英伟达显卡', 'Windows x64, NVIDIA GPU'),
     ('windows_nvidia_portable', 'windows64.nvidia.portable.zip', 'Windows 64 位，英伟达显卡，免安装', 'Windows x64, NVIDIA GPU, no installer'),
-    ('windows_nvidia50_cuda_installer', 'windows64.nvidia50.cuda.installer.exe', 'Windows 64 位，RTX 50 CUDA 版', 'Windows x64, RTX 50 CUDA'),
-    ('windows_nvidia50_cuda_portable', 'windows64.nvidia50.cuda.portable.zip', 'Windows 64 位，RTX 50 CUDA 版，免安装', 'Windows x64, RTX 50 CUDA, no installer'),
+    ('windows_directml_experimental', 'windows64.experimental.directml.portable.zip', 'Windows 64 位，DirectML 实验版', 'Windows x64, DirectML experimental'),
+    ('windows_openvino_experimental', 'windows64.experimental.openvino.portable.zip', 'Windows 64 位，OpenVINO 实验版', 'Windows x64, OpenVINO experimental'),
+    ('windows_rocm_gfx103x_experimental', 'windows64.experimental.rocm.gfx103x.portable.zip', 'Windows 64 位，ROCm RX 6000 实验版', 'Windows x64, ROCm RX 6000 experimental'),
+    ('windows_rocm_gfx110x_experimental', 'windows64.experimental.rocm.gfx110x.portable.zip', 'Windows 64 位，ROCm RX 7000 实验版', 'Windows x64, ROCm RX 7000 experimental'),
+    ('windows_rocm_gfx1151_experimental', 'windows64.experimental.rocm.gfx1151.portable.zip', 'Windows 64 位，ROCm Ryzen AI Max 实验版', 'Windows x64, ROCm Ryzen AI Max experimental'),
+    ('windows_rocm_gfx120x_experimental', 'windows64.experimental.rocm.gfx120x.portable.zip', 'Windows 64 位，ROCm RX 9000 实验版', 'Windows x64, ROCm RX 9000 experimental'),
     ('windows_no_engine_installer', 'windows64.without.engine.installer.exe', 'Windows 64 位，想自己配引擎，也想安装器', 'Windows x64, your own engine with installer'),
     ('windows_no_engine_portable', 'windows64.without.engine.portable.zip', 'Windows 64 位，想自己配引擎', 'Windows x64, your own engine'),
     ('mac_arm64', 'mac-apple-silicon.with-katago.dmg', 'macOS Apple Silicon', 'macOS Apple Silicon'),
@@ -99,7 +104,27 @@ def load_bundle_metadata() -> dict[str, str]:
             elif key == 'model source':
                 metadata['model_source'] = value
 
-    if PREPARE_BUNDLED_KATAGO_SCRIPT.exists():
+    if KATAGO_ASSET_CATALOG.exists():
+        catalog = json.loads(KATAGO_ASSET_CATALOG.read_text(encoding='utf-8'))
+        assets = catalog['assets']
+        default_model = catalog['models'][catalog['defaultModelId']]
+        metadata.update(
+            {
+                'katago_version': catalog['katagoReleaseTag'],
+                'model_source': default_model['fileName'],
+                'windows_bundle': assets['windows-cpu']['assetName'],
+                'windows_opencl_bundle': assets['windows-opencl']['assetName'],
+                'windows_nvidia_bundle': assets['windows-nvidia']['assetName'],
+                # Historical note builders still expose this compatibility field. The current
+                # release deliberately uses the same unified CUDA asset for every RTX generation.
+                'windows_nvidia50_cuda_bundle': assets['windows-nvidia']['assetName'],
+                'linux_bundle': assets['linux-cpu']['assetName'],
+                'linux_opencl_bundle': assets['linux-opencl']['assetName'],
+                'linux_nvidia_bundle': assets['linux-nvidia']['assetName'],
+            }
+        )
+
+    if not KATAGO_ASSET_CATALOG.exists() and PREPARE_BUNDLED_KATAGO_SCRIPT.exists():
         script_text = PREPARE_BUNDLED_KATAGO_SCRIPT.read_text(encoding='utf-8')
         pattern_map = {
             'katago_version': r'KATAGO_TAG="\$\{KATAGO_TAG:-([^"]+)\}"',
@@ -408,60 +433,16 @@ def add_nvidia50_download_rows(
     assets: dict[str, str],
 ) -> None:
     add_windows_core_update_download_row(sections, assets_cn, assets)
-    labels_by_language = {
-        '中文': (
-            'Windows 64 位，RTX 50 CUDA 版，5070/5080/5090 优先，免安装',
-            'Windows 64 位，RTX 50 CUDA 版，5070/5080/5090 优先，想安装',
-        ),
-        '繁體中文': (
-            'Windows 64 位，RTX 50 CUDA 版，5070/5080/5090 優先，免安裝',
-            'Windows 64 位，RTX 50 CUDA 版，5070/5080/5090 優先，想安裝',
-        ),
-        'English': (
-            'Windows 64-bit, RTX 50 CUDA, recommended for 5070/5080/5090, no install',
-            'Windows 64-bit, RTX 50 CUDA, recommended for 5070/5080/5090, installer',
-        ),
-        '日本語': (
-            'Windows 64-bit、RTX 50 CUDA、5070/5080/5090 推奨、インストール不要',
-            'Windows 64-bit、RTX 50 CUDA、5070/5080/5090 推奨、インストーラ',
-        ),
-        '한국어': (
-            'Windows 64-bit, RTX 50 CUDA, 5070/5080/5090 권장, 무설치',
-            'Windows 64-bit, RTX 50 CUDA, 5070/5080/5090 권장, 설치형',
-        ),
-        'ภาษาไทย': (
-            'Windows 64-bit, RTX 50 CUDA, แนะนำสำหรับ 5070/5080/5090, ไม่ต้องติดตั้ง',
-            'Windows 64-bit, RTX 50 CUDA, แนะนำสำหรับ 5070/5080/5090, แบบติดตั้ง',
-        ),
-    }
     before_note_by_language = {
-        '中文': 'RTX 5070/5080/5090 用户优先下载 RTX 50 CUDA 版；RTX 20/30/40/50 用户需要 TensorRT 时可在软件内“一键设置”按需安装，GTX 10 系及更老显卡优先 CUDA/OpenCL。',
-        '繁體中文': 'RTX 5070/5080/5090 使用者優先下載 RTX 50 CUDA 版；RTX 20/30/40/50 使用者需要 TensorRT 時可在軟體內「一鍵設定」按需安裝，GTX 10 系及更舊顯卡優先 CUDA/OpenCL。',
-        'English': 'RTX 5070/5080/5090 users should try the RTX 50 CUDA build first; RTX 20/30/40/50 users can install TensorRT on demand from the in-app KataGo Auto Setup, while GTX 10 series and older cards should prefer CUDA/OpenCL.',
-        '日本語': 'RTX 5070/5080/5090 ユーザーは RTX 50 CUDA 版を優先してください。RTX 20/30/40/50 ユーザーはアプリ内の KataGo 自動設定から TensorRT を必要時にインストールできます。GTX 10 系以前は CUDA/OpenCL を推奨します。',
-        '한국어': 'RTX 5070/5080/5090 사용자는 RTX 50 CUDA 버전을 먼저 권장합니다. RTX 20/30/40/50 사용자는 앱 안의 KataGo 자동 설정에서 TensorRT를 필요할 때 설치할 수 있고, GTX 10 시리즈 및 이전 카드는 CUDA/OpenCL을 권장합니다.',
-        'ภาษาไทย': 'ผู้ใช้ RTX 5070/5080/5090 ควรลอง RTX 50 CUDA ก่อน ผู้ใช้ RTX 20/30/40/50 สามารถติดตั้ง TensorRT จาก KataGo Auto Setup ในแอปเมื่อต้องการ ส่วน GTX 10 series และรุ่นเก่าควรใช้ CUDA/OpenCL',
+        '中文': 'Windows NVIDIA 已统一为 CUDA 12.8 包，覆盖 RTX 20/30/40/50；RTX 40/50 默认使用 CUDA，RTX 30 系及以下可在“一键设置”中选装 TensorRT。',
+        '繁體中文': 'Windows NVIDIA 已統一為 CUDA 12.8 套件，涵蓋 RTX 20/30/40/50；RTX 40/50 預設使用 CUDA，RTX 30 系及以下可在「一鍵設定」中選裝 TensorRT。',
+        'English': 'Windows NVIDIA now uses one CUDA 12.8 package for RTX 20/30/40/50. RTX 40/50 should keep CUDA; RTX 30 series and earlier may optionally install TensorRT in KataGo Auto Setup.',
+        '日本語': 'Windows NVIDIA は RTX 20/30/40/50 向けの CUDA 12.8 パッケージに統合されました。RTX 40/50 は CUDA、RTX 30 以前は自動設定で TensorRT を任意に追加できます。',
+        '한국어': 'Windows NVIDIA는 RTX 20/30/40/50용 CUDA 12.8 패키지 하나로 통합되었습니다. RTX 40/50은 CUDA를 사용하고 RTX 30 이하는 자동 설정에서 TensorRT를 선택할 수 있습니다.',
+        'ภาษาไทย': 'Windows NVIDIA รวมเป็นแพ็กเกจ CUDA 12.8 เดียวสำหรับ RTX 20/30/40/50 โดย RTX 40/50 ควรใช้ CUDA ส่วน RTX 30 และรุ่นก่อนหน้าติดตั้ง TensorRT เพิ่มได้ใน Auto Setup',
     }
     for section in sections:
         language = str(section['language'])
-        download = section['download']
-        assert isinstance(download, dict)
-        rows = download['rows']
-        assert isinstance(rows, list)
-        if any('nvidia50.cuda' in str(row[1]) for row in rows if isinstance(row, tuple)):
-            continue
-        localized_assets = assets_cn if language in ('中文', '繁體中文') else assets
-        labels = labels_by_language.get(language, labels_by_language['English'])
-        additions = [
-            (labels[0], localized_assets['windows_nvidia50_cuda_portable']),
-            (labels[1], localized_assets['windows_nvidia50_cuda_installer']),
-        ]
-        insert_at = min(6, len(rows))
-        for index, row in enumerate(rows):
-            if isinstance(row, tuple) and 'windows64.nvidia.installer' in str(row[1]):
-                insert_at = index + 1
-                break
-        rows[insert_at:insert_at] = additions
         before = section['before']
         assert isinstance(before, dict)
         before_items = before['items']
@@ -480,20 +461,20 @@ def add_tensorrt_split_download_row(
     if not any(asset_map.get(key) for key in TENSORRT_SPLIT_DOWNLOAD_ASSET_KEYS):
         return
     labels_by_language = {
-        '中文': '高级可选：TensorRT 预装分卷包说明（需下载全部 .7z.00N）',
-        '繁體中文': '進階可選：TensorRT 預裝分卷包說明（需下載全部 .7z.00N）',
-        'English': 'Advanced optional TensorRT split package guide; download every .7z.00N part',
-        '日本語': '上級者向け任意：TensorRT 分割パッケージ案内（.7z.00N を全て取得）',
-        '한국어': '고급 선택: TensorRT 분할 패키지 안내(.7z.00N 전체 다운로드 필요)',
-        'ภาษาไทย': 'ตัวเลือกขั้นสูง: คู่มือ TensorRT split package ต้องดาวน์โหลด .7z.00N ครบทุกไฟล์',
+        '中文': 'RTX 30 系及以下可选：TensorRT 预装分卷包（需下载全部 .7z.00N）',
+        '繁體中文': 'RTX 30 系及以下可選：TensorRT 預裝分卷包（需下載全部 .7z.00N）',
+        'English': 'Optional TensorRT split package for RTX 30 and earlier; download every .7z.00N part',
+        '日本語': 'RTX 30 以前向け任意：TensorRT 分割パッケージ（.7z.00N を全て取得）',
+        '한국어': 'RTX 30 이하 선택: TensorRT 분할 패키지(.7z.00N 전체 다운로드 필요)',
+        'ภาษาไทย': 'ตัวเลือกสำหรับ RTX 30 และเก่ากว่า: TensorRT split package ต้องดาวน์โหลด .7z.00N ครบ',
     }
     before_note_by_language = {
-        '中文': '高级可选 TensorRT 分卷包只适合熟悉 7-Zip 的 RTX 20/30/40/50 用户；普通用户继续下载 NVIDIA/CUDA 包后在软件内一键安装，支持断点续传。分卷包必须下载全部 `.7z.00N`，只下 `.001` 没用。',
-        '繁體中文': '進階可選 TensorRT 分卷包只適合熟悉 7-Zip 的 RTX 20/30/40/50 使用者；一般使用者請先下載 NVIDIA/CUDA 包，再在軟體內一鍵安裝，支援斷點續傳。分卷包必須下載全部 `.7z.00N`，只下 `.001` 沒有用。',
-        'English': 'The advanced optional TensorRT split package is only for RTX 20/30/40/50 users who are comfortable with 7-Zip. Most users should keep using the normal NVIDIA/CUDA package plus the in-app resumable TensorRT installer. You must download every `.7z.00N` part; `.001` alone is useless.',
-        '日本語': '上級者向けの TensorRT 分割パッケージは、7-Zip に慣れた RTX 20/30/40/50 ユーザー向けです。通常は NVIDIA/CUDA パッケージを使い、アプリ内の再開対応 TensorRT インストーラを利用してください。`.7z.00N` を全てダウンロードする必要があり、`.001` だけでは使えません。',
-        '한국어': '고급 선택 TensorRT 분할 패키지는 7-Zip 에 익숙한 RTX 20/30/40/50 사용자용입니다. 대부분의 사용자는 일반 NVIDIA/CUDA 패키지와 앱 안의 이어받기 지원 TensorRT 설치를 쓰면 됩니다. `.7z.00N` 전체를 받아야 하며 `.001` 만 받으면 사용할 수 없습니다.',
-        'ภาษาไทย': 'TensorRT split package แบบตัวเลือกขั้นสูงเหมาะกับผู้ใช้ RTX 20/30/40/50 ที่คุ้นกับ 7-Zip เท่านั้น ผู้ใช้ทั่วไปควรใช้ NVIDIA/CUDA package ปกติแล้วติดตั้ง TensorRT ในแอปซึ่งรองรับ resume ต้องดาวน์โหลด `.7z.00N` ครบทุกไฟล์ ไฟล์ `.001` อย่างเดียวใช้ไม่ได้',
+        '中文': 'TensorRT 分卷包是 RTX 30 系及以下显卡的可选离线路径；RTX 40/50 请使用 CUDA。必须下载全部 `.7z.00N` 并从 `.001` 解压。',
+        '繁體中文': 'TensorRT 分卷包是 RTX 30 系及以下顯示卡的可選離線路徑；RTX 40/50 請使用 CUDA。必須下載全部 `.7z.00N` 並從 `.001` 解壓。',
+        'English': 'The TensorRT split package is an optional offline path for RTX 30 series and earlier; RTX 40/50 should use CUDA. Download every `.7z.00N` part and extract from `.001`.',
+        '日本語': 'TensorRT 分割パッケージは RTX 30 以前向けの任意のオフライン手段です。RTX 40/50 は CUDA を使用し、`.7z.00N` を全て取得して `.001` から展開してください。',
+        '한국어': 'TensorRT 분할 패키지는 RTX 30 이하를 위한 선택적 오프라인 경로입니다. RTX 40/50은 CUDA를 사용하고 `.7z.00N` 전체를 받아 `.001`에서 압축을 푸세요.',
+        'ภาษาไทย': 'TensorRT split package เป็นทางเลือกออฟไลน์สำหรับ RTX 30 และรุ่นก่อนหน้า ส่วน RTX 40/50 ควรใช้ CUDA ต้องดาวน์โหลด `.7z.00N` ครบแล้วแตกจาก `.001`',
     }
     for section in sections:
         language = str(section['language'])
@@ -557,6 +538,12 @@ def standard_download_rows(labels: list[str], localized_assets: dict[str, str]) 
         'windows_installer',
         'windows_nvidia_portable',
         'windows_nvidia_installer',
+        'windows_directml_experimental',
+        'windows_openvino_experimental',
+        'windows_rocm_gfx103x_experimental',
+        'windows_rocm_gfx110x_experimental',
+        'windows_rocm_gfx1151_experimental',
+        'windows_rocm_gfx120x_experimental',
         'windows_no_engine_portable',
         'windows_no_engine_installer',
         'mac_arm64',
@@ -576,6 +563,12 @@ STANDARD_DOWNLOAD_LABELS = {
         'Windows 64 位，CPU 兼容版，想安装',
         'Windows 64 位，NVIDIA 显卡，免安装',
         'Windows 64 位，NVIDIA 显卡，想安装',
+        'Windows 64 位，DirectML 实验版，DirectX 12 GPU',
+        'Windows 64 位，OpenVINO 实验版，Intel GPU/NPU',
+        'Windows 64 位，ROCm 实验版，AMD RX 6000',
+        'Windows 64 位，ROCm 实验版，AMD RX 7000',
+        'Windows 64 位，ROCm 实验版，Ryzen AI Max',
+        'Windows 64 位，ROCm 实验版，AMD RX 9000',
         'Windows 64 位，想自己配引擎',
         'Windows 64 位，想自己配引擎，也想安装器',
         'macOS Apple Silicon',
@@ -591,6 +584,12 @@ STANDARD_DOWNLOAD_LABELS = {
         'Windows 64 位，CPU 相容版，想安裝',
         'Windows 64 位，NVIDIA 顯示卡，免安裝',
         'Windows 64 位，NVIDIA 顯示卡，想安裝',
+        'Windows 64 位，DirectML 實驗版，DirectX 12 GPU',
+        'Windows 64 位，OpenVINO 實驗版，Intel GPU/NPU',
+        'Windows 64 位，ROCm 實驗版，AMD RX 6000',
+        'Windows 64 位，ROCm 實驗版，AMD RX 7000',
+        'Windows 64 位，ROCm 實驗版，Ryzen AI Max',
+        'Windows 64 位，ROCm 實驗版，AMD RX 9000',
         'Windows 64 位，想自己配引擎',
         'Windows 64 位，想自己配引擎，也想安裝器',
         'macOS Apple Silicon',
@@ -606,6 +605,12 @@ STANDARD_DOWNLOAD_LABELS = {
         'Windows 64-bit, CPU compatible build, installer',
         'Windows 64-bit, NVIDIA GPU, no install',
         'Windows 64-bit, NVIDIA GPU, installer',
+        'Windows 64-bit, DirectML experimental, DirectX 12 GPU',
+        'Windows 64-bit, OpenVINO experimental, Intel GPU/NPU',
+        'Windows 64-bit, ROCm experimental, AMD RX 6000',
+        'Windows 64-bit, ROCm experimental, AMD RX 7000',
+        'Windows 64-bit, ROCm experimental, Ryzen AI Max',
+        'Windows 64-bit, ROCm experimental, AMD RX 9000',
         'Windows 64-bit, configure your own engine',
         'Windows 64-bit, configure your own engine, installer',
         'macOS Apple Silicon',
@@ -621,6 +626,12 @@ STANDARD_DOWNLOAD_LABELS = {
         'Windows 64-bit、CPU 互換版、インストーラ',
         'Windows 64-bit、NVIDIA GPU、インストール不要',
         'Windows 64-bit、NVIDIA GPU、インストーラ',
+        'Windows 64-bit、DirectML experimental、DirectX 12 GPU',
+        'Windows 64-bit、OpenVINO experimental、Intel GPU/NPU',
+        'Windows 64-bit、ROCm experimental、AMD RX 6000',
+        'Windows 64-bit、ROCm experimental、AMD RX 7000',
+        'Windows 64-bit、ROCm experimental、Ryzen AI Max',
+        'Windows 64-bit、ROCm experimental、AMD RX 9000',
         'Windows 64-bit、自分でエンジンを設定したい場合',
         'Windows 64-bit、自分でエンジンを設定したい場合、インストーラ',
         'macOS Apple Silicon',
@@ -636,6 +647,12 @@ STANDARD_DOWNLOAD_LABELS = {
         'Windows 64-bit, CPU 호환 빌드, 설치형',
         'Windows 64-bit, NVIDIA GPU, 무설치',
         'Windows 64-bit, NVIDIA GPU, 설치형',
+        'Windows 64-bit, DirectML experimental, DirectX 12 GPU',
+        'Windows 64-bit, OpenVINO experimental, Intel GPU/NPU',
+        'Windows 64-bit, ROCm experimental, AMD RX 6000',
+        'Windows 64-bit, ROCm experimental, AMD RX 7000',
+        'Windows 64-bit, ROCm experimental, Ryzen AI Max',
+        'Windows 64-bit, ROCm experimental, AMD RX 9000',
         'Windows 64-bit, 직접 엔진 설정',
         'Windows 64-bit, 직접 엔진 설정, 설치형',
         'macOS Apple Silicon',
@@ -651,6 +668,12 @@ STANDARD_DOWNLOAD_LABELS = {
         'Windows 64-bit, CPU compatible build, แบบติดตั้ง',
         'Windows 64-bit, การ์ดจอ NVIDIA, ไม่ต้องติดตั้ง',
         'Windows 64-bit, การ์ดจอ NVIDIA, แบบติดตั้ง',
+        'Windows 64-bit, DirectML experimental, DirectX 12 GPU',
+        'Windows 64-bit, OpenVINO experimental, Intel GPU/NPU',
+        'Windows 64-bit, ROCm experimental, AMD RX 6000',
+        'Windows 64-bit, ROCm experimental, AMD RX 7000',
+        'Windows 64-bit, ROCm experimental, Ryzen AI Max',
+        'Windows 64-bit, ROCm experimental, AMD RX 9000',
         'Windows 64-bit, ต้องการตั้งค่า engine เอง',
         'Windows 64-bit, ต้องการตั้งค่า engine เองและอยากใช้ installer',
         'macOS Apple Silicon',

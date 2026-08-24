@@ -47,17 +47,16 @@
 > [!IMPORTANT]
 > 如果你只想先下对版本，先记住这几句：
 > - Windows 大多数用户：到 [正式版下载页](https://goagent.top/download/) 下载 `*windows64.opencl.portable.zip`
-> - RTX 20/30/40 NVIDIA 显卡并且想更快：下载 `*windows64.nvidia.portable.zip`
-> - RTX 5070/5080/5090：优先下载 `*windows64.nvidia50.cuda.portable.zip`，需要 TensorRT 时再到软件内“一键设置”按需安装
+> - RTX 20/30/40/50 NVIDIA 显卡：统一下载 `*windows64.nvidia.portable.zip`，内置 CUDA 12.8 + cuDNN 9.8
 > - 已经有 Windows 免安装版：日常升级优先下载 `*windows64.core-update.zip`，关闭软件后解压到旧目录覆盖，只更新主程序和启动器配置
-> - TensorRT 不只给 RTX 50：RTX 20/30/40/50 NVIDIA 显卡都可以在软件内按需安装；GTX 10 系不建议 TensorRT，使用普通 NVIDIA 包前请将驱动升级到 `527.41` 或更高，仍无法启动时改用 OpenCL 包
-> - 软件内按需安装和高级分卷包已跟进 KataGo `v1.17.2` 的 TensorRT 修复；普通 CUDA、OpenCL、CPU、Metal 完整包仍使用官方提供这些后端资产的 `v1.17.1`
+> - RTX 40/50 默认使用 CUDA；TensorRT 是 RTX 30 系及以下 NVIDIA 显卡的可选方案，不再作为“高级版”推荐
+> - 完整包的 CPU、OpenCL、CUDA、TensorRT、Metal 和 Linux 后端已统一升级到 KataGo `v1.18.1`；Linux NVIDIA 仍使用 CUDA 12.1 以兼顾系统运行环境
 > - `KataGo 一键设置` 会检测 NVIDIA GPU 和 Compute Capability，自动提示是否推荐 TensorRT；检测失败也可以手动继续
 > - TensorRT 一键安装成功后会自动清理下载包缓存；运行缓存尽量写入软件自己的 `user-data/runtime`，减少 C 盘额外占用
-> - Release 里的 `*windows64.nvidia.tensorrt.portable.7z.001` 是高级可选分卷包，必须下载全部 `.7z.00N` 并用 7-Zip 解压；普通用户不要优先选它
+> - Release 里的 `*windows64.nvidia.tensorrt.portable.7z.001` 是 RTX 30 系及以下可选离线包，必须下载全部 `.7z.00N` 并用 7-Zip 解压
 > - 如果 OpenCL 在你的电脑上不稳定：下载 `*windows64.with-katago.portable.zip`
 > - 现在支持直接输入野狐昵称抓最近公开棋谱，不需要先查账号数字
-> - 主推荐完整包已内置 KataGo `v1.17.1` 和官方中型 Transformer，界面显示为“Transformer 10B 均衡版”（约 94 MB）；主程序小更新包不包含引擎和权重
+> - 主推荐完整包默认内置官方旗舰 B11 `b11c768h12nbt3tflrs-fson-silu.bin.gz`（约 202 MiB）：单次判断更强、复杂局面效果更好；本机 RTX 3070 实测搜索吞吐比 B10 慢约 40%，追求速度可在“一键设置 -> 权重”切换 B10
 > - Windows 主发布包已内置原生 `readboard.exe`，同步入口只保留这套更强的棋盘同步工具
 
 ## 为什么很多用户会直接选它
@@ -103,13 +102,14 @@
 | Windows，OpenCL 版，想安装 | `*windows64.opencl.installer.exe` |
 | Windows，OpenCL 不稳定，CPU 兼容兜底，免安装 | `*windows64.with-katago.portable.zip` |
 | Windows，CPU 兼容兜底，想安装 | `*windows64.with-katago.installer.exe` |
-| Windows，NVIDIA 显卡，想更快，免安装 | `*windows64.nvidia.portable.zip` |
-| Windows，NVIDIA 显卡，想安装 | `*windows64.nvidia.installer.exe` |
-| Windows，RTX 5070/5080/5090，CUDA 版，免安装 | `*windows64.nvidia50.cuda.portable.zip` |
-| Windows，RTX 5070/5080/5090，CUDA 版，想安装 | `*windows64.nvidia50.cuda.installer.exe` |
+| Windows，RTX 20/30/40/50 NVIDIA 显卡，免安装 | `*windows64.nvidia.portable.zip` |
+| Windows，RTX 20/30/40/50 NVIDIA 显卡，想安装 | `*windows64.nvidia.installer.exe` |
 | 已经有 Windows 免安装版，日常升级 | `*windows64.core-update.zip`，解压到旧目录覆盖 |
-| Windows，RTX 20/30/40/50，想测试 TensorRT 加速 | 先下载对应 NVIDIA 包（RTX 50 用 `*windows64.nvidia50.cuda.portable.zip`），打开后在 `KataGo 一键设置` 里安装 |
-| Windows，高级用户，想离线测试 TensorRT 预装包 | `*windows64.nvidia.tensorrt.portable.7z.001` 起的全部分卷，先看同名 `README.txt` |
+| Windows，RTX 30 系及以下，想测试 TensorRT | 先下载统一 NVIDIA 包，再在 `KataGo 一键设置` 里选装 |
+| Windows，RTX 30 系及以下，想离线测试 TensorRT | `*windows64.nvidia.tensorrt.portable.7z.001` 起的全部分卷，先看同名 `README.txt` |
+| Windows，DirectX 12 GPU，参与 DirectML 测试 | `*windows64.experimental.directml.portable.zip` |
+| Windows，Intel GPU/NPU，参与 OpenVINO 测试 | `*windows64.experimental.openvino.portable.zip` |
+| Windows，AMD RX 6000/7000/9000 或 Ryzen AI Max，参与 ROCm 测试 | 选择对应 `*windows64.experimental.rocm.*.portable.zip` |
 | Windows，自己配引擎，免安装 | `*windows64.without.engine.portable.zip` |
 | Windows，自己配引擎，想安装 | `*windows64.without.engine.installer.exe` |
 | macOS Apple Silicon，打开后拖到“应用程序” | `*mac-apple-silicon.with-katago.dmg` |
@@ -124,12 +124,11 @@ Windows `portable.zip` 是真正的免安装模式：配置、日志、保存棋
 
 - Windows：先下 `*windows64.opencl.portable.zip`
 - 已经有 Windows 免安装版：先下 `*windows64.core-update.zip` 覆盖旧目录，除非更新说明要求下载完整包
-- Windows + RTX 20/30/40 NVIDIA 显卡：先下 `*windows64.nvidia.portable.zip`
-- Windows + RTX 5070/5080/5090：先下 `*windows64.nvidia50.cuda.portable.zip`
-- Windows + RTX 20/30/40/50 想试 TensorRT：普通用户先下对应 NVIDIA/CUDA 包，再在软件内“一键设置”按需安装；软件会检测 GPU 和 Compute Capability 后给出推荐，下载支持断点续传
+- Windows + RTX 20/30/40/50 NVIDIA 显卡：统一下载 `*windows64.nvidia.portable.zip`
+- Windows + RTX 30 系及以下想试 TensorRT：先打开统一 NVIDIA/CUDA 包，再在软件内“一键设置”按需安装；RTX 40/50 保留 CUDA
 - TensorRT 一键安装完成后会自动删除完整下载包，之前留下的下载缓存也可以在一键设置里点“清理 TensorRT 缓存”
-- Windows + 熟悉 7-Zip 的高级用户：可以下载 `*windows64.nvidia.tensorrt.portable.7z.001/.002/...` 高级可选分卷包，必须下载全部分卷后从 `.001` 解压；只下载 `.001` 没用
-- GTX 10 系 NVIDIA 显卡：不建议 TensorRT；普通 NVIDIA 包要求驱动 `527.41` 或更高，仍启动失败时改用 OpenCL 包
+- Windows + RTX 30 系及以下需要离线 TensorRT：下载 `*windows64.nvidia.tensorrt.portable.7z.001/.002/...` 全部分卷后从 `.001` 解压
+- NVIDIA 驱动 `570.65` 及以上直接加载；`528.33–570.64` 首次运行会做一次轻量真实推理探测；更旧驱动会显示明确修复状态
 - GTX 10 系以前的 NVIDIA 显卡：优先使用 OpenCL 包
 - OpenCL 不稳定：改下 `*windows64.with-katago.portable.zip`
 - Mac：先分清 Apple Silicon 还是 Intel

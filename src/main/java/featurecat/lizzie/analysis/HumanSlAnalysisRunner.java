@@ -121,7 +121,8 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     Path launchExecutable = KataGoRuntimeHelper.resolveCommandExecutable(launchCommands);
     if (Config.isBundledKataGoExecutable(launchExecutable)) {
       try {
-        KataGoRuntimeHelper.ensureBundledRuntimeReady(launchExecutable, Lizzie.frame);
+        KataGoRuntimeHelper.ensureBundledRuntimeReady(
+            launchExecutable, launchCommands, Lizzie.frame);
       } catch (IOException e) {
         unavailableReason = e.getLocalizedMessage();
         return false;

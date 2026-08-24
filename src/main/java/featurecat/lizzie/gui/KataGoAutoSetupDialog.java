@@ -16,6 +16,8 @@ import featurecat.lizzie.util.KataGoAutoSetupHelper.RemoteWeightInfo;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupResult;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupSnapshot;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.TransformerTier;
+import featurecat.lizzie.util.KataGoExperimentalBackendInstaller;
+import featurecat.lizzie.util.KataGoExperimentalBackendInstaller.Backend;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.NvidiaGpuDetector;
 import featurecat.lizzie.util.Utils;
@@ -75,6 +77,7 @@ import javax.swing.DefaultListModel;
 import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
@@ -175,6 +178,7 @@ public class KataGoAutoSetupDialog extends JDialog {
   private final JLabel lblNvidiaGpuValue = new JFontLabel();
   private final JLabel lblTensorRtDownloadValue = new JFontLabel();
   private final JLabel lblTensorRtConfigValue = new JFontLabel();
+  private final JLabel lblExperimentalBackendValue = new JFontLabel();
   private final JLabel lblBenchmarkValue = new JFontLabel();
   private final JLabel lblSelectedWeightName = new JFontLabel();
   private final JLabel lblSelectedWeightMeta = new JFontLabel();
@@ -228,6 +232,8 @@ public class KataGoAutoSetupDialog extends JDialog {
   private final JFontButton btnInstallTensorRt = new JFontButton();
   private final JFontButton btnSwitchBackCuda = new JFontButton();
   private final JFontButton btnCleanTensorRtCache = new JFontButton();
+  private final JComboBox<Backend> cmbExperimentalBackend = new JComboBox<>(Backend.values());
+  private final JFontButton btnInstallExperimentalBackend = new JFontButton();
   private final JFontButton btnOptimizePerformance = new JFontButton();
   private final JFontButton btnExperimentalPerformance = new JFontButton();
   private final JFontButton btnStopDownload = new JFontButton();
@@ -419,6 +425,9 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnInstallTensorRt.setText(text("AutoSetup.installTensorRt"));
     btnSwitchBackCuda.setText(text("AutoSetup.switchBackCuda"));
     btnCleanTensorRtCache.setText(text("AutoSetup.cleanTensorRtCache"));
+    btnInstallExperimentalBackend.setText(text("AutoSetup.installExperimentalBackend"));
+    cmbExperimentalBackend.setPrototypeDisplayValue(Backend.ROCM_GFX110X);
+    cmbExperimentalBackend.setMaximumRowCount(Backend.values().length);
     btnOptimizePerformance.setText(text("AutoSetup.optimizePerformance"));
     btnExperimentalPerformance.setText(text("AutoSetup.experimentalPerformance"));
     btnExperimentalPerformance.setVisible(false);
@@ -446,6 +455,7 @@ public class KataGoAutoSetupDialog extends JDialog {
     styleButton(btnInstallTensorRt, false);
     styleButton(btnSwitchBackCuda, false);
     styleButton(btnCleanTensorRtCache, false);
+    styleButton(btnInstallExperimentalBackend, false);
     styleButton(btnStopDownload, false);
     styleButton(btnClose, false);
 
@@ -546,6 +556,8 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnInstallTensorRt.addActionListener(e -> startTensorRtInstall());
     btnSwitchBackCuda.addActionListener(e -> switchBackToCuda());
     btnCleanTensorRtCache.addActionListener(e -> cleanTensorRtCache());
+    btnInstallExperimentalBackend.addActionListener(e -> startExperimentalBackendInstall());
+    cmbExperimentalBackend.addActionListener(e -> updateExperimentalBackendInfo());
     btnOptimizePerformance.addActionListener(e -> startPerformanceBenchmark(false));
     btnExperimentalPerformance.addActionListener(e -> startPerformanceBenchmark(true));
     btnStopDownload.addActionListener(e -> stopActiveDownload());
@@ -750,8 +762,30 @@ public class KataGoAutoSetupDialog extends JDialog {
             btnOpenAppFolder,
             btnViewFullDownloads,
             btnRefresh);
-    return createSectionCard(
-        text("AutoSetup.overviewTitle"), text("AutoSetup.overviewSubtitle"), rows, actions);
+    JPanel page = new JPanel(new BorderLayout(0, 10));
+    page.setOpaque(false);
+    page.add(createB11DefaultNotice(), BorderLayout.NORTH);
+    page.add(
+        createSectionCard(
+            text("AutoSetup.overviewTitle"), text("AutoSetup.overviewSubtitle"), rows, actions),
+        BorderLayout.CENTER);
+    return page;
+  }
+
+  private JPanel createB11DefaultNotice() {
+    JPanel notice = new RoundedSurfacePanel(new Color(245, 249, 247), new Color(178, 207, 194), 12, true);
+    notice.setLayout(new BorderLayout(0, 4));
+    notice.setBorder(BorderFactory.createEmptyBorder(11, 16, 11, 16));
+    JFontLabel title = new JFontLabel(text("AutoSetup.b11DefaultNoticeTitle"));
+    title.setForeground(TEXT_PRIMARY);
+    title.setFont(title.getFont().deriveFont(Font.BOLD));
+    JTextArea detail = createHintText(text("AutoSetup.b11DefaultNoticeBody"));
+    detail.getAccessibleContext().setAccessibleName(title.getText());
+    notice.getAccessibleContext().setAccessibleName(title.getText());
+    notice.getAccessibleContext().setAccessibleDescription(detail.getText());
+    notice.add(title, BorderLayout.NORTH);
+    notice.add(detail, BorderLayout.CENTER);
+    return notice;
   }
 
   private void openRemoteComputeCenter() {
@@ -826,10 +860,10 @@ public class KataGoAutoSetupDialog extends JDialog {
     gbc.weightx = 1;
     gbc.fill = GridBagConstraints.BOTH;
     gbc.insets = new Insets(0, 0, 0, 7);
-    cards.add(balancedRecommendation, gbc);
+    cards.add(strongestRecommendation, gbc);
     gbc.gridx = 1;
     gbc.insets = new Insets(0, 7, 0, 7);
-    cards.add(strongestRecommendation, gbc);
+    cards.add(balancedRecommendation, gbc);
     gbc.gridx = 2;
     gbc.insets = new Insets(0, 7, 0, 0);
     cards.add(lightweightRecommendation, gbc);
@@ -1078,9 +1112,16 @@ public class KataGoAutoSetupDialog extends JDialog {
     addInfoRow(rows, gbc, text("AutoSetup.nvidiaGpu"), lblNvidiaGpuValue);
     addInfoRow(rows, gbc, text("AutoSetup.tensorRtDownloadStatus"), lblTensorRtDownloadValue);
     addInfoRow(rows, gbc, text("AutoSetup.tensorRtConfigStatus"), lblTensorRtConfigValue);
+    addInfoRow(rows, gbc, text("AutoSetup.experimentalBackendStatus"), lblExperimentalBackendValue);
 
     JTextArea tensorRtHint = createHintText(text("AutoSetup.accelerationTensorRtHint"));
     addComponentRow(rows, gbc, text("AutoSetup.installTensorRt"), tensorRtHint);
+
+    JTextArea experimentalHint = createHintText(text("AutoSetup.experimentalBackendHint"));
+    addComponentRow(rows, gbc, text("AutoSetup.experimentalBackends"), experimentalHint);
+    JPanel experimentalActions =
+        createResponsiveActionRow(cmbExperimentalBackend, btnInstallExperimentalBackend);
+    addComponentRow(rows, gbc, text("AutoSetup.experimentalBackendChoose"), experimentalActions);
 
     JPanel actions =
         createActionBar(
@@ -1412,6 +1453,7 @@ public class KataGoAutoSetupDialog extends JDialog {
         formatPath(snapshot.analysisConfigPath));
     renderDiscoveryDetails();
     updateNvidiaRuntimeInfo();
+    updateExperimentalBackendInfo();
     updateBenchmarkInfo();
     renderWeightRecommendations();
     updateSelectedWeightInfo();
@@ -1615,7 +1657,8 @@ public class KataGoAutoSetupDialog extends JDialog {
   }
 
   private void renderHumanSlModel() {
-    KataGoAutoSetupHelper.HumanSlModelStatus status = KataGoAutoSetupHelper.inspectHumanSlModel();
+    KataGoAutoSetupHelper.HumanSlModelStatus status =
+        KataGoAutoSetupHelper.inspectHumanSlModel(snapshot);
     String release = text("AutoSetup.humanSlModelRelease");
     lblHumanSlModelValue.setText(text("AutoSetup.humanSlModelDescription") + "  ·  " + release);
     if (status.isInstalled()) {
@@ -1640,7 +1683,7 @@ public class KataGoAutoSetupDialog extends JDialog {
 
   private void renderQuickAnalysisModel() {
     KataGoAutoSetupHelper.QuickAnalysisModelStatus status =
-        KataGoAutoSetupHelper.inspectQuickAnalysisModel();
+        KataGoAutoSetupHelper.inspectQuickAnalysisModel(snapshot);
     boolean busy = activeDownloadSession != null || activeWorkerThread != null;
     boolean requiresUpgrade = quickAnalysisModelRequiresKataGo117();
     boolean configured =
@@ -2053,6 +2096,34 @@ public class KataGoAutoSetupDialog extends JDialog {
         cacheBytes > 0L
             ? String.format(text("AutoSetup.cleanTensorRtCacheTooltip"), formatSize(cacheBytes))
             : text("AutoSetup.cleanTensorRtCacheEmpty"));
+  }
+
+  private void updateExperimentalBackendInfo() {
+    Backend backend = (Backend) cmbExperimentalBackend.getSelectedItem();
+    if (backend == null || snapshot == null) {
+      setInfoValue(lblExperimentalBackendValue, false, text("AutoSetup.notFound"));
+      btnInstallExperimentalBackend.setEnabled(false);
+      return;
+    }
+    KataGoExperimentalBackendInstaller.Status status =
+        KataGoExperimentalBackendInstaller.inspect(snapshot, backend);
+    String state =
+        status.active()
+            ? text("AutoSetup.experimentalBackendActive")
+            : status.installed()
+                ? text("AutoSetup.experimentalBackendInstalled")
+                : text("AutoSetup.experimentalBackendNotInstalled");
+    setInfoValue(lblExperimentalBackendValue, status.installed(), backend.displayName() + " · " + state);
+    btnInstallExperimentalBackend.setText(
+        status.installed()
+            ? text("AutoSetup.enableExperimentalBackend")
+            : text("AutoSetup.installExperimentalBackend"));
+    btnInstallExperimentalBackend.setEnabled(
+        activeDownloadSession == null
+            && activeWorkerThread == null
+            && snapshot.hasConfigs()
+            && snapshot.hasWeight()
+            && !status.active());
   }
 
   private void setTensorRtLabel(JLabel label, String value, Color color, String tooltip) {
@@ -2817,6 +2888,80 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
   }
 
+  private void startExperimentalBackendInstall() {
+    if (hasActiveBackgroundTask()) {
+      showBackgroundTaskAlreadyRunningNotice();
+      return;
+    }
+    Backend backend = (Backend) cmbExperimentalBackend.getSelectedItem();
+    if (backend == null) {
+      return;
+    }
+    if (snapshot == null) {
+      snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+    }
+    KataGoExperimentalBackendInstaller.Status current =
+        KataGoExperimentalBackendInstaller.inspect(snapshot, backend);
+    if (current.active()) {
+      updateExperimentalBackendInfo();
+      return;
+    }
+    if (!current.installed()) {
+      String message =
+          String.format(
+              text("AutoSetup.experimentalBackendConfirm"),
+              backend.displayName(),
+              formatSize(backend.asset().sizeBytes()));
+      int answer =
+          JOptionPane.showConfirmDialog(
+              this,
+              message,
+              text("AutoSetup.experimentalBackends"),
+              JOptionPane.OK_CANCEL_OPTION,
+              JOptionPane.WARNING_MESSAGE);
+      if (answer != JOptionPane.OK_OPTION) {
+        return;
+      }
+    }
+
+    DownloadSession session = new DownloadSession();
+    activeDownloadSession = session;
+    setBusy(
+        true,
+        text("AutoSetup.experimentalBackendPreparing"),
+        0,
+        current.installed() ? 0 : backend.asset().sizeBytes());
+    Thread worker =
+        new Thread(
+            () -> {
+              try {
+                SetupResult setupResult =
+                    KataGoExperimentalBackendInstaller.installAndApply(
+                        snapshot,
+                        backend,
+                        (statusText, downloaded, total) ->
+                            SwingUtilities.invokeLater(
+                                () -> setBusy(true, statusText, downloaded, total)),
+                        session);
+                SwingUtilities.invokeLater(
+                    () -> {
+                      setBusy(false, text("AutoSetup.experimentalBackendDone"), 0, 0);
+                      onSetupApplied(
+                          setupResult, text("AutoSetup.experimentalBackendDoneMessage"), false);
+                    });
+              } catch (DownloadCancelledException e) {
+                SwingUtilities.invokeLater(this::onDownloadCancelled);
+              } catch (IOException e) {
+                SwingUtilities.invokeLater(() -> onBackgroundError(e));
+              } finally {
+                clearActiveDownload(session, Thread.currentThread());
+              }
+            },
+            "katago-install-experimental-backend");
+    activeWorkerThread = worker;
+    worker.start();
+  }
+
   private boolean recoverInstalledTensorRtAfterError(IOException originalError) {
     try {
       SetupSnapshot currentSnapshot = KataGoAutoSetupHelper.inspectLocalSetup();
@@ -3557,6 +3702,8 @@ public class KataGoAutoSetupDialog extends JDialog {
     btnSwitchBackCuda.setEnabled(!busy && canSwitchBackToCuda());
     btnCleanTensorRtCache.setEnabled(
         !busy && KataGoRuntimeHelper.tensorRtDownloadCacheBytes() > 0L);
+    cmbExperimentalBackend.setEnabled(!busy);
+    btnInstallExperimentalBackend.setEnabled(!busy && canInstallExperimentalBackend());
     btnOptimizePerformance.setEnabled(!busy && canRunBenchmark());
     btnExperimentalPerformance.setEnabled(
         !busy && canRunBenchmark() && isExperimentalAppleSiliconTuningAvailable());
@@ -3645,6 +3792,14 @@ public class KataGoAutoSetupDialog extends JDialog {
       return false;
     }
     return KataGoRuntimeHelper.canInstallTensorRt(snapshot);
+  }
+
+  private boolean canInstallExperimentalBackend() {
+    Backend backend = (Backend) cmbExperimentalBackend.getSelectedItem();
+    if (backend == null || snapshot == null || !snapshot.hasConfigs() || !snapshot.hasWeight()) {
+      return false;
+    }
+    return !KataGoExperimentalBackendInstaller.inspect(snapshot, backend).active();
   }
 
   private boolean canSwitchBackToCuda() {
@@ -4366,9 +4521,7 @@ public class KataGoAutoSetupDialog extends JDialog {
         text("AutoSetup.recommendationStrongest"),
         text("AutoSetup.recommendationStrongestHint"),
         strongest,
-        strongest != null && strongest.isTransformer()
-            ? text("AutoSetup.transformerBadge")
-            : text("AutoSetup.officialStrongestBadge"));
+        strongest != null ? text("AutoSetup.recommendedBadge") : "");
     lightweightRecommendation.configure(
         text("AutoSetup.recommendationLightweight"),
         text("AutoSetup.recommendationLightweightHint"),

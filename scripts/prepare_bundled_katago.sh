@@ -3,23 +3,37 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/katago_windows_pins.sh"
+CATEGORY_READER="${PYTHON_BIN:-python3}"
+ASSET_CATALOG_READER="$ROOT_DIR/scripts/katago_asset_catalog.py"
+
+catalog_get() {
+  "$CATEGORY_READER" "$ASSET_CATALOG_READER" get "$1"
+}
+
 CACHE_DIR="${CACHE_DIR:-$ROOT_DIR/.cache/katago}"
-KATAGO_TAG="${KATAGO_TAG:-v1.17.1}"
+KATAGO_TAG="${KATAGO_TAG:-$(catalog_get katagoReleaseTag)}"
 KATAGO_RELEASE_BASE="https://github.com/lightvector/KataGo/releases/download/${KATAGO_TAG}"
 # The regular Windows bundle prioritizes compatibility for mixed consumer hardware.
-WINDOWS_ASSET="${WINDOWS_ASSET:-katago-${KATAGO_TAG}-eigen-windows-x64.zip}"
-WINDOWS_OPENCL_ASSET="${WINDOWS_OPENCL_ASSET:-katago-${KATAGO_TAG}-opencl-windows-x64.zip}"
-WINDOWS_NVIDIA_ASSET="${WINDOWS_NVIDIA_ASSET:-katago-${KATAGO_TAG}-cuda12.1-cudnn9.8.0-windows-x64.zip}"
-WINDOWS_NVIDIA50_CUDA_ASSET="${WINDOWS_NVIDIA50_CUDA_ASSET:-katago-${KATAGO_TAG}-cuda12.8-cudnn9.8.0-windows-x64.zip}"
-LINUX_ASSET="${LINUX_ASSET:-katago-${KATAGO_TAG}-eigen-linux-x64.zip}"
-LINUX_OPENCL_ASSET="${LINUX_OPENCL_ASSET:-katago-${KATAGO_TAG}-opencl-linux-x64.zip}"
-LINUX_NVIDIA_ASSET="${LINUX_NVIDIA_ASSET:-katago-${KATAGO_TAG}-cuda12.1-cudnn9.8.0-linux-x64.zip}"
-PREFERRED_MODEL_NAME="${PREFERRED_MODEL_NAME:-b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz}"
-PREFERRED_MODEL_SHA256="${PREFERRED_MODEL_SHA256:-c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995}"
-PREFERRED_MODEL_SIZE_BYTES="${PREFERRED_MODEL_SIZE_BYTES:-94281753}"
-PREFERRED_MODEL_ARCHITECTURE="${PREFERRED_MODEL_ARCHITECTURE:-transformer}"
-PREFERRED_MODEL_MINIMUM_KATAGO="${PREFERRED_MODEL_MINIMUM_KATAGO:-1.17.0}"
-MODEL_URL="${MODEL_URL:-$KATAGO_RELEASE_BASE/$PREFERRED_MODEL_NAME}"
+WINDOWS_ASSET="${WINDOWS_ASSET:-$(catalog_get assets.windows-cpu.assetName)}"
+WINDOWS_OPENCL_ASSET="${WINDOWS_OPENCL_ASSET:-$(catalog_get assets.windows-opencl.assetName)}"
+WINDOWS_NVIDIA_ASSET="${WINDOWS_NVIDIA_ASSET:-$(catalog_get assets.windows-nvidia.assetName)}"
+WINDOWS_DIRECTML_ASSET="${WINDOWS_DIRECTML_ASSET:-$(catalog_get assets.windows-directml.assetName)}"
+WINDOWS_OPENVINO_ASSET="${WINDOWS_OPENVINO_ASSET:-$(catalog_get assets.windows-openvino.assetName)}"
+WINDOWS_ROCM_GFX103X_ASSET="${WINDOWS_ROCM_GFX103X_ASSET:-$(catalog_get assets.windows-rocm-gfx103x.assetName)}"
+WINDOWS_ROCM_GFX110X_ASSET="${WINDOWS_ROCM_GFX110X_ASSET:-$(catalog_get assets.windows-rocm-gfx110x.assetName)}"
+WINDOWS_ROCM_GFX1151_ASSET="${WINDOWS_ROCM_GFX1151_ASSET:-$(catalog_get assets.windows-rocm-gfx1151.assetName)}"
+WINDOWS_ROCM_GFX120X_ASSET="${WINDOWS_ROCM_GFX120X_ASSET:-$(catalog_get assets.windows-rocm-gfx120x.assetName)}"
+LINUX_ASSET="${LINUX_ASSET:-$(catalog_get assets.linux-cpu.assetName)}"
+LINUX_OPENCL_ASSET="${LINUX_OPENCL_ASSET:-$(catalog_get assets.linux-opencl.assetName)}"
+LINUX_NVIDIA_ASSET="${LINUX_NVIDIA_ASSET:-$(catalog_get assets.linux-nvidia.assetName)}"
+DEFAULT_MODEL_ID="$(catalog_get defaultModelId)"
+PREFERRED_MODEL_NAME="${PREFERRED_MODEL_NAME:-$(catalog_get models.$DEFAULT_MODEL_ID.fileName)}"
+PREFERRED_MODEL_SHA256="${PREFERRED_MODEL_SHA256:-$(catalog_get models.$DEFAULT_MODEL_ID.sha256)}"
+PREFERRED_MODEL_SIZE_BYTES="${PREFERRED_MODEL_SIZE_BYTES:-$(catalog_get models.$DEFAULT_MODEL_ID.sizeBytes)}"
+PREFERRED_MODEL_ARCHITECTURE="${PREFERRED_MODEL_ARCHITECTURE:-$(catalog_get models.$DEFAULT_MODEL_ID.architecture)}"
+PREFERRED_MODEL_MINIMUM_KATAGO="${PREFERRED_MODEL_MINIMUM_KATAGO:-$(catalog_get models.$DEFAULT_MODEL_ID.minimumKataGoVersion)}"
+MODEL_RELEASE_TAG="$(catalog_get modelReleaseTag)"
+MODEL_URL="${MODEL_URL:-https://github.com/lightvector/KataGo/releases/download/$MODEL_RELEASE_TAG/$PREFERRED_MODEL_NAME}"
 MODEL_SOURCE="${MODEL_SOURCE:-}"
 
 ENGINES_ROOT="$ROOT_DIR/engines/katago"
@@ -28,7 +42,12 @@ CONFIG_ROOT="$ENGINES_ROOT/configs"
 WINDOWS_ROOT="$ENGINES_ROOT/windows-x64"
 WINDOWS_OPENCL_ROOT="$ENGINES_ROOT/windows-x64-opencl"
 WINDOWS_NVIDIA_ROOT="$ENGINES_ROOT/windows-x64-nvidia"
-WINDOWS_NVIDIA50_CUDA_ROOT="$ENGINES_ROOT/windows-x64-nvidia50-cuda"
+WINDOWS_DIRECTML_ROOT="$ENGINES_ROOT/windows-x64-directml"
+WINDOWS_OPENVINO_ROOT="$ENGINES_ROOT/windows-x64-openvino"
+WINDOWS_ROCM_GFX103X_ROOT="$ENGINES_ROOT/windows-x64-rocm-gfx103x"
+WINDOWS_ROCM_GFX110X_ROOT="$ENGINES_ROOT/windows-x64-rocm-gfx110x"
+WINDOWS_ROCM_GFX1151_ROOT="$ENGINES_ROOT/windows-x64-rocm-gfx1151"
+WINDOWS_ROCM_GFX120X_ROOT="$ENGINES_ROOT/windows-x64-rocm-gfx120x"
 LINUX_ROOT="$ENGINES_ROOT/linux-x64"
 LINUX_OPENCL_ROOT="$ENGINES_ROOT/linux-x64-opencl"
 LINUX_NVIDIA_ROOT="$ENGINES_ROOT/linux-x64-nvidia"
@@ -84,26 +103,41 @@ file_size_bytes() {
 
 expected_asset_sha256() {
   case "$1" in
-    "katago-v1.17.1-eigen-windows-x64.zip")
-      echo "3a7538ecb6facefcfe16d649fd695c29e44f8372cb7de8c316eee5779865f379"
+    "$WINDOWS_ASSET")
+      catalog_get assets.windows-cpu.sha256
       ;;
-    "katago-v1.17.1-opencl-windows-x64.zip")
-      echo "68d0a9b11ef7e3c1ddfc5bcd400306ca66c3770dd67a22cb377d3aaaf32e8c66"
+    "$WINDOWS_OPENCL_ASSET")
+      catalog_get assets.windows-opencl.sha256
       ;;
-    "katago-v1.17.1-cuda12.1-cudnn9.8.0-windows-x64.zip")
-      echo "b081832d48b4a553436ad5c54f9c4f4feff39df7b52e68228929e9f8a70988bc"
+    "$WINDOWS_NVIDIA_ASSET")
+      catalog_get assets.windows-nvidia.sha256
       ;;
-    "katago-v1.17.1-cuda12.8-cudnn9.8.0-windows-x64.zip")
-      echo "476a35c0b43cc937906d4313acaf592a97a30775ec51d37f5401a284ad9fa0f9"
+    "$WINDOWS_DIRECTML_ASSET")
+      catalog_get assets.windows-directml.sha256
       ;;
-    "katago-v1.17.1-eigen-linux-x64.zip")
-      echo "cca71fff39abd19bd9acfc17750025d4bb0ee6adbad99d7513a2c6401b0a7af3"
+    "$WINDOWS_OPENVINO_ASSET")
+      catalog_get assets.windows-openvino.sha256
       ;;
-    "katago-v1.17.1-opencl-linux-x64.zip")
-      echo "be537295868c0b8ff6985e62e411fff67cbba2dc872343c74896063de1ef51e9"
+    "$WINDOWS_ROCM_GFX103X_ASSET")
+      catalog_get assets.windows-rocm-gfx103x.sha256
       ;;
-    "katago-v1.17.1-cuda12.1-cudnn9.8.0-linux-x64.zip")
-      echo "451ae213021cef0d2fcbfae650479532b53361c5ecbdfe1a5a643065bc76edc8"
+    "$WINDOWS_ROCM_GFX110X_ASSET")
+      catalog_get assets.windows-rocm-gfx110x.sha256
+      ;;
+    "$WINDOWS_ROCM_GFX1151_ASSET")
+      catalog_get assets.windows-rocm-gfx1151.sha256
+      ;;
+    "$WINDOWS_ROCM_GFX120X_ASSET")
+      catalog_get assets.windows-rocm-gfx120x.sha256
+      ;;
+    "$LINUX_ASSET")
+      catalog_get assets.linux-cpu.sha256
+      ;;
+    "$LINUX_OPENCL_ASSET")
+      catalog_get assets.linux-opencl.sha256
+      ;;
+    "$LINUX_NVIDIA_ASSET")
+      catalog_get assets.linux-nvidia.sha256
       ;;
     *)
       echo ""
@@ -226,16 +260,47 @@ prepare_windows_bundle() {
   copy_matching_files "$source_dir" "$dest_dir" "katago.exe" "*.dll" "cacert.pem"
 }
 
-verify_windows_nvidia50_cuda_executable() {
-  local executable="$WINDOWS_NVIDIA50_CUDA_ROOT/katago.exe"
+prepare_windows_bundle_tree() {
+  local source_dir="$1"
+  local dest_dir="$2"
+  local executable
+  executable="$(find "$source_dir" -type f -iname 'katago.exe' -print -quit)"
+  if [[ -z "$executable" ]]; then
+    echo "KataGo Windows archive did not contain katago.exe: $source_dir" >&2
+    exit 1
+  fi
+  local bundle_root
+  bundle_root="$(dirname "$executable")"
+  rm -rf "$dest_dir"
+  mkdir -p "$dest_dir"
+  cp -R "$bundle_root/." "$dest_dir/"
+}
+
+write_experimental_engine_manifest() {
+  local dest_dir="$1"
+  local asset_name="$2"
+  local backend="$3"
+  local asset_sha
+  asset_sha="$(expected_asset_sha256 "$asset_name")"
+  printf '%s\n' "$backend" >"$dest_dir/lizzieyzy-next-engine-backend.txt"
+  cat >"$dest_dir/lizzieyzy-next-katago-engine-manifest.txt" <<EOF
+KataGo release: $KATAGO_TAG
+Asset: $asset_name
+Asset SHA-256: $asset_sha
+Backend: $backend
+EOF
+}
+
+verify_windows_nvidia_executable() {
+  local executable="$WINDOWS_NVIDIA_ROOT/katago.exe"
   if [[ ! -f "$executable" ]]; then
-    echo "Prepared NVIDIA 50 CUDA bundle is missing katago.exe: $executable"
+    echo "Prepared unified NVIDIA CUDA bundle is missing katago.exe: $executable"
     exit 1
   fi
   local actual_sha256
   actual_sha256="$(sha256_file "$executable")"
   if [[ "$actual_sha256" != "$HUMAN_SL_CUDA_COMPANION_SHA256" ]]; then
-    echo "NVIDIA 50 CUDA katago.exe checksum mismatch: expected $HUMAN_SL_CUDA_COMPANION_SHA256, got $actual_sha256"
+    echo "Unified NVIDIA CUDA katago.exe checksum mismatch: expected $HUMAN_SL_CUDA_COMPANION_SHA256, got $actual_sha256"
     exit 1
   fi
 }
@@ -300,8 +365,13 @@ KataGo release: $KATAGO_TAG
 Windows bundle: $WINDOWS_ASSET
 Windows OpenCL bundle: $WINDOWS_OPENCL_ASSET
 Windows NVIDIA bundle: $WINDOWS_NVIDIA_ASSET
-Windows NVIDIA 50 CUDA bundle: $WINDOWS_NVIDIA50_CUDA_ASSET
-Windows NVIDIA 50 CUDA executable SHA-256: $HUMAN_SL_CUDA_COMPANION_SHA256
+Windows NVIDIA executable SHA-256: $HUMAN_SL_CUDA_COMPANION_SHA256
+Windows DirectML bundle: $WINDOWS_DIRECTML_ASSET
+Windows OpenVINO bundle: $WINDOWS_OPENVINO_ASSET
+Windows ROCm gfx103X bundle: $WINDOWS_ROCM_GFX103X_ASSET
+Windows ROCm gfx110X bundle: $WINDOWS_ROCM_GFX110X_ASSET
+Windows ROCm gfx1151 bundle: $WINDOWS_ROCM_GFX1151_ASSET
+Windows ROCm gfx120X bundle: $WINDOWS_ROCM_GFX120X_ASSET
 Linux bundle: $LINUX_ASSET
 Linux OpenCL bundle: $LINUX_OPENCL_ASSET
 Linux NVIDIA bundle: $LINUX_NVIDIA_ASSET
@@ -321,7 +391,14 @@ main() {
   download_asset "$WINDOWS_ASSET"
   download_asset "$WINDOWS_OPENCL_ASSET"
   download_asset "$WINDOWS_NVIDIA_ASSET"
-  download_asset "$WINDOWS_NVIDIA50_CUDA_ASSET"
+  if [[ "${PREPARE_WINDOWS_EXPERIMENTAL:-false}" == "true" ]]; then
+    download_asset "$WINDOWS_DIRECTML_ASSET"
+    download_asset "$WINDOWS_OPENVINO_ASSET"
+    download_asset "$WINDOWS_ROCM_GFX103X_ASSET"
+    download_asset "$WINDOWS_ROCM_GFX110X_ASSET"
+    download_asset "$WINDOWS_ROCM_GFX1151_ASSET"
+    download_asset "$WINDOWS_ROCM_GFX120X_ASSET"
+  fi
   download_asset "$LINUX_ASSET"
   download_asset "$LINUX_OPENCL_ASSET"
   download_asset "$LINUX_NVIDIA_ASSET"
@@ -329,7 +406,6 @@ main() {
   local windows_src
   local windows_opencl_src
   local windows_nvidia_src
-  local windows_nvidia50_cuda_src
   local linux_src
   local linux_opencl_src
   local linux_nvidia_src
@@ -337,7 +413,6 @@ main() {
   windows_src="$(extract_asset "$WINDOWS_ASSET")"
   windows_opencl_src="$(extract_asset "$WINDOWS_OPENCL_ASSET")"
   windows_nvidia_src="$(extract_asset "$WINDOWS_NVIDIA_ASSET")"
-  windows_nvidia50_cuda_src="$(extract_asset "$WINDOWS_NVIDIA50_CUDA_ASSET")"
   linux_src="$(extract_asset "$LINUX_ASSET")"
   linux_opencl_src="$(extract_asset "$LINUX_OPENCL_ASSET")"
   linux_nvidia_src="$(extract_asset "$LINUX_NVIDIA_ASSET")"
@@ -352,8 +427,30 @@ main() {
   prepare_windows_bundle "$windows_src" "$WINDOWS_ROOT"
   prepare_windows_bundle "$windows_opencl_src" "$WINDOWS_OPENCL_ROOT"
   prepare_windows_bundle "$windows_nvidia_src" "$WINDOWS_NVIDIA_ROOT"
-  prepare_windows_bundle "$windows_nvidia50_cuda_src" "$WINDOWS_NVIDIA50_CUDA_ROOT"
-  verify_windows_nvidia50_cuda_executable
+  rm -rf "$ENGINES_ROOT/windows-x64-nvidia50-cuda"
+  verify_windows_nvidia_executable
+  if [[ "${PREPARE_WINDOWS_EXPERIMENTAL:-false}" == "true" ]]; then
+    prepare_windows_bundle_tree "$(extract_asset "$WINDOWS_DIRECTML_ASSET")" "$WINDOWS_DIRECTML_ROOT"
+    write_experimental_engine_manifest "$WINDOWS_DIRECTML_ROOT" "$WINDOWS_DIRECTML_ASSET" "directml"
+    prepare_windows_bundle_tree "$(extract_asset "$WINDOWS_OPENVINO_ASSET")" "$WINDOWS_OPENVINO_ROOT"
+    write_experimental_engine_manifest "$WINDOWS_OPENVINO_ROOT" "$WINDOWS_OPENVINO_ASSET" "openvino"
+    prepare_windows_bundle_tree "$(extract_asset "$WINDOWS_ROCM_GFX103X_ASSET")" "$WINDOWS_ROCM_GFX103X_ROOT"
+    write_experimental_engine_manifest "$WINDOWS_ROCM_GFX103X_ROOT" "$WINDOWS_ROCM_GFX103X_ASSET" "rocm-gfx103x"
+    prepare_windows_bundle_tree "$(extract_asset "$WINDOWS_ROCM_GFX110X_ASSET")" "$WINDOWS_ROCM_GFX110X_ROOT"
+    write_experimental_engine_manifest "$WINDOWS_ROCM_GFX110X_ROOT" "$WINDOWS_ROCM_GFX110X_ASSET" "rocm-gfx110x"
+    prepare_windows_bundle_tree "$(extract_asset "$WINDOWS_ROCM_GFX1151_ASSET")" "$WINDOWS_ROCM_GFX1151_ROOT"
+    write_experimental_engine_manifest "$WINDOWS_ROCM_GFX1151_ROOT" "$WINDOWS_ROCM_GFX1151_ASSET" "rocm-gfx1151"
+    prepare_windows_bundle_tree "$(extract_asset "$WINDOWS_ROCM_GFX120X_ASSET")" "$WINDOWS_ROCM_GFX120X_ROOT"
+    write_experimental_engine_manifest "$WINDOWS_ROCM_GFX120X_ROOT" "$WINDOWS_ROCM_GFX120X_ASSET" "rocm-gfx120x"
+  else
+    rm -rf \
+      "$WINDOWS_DIRECTML_ROOT" \
+      "$WINDOWS_OPENVINO_ROOT" \
+      "$WINDOWS_ROCM_GFX103X_ROOT" \
+      "$WINDOWS_ROCM_GFX110X_ROOT" \
+      "$WINDOWS_ROCM_GFX1151_ROOT" \
+      "$WINDOWS_ROCM_GFX120X_ROOT"
+  fi
   prepare_linux_bundle "$linux_src" "$LINUX_ROOT"
   prepare_linux_bundle "$linux_opencl_src" "$LINUX_OPENCL_ROOT"
   prepare_linux_bundle "$linux_nvidia_src" "$LINUX_NVIDIA_ROOT"

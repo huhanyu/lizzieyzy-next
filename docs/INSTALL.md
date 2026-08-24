@@ -25,10 +25,8 @@
 | Windows 64 位 | `<date>-windows64.opencl.installer.exe` | 是 | 是 | 想保留安装流程的 OpenCL 用户 |
 | Windows 64 位 | `<date>-windows64.with-katago.portable.zip` | 是 | 是 | OpenCL 不稳定时的 CPU 兜底，免安装 |
 | Windows 64 位 | `<date>-windows64.with-katago.installer.exe` | 是 | 是 | 想安装的 CPU 兜底版 |
-| Windows 64 位 | `<date>-windows64.nvidia.portable.zip` | 是 | 是 | 有 NVIDIA 显卡，想要更快分析，也不想安装 |
-| Windows 64 位 | `<date>-windows64.nvidia.installer.exe` | 是 | 是 | 有 NVIDIA 显卡，想保留安装流程 |
-| Windows 64 位 | `<date>-windows64.nvidia50.cuda.portable.zip` | 是 | 是 | RTX 5070/5080/5090 首选，免安装 |
-| Windows 64 位 | `<date>-windows64.nvidia50.cuda.installer.exe` | 是 | 是 | RTX 5070/5080/5090 首选，想保留安装流程 |
+| Windows 64 位 | `<date>-windows64.nvidia.portable.zip` | 是 | 是 | RTX 20/30/40/50 NVIDIA 显卡，免安装 |
+| Windows 64 位 | `<date>-windows64.nvidia.installer.exe` | 是 | 是 | RTX 20/30/40/50 NVIDIA 显卡，想保留安装流程 |
 | Windows 64 位 | `<date>-windows64.without.engine.portable.zip` | 是 | 否 | 想自己配引擎，也不想安装 |
 | Windows 64 位 | `<date>-windows64.without.engine.installer.exe` | 是 | 否 | 想保留安装流程，但自己配引擎 |
 | macOS Apple Silicon | `<date>-mac-apple-silicon.with-katago.dmg` | App 自带运行时 | 是 | M 系列 Mac |
@@ -41,18 +39,32 @@
 
 - 想最省事：选 `windows64.opencl.portable.zip`
 - 如果 OpenCL 在你电脑上不稳定：改用 `windows64.with-katago.portable.zip`
-- RTX 20/30/40 NVIDIA 显卡想跑得更快：选 `windows64.nvidia.portable.zip`
-- RTX 5070/5080/5090：优先选 `windows64.nvidia50.cuda.portable.zip`
-- RTX 20/30/40/50 想试 TensorRT：先选对应 NVIDIA/CUDA 包，打开后在 `KataGo 一键设置` 中手动安装 TensorRT 加速
+- RTX 20/30/40/50 NVIDIA 显卡想跑得更快：统一选 `windows64.nvidia.portable.zip`
+- RTX 40/50 默认使用 CUDA；RTX 30 系及以下可在 `KataGo 一键设置` 中按需安装 TensorRT 作为可选方案
 - `KataGo 一键设置` 会检测 NVIDIA GPU / Compute Capability，再给出 TensorRT 推荐状态
-- GTX 10 系 NVIDIA 显卡：不建议 TensorRT；普通 NVIDIA 包需要 `527.41` 或更高驱动，仍启动失败时使用 OpenCL 包
+- NVIDIA 驱动 `570.65` 及以上直接加载；`528.33` 至 `570.64` 首次运行会执行一次轻量真实推理探测；更旧驱动会显示明确修复提示
 - GTX 10 系以前的 NVIDIA 显卡：优先使用 OpenCL 包
 - 想自己管引擎：Windows 选 `without.engine.portable.zip`，想安装再选同名 `installer.exe`
 - Windows 普通用户：优先选 `.portable.zip`，想保留安装流程再选同名 `.installer.exe`
 
 ### 历史 tag 说明
 
-部分旧 tag 还会看到早期的 zip 命名或兼容包，但当前维护版公开 release 已统一成 15 个首次下载主资产：10 个 Windows、2 个 macOS、3 个 Linux。TensorRT 的普通用户路径是软件内按需安装；Release 同时保留高级可选离线分卷及其 README、清单和校验文件。普通用户直接按上面的表选即可。
+部分旧 tag 还会看到早期的 zip 命名或兼容包，但当前维护版公开 release 已统一成 13 个首次下载稳定资产：8 个 Windows、2 个 macOS、3 个 Linux。另提供 DirectML、OpenVINO 和四种 AMD ROCm 架构的 6 个 Windows 实验便携包，供匹配硬件的用户验证。TensorRT 的普通用户路径是软件内按需安装；Release 同时保留可选离线分卷及其 README、清单和校验文件。
+
+### Windows 实验后端
+
+实验包只提供免安装版，不替代上面的稳定包：
+
+| 实验包 | 适合谁 |
+| --- | --- |
+| `<date>-windows64.experimental.directml.portable.zip` | Windows 10/11、支持 DirectX 12 的 GPU |
+| `<date>-windows64.experimental.openvino.portable.zip` | Intel CPU、核显或受支持的 Intel NPU |
+| `<date>-windows64.experimental.rocm.gfx103x.portable.zip` | AMD RDNA2 |
+| `<date>-windows64.experimental.rocm.gfx110x.portable.zip` | AMD RDNA3 桌面显卡 |
+| `<date>-windows64.experimental.rocm.gfx1151.portable.zip` | AMD RDNA3.5 |
+| `<date>-windows64.experimental.rocm.gfx120x.portable.zip` | AMD RDNA4 |
+
+这些包会在界面中标明实验状态。没有对应硬件时不要下载；出现兼容问题可回到 OpenCL 稳定包。
 
 ## Windows 安装
 
@@ -103,15 +115,11 @@ OpenCL 免安装包也能直接打开 `KataGo 一键设置`，点一次“智能
 - 这个版本只适合 NVIDIA 显卡电脑。
 - 如果你不确定自己是不是 NVIDIA 显卡，直接下载普通的 `windows64.opencl.portable.zip`。
 
-### Windows 64 位 RTX 50 CUDA 版和 TensorRT 按需安装
+### Windows 64 位统一 NVIDIA CUDA 和 TensorRT 可选方案
 
-如果你的显卡是 RTX 5070、RTX 5080 或 RTX 5090：
+RTX 20/30/40/50 统一下载 `windows64.nvidia.portable.zip`，解压后运行 `LizzieYzy Next NVIDIA.exe`；喜欢安装流程则使用同名安装器。该包使用 CUDA 12.8 + cuDNN 9.8，RTX 40/50 默认推荐 CUDA。
 
-1. 优先下载 `windows64.nvidia50.cuda.portable.zip`。
-2. 解压后运行 `LizzieYzy Next NVIDIA 50 CUDA.exe`。
-3. 如果你更喜欢安装流程，改用 `windows64.nvidia50.cuda.installer.exe`。
-
-TensorRT 不再作为普通用户优先下载的巨大单文件包。RTX 20/30/40/50 用户可以先打开对应 NVIDIA/CUDA 包，再进入 `KataGo 一键设置`，点击 `安装 TensorRT 加速`。安装界面会检测本机 NVIDIA GPU / Compute Capability，并显示推荐、可尝试、不推荐或未知状态。RTX 50 属于更新架构，是重点实验加速方向；GTX 10 系及更老显卡建议继续使用 CUDA/OpenCL。软件会从 KataGo / NVIDIA 官方源下载、校验并配置 TensorRT；不需要的用户不会被自动下载。需要完全离线安装的高级用户也可以从 Release 下载全部 `.7z.00N` 分卷，并按同名 README、清单和 SHA-256 文件校验后从 `.001` 解压。
+TensorRT 不再作为普通用户优先下载的巨大单文件包。RTX 30 系及以下用户可进入 `KataGo 一键设置`，点击 `安装 TensorRT 加速` 作为可选方案。安装界面会检测本机 NVIDIA GPU / Compute Capability，并显示推荐、可尝试、不推荐或未知状态。软件只从 KataGo / NVIDIA 官方源下载并校验；未点击安装就不会下载。需要完全离线安装的用户也可以从 Release 下载全部 `.7z.00N` 分卷，并按同名 README、清单和 SHA-256 文件校验后从 `.001` 解压。
 
 ### Windows 64 位无引擎包
 
@@ -208,8 +216,9 @@ chmod +x start-linux64.sh
 
 当前默认内置信息：
 
-- KataGo 版本：`v1.17.1`
-- 默认权重：官方中型 Transformer `b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz`（界面显示“Transformer 10B 均衡版”，约 94 MB）
+- KataGo 版本：`v1.18.1`
+- 默认权重：官方旗舰 B11 Transformer `b11c768h12nbt3tflrs-fson-silu.bin.gz`（界面显示“Transformer 11B 棋力优先”，`211,660,960` 字节，约 202 MiB）
+- B11 单次判断更强、复杂局面效果更好，但搜索速度可能较慢；追求速度可在 `KataGo 一键设置` 中按需下载并切换 B10
 - 旧完整包升级：请安装最新完整包；`core-update.zip` 不包含新引擎和权重
 
 ## 需要更多说明

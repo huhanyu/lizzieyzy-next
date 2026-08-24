@@ -26,7 +26,6 @@ CURRENT_VERSION_FILENAME = '当前版本.txt'
 EXPECTED_ASSET_SUFFIXES = (
     'windows64.opencl.portable.zip',
     'windows64.nvidia.portable.zip',
-    'windows64.nvidia50.cuda.portable.zip',
 )
 
 

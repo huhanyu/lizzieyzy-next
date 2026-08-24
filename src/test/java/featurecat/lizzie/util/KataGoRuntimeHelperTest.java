@@ -898,7 +898,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-spec");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -907,11 +907,11 @@ public class KataGoRuntimeHelperTest {
                     KataGoRuntimeHelper.buildTensorRtInstallSpec(snapshot);
 
                 assertTrue(
-                    spec.katagoUrl.endsWith("/katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip"));
+                    spec.katagoUrl.endsWith("/katago-v1.18.1-trt10.9.0-cuda12.8-windows-x64.zip"));
                 assertEquals(
-                    "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6",
+                    "49b7229803b2ccee5205cc9d1f7b1a37790469405324de5e5acaafe7a8a9172a",
                     spec.katagoSha256);
-                assertEquals(7_678_930L, spec.katagoSizeBytes);
+                assertEquals(8_375_820L, spec.katagoSizeBytes);
                 assertEquals(6, spec.runtimePackageCount);
                 assertTrue(spec.totalDownloadBytes > 3_000_000_000L);
                 assertEquals(
@@ -984,7 +984,7 @@ public class KataGoRuntimeHelperTest {
                       .resolve("katago")
                       .resolve("windows-x64-nvidia50-trt")
                       .resolve("katago.exe"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -1006,7 +1006,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-install");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
           Path fixtureZip =
               createTensorRtFixtureZip(tempRoot.resolve("fixture").resolve("katago-trt.zip"));
           withTensorRtFixtureProperties(
@@ -1041,7 +1041,7 @@ public class KataGoRuntimeHelperTest {
                         assertTrue(
                             Files.readString(
                                     targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
-                                .contains("KataGo release: v1.17.2"));
+                                .contains("KataGo release: v1.18.1"));
                         assertTrue(
                             Files.readString(
                                     targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
@@ -1070,7 +1070,7 @@ public class KataGoRuntimeHelperTest {
   void tensorRtInstallResumesInterruptedDownloadPartFile() throws Exception {
     Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-resume");
     Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-    SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+    SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
     Path fixtureZip =
         createTensorRtFixtureZip(tempRoot.resolve("fixture").resolve("katago-trt.zip"));
     byte[] fixtureBytes = Files.readAllBytes(fixtureZip);
@@ -1154,7 +1154,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-lock");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
           Path fixtureZip =
               createTensorRtFixtureZip(tempRoot.resolve("fixture").resolve("katago-trt.zip"));
 
@@ -1201,7 +1201,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-apply-installed");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -1266,14 +1266,14 @@ public class KataGoRuntimeHelperTest {
   }
 
   @Test
-  void currentTensorRtInstallWithoutCompanionRepairsFromPinnedNvidia50Source()
+  void currentTensorRtInstallWithoutCompanionRepairsFromPinnedUnifiedCudaSource()
       throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-companion-repair");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -1324,6 +1324,7 @@ public class KataGoRuntimeHelperTest {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-legacy-fallback");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
           SetupSnapshot snapshot = createLegacyNvidiaSnapshot(tempRoot);
+          Files.writeString(snapshot.enginePath, "legacy cuDNN 8 fixture");
 
           withConfig(
               runtimeWorkDirectory,
@@ -1356,7 +1357,7 @@ public class KataGoRuntimeHelperTest {
                 assertFalse(
                     Files.exists(
                         targetDir.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME)),
-                    "A cuDNN 8 executable must never be copied and relabelled as nvidia50-cuda.");
+                    "A cuDNN 8 executable must never be copied as the TensorRT CUDA companion.");
                 assertEquals(
                     normalize(snapshot.enginePath),
                     normalize(
@@ -1374,7 +1375,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-unknown-companion");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
           Files.writeString(snapshot.enginePath, "unknown ABI fixture");
 
           withConfig(
@@ -1417,7 +1418,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-engine-upgrade");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
           Path targetDir =
               runtimeWorkDirectory
                   .resolve("engines")
@@ -1470,7 +1471,7 @@ public class KataGoRuntimeHelperTest {
                         assertTrue(
                             Files.readString(
                                     targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"))
-                                .contains("KataGo release: v1.17.2"));
+                                .contains("KataGo release: v1.18.1"));
                         assertTrue(
                             KataGoRuntimeHelper.inspectTensorRtInstall(result.snapshot).active);
                       }));
@@ -1484,7 +1485,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-status");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -1518,7 +1519,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-missing-nvrtc");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -1620,7 +1621,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-split-enable");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
           Path targetDir =
               snapshot
                   .appRoot
@@ -1666,7 +1667,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-back-to-cuda");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
 
           withConfig(
               runtimeWorkDirectory,
@@ -1707,7 +1708,7 @@ public class KataGoRuntimeHelperTest {
                             engine ->
                                 "KataGo Auto Setup".equals(engine.name)
                                     && engine.isDefault
-                                    && engine.commands.contains("windows-x64-nvidia50-cuda")));
+                                    && engine.commands.contains("windows-x64-nvidia")));
               });
         });
   }
@@ -1719,7 +1720,7 @@ public class KataGoRuntimeHelperTest {
         () -> {
           Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-cancel");
           Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
-          SetupSnapshot snapshot = createNvidia50Snapshot(tempRoot);
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
           DownloadSession session = new DownloadSession();
           session.cancel();
 
@@ -2037,6 +2038,85 @@ public class KataGoRuntimeHelperTest {
   }
 
   @Test
+  void cudaCompatibilityProbeCacheIsBoundToDriverEngineModelAndConfig() throws Exception {
+    Path root = Files.createTempDirectory("katago-cuda-compatibility-signature");
+    Path engine = Files.writeString(root.resolve("katago.exe"), "engine-v1");
+    Path model = Files.writeString(root.resolve("default.bin.gz"), "model-v1");
+    Path config = Files.writeString(root.resolve("gtp.cfg"), "config-v1");
+    Path marker = root.resolve("cache/compatibility.txt");
+
+    String original =
+        KataGoRuntimeHelper.buildCudaCompatibilityProbeSignature(
+            engine, model, config, "560.76");
+    assertFalse(KataGoRuntimeHelper.hasMatchingCudaCompatibilityProbe(marker, original));
+
+    KataGoRuntimeHelper.rememberCudaCompatibilityProbe(marker, original);
+    assertTrue(KataGoRuntimeHelper.hasMatchingCudaCompatibilityProbe(marker, original));
+
+    String changedDriver =
+        KataGoRuntimeHelper.buildCudaCompatibilityProbeSignature(
+            engine, model, config, "566.14");
+    assertFalse(original.equals(changedDriver));
+    assertFalse(KataGoRuntimeHelper.hasMatchingCudaCompatibilityProbe(marker, changedDriver));
+
+    Files.writeString(model, "model-v2-with-different-size");
+    String changedModel =
+        KataGoRuntimeHelper.buildCudaCompatibilityProbeSignature(
+            engine, model, config, "560.76");
+    assertFalse(original.equals(changedModel));
+    assertFalse(KataGoRuntimeHelper.hasMatchingCudaCompatibilityProbe(marker, changedModel));
+  }
+
+  @Test
+  void cudaCompatibilityProbeUsesTheExactLaunchModelAndConfig() throws Exception {
+    Path root = Files.createTempDirectory("katago-cuda-probe-command-inputs");
+    Path engine = Files.writeString(root.resolve("katago.exe"), "engine");
+    Path model = Files.writeString(root.resolve("custom-model.bin.gz"), "model");
+    Path config = Files.writeString(root.resolve("custom-gtp.cfg"), "config");
+    List<String> command =
+        List.of(
+            engine.toString(),
+            "gtp",
+            "-model",
+            model.toString(),
+            "-config",
+            config.toString());
+
+    KataGoRuntimeHelper.CudaCompatibilityProbeInputs inputs =
+        KataGoRuntimeHelper.resolveCudaCompatibilityProbeInputs(engine, command);
+
+    assertEquals(normalize(model), inputs.modelPath);
+    assertEquals(normalize(config), inputs.configPath);
+  }
+
+  @Test
+  void cudaCompatibilityProbeUsesTheSmallestKataGo118LegalInference() throws Exception {
+    Path root = Files.createTempDirectory("katago-cuda-probe-command");
+    Path engine = Files.writeString(root.resolve("katago.exe"), "engine");
+    Path model = Files.writeString(root.resolve("model.bin.gz"), "model");
+    Path config = Files.writeString(root.resolve("gtp.cfg"), "config");
+    KataGoRuntimeHelper.CudaCompatibilityProbeInputs inputs =
+        KataGoRuntimeHelper.resolveCudaCompatibilityProbeInputs(
+            engine,
+            List.of(
+                engine.toString(),
+                "gtp",
+                "-model",
+                model.toString(),
+                "-config",
+                config.toString()));
+
+    List<String> command =
+        KataGoRuntimeHelper.buildCudaCompatibilityProbeCommand(engine, inputs);
+
+    assertEquals("2", command.get(command.indexOf("-v") + 1));
+    assertEquals("1", command.get(command.indexOf("-n") + 1));
+    assertEquals("1", command.get(command.indexOf("-t") + 1));
+    assertTrue(command.contains("-no-server-thread-test"));
+    assertTrue(command.contains("-no-half-batch-size-test"));
+  }
+
+  @Test
   void nonKataGoAnalysisCommandKeepsOriginalText() throws Exception {
     Path runtimeWorkDirectory = Files.createTempDirectory("katago-helper-nonkatago");
     withConfig(
@@ -2120,6 +2200,40 @@ public class KataGoRuntimeHelperTest {
     assertTrue(
         completed >= 950,
         "A completed fixed-thread cell should nearly complete its segment instead of assuming 12 tests.");
+  }
+
+  @Test
+  void katago118ExtraTuningStagesKeepProgressMovingAfterThreadSearch() {
+    KataGoRuntimeHelper.BenchmarkProgressTracker tracker =
+        new KataGoRuntimeHelper.BenchmarkProgressTracker();
+
+    tracker.update("Possible numbers of threads to test: 1 2 4 6 8 10");
+    tracker.update("numSearchThreads = 10: 6/6 positions");
+    int summary = tracker.update("Ordered summary of results:");
+    int extraStart =
+        tracker.update(
+            "Running additional tests of a few other settings at numSearchThreads = 10.");
+    int baselineStart =
+        tracker.update("Re-measuring the current recommendation as a baseline:");
+    int baselineHalf = tracker.update("numSearchThreads = 10: 3/6 positions");
+    int serverStart = tracker.update("Testing 2 NN server threads per GPU.");
+    int serverDone = tracker.update("numSearchThreads = 10: 6/6 positions");
+    int batchStart = tracker.update("Testing a max batch size of 5, half the search threads:");
+    int batchDone = tracker.update("numSearchThreads = 10: 6/6 positions");
+    int recommendation =
+        tracker.update(
+            "ADDITIONAL RECOMMENDATION: a smaller batch size measured faster. "
+                + "To use this, set nnMaxBatchSize = 5 in your config.");
+
+    assertEquals(795, summary);
+    assertTrue(extraStart > summary);
+    assertTrue(baselineStart >= extraStart);
+    assertTrue(baselineHalf > baselineStart);
+    assertTrue(serverStart > baselineHalf);
+    assertTrue(serverDone > serverStart);
+    assertTrue(batchStart > serverDone);
+    assertTrue(batchDone > batchStart);
+    assertEquals(990, recommendation);
   }
 
   @Test
@@ -2352,20 +2466,20 @@ public class KataGoRuntimeHelperTest {
       throws IOException {
     Files.writeString(
         directory.resolve("lizzieyzy-next-katago-engine-manifest.txt"),
-        "KataGo release: v1.17.2\n"
-            + "Asset: katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip\n"
+        "KataGo release: v1.18.1\n"
+            + "Asset: katago-v1.18.1-trt10.9.0-cuda12.8-windows-x64.zip\n"
             + "Asset SHA-256: "
-            + "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6\n");
+            + "49b7229803b2ccee5205cc9d1f7b1a37790469405324de5e5acaafe7a8a9172a\n");
   }
 
-  private static SetupSnapshot createNvidia50Snapshot(Path tempRoot) throws Exception {
+  private static SetupSnapshot createUnifiedNvidiaSnapshot(Path tempRoot) throws Exception {
     Path workingDir = Files.createDirectories(tempRoot.resolve("working"));
     Path appRoot = Files.createDirectories(tempRoot.resolve("app"));
     Path engineDir =
         Files.createDirectories(
-            appRoot.resolve("engines").resolve("katago").resolve("windows-x64-nvidia50-cuda"));
+            appRoot.resolve("engines").resolve("katago").resolve("windows-x64-nvidia"));
     Path enginePath = touch(engineDir.resolve("katago.exe"));
-    Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia50-cuda");
+    Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia");
     Path configDir =
         Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve("configs"));
     Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));

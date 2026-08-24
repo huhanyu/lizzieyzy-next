@@ -6728,12 +6728,17 @@ public class LizzieFrame extends JFrame {
   }
 
   private String getLoadingText() {
-    // TODO Auto-generated method stub
-    if (Lizzie.leelaz.isDownWithError)
-      return Lizzie.resourceBundle.getString("LizzieFrame.display.down");
-    else if (Lizzie.leelaz.isTuning)
-      return Lizzie.resourceBundle.getString("LizzieFrame.display.tuning");
-    else return Lizzie.resourceBundle.getString("LizzieFrame.display.loading");
+    return Lizzie.resourceBundle.getString(loadingTextResourceKey(Lizzie.leelaz));
+  }
+
+  static String loadingTextResourceKey(Leelaz engine) {
+    if (engine == null || engine.isDownWithError) {
+      return "LizzieFrame.display.down";
+    }
+    if (engine.isTuning) {
+      return "LizzieFrame.display.tuning";
+    }
+    return "LizzieFrame.display.loading";
   }
 
   /**
@@ -19361,10 +19366,14 @@ public class LizzieFrame extends JFrame {
   }
 
   public void openKataGoAutoSetup() {
+    boolean created = false;
     if (kataGoAutoSetupDialog == null || !kataGoAutoSetupDialog.isDisplayable()) {
       kataGoAutoSetupDialog = new KataGoAutoSetupDialog(this);
+      created = true;
     }
-    kataGoAutoSetupDialog.refreshState();
+    if (!created) {
+      kataGoAutoSetupDialog.refreshState();
+    }
     kataGoAutoSetupDialog.ensureVisibleOnScreen();
     kataGoAutoSetupDialog.setVisible(true);
     kataGoAutoSetupDialog.ensureVisibleOnScreen();
@@ -19388,10 +19397,14 @@ public class LizzieFrame extends JFrame {
   }
 
   public void openKataGoWeightDownload() {
+    boolean created = false;
     if (kataGoAutoSetupDialog == null || !kataGoAutoSetupDialog.isDisplayable()) {
       kataGoAutoSetupDialog = new KataGoAutoSetupDialog(this);
+      created = true;
     }
-    kataGoAutoSetupDialog.refreshState();
+    if (!created) {
+      kataGoAutoSetupDialog.refreshState();
+    }
     kataGoAutoSetupDialog.showWeightsSection();
     kataGoAutoSetupDialog.ensureVisibleOnScreen();
     kataGoAutoSetupDialog.setVisible(true);

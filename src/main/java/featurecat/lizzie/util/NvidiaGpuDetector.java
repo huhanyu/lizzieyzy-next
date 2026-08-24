@@ -34,6 +34,13 @@ public final class NvidiaGpuDetector {
     UNKNOWN
   }
 
+  public enum CudaCompatibility {
+    SUPPORTED,
+    PROBE_REQUIRED,
+    UNSUPPORTED,
+    UNKNOWN
+  }
+
   public static final class GpuInfo {
     public final String name;
     public final int computeMajor;
@@ -42,7 +49,7 @@ public final class NvidiaGpuDetector {
     public final long memoryMiB;
     public final String source;
 
-    private GpuInfo(
+    GpuInfo(
         String name,
         int computeMajor,
         int computeMinor,
@@ -360,7 +367,7 @@ public final class NvidiaGpuDetector {
     return best;
   }
 
-  private static TensorRtRecommendation recommend(GpuInfo gpu) {
+  static TensorRtRecommendation recommend(GpuInfo gpu) {
     if (gpu == null || !gpu.hasComputeCapability()) {
       return TensorRtRecommendation.UNKNOWN;
     }
@@ -368,10 +375,24 @@ public final class NvidiaGpuDetector {
     if (rank < 75) {
       return TensorRtRecommendation.NOT_RECOMMENDED;
     }
-    if (rank == 75 && isGtx16Series(gpu.name)) {
-      return TensorRtRecommendation.ALLOWED;
+    if (rank >= 89) {
+      return TensorRtRecommendation.NOT_RECOMMENDED;
     }
-    return TensorRtRecommendation.RECOMMENDED;
+    return TensorRtRecommendation.ALLOWED;
+  }
+
+  public static CudaCompatibility cudaCompatibility(String driverVersion) {
+    int[] parsed = parseDriverVersion(driverVersion);
+    if (parsed[0] <= 0) {
+      return CudaCompatibility.UNKNOWN;
+    }
+    if (compareVersion(parsed, new int[] {570, 65}) >= 0) {
+      return CudaCompatibility.SUPPORTED;
+    }
+    if (compareVersion(parsed, new int[] {528, 33}) >= 0) {
+      return CudaCompatibility.PROBE_REQUIRED;
+    }
+    return CudaCompatibility.UNSUPPORTED;
   }
 
   private static boolean isGtx16Series(String name) {
@@ -403,22 +424,24 @@ public final class NvidiaGpuDetector {
 
   private static String recommendationText(TensorRtRecommendation recommendation, GpuInfo gpu) {
     if (recommendation == TensorRtRecommendation.RECOMMENDED) {
-      if (gpu != null && gpu.computeMajor >= 12) {
-        return resource(
-            "AutoSetup.gpuRecommendTensorRtRtx50",
-            "Recommended: TensorRT RTX 50 / Blackwell acceleration. First launch may build caches.");
-      }
-      return resource("AutoSetup.gpuRecommendTensorRt", "Recommended: TensorRT for this GPU.");
+      return resource(
+          "AutoSetup.gpuTensorRtOptionalOlder",
+          "Optional: RTX 30 series and earlier NVIDIA GPUs may try TensorRT.");
     }
     if (recommendation == TensorRtRecommendation.ALLOWED) {
       return resource(
           "AutoSetup.gpuAllowTensorRt",
-          "Allowed: this GPU meets the TensorRT 10.x SM 7.5+ floor, but RTX cards are preferred for best speed.");
+          "Optional: RTX 30 series and earlier may try TensorRT. GTX 16 may also try it; CUDA remains the safe default.");
     }
     if (recommendation == TensorRtRecommendation.NOT_RECOMMENDED) {
+      if (gpu != null && gpu.computeRank() >= 89) {
+        return resource(
+            "AutoSetup.gpuPreferCudaModern",
+            "Use CUDA: RTX 40/50 series run the unified CUDA package by default; TensorRT is not recommended.");
+      }
       return resource(
           "AutoSetup.gpuNotRecommendTensorRt",
-          "Not recommended: TensorRT 10.x requires SM 7.5+. Use CUDA/OpenCL for this GPU.");
+          "Unsupported: TensorRT 10.x requires SM 7.5+. Use CUDA/OpenCL for this GPU.");
     }
     return resource(
         "AutoSetup.gpuUnknownTensorRt",
@@ -435,6 +458,27 @@ public final class NvidiaGpuDetector {
     } catch (Exception e) {
       return 0;
     }
+  }
+
+  private static int[] parseDriverVersion(String value) {
+    String normalized = clean(value).replace(',', '.');
+    Matcher matcher = Pattern.compile("(\\d+)(?:[.](\\d+))?").matcher(normalized);
+    if (!matcher.find()) {
+      return new int[] {0, 0};
+    }
+    return new int[] {parseInt(matcher.group(1)), parseInt(matcher.group(2))};
+  }
+
+  private static int compareVersion(int[] left, int[] right) {
+    int length = Math.max(left.length, right.length);
+    for (int i = 0; i < length; i++) {
+      int leftPart = i < left.length ? left[i] : 0;
+      int rightPart = i < right.length ? right[i] : 0;
+      if (leftPart != rightPart) {
+        return Integer.compare(leftPart, rightPart);
+      }
+    }
+    return 0;
   }
 
   private static long parseMemoryMiB(String value) {
