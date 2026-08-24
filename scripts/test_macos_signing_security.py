@@ -21,6 +21,11 @@ SIGN_SCRIPT = ROOT / "scripts" / "sign_macos_release.sh"
 
 
 def find_bash() -> str | None:
+    # Windows may expose the WSL launcher as bash.exe even when no usable Linux
+    # distribution exists. Keep the executable macOS cleanup fixture on POSIX;
+    # the static signing-security checks remain fully Windows-runnable.
+    if os.name == "nt":
+        return None
     discovered = shutil.which("bash")
     if discovered:
         return discovered
@@ -329,6 +334,13 @@ class MacOSSigningSecurityTest(unittest.TestCase):
 
             self.assertNotEqual(completed.returncode, 0, completed.stderr)
             self.assertNotIn("unbound variable", completed.stderr.lower())
+            self.assertTrue(
+                security_log.is_file(),
+                "fake security command was not reached\n"
+                f"return code: {completed.returncode}\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}",
+            )
 
             records = [
                 json.loads(line)

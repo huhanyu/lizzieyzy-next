@@ -579,7 +579,7 @@ public class KataGoRuntimeHelperTest {
               runtimeWorkDirectory,
               () -> {
                 KataGoRuntimeHelper.NvidiaRuntimeStatus status =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "");
                 KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, enginePath);
 
                 assertTrue(
@@ -627,7 +627,7 @@ public class KataGoRuntimeHelperTest {
               runtimeWorkDirectory,
               () -> {
                 KataGoRuntimeHelper.NvidiaRuntimeStatus status =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "");
 
                 assertTrue(status.applicable);
                 assertFalse(status.ready);
@@ -659,7 +659,7 @@ public class KataGoRuntimeHelperTest {
               runtimeWorkDirectory,
               () -> {
                 KataGoRuntimeHelper.NvidiaRuntimeStatus status =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "");
 
                 assertTrue(status.applicable);
                 assertTrue(
@@ -692,7 +692,7 @@ public class KataGoRuntimeHelperTest {
               runtimeWorkDirectory,
               () -> {
                 KataGoRuntimeHelper.NvidiaRuntimeStatus status =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "");
 
                 assertTrue(status.applicable);
                 assertTrue(status.ready);
@@ -724,11 +724,46 @@ public class KataGoRuntimeHelperTest {
               runtimeWorkDirectory,
               () -> {
                 KataGoRuntimeHelper.NvidiaRuntimeStatus status =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "");
 
                 assertFalse(status.ready);
                 assertTrue(status.missingDlls.contains("nvrtc64_*.dll"));
                 assertTrue(status.missingDlls.contains("nvrtc-builtins64_*.dll"));
+              });
+        });
+  }
+
+  @Test
+  void standardNvidiaRuntimeCanUseNvrtcFromExplicitLaunchPath() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-nvidia-nvrtc-path");
+          Path engineDir =
+              Files.createDirectories(
+                  tempRoot.resolve("engines").resolve("katago").resolve("windows-x64"));
+          Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia");
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+              "Profile: cuda12.1-cudnn9\n");
+          Path enginePath = touch(engineDir.resolve("katago.exe"));
+          touchCuda12CoreWithoutNvrtc(engineDir);
+          touch(engineDir.resolve("cudnn64_9.dll"));
+          touch(engineDir.resolve("z.dll"));
+          Path launchPathDir = Files.createDirectories(tempRoot.resolve("launch-path"));
+          touch(launchPathDir.resolve("nvrtc64_120_0.dll"));
+          touch(launchPathDir.resolve("nvrtc-builtins64_126.dll"));
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                KataGoRuntimeHelper.NvidiaRuntimeStatus status =
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(
+                        enginePath, launchPathDir.toString());
+
+                assertTrue(status.ready);
+                assertTrue(status.missingDlls.isEmpty());
               });
         });
   }
@@ -758,7 +793,7 @@ public class KataGoRuntimeHelperTest {
               runtimeWorkDirectory,
               () -> {
                 KataGoRuntimeHelper.NvidiaRuntimeStatus status =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath);
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "");
 
                 assertFalse(status.ready);
                 assertTrue(
@@ -1187,7 +1222,8 @@ public class KataGoRuntimeHelperTest {
                 writeCurrentTensorRtEngineManifest(targetDir);
 
                 KataGoRuntimeHelper.NvidiaRuntimeStatus runtimeStatus =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(targetDir.resolve("katago.exe"));
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(
+                        targetDir.resolve("katago.exe"), "");
                 assertTrue(
                     runtimeStatus.ready,
                     "TensorRT runtime should be accepted when launch PATH dirs satisfy dependencies.");
@@ -1510,7 +1546,8 @@ public class KataGoRuntimeHelperTest {
                         + "\n");
 
                 KataGoRuntimeHelper.NvidiaRuntimeStatus runtimeStatus =
-                    KataGoRuntimeHelper.inspectNvidiaRuntime(targetDir.resolve("katago.exe"));
+                    KataGoRuntimeHelper.inspectNvidiaRuntime(
+                        targetDir.resolve("katago.exe"), "");
                 KataGoRuntimeHelper.TensorRtInstallStatus installStatus =
                     KataGoRuntimeHelper.inspectTensorRtInstall(snapshot);
 
