@@ -243,7 +243,6 @@ function Set-StaleLegacyEngineConfig {
     Set-JsonProperty -Target $config.ui -Name 'autoload-empty' -Value $false
     Set-JsonProperty -Target $config.ui -Name 'first-time-load' -Value $false
     Set-JsonProperty -Target $config.ui -Name 'analysis-engine-command' -Value 'java -jar legacy\broken-analysis-launcher.jar'
-    Set-JsonProperty -Target $config.ui -Name 'estimate-command' -Value 'java -jar legacy\broken-estimate-launcher.jar'
 
     $json = $config | ConvertTo-Json -Depth 100
     [System.IO.File]::WriteAllText($ConfigPath, $json, [System.Text.Encoding]::UTF8)
@@ -268,16 +267,12 @@ function Assert-RepairedBundledEngineConfig {
     $defaultEngine = $engines[$defaultIndex]
     $engineCommand = [string]$defaultEngine.command
     $analysisCommand = [string]$config.ui.'analysis-engine-command'
-    $estimateCommand = [string]$config.ui.'estimate-command'
 
     if ($engineCommand -match 'java\s+-jar') {
         throw "Startup repair failed: default engine still points to a legacy java launcher."
     }
     if ($analysisCommand -match 'java\s+-jar') {
         throw "Startup repair failed: analysis engine command still points to a legacy java launcher."
-    }
-    if ($estimateCommand -match 'java\s+-jar') {
-        throw "Startup repair failed: estimate engine command still points to a legacy java launcher."
     }
     if ($engineCommand -notmatch 'engines[\\/]+katago') {
         throw "Startup repair failed: default engine was not rewritten to the bundled KataGo command."

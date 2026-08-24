@@ -35,14 +35,11 @@ public class RemoteEngineSettings extends JDialog {
   private String keyGenPath = "";
   private JDialog thisDialog = this;
   private boolean isAnalysisEngine;
-  private boolean isContributeEngine;
   private RemoteEngineData initialAnalysisEngineData;
   private Consumer<RemoteEngineData> analysisEngineDataConsumer;
 
-  public RemoteEngineSettings(JDialog owner, boolean isAnalysisEngine, boolean isContributeEngine) {
+  public RemoteEngineSettings(JDialog owner) {
     super(owner);
-    this.isAnalysisEngine = isAnalysisEngine;
-    this.isContributeEngine = isContributeEngine;
     initialize(owner);
   }
 
@@ -100,10 +97,8 @@ public class RemoteEngineSettings extends JDialog {
       remoteEngineData = initialAnalysisEngineData;
     } else if (isAnalysisEngine) {
       remoteEngineData = Utils.getAnalysisEngineRemoteEngineData();
-    } else if (isContributeEngine) {
-      remoteEngineData = Utils.getContributeRemoteEngineData();
     } else {
-      remoteEngineData = Utils.getEstimateEngineRemoteEngineData();
+      remoteEngineData = Utils.getContributeRemoteEngineData();
     }
     txtIP.setText(remoteEngineData.ip);
     txtPort.setText(remoteEngineData.port);
@@ -208,8 +203,7 @@ public class RemoteEngineSettings extends JDialog {
             if (analysisEngineDataConsumer != null)
               analysisEngineDataConsumer.accept(remoteEngineData);
             else if (isAnalysisEngine) Utils.saveAnalysisEngineRemoteEngineData(remoteEngineData);
-            else if (isContributeEngine) Utils.saveContributeRemoteEngineData(remoteEngineData);
-            else Utils.saveEstimateEngineRemoteEngineData(remoteEngineData);
+            else Utils.saveContributeRemoteEngineData(remoteEngineData);
             setVisible(false);
           }
         });

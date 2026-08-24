@@ -1585,7 +1585,6 @@ public class KataGoRuntimeHelperTest {
                   appRoot.resolve("engines").resolve("katago").resolve("configs"));
           Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));
           Path analysisConfigPath = touch(configDir.resolve("analysis.cfg"));
-          Path estimateConfigPath = touch(configDir.resolve("estimate.cfg"));
           Path weightPath = touch(appRoot.resolve("weights").resolve("default.bin.gz"));
           SetupSnapshot snapshot =
               setupSnapshot(
@@ -1594,7 +1593,6 @@ public class KataGoRuntimeHelperTest {
                   enginePath,
                   gtpConfigPath,
                   analysisConfigPath,
-                  estimateConfigPath,
                   weightPath);
 
           withConfig(
@@ -1756,7 +1754,6 @@ public class KataGoRuntimeHelperTest {
     Path enginePath = touch(tempRoot.resolve("external-engine").resolve("katago"));
     Path gtpConfigPath = touch(tempRoot.resolve("configs").resolve("gtp.cfg"));
     Path analysisConfigPath = touch(tempRoot.resolve("configs").resolve("analysis.cfg"));
-    Path estimateConfigPath = touch(tempRoot.resolve("configs").resolve("estimate.cfg"));
     Path weightPath = touch(tempRoot.resolve("weights").resolve("default.bin.gz"));
     Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
     SetupSnapshot snapshot =
@@ -1766,7 +1763,6 @@ public class KataGoRuntimeHelperTest {
             enginePath,
             gtpConfigPath,
             analysisConfigPath,
-            estimateConfigPath,
             weightPath);
 
     withConfig(
@@ -2484,7 +2480,6 @@ public class KataGoRuntimeHelperTest {
         Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve("configs"));
     Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));
     Path analysisConfigPath = touch(configDir.resolve("analysis.cfg"));
-    Path estimateConfigPath = touch(configDir.resolve("estimate.cfg"));
     Path weightPath = touch(workingDir.resolve("weights").resolve("default.bin.gz"));
     return setupSnapshot(
         workingDir,
@@ -2492,7 +2487,6 @@ public class KataGoRuntimeHelperTest {
         enginePath,
         gtpConfigPath,
         analysisConfigPath,
-        estimateConfigPath,
         weightPath);
   }
 
@@ -2509,7 +2503,6 @@ public class KataGoRuntimeHelperTest {
         Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve("configs"));
     Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));
     Path analysisConfigPath = touch(configDir.resolve("analysis.cfg"));
-    Path estimateConfigPath = touch(configDir.resolve("estimate.cfg"));
     Path weightPath = touch(workingDir.resolve("weights").resolve("default.bin.gz"));
     return setupSnapshot(
         workingDir,
@@ -2517,7 +2510,6 @@ public class KataGoRuntimeHelperTest {
         enginePath,
         gtpConfigPath,
         analysisConfigPath,
-        estimateConfigPath,
         weightPath);
   }
 
@@ -2532,7 +2524,6 @@ public class KataGoRuntimeHelperTest {
         Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve("configs"));
     Path gtpConfigPath = touch(configDir.resolve("gtp.cfg"));
     Path analysisConfigPath = touch(configDir.resolve("analysis.cfg"));
-    Path estimateConfigPath = touch(configDir.resolve("estimate.cfg"));
     Path weightPath = touch(workingDir.resolve("weights").resolve("default.bin.gz"));
     return setupSnapshot(
         workingDir,
@@ -2540,7 +2531,6 @@ public class KataGoRuntimeHelperTest {
         enginePath,
         gtpConfigPath,
         analysisConfigPath,
-        estimateConfigPath,
         weightPath);
   }
 
@@ -2695,13 +2685,11 @@ public class KataGoRuntimeHelperTest {
       Path enginePath,
       Path gtpConfigPath,
       Path analysisConfigPath,
-      Path estimateConfigPath,
       Path weightPath,
       List<Path> weightCandidates)
       throws Exception {
     Constructor<SetupSnapshot> constructor =
         SetupSnapshot.class.getDeclaredConstructor(
-            Path.class,
             Path.class,
             Path.class,
             Path.class,
@@ -2716,7 +2704,6 @@ public class KataGoRuntimeHelperTest {
         enginePath,
         gtpConfigPath,
         analysisConfigPath,
-        estimateConfigPath,
         weightPath,
         weightCandidates);
   }
@@ -2727,7 +2714,6 @@ public class KataGoRuntimeHelperTest {
       Path enginePath,
       Path gtpConfigPath,
       Path analysisConfigPath,
-      Path estimateConfigPath,
       Path weightPath)
       throws Exception {
     return setupSnapshot(
@@ -2736,7 +2722,6 @@ public class KataGoRuntimeHelperTest {
         enginePath,
         gtpConfigPath,
         analysisConfigPath,
-        estimateConfigPath,
         weightPath,
         Arrays.asList(weightPath));
   }

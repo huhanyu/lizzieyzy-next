@@ -86,6 +86,18 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
+  void aiPositionToggleIsNoOpWithoutAnEngine() throws Exception {
+    Leelaz previousEngine = Lizzie.leelaz;
+    try {
+      Lizzie.leelaz = null;
+
+      allocate(LizzieFrame.class).toggleShowKataEstimate();
+    } finally {
+      Lizzie.leelaz = previousEngine;
+    }
+  }
+
+  @Test
   void loadingStatusFontFitsAndTruncatesLongLocalizedText() {
     BufferedImage image = new BufferedImage(800, 200, BufferedImage.TYPE_INT_ARGB);
     Graphics2D graphics = image.createGraphics();
