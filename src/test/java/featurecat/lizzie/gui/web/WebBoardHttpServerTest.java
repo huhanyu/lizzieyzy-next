@@ -45,9 +45,12 @@ public class WebBoardHttpServerTest {
   }
 
   @Test
-  void servesIndexHtml() throws Exception {
+  void servesIndexHtmlWithAiPositionLabel() throws Exception {
     String response = httpGet("/");
+
     assertTrue(response.contains("200"));
+    assertTrue(response.contains(">Kata形势</button>"));
+    assertFalse(response.contains(">形势判断</button>"));
   }
 
   @Test

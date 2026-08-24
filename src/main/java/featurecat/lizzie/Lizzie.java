@@ -1031,9 +1031,6 @@ public class Lizzie {
                 oldfile2.renameTo(newfile2);
               }
             }
-            if (Lizzie.config.loadEstimateEngine) {
-              frame.preloadEstimateEngineAfterStartup();
-            }
             if (Lizzie.config.analysisEnginePreLoad) {
               frame.preloadConfiguredAnalysisEngineAfterStartup();
             }
@@ -1470,7 +1467,6 @@ public class Lizzie {
     } catch (Exception e) {
       APP.error("failed to shut down clock helper", e);
     }
-    Lizzie.frame.destroyEstimateEngine();
     Lizzie.frame.destroyAnalysisEngine();
     if (webBoardManager != null) {
       try {

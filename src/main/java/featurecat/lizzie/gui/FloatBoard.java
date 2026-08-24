@@ -280,16 +280,6 @@ public class FloatBoard extends JDialog {
     addKeyListener(
         new KeyAdapter() {
           public void keyPressed(KeyEvent e) {
-            if (e.getKeyCode() == KeyEvent.VK_SLASH || e.getKeyCode() == KeyEvent.VK_DECIMAL) {
-              if (Lizzie.frame.isCounting) {
-                Lizzie.frame.clearKataEstimate();
-                Lizzie.frame.isCounting = false;
-                Lizzie.frame.cancelPositionEstimateRequest();
-                Lizzie.frame.estimateResults.setVisible(false);
-              } else {
-                Lizzie.frame.countstones(true);
-              }
-            }
             if (e.getKeyCode() == KeyEvent.VK_V) changeEetEditMode();
             if (e.getKeyCode() == KeyEvent.VK_PERIOD)
               if (Lizzie.config.useShortcutKataEstimate) Lizzie.frame.toggleShowKataEstimate();

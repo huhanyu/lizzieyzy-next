@@ -485,8 +485,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .put("autoload-last", false)
             .put("autoload-empty", false)
             .put("default-engine", 0)
-            .put("analysis-engine-command", "java -jar legacy/missing-analysis.jar")
-            .put("estimate-command", "java -jar legacy/missing-estimate.jar");
+            .put("analysis-engine-command", "java -jar legacy/missing-analysis.jar");
     JSONObject legacyEngine =
         new JSONObject()
             .put("name", "Legacy KataGo")
@@ -508,7 +507,6 @@ public class ConfigBundledKataGoDefaultsTest {
     assertTrue(engines.getJSONObject(defaultIndex).getBoolean("isDefault"));
     assertFalse(engines.getJSONObject(defaultIndex).getString("command").contains("java -jar"));
     assertFalse(ui.getString("analysis-engine-command").contains("java -jar"));
-    assertFalse(ui.getString("estimate-command").contains("java -jar"));
     assertTrue(ui.getBoolean("autoload-default"));
     assertFalse(ui.getBoolean("autoload-last"));
     assertFalse(ui.getBoolean("autoload-empty"));
@@ -526,7 +524,7 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   @Test
-  void brokenLegacyAuxiliaryEnginesAreRepairedWithoutVersionMetadata() throws Exception {
+  void brokenLegacyAnalysisEngineIsRepairedWithoutVersionMetadata() throws Exception {
     Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-legacy-package");
     Files.writeString(tempRoot.resolve("config.txt"), "{}");
     createBundledKataGoAssets(tempRoot);
@@ -538,8 +536,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .put("autoload-default", true)
             .put("default-engine", 0)
             .put("analysis-engine-command", "java -jar legacy/missing-analysis.jar")
-            .put("analysis-engine-command-customized", true)
-            .put("estimate-command", "java -jar legacy/missing-estimate.jar");
+            .put("analysis-engine-command-customized", true);
     JSONObject leelaz =
         new JSONObject()
             .put(
@@ -556,7 +553,6 @@ public class ConfigBundledKataGoDefaultsTest {
 
     assertFalse(ui.getString("analysis-engine-command").contains("java -jar"));
     assertFalse(ui.getBoolean("analysis-engine-command-customized"));
-    assertFalse(ui.getString("estimate-command").contains("java -jar"));
     assertFalse(ui.optBoolean("migrated-default-transformer-v1", false));
   }
 
@@ -575,8 +571,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .put("first-time-load", false)
             .put("autoload-default", true)
             .put("default-engine", 0)
-            .put("analysis-engine-command", command)
-            .put("estimate-command", command);
+            .put("analysis-engine-command", command);
     JSONObject customEngine =
         new JSONObject()
             .put("name", "Custom Java Engine")
@@ -593,7 +588,6 @@ public class ConfigBundledKataGoDefaultsTest {
         command,
         leelaz.getJSONArray("engine-settings-list").getJSONObject(0).getString("command"));
     assertEquals(command, ui.getString("analysis-engine-command"));
-    assertEquals(command, ui.getString("estimate-command"));
   }
 
   @Test
@@ -772,12 +766,6 @@ public class ConfigBundledKataGoDefaultsTest {
             + " -config "
             + quote(configs.resolve("analysis.cfg"))
             + " -quit-without-waiting";
-    String oldEstimate =
-        quote(executable)
-            + " gtp -model "
-            + quote(oldWeight)
-            + " -config "
-            + quote(configs.resolve("gtp.cfg"));
 
     Config config = ConfigTestHelper.createForTests(tempRoot);
     JSONObject ui =
@@ -788,8 +776,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .put("autoload-empty", false)
             .put("default-engine", 0)
             .put("analysis-engine-command", oldAnalysis)
-            .put("analysis-engine-command-customized", false)
-            .put("estimate-command", oldEstimate);
+            .put("analysis-engine-command-customized", false);
     JSONObject managedEngine =
         new JSONObject()
             .put("name", "KataGo Auto Setup")
@@ -807,7 +794,6 @@ public class ConfigBundledKataGoDefaultsTest {
     assertFalse(migratedCommand.contains("zhizi"));
     assertTrue(ui.getString("analysis-engine-command").contains("default.bin.gz"));
     assertFalse(ui.getString("analysis-engine-command").contains("zhizi"));
-    assertTrue(ui.getString("estimate-command").contains("default.bin.gz"));
     assertTrue(ui.getBoolean("migrated-default-transformer-v1"));
     assertFalse(ui.getBoolean("autoload-default"));
     assertTrue(ui.getBoolean("autoload-last"));

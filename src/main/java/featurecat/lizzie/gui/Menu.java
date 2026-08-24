@@ -2156,7 +2156,7 @@ public class Menu extends JMenuBar {
     //        });
 
     final JFontMenu kataEstimate =
-        new JFontMenu(resourceBundle.getString("Menu.kataEstimate")); // ("Kata评估显示");
+        new JFontMenu(resourceBundle.getString("Menu.kataEstimate")); // ("Kata形势显示");
     kataSettings.add(kataEstimate);
 
     final JFontCheckBoxMenuItem kataEstimateClose =
@@ -2280,7 +2280,7 @@ public class Menu extends JMenuBar {
 
     final JFontCheckBoxMenuItem kataEstimateSaveState =
         new JFontCheckBoxMenuItem(
-            resourceBundle.getString("Menu.kataEstimateSaveState")); // ("记忆Kata评估显示状态");
+            resourceBundle.getString("Menu.kataEstimateSaveState")); // ("记忆Kata形势显示状态");
     kataEstimate.add(kataEstimateSaveState);
     kataEstimateSaveState.addActionListener(
         new ActionListener() {
@@ -2515,7 +2515,7 @@ public class Menu extends JMenuBar {
 
     final JFontCheckBoxMenuItem useKataEstimateShortcut =
         new JFontCheckBoxMenuItem(
-            resourceBundle.getString("Menu.useKataEstimateShortcut")); // ("使用Kata评估快捷键(大键盘点)");
+            resourceBundle.getString("Menu.useKataEstimateShortcut")); // ("使用Kata形势快捷键(大键盘点)");
     kataEstimate.add(useKataEstimateShortcut);
     useKataEstimateShortcut.addActionListener(
         new ActionListener() {
@@ -3468,16 +3468,6 @@ public class Menu extends JMenuBar {
         });
     analyzeMenu.add(showPolicy);
 
-    final JFontMenuItem estimateStones =
-        new JFontMenuItem(resourceBundle.getString("Menu.estimateStones")); // ("形势判断( / 或小键盘点)");
-    // aboutItem.setMnemonic('A');
-    estimateStones.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            Lizzie.frame.countstones(true);
-          }
-        });
-    analyzeMenu.add(estimateStones);
     analyzeMenu.addSeparator();
 
     final JFontMenuItem clearAllLizzieCache =
@@ -4864,7 +4854,7 @@ public class Menu extends JMenuBar {
 
     final JFontCheckBoxMenuItem kataEstimateButton =
         new JFontCheckBoxMenuItem(
-            resourceBundle.getString("BottomToolbar.kataEstimate")); // "Kata评估");
+            resourceBundle.getString("BottomToolbar.kataEstimate")); // "Kata形势");
     customToolbarItem.add(kataEstimateButton);
     kataEstimateButton.addActionListener(
         new ActionListener() {
@@ -4911,21 +4901,9 @@ public class Menu extends JMenuBar {
           }
         });
 
-    final JFontCheckBoxMenuItem countButton =
-        new JFontCheckBoxMenuItem(
-            resourceBundle.getString("BottomToolbar.countButton")); // "形势判断");
-    customToolbarItem.add(countButton);
-    countButton.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            Lizzie.config.countButton = !Lizzie.config.countButton;
-            Lizzie.config.uiConfig.put("countButton", Lizzie.config.countButton);
-            LizzieFrame.toolbar.reSetButtonLocation();
-          }
-        });
 
     final JFontCheckBoxMenuItem finalScore =
-        new JFontCheckBoxMenuItem(resourceBundle.getString("BottomToolbar.finalScore")); // "形势判断");
+        new JFontCheckBoxMenuItem(resourceBundle.getString("BottomToolbar.finalScore")); // "终局点目");
     customToolbarItem.add(finalScore);
     finalScore.addActionListener(
         new ActionListener() {
@@ -5138,8 +5116,6 @@ public class Menu extends JMenuBar {
             else backMain.setState(false);
             if (Lizzie.config.clearButton) clearButton.setState(true);
             else clearButton.setState(false);
-            if (Lizzie.config.countButton) countButton.setState(true);
-            else countButton.setState(false);
             if (Lizzie.config.finalScore) finalScore.setState(true);
             else finalScore.setState(false);
             if (Lizzie.config.heatMap) heatMap.setState(true);

@@ -64,7 +64,6 @@ public class BottomToolbar extends JPanel {
   JButton firstButton;
   JButton lastButton;
   JButton clearButton;
-  JButton countButton;
   JButton finalScore;
   JButton forward10;
   JButton backward10;
@@ -616,8 +615,6 @@ public class BottomToolbar extends JPanel {
     AppleStyleSupport.markDanger(clearButton);
     firstButton = new JFontButton("|<");
     lastButton = new JFontButton(">|");
-    countButton =
-        new JFontButton(Lizzie.resourceBundle.getString("BottomToolbar.countButton")); // ("形势判断");
     finalScore =
         new JFontButton(Lizzie.resourceBundle.getString("BottomToolbar.finalScore")); // ("终局数子");
     forward10 = new JFontButton(">>");
@@ -632,7 +629,7 @@ public class BottomToolbar extends JPanel {
         new JFontButton(Lizzie.resourceBundle.getString("BottomToolbar.openfile")); // ("打开");
     kataEstimate =
         new JFontButton(
-            Lizzie.resourceBundle.getString("BottomToolbar.kataEstimate")); // ("Kata评估");
+            Lizzie.resourceBundle.getString("BottomToolbar.kataEstimate")); // ("Kata形势");
     analyse = new JFontButton(Lizzie.resourceBundle.getString("BottomToolbar.analyse")); // ("分析");
     AppleStyleSupport.markPrimary(analyse);
     heatMap = new JFontButton(Lizzie.resourceBundle.getString("BottomToolbar.heatMap")); // ("纯网络");
@@ -721,7 +718,6 @@ public class BottomToolbar extends JPanel {
     buttonPane.add(clearButton);
     buttonPane.add(lastButton);
     buttonPane.add(firstButton);
-    buttonPane.add(countButton);
     buttonPane.add(finalScore);
     buttonPane.add(forward10);
     buttonPane.add(savefile);
@@ -750,7 +746,6 @@ public class BottomToolbar extends JPanel {
     firstButton.setFocusable(false);
     lastButton.setFocusable(false);
     clearButton.setFocusable(false);
-    countButton.setFocusable(false);
     finalScore.setFocusable(false);
     forward10.setFocusable(false);
     backward10.setFocusable(false);
@@ -792,7 +787,6 @@ public class BottomToolbar extends JPanel {
     firstButton.setMargin(new Insets(0, 0, 0, 0));
     lastButton.setMargin(new Insets(0, 0, 0, 0));
     clearButton.setMargin(new Insets(0, 0, 0, 0));
-    countButton.setMargin(new Insets(0, 0, 0, 0));
     finalScore.setMargin(new Insets(0, 0, 0, 0));
     forward10.setMargin(new Insets(0, 0, 0, 0));
     backward10.setMargin(new Insets(0, 0, 0, 0));
@@ -846,7 +840,6 @@ public class BottomToolbar extends JPanel {
     setButtonSize(setMain, false);
     setButtonSize(backMain, false);
     setButtonSize(clearButton, false);
-    setButtonSize(countButton, false);
     setButtonSize(finalScore, false);
     setButtonSize(heatMap, false);
     setButtonSize(move, true);
@@ -1377,21 +1370,6 @@ public class BottomToolbar extends JPanel {
             if (Lizzie.engineManager.isEngineGame()) return;
             if (Lizzie.frame.commentEditPane.isVisible()) Lizzie.frame.setCommentEditable(false);
             Lizzie.frame.firstMove();
-            setTxtUnfocuse();
-          }
-        });
-    countButton.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            if (Lizzie.frame.isCounting) {
-              Lizzie.frame.clearKataEstimate();
-              Lizzie.frame.refresh();
-              Lizzie.frame.isCounting = false;
-              Lizzie.frame.cancelPositionEstimateRequest();
-              Lizzie.frame.estimateResults.setVisible(false);
-            } else {
-              Lizzie.frame.countstones(true);
-            }
             setTxtUnfocuse();
           }
         });
@@ -4498,8 +4476,6 @@ public class BottomToolbar extends JPanel {
     else backMain.setVisible(false);
     if (Lizzie.config.clearButton) clearButton.setVisible(true);
     else clearButton.setVisible(false);
-    if (Lizzie.config.countButton) countButton.setVisible(true);
-    else countButton.setVisible(false);
     if (Lizzie.config.finalScore) finalScore.setVisible(true);
     else finalScore.setVisible(false);
     if (Lizzie.config.heatMap) heatMap.setVisible(true);
@@ -4658,9 +4634,6 @@ public class BottomToolbar extends JPanel {
     if (savefile.isVisible()) {
       length = length + savefile.getWidth() - (Config.isScaled ? 0 : 1);
     }
-    if (countButton.isVisible()) {
-      length = length + countButton.getWidth() - (Config.isScaled ? 0 : 1);
-    }
     if (finalScore.isVisible()) {
       length = length + finalScore.getWidth() - (Config.isScaled ? 0 : 1);
     }
@@ -4758,10 +4731,6 @@ public class BottomToolbar extends JPanel {
     if (finalScore.isVisible()) {
       w = w - (finalScore.getWidth() - (Config.isScaled ? 0 : 1));
       finalScore.setLocation(w, 0);
-    }
-    if (countButton.isVisible()) {
-      w = w - (countButton.getWidth() - (Config.isScaled ? 0 : 1));
-      countButton.setLocation(w, 0);
     }
     if (lastButton.isVisible()) {
       w = w - (lastButton.getWidth() - (Config.isScaled ? 0 : 1));
@@ -4982,10 +4951,6 @@ public class BottomToolbar extends JPanel {
       lastButton.setLocation(w, 0);
       w = w + lastButton.getWidth() - (Config.isScaled ? 0 : 1);
     }
-    if (countButton.isVisible()) {
-      countButton.setLocation(w, 0);
-      w = w + countButton.getWidth() - (Config.isScaled ? 0 : 1);
-    }
     if (finalScore.isVisible()) {
       finalScore.setLocation(w, 0);
       w = w + finalScore.getWidth() - (Config.isScaled ? 0 : 1);
@@ -5055,7 +5020,7 @@ public class BottomToolbar extends JPanel {
             lastButton,
             autoPlay);
     List<JButton> rightPrimary = visibleButtons(tryPlay, backMain, setMain, moveRank, move, coords);
-    List<JButton> rightOptional = visibleButtons(countButton, finalScore, clearButton, deleteMove);
+    List<JButton> rightOptional = visibleButtons(finalScore, clearButton, deleteMove);
 
     int leftStart = TOOLBAR_SIDE_PADDING + (showDetail ? 32 : 0);
     int centerWidth = measureComponents(centerComponents, TOOLBAR_BUTTON_GAP);
@@ -5075,7 +5040,6 @@ public class BottomToolbar extends JPanel {
           clearButton,
           lastButton,
           firstButton,
-          countButton,
           finalScore,
           forward10,
           savefile,
@@ -5187,7 +5151,6 @@ public class BottomToolbar extends JPanel {
   //    badMoves.setFont(smallFont);
   //    liveButton.setFont(smallFont);
   //    clearButton.setFont(smallFont);
-  //    countButton.setFont(smallFont);
   //    gotomove.setFont(smallFont);
   //    savefile.setFont(smallFont);
   //    openfile.setFont(smallFont);

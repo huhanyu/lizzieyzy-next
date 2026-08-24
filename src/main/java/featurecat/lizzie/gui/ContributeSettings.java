@@ -57,7 +57,7 @@ public class ContributeSettings extends JDialog {
             "ContributeSettings.configTip"); // "可配置使用的显卡数量等,不同于普通的分析引擎配置文件,默认名字为contribute_example.cfg";
     String ownerShipTip =
         Lizzie.resourceBundle.getString(
-            "ContributeSettings.ownerShipTip"); // "略微牺牲跑谱速度,以显示领地(可在底部工具栏-Kata评估关闭显示,但速度不会恢复)";
+            "ContributeSettings.ownerShipTip"); // "略微牺牲跑谱速度,以显示领地(可在底部工具栏-Kata形势关闭显示,但速度不会恢复)";
     String autoSaveTip =
         Lizzie.resourceBundle.getString(
             "ContributeSettings.autoSaveTip"); // "自动保存观看过且已对局结束的棋谱,保存到LizzieYzy目录内\"ContributeGames\"文件夹中";
@@ -199,8 +199,7 @@ public class ContributeSettings extends JDialog {
     btnRemoteSetting.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
-            RemoteEngineSettings remoteEngineSettings =
-                new RemoteEngineSettings(thisDialog, false, true);
+            RemoteEngineSettings remoteEngineSettings = new RemoteEngineSettings(thisDialog);
             remoteEngineSettings.setVisible(true);
           }
         });
