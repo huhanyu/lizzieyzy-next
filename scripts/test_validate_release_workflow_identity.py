@@ -307,6 +307,38 @@ class ReleaseWorkflowIdentityWiringTest(unittest.TestCase):
         ].default
         self.assertGreater(publisher_wait, 280 * 60)
 
+    def test_windows_katago_version_audit_uses_runtime_checks_when_possible(self) -> None:
+        workflow = self.workflow("build-windows-release.yml")
+        runtime_start = workflow.index("runtime_version_engines=(")
+        static_start = workflow.index("driver_gated_static_engines=(")
+        runtime_block = workflow[runtime_start:static_start]
+        static_end = workflow.index("tensorrt_engine=", static_start)
+        static_block = workflow[static_start:static_end]
+
+        for flavor in (
+            "app-image-with-katago",
+            "app-image-opencl",
+            "app-image-experimental.directml",
+            "app-image-experimental.openvino",
+            "app-image-experimental.rocm.gfx103x",
+            "app-image-experimental.rocm.gfx110x",
+            "app-image-experimental.rocm.gfx1151",
+            "app-image-experimental.rocm.gfx120x",
+        ):
+            self.assertIn(flavor, runtime_block)
+        self.assertNotIn("app-image-nvidia/", runtime_block)
+        self.assertNotIn("app-image-nvidia.tensorrt", runtime_block)
+
+        self.assertIn("app-image-nvidia/", static_block)
+        self.assertIn("katago-human-sl-cuda.exe", static_block)
+        self.assertNotIn("app-image-experimental", static_block)
+        self.assertIn('for engine in "${runtime_version_engines[@]}"', workflow)
+        self.assertIn('version_output="$("$engine" version 2>&1)"', workflow)
+        self.assertIn(
+            '"${driver_gated_static_engines[@]}"',
+            workflow,
+        )
+
     def test_publisher_explicit_waits_leave_job_timeout_margin(self) -> None:
         workflow = (
             self.root / ".github/workflows/publish-requested-pre-release.yml"
