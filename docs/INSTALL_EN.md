@@ -25,10 +25,8 @@ This installation guide is for the actively maintained `LizzieYzy Next` fork, wh
 | Windows x64 | `<date>-windows64.opencl.installer.exe` | Yes | Yes | OpenCL users who prefer the installer flow |
 | Windows x64 | `<date>-windows64.with-katago.portable.zip` | Yes | Yes | CPU fallback when OpenCL behaves badly |
 | Windows x64 | `<date>-windows64.with-katago.installer.exe` | Yes | Yes | CPU fallback with an installer |
-| Windows x64 | `<date>-windows64.nvidia.portable.zip` | Yes | Yes | NVIDIA GPU users who want higher analysis speed without an installer |
-| Windows x64 | `<date>-windows64.nvidia.installer.exe` | Yes | Yes | NVIDIA GPU users who prefer an installer |
-| Windows x64 | `<date>-windows64.nvidia50.cuda.portable.zip` | Yes | Yes | First choice for RTX 5070/5080/5090 users, no installer |
-| Windows x64 | `<date>-windows64.nvidia50.cuda.installer.exe` | Yes | Yes | First choice for RTX 5070/5080/5090 users who prefer an installer |
+| Windows x64 | `<date>-windows64.nvidia.portable.zip` | Yes | Yes | RTX 20/30/40/50 NVIDIA users, no installer |
+| Windows x64 | `<date>-windows64.nvidia.installer.exe` | Yes | Yes | RTX 20/30/40/50 NVIDIA users who prefer an installer |
 | Windows x64 | `<date>-windows64.without.engine.portable.zip` | Yes | No | Custom engine setup without installation |
 | Windows x64 | `<date>-windows64.without.engine.installer.exe` | Yes | No | Installer flow with your own engine |
 | macOS Apple Silicon | `<date>-mac-apple-silicon.with-katago.dmg` | App runtime | Yes | M-series Macs |
@@ -41,18 +39,32 @@ Quick rule:
 
 - choose `windows64.opencl.portable.zip` if you want the shortest path
 - choose `windows64.with-katago.portable.zip` if OpenCL behaves badly on your PC
-- choose `windows64.nvidia.portable.zip` if your PC has an RTX 20/30/40 NVIDIA GPU and you want faster KataGo analysis
-- choose `windows64.nvidia50.cuda.portable.zip` first for RTX 5070/5080/5090
-- for RTX 20/30/40/50 TensorRT testing, start with the matching NVIDIA/CUDA package and install TensorRT acceleration manually from `KataGo Auto Setup`
+- choose the single `windows64.nvidia.portable.zip` for RTX 20/30/40/50 NVIDIA GPUs
+- use CUDA by default on RTX 40/50; TensorRT is an optional on-demand alternative for RTX 30 series and earlier
 - `KataGo Auto Setup` detects the NVIDIA GPU / Compute Capability before recommending TensorRT
-- TensorRT is not recommended for GTX 10 series cards; the regular NVIDIA package needs driver `527.41` or newer, and users should switch to the OpenCL package if KataGo still cannot start
+- driver `570.65` or newer loads directly; `528.33` through `570.64` runs one lightweight real-inference probe on first use; older drivers show an explicit repair state
 - NVIDIA cards older than GTX 10 series should prefer the OpenCL package
 - choose `without.engine.portable.zip` or `without.engine.installer.exe` on Windows if you plan to manage the engine yourself
 - on Windows, regular users should start with the portable build and only switch to the installer if they want that flow
 
 ### Legacy tag note
 
-Some older tags still show transitional zip names or compatibility packages, but the current maintained release now centers on 15 first-download assets: 10 Windows, 2 macOS, and 3 Linux packages. In-app installation is the regular TensorRT path; the Release also retains an advanced optional offline split package with its README, manifest, and checksum file.
+Some older tags still show transitional names, but the current maintained release centers on 13 stable first-download assets: 8 Windows, 2 macOS, and 3 Linux packages. Six Windows experimental portable packages cover DirectML, OpenVINO, and four AMD ROCm architecture families. In-app installation is the regular TensorRT path; the Release also retains an optional offline split package with its README, manifest, and checksum file.
+
+### Windows experimental backends
+
+These portable-only packages do not replace the stable packages above:
+
+| Experimental package | Intended hardware |
+| --- | --- |
+| `<date>-windows64.experimental.directml.portable.zip` | Windows 10/11 GPU with DirectX 12 support |
+| `<date>-windows64.experimental.openvino.portable.zip` | Intel CPU, integrated GPU, or supported Intel NPU |
+| `<date>-windows64.experimental.rocm.gfx103x.portable.zip` | AMD RDNA2 |
+| `<date>-windows64.experimental.rocm.gfx110x.portable.zip` | AMD RDNA3 desktop GPU |
+| `<date>-windows64.experimental.rocm.gfx1151.portable.zip` | AMD RDNA3.5 |
+| `<date>-windows64.experimental.rocm.gfx120x.portable.zip` | AMD RDNA4 |
+
+The app labels these backends experimental. Use the stable OpenCL package if the matching experimental backend is not compatible with your hardware.
 
 ## Windows
 
@@ -100,15 +112,11 @@ If you prefer the installer flow:
 
 This bundle ships with the official KataGo CUDA Windows build. If you want to tune speed further, open `KataGo Auto Setup` once and run `Smart Optimize` to apply a benchmark-based thread setting automatically. If you are not sure whether your PC has an NVIDIA GPU, use the regular `windows64.opencl.portable.zip` instead.
 
-### Windows x64 RTX 50 CUDA and on-demand TensorRT
+### Unified NVIDIA CUDA and optional TensorRT
 
-If your GPU is an RTX 5070, RTX 5080, or RTX 5090:
+RTX 20/30/40/50 users all download `windows64.nvidia.portable.zip` and run `LizzieYzy Next NVIDIA.exe`; use the matching installer only when you prefer that flow. The package uses CUDA 12.8 + cuDNN 9.8, and CUDA is the default recommendation for RTX 40/50.
 
-1. Download `windows64.nvidia50.cuda.portable.zip` first.
-2. Extract it and run `LizzieYzy Next NVIDIA 50 CUDA.exe`.
-3. If you prefer an installer, use `windows64.nvidia50.cuda.installer.exe`.
-
-TensorRT acceleration is no longer a huge standalone package recommended to regular users. RTX 20/30/40/50 users can launch the matching NVIDIA/CUDA package, open `KataGo Auto Setup`, and click `Install TensorRT acceleration`. The install UI detects the local NVIDIA GPU / Compute Capability and shows recommended, try, not recommended, or unknown status. RTX 50 is the newer architecture and remains the key experimental acceleration path; GTX 10 series and older cards should prefer CUDA/OpenCL. The app downloads, verifies, and configures files from official KataGo / NVIDIA sources only; users who do not click it will not download TensorRT. Advanced users who need a fully offline install can instead download every `.7z.00N` split asset from the Release, verify it against the matching README, manifest, and SHA-256 file, and extract from `.001`.
+TensorRT is no longer a huge standalone package recommended to regular users. RTX 30 series and earlier users may open `KataGo Auto Setup` and choose `Install TensorRT acceleration` as an optional alternative. The install UI detects the local NVIDIA GPU / Compute Capability and shows recommended, try, not recommended, or unknown status. The app downloads and verifies files from official KataGo / NVIDIA sources only; nothing is downloaded unless the user starts installation. Fully offline users can download every `.7z.00N` split asset, verify the matching README, manifest, and SHA-256 file, and extract from `.001`.
 
 ### Windows x64 no-engine build
 
@@ -203,8 +211,9 @@ Notes:
 
 Current bundled defaults:
 
-- KataGo version: `v1.17.1`
-- Weight: official medium Transformer `b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz` (shown as “Transformer 10B Balanced”, about 94 MB)
+- KataGo version: `v1.18.1`
+- Weight: official flagship B11 Transformer `b11c768h12nbt3tflrs-fson-silu.bin.gz` (shown as “Transformer 11B Strength First”, `211,660,960` bytes, about 202 MiB)
+- B11 makes stronger individual evaluations and handles complex positions better, but search can be slower; users who prioritize throughput can download and switch to B10 in `KataGo Auto Setup`
 - Upgrading an older full bundle requires the latest full package; `core-update.zip` does not contain the new engine or weight
 
 ## Need More Help

@@ -210,7 +210,7 @@ def validate_tensorrt_split(
         "TensorRT manifest releaseDisplayVersion must match release tag",
     )
     require(
-        manifest.get("assetKind") == "advanced-optional-tensorrt-split-package",
+        manifest.get("assetKind") == "optional-tensorrt-split-package",
         "TensorRT manifest assetKind is incorrect",
     )
     require(

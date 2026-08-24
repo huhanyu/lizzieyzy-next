@@ -101,7 +101,7 @@ class WindowsReleaseAssetValidationTest(unittest.TestCase):
             {
                 "dateTag": DATE_TAG,
                 "releaseDisplayVersion": RELEASE_TAG,
-                "assetKind": "advanced-optional-tensorrt-split-package",
+                "assetKind": "optional-tensorrt-split-package",
                 "archivePrefix": self.prefix,
                 "engineBackend": "nvidia-tensorrt",
                 "parts": [

@@ -244,6 +244,25 @@ class KataGoAutoSetupDialogLayoutTest {
   }
 
   @Test
+  void localizedExperimentalBackendActionWrapsWithoutClipping() {
+    JComboBox<String> selector =
+        new JComboBox<String>(
+            new String[] {"OpenVINO (หน่วยประมวลผลประสาท Intel NPU)"});
+    selector.setPreferredSize(new Dimension(390, 36));
+    JButton install = new JButton("ติดตั้งและใช้แบ็กเอนด์ทดลองที่เลือก");
+
+    JPanel row = KataGoAutoSetupDialog.createResponsiveActionRow(selector, install);
+    row.setSize(420, 120);
+    row.doLayout();
+
+    assertEquals(0, selector.getX());
+    assertEquals(row.getWidth(), selector.getWidth());
+    assertTrue(install.getY() >= selector.getHeight());
+    assertTrue(install.getX() >= 0 && install.getX() + install.getWidth() <= row.getWidth());
+    assertTrue(row.getPreferredSize().height >= install.getY() + install.getHeight());
+  }
+
+  @Test
   void detailCardsAlwaysTrackTheViewportWidth() {
     KataGoAutoSetupDialog.ViewportWidthPanel cards =
         new KataGoAutoSetupDialog.ViewportWidthPanel(new CardLayout());

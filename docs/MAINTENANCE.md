@@ -29,7 +29,7 @@
 
 当前发布包策略以“普通用户能快速选对并直接用”为核心。
 
-当前主推荐矩阵固定为 15 个公开资产：
+当前稳定主推荐矩阵固定为 13 个公开资产：
 
 - Windows 64 位：`opencl.portable.zip`
 - Windows 64 位：`opencl.installer.exe`
@@ -37,8 +37,6 @@
 - Windows 64 位：`with-katago.installer.exe`
 - Windows 64 位：`nvidia.portable.zip`
 - Windows 64 位：`nvidia.installer.exe`
-- Windows 64 位：`nvidia50.cuda.portable.zip`
-- Windows 64 位：`nvidia50.cuda.installer.exe`
 - Windows 64 位：`without.engine.portable.zip`
 - Windows 64 位：`without.engine.installer.exe`
 - macOS Apple Silicon：`.dmg`
@@ -47,7 +45,9 @@
 - Linux 64 位：`opencl.zip`
 - Linux 64 位：`nvidia.zip`
 
-TensorRT 加速不计入 15 个首次下载主资产；RTX 20/30/40/50 用户的默认路径仍是在软件内 `KataGo 一键设置` 中显式安装，界面会检测 NVIDIA GPU / Compute Capability 后给出推荐状态。Release 同时保留高级可选离线分卷以及 README、清单和 SHA-256 文件，并纳入发布白名单与 provenance 校验。RTX 50 仍优先下载 `nvidia50.cuda` 包，GTX 10 系及更老显卡优先 CUDA/OpenCL。
+Windows NVIDIA 统一使用 CUDA 12.8 + cuDNN 9.8 的 `nvidia` 包，覆盖 RTX 20/30/40/50，不再发布独立 `nvidia50` 资产。TensorRT 不计入 13 个首次下载稳定资产，定位为 RTX 30 系及以下 NVIDIA 显卡的可选方案；RTX 40/50 默认推荐 CUDA。Release 仍保留可选离线分卷及 README、清单和 SHA-256，并纳入发布白名单与 provenance 校验。
+
+此外发布 6 个 Windows 实验便携包：DirectML、OpenVINO，以及 ROCm `gfx103x`、`gfx110x`、`gfx1151`、`gfx120x`。它们不冒充稳定硬件验证，发布说明必须明确需要对应设备的社区复测。
 
 历史兼容包只有在明确需要时才通过额外开关构建，不再进入主 release 页面。
 

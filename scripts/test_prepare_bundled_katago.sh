@@ -5,23 +5,25 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=prepare_bundled_katago.sh
 source "$ROOT_DIR/scripts/prepare_bundled_katago.sh"
 
-[[ "$KATAGO_TAG" == "v1.17.1" ]]
+[[ "$KATAGO_TAG" == "v1.18.1" ]]
+[[ "$PREFERRED_MODEL_NAME" == "b11c768h12nbt3tflrs-fson-silu.bin.gz" ]]
+[[ "$PREFERRED_MODEL_SIZE_BYTES" == "211660960" ]]
+[[ "$PREFERRED_MODEL_SHA256" == \
+  "1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6" ]]
 [[ "$HUMAN_SL_CUDA_COMPANION_SHA256" == \
-  "4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5" ]]
+  "e207abb6e2403f0f34e9f4cac6079b988bf853537367d18f899c4b246eeb044c" ]]
 [[ "$(expected_asset_sha256 "$WINDOWS_ASSET")" == \
-  "3a7538ecb6facefcfe16d649fd695c29e44f8372cb7de8c316eee5779865f379" ]]
+  "074485cf150c38aa3bb14ac9f54f2952ffefbceb44673709bbb8a83650bf95d6" ]]
 [[ "$(expected_asset_sha256 "$WINDOWS_OPENCL_ASSET")" == \
-  "68d0a9b11ef7e3c1ddfc5bcd400306ca66c3770dd67a22cb377d3aaaf32e8c66" ]]
+  "1710db1903ab921aa6837a9599c8474f8a59f057650217c5d9bc125ee393a9ff" ]]
 [[ "$(expected_asset_sha256 "$WINDOWS_NVIDIA_ASSET")" == \
-  "b081832d48b4a553436ad5c54f9c4f4feff39df7b52e68228929e9f8a70988bc" ]]
-[[ "$(expected_asset_sha256 "$WINDOWS_NVIDIA50_CUDA_ASSET")" == \
-  "476a35c0b43cc937906d4313acaf592a97a30775ec51d37f5401a284ad9fa0f9" ]]
+  "8caabc5675950f52d285a686c19727f7a56a982313a7f055ade060ba78df552e" ]]
 [[ "$(expected_asset_sha256 "$LINUX_ASSET")" == \
-  "cca71fff39abd19bd9acfc17750025d4bb0ee6adbad99d7513a2c6401b0a7af3" ]]
+  "993b642601e806037003d11e43775e7b4fc65281aed9b9469b7122f18fc16811" ]]
 [[ "$(expected_asset_sha256 "$LINUX_OPENCL_ASSET")" == \
-  "be537295868c0b8ff6985e62e411fff67cbba2dc872343c74896063de1ef51e9" ]]
+  "81ecea81526adb412a392ec728dbdf9627e754df7cf1a7a3dbb8ef220182184a" ]]
 [[ "$(expected_asset_sha256 "$LINUX_NVIDIA_ASSET")" == \
-  "451ae213021cef0d2fcbfae650479532b53361c5ecbdfe1a5a643065bc76edc8" ]]
+  "242e6720e085a67bbb6605408fbcf607812185e40cea5f5fe4090e71201a49c0" ]]
 
 uname() {
   printf '%s\n' "MINGW64_NT-10.0"

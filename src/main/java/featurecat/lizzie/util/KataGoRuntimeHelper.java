@@ -67,6 +67,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -106,9 +107,14 @@ public final class KataGoRuntimeHelper {
   private static final String NVIDIA50_CUDA_BACKEND = "nvidia50-cuda";
   private static final String NVIDIA_TRT_BACKEND = "nvidia-tensorrt";
   private static final String NVIDIA50_TRT_BACKEND = "nvidia50-trt";
+  private static final KataGoAssetCatalog KATAGO_ASSETS = KataGoAssetCatalog.get();
+  private static final KataGoAssetCatalog.Asset NVIDIA_CUDA_ASSET =
+      KATAGO_ASSETS.asset("windows-nvidia");
+  private static final KataGoAssetCatalog.Asset TENSORRT_KATAGO_ASSET_INFO =
+      KATAGO_ASSETS.asset("windows-tensorrt");
   static final String HUMAN_SL_CUDA_COMPANION_NAME = "katago-human-sl-cuda.exe";
   static final String HUMAN_SL_CUDA_COMPANION_SHA256 =
-      "4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5";
+      NVIDIA_CUDA_ASSET.executableSha256();
   private static final String OPENCL_BACKEND = "opencl";
   private static final String ENGINE_BACKEND_MARKER_NAME = "lizzieyzy-next-engine-backend.txt";
   private static final String NVIDIA_RUNTIME_ROOT = "nvidia-runtime";
@@ -124,6 +130,9 @@ public final class KataGoRuntimeHelper {
   private static final String OPENCL_TUNING_CACHE_GENERATION_MARKER =
       "lizzie-opencl-tuning-generation.txt";
   private static final String OPENCL_TUNING_CACHE_GENERATION = "serialized-launch-v1";
+  private static final String CUDA_COMPATIBILITY_PROBE_MARKER =
+      "cuda12.8-inference-compatibility-v1.txt";
+  private static final int CUDA_COMPATIBILITY_PROBE_TIMEOUT_SECONDS = 300;
   private static final String OPENCL_NVIDIA_DRIVER_VERSION_PROPERTY =
       "lizzie.opencl.nvidiaDriverVersion";
   private static final int WINDOWS_FAST_FAIL_EXIT_CODE = (int) 0xC0000409L;
@@ -141,18 +150,13 @@ public final class KataGoRuntimeHelper {
   private static final String TENSORRT_KATAGO_SIZE_PROPERTY = "lizzie.tensorrt.katago.size";
   private static final String TENSORRT_SKIP_RUNTIME_FOR_TESTS_PROPERTY =
       "lizzie.tensorrt.skipRuntimePackagesForTests";
-  private static final String TENSORRT_KATAGO_VERSION = "v1.17.2";
+  private static final String TENSORRT_KATAGO_VERSION = KATAGO_ASSETS.katagoReleaseTag();
   private static final String TENSORRT_INSTALL_LOCK_NAME = "tensorrt-install.lock";
-  private static final String TENSORRT_KATAGO_ASSET =
-      "katago-v1.17.2-trt10.9.0-cuda12.8-windows-x64.zip";
+  private static final String TENSORRT_KATAGO_ASSET = TENSORRT_KATAGO_ASSET_INFO.assetName();
   private static final String TENSORRT_KATAGO_URL =
-      "https://github.com/lightvector/KataGo/releases/download/"
-          + TENSORRT_KATAGO_VERSION
-          + "/"
-          + TENSORRT_KATAGO_ASSET;
-  private static final String TENSORRT_KATAGO_SHA256 =
-      "be09c4ecc02028e2bdf98ff489683840bc9be480ba94f1cfe6f7e15018e36be6";
-  private static final long TENSORRT_KATAGO_SIZE_BYTES = 7_678_930L;
+      KATAGO_ASSETS.assetDownloadUrl(TENSORRT_KATAGO_ASSET_INFO);
+  private static final String TENSORRT_KATAGO_SHA256 = TENSORRT_KATAGO_ASSET_INFO.sha256();
+  private static final long TENSORRT_KATAGO_SIZE_BYTES = TENSORRT_KATAGO_ASSET_INFO.sizeBytes();
   private static final String TENSORRT_ENGINE_MANIFEST_NAME =
       "lizzieyzy-next-katago-engine-manifest.txt";
   private static final String TENSORRT_RUNTIME_URL =
@@ -173,12 +177,6 @@ public final class KataGoRuntimeHelper {
   private static final int TENSORRT_MIRROR_PROBE_CONNECT_TIMEOUT_MILLIS = 6000;
   private static final int TENSORRT_MIRROR_PROBE_READ_TIMEOUT_MILLIS = 6000;
   private static final int TENSORRT_MIRROR_PROBE_MAX_MILLIS = 8000;
-  private static final Pattern BENCHMARK_RECOMMENDED_PATTERN =
-      Pattern.compile("numSearchThreads\\s*=\\s*(\\d+):.*\\(recommended\\)");
-  private static final Pattern BENCHMARK_CURRENT_PATTERN =
-      Pattern.compile("Your GTP config is currently set to use numSearchThreads\\s*=\\s*(\\d+)");
-  private static final Pattern BENCHMARK_BACKEND_PATTERN =
-      Pattern.compile("You are currently using the (.+?) version of KataGo\\.");
   private static final Pattern BENCHMARK_SUMMARY_LINE_PATTERN =
       Pattern.compile(
           "^numSearchThreads\\s*=\\s*\\d+:\\s*(?:\\(baseline\\)(?:\\s+\\(recommended\\))?|[+-]?\\d+\\s+Elo.*)$");
@@ -186,6 +184,18 @@ public final class KataGoRuntimeHelper {
       Pattern.compile("numSearchThreads\\s*=\\s*(\\d+):\\s*(\\d+)\\s*/\\s*(\\d+)\\s*positions");
   private static final Pattern BENCHMARK_POSSIBLE_THREADS_PATTERN =
       Pattern.compile("Possible numbers of threads to test:\\s*(.*)");
+  private static final String BENCHMARK_EXTRA_START =
+      "Running additional tests of a few other settings";
+  private static final String BENCHMARK_EXTRA_BASELINE =
+      "Re-measuring the current recommendation as a baseline";
+  private static final String BENCHMARK_EXTRA_SERVER_THREADS =
+      "Testing 2 NN server threads per GPU";
+  private static final String BENCHMARK_EXTRA_BATCH = "Testing a max batch size of";
+  private static final String BENCHMARK_EXTRA_SERVER_RESULT =
+      "2 NN server threads per GPU was";
+  private static final String BENCHMARK_EXTRA_BATCH_RESULT = "Half batch size was";
+  private static final String BENCHMARK_ADDITIONAL_RECOMMENDATION =
+      "ADDITIONAL RECOMMENDATION:";
   private static final List<List<String>> REQUIRED_NVIDIA_CUDA12_1_CUDNN8_RUNTIME_DLL_GROUPS =
       Arrays.asList(
           Arrays.asList("cudart64_12.dll"),
@@ -270,6 +280,7 @@ public final class KataGoRuntimeHelper {
   private static volatile boolean appleAutoOptimizeRunning = false;
   private static volatile AppleSiliconHardwareProbe.HardwareProfile cachedAppleHardwareProfile;
   private static final Object NVIDIA_DRIVER_DETECTION_LOCK = new Object();
+  private static final Object CUDA_COMPATIBILITY_PROBE_LOCK = new Object();
   private static final Object OPENCL_TUNING_CACHE_LOCK = new Object();
   private static volatile boolean nvidiaDriverDetectionComplete = false;
   private static volatile String detectedNvidiaDriverVersion = "";
@@ -401,6 +412,7 @@ public final class KataGoRuntimeHelper {
     public final String summary;
     public final long completedAtMillis;
     public final String topologyLabel;
+    public final int nnServerThreadsPerModel;
     public final int maxBatchSize;
     public final double visitsPerSecond;
     public final double nnEvalsPerSecond;
@@ -421,6 +433,7 @@ public final class KataGoRuntimeHelper {
           completedAtMillis,
           "",
           0,
+          0,
           0.0,
           0.0,
           0.0,
@@ -434,6 +447,7 @@ public final class KataGoRuntimeHelper {
         String summary,
         long completedAtMillis,
         String topologyLabel,
+        int nnServerThreadsPerModel,
         int maxBatchSize,
         double visitsPerSecond,
         double nnEvalsPerSecond,
@@ -445,6 +459,7 @@ public final class KataGoRuntimeHelper {
       this.summary = summary;
       this.completedAtMillis = completedAtMillis;
       this.topologyLabel = topologyLabel == null ? "" : topologyLabel;
+      this.nnServerThreadsPerModel = Math.max(0, nnServerThreadsPerModel);
       this.maxBatchSize = Math.max(0, maxBatchSize);
       this.visitsPerSecond = Math.max(0.0, visitsPerSecond);
       this.nnEvalsPerSecond = Math.max(0.0, nnEvalsPerSecond);
@@ -736,11 +751,278 @@ public final class KataGoRuntimeHelper {
   }
 
   public static void ensureBundledRuntimeReady(Path enginePath, Window owner) throws IOException {
+    ensureBundledRuntimeReady(enginePath, null, owner);
+  }
+
+  public static void ensureBundledRuntimeReady(
+      Path enginePath, List<String> launchCommand, Window owner) throws IOException {
     NvidiaRuntimeStatus status = inspectNvidiaRuntime(enginePath);
-    if (!status.applicable || status.ready) {
+    if (!status.applicable) {
       return;
     }
-    throw new IOException(buildMissingRuntimeMessage(status));
+    if (!status.ready) {
+      throw new IOException(buildMissingRuntimeMessage(status));
+    }
+    ensureCuda12_8DriverCompatibility(enginePath, launchCommand);
+  }
+
+  private static void ensureCuda12_8DriverCompatibility(
+      Path enginePath, List<String> launchCommand) throws IOException {
+    String backend = resolveNvidiaBackend(enginePath);
+    if (backend == null
+        || (!usesCuda12_8Runtime(enginePath, backend) && !isTensorRtBackend(backend))) {
+      return;
+    }
+
+    String driverVersion = resolveNvidiaDriverVersion();
+    NvidiaGpuDetector.CudaCompatibility compatibility =
+        NvidiaGpuDetector.cudaCompatibility(driverVersion);
+    if (compatibility == NvidiaGpuDetector.CudaCompatibility.SUPPORTED) {
+      return;
+    }
+    if (compatibility == NvidiaGpuDetector.CudaCompatibility.UNSUPPORTED) {
+      throw new IOException(
+          String.format(
+              resource(
+                  "AutoSetup.cudaDriverTooOld",
+                  "NVIDIA driver %s is too old for the CUDA 12.8 package. Update to 528.33 or newer; 570.65 or newer is recommended."),
+              driverVersion == null || driverVersion.trim().isEmpty()
+                  ? resource("AutoSetup.cudaDriverUnknown", "unknown")
+                  : driverVersion.trim()));
+    }
+
+    CudaCompatibilityProbeInputs inputs =
+        resolveCudaCompatibilityProbeInputs(enginePath, launchCommand);
+    Path marker = cudaCompatibilityProbeMarker();
+    String signature =
+        buildCudaCompatibilityProbeSignature(
+            enginePath, inputs.modelPath, inputs.configPath, driverVersion);
+    synchronized (CUDA_COMPATIBILITY_PROBE_LOCK) {
+      if (hasMatchingCudaCompatibilityProbe(marker, signature)) {
+        return;
+      }
+      runCudaCompatibilityInferenceProbe(enginePath, inputs, driverVersion);
+      rememberCudaCompatibilityProbe(marker, signature);
+    }
+  }
+
+  static CudaCompatibilityProbeInputs resolveCudaCompatibilityProbeInputs(
+      Path enginePath, List<String> launchCommand) throws IOException {
+    Path modelPath =
+        findCommandPath(launchCommand, "-model", "--model", "-weights", "--weights");
+    Path configPath = findCommandPath(launchCommand, "-config", "--config");
+    if (modelPath == null || configPath == null) {
+      try {
+        SetupSnapshot snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
+        if (modelPath == null) {
+          modelPath = snapshot.activeWeightPath;
+        }
+        if (configPath == null) {
+          configPath = snapshot.gtpConfigPath;
+        }
+      } catch (RuntimeException ignored) {
+      }
+    }
+    if (modelPath == null
+        || !Files.isRegularFile(modelPath)
+        || configPath == null
+        || !Files.isRegularFile(configPath)) {
+      throw new IOException(
+          resource(
+              "AutoSetup.cudaProbeInputsMissing",
+              "CUDA compatibility could not be verified because the active model or KataGo config is missing."));
+    }
+    return new CudaCompatibilityProbeInputs(
+        modelPath.toAbsolutePath().normalize(), configPath.toAbsolutePath().normalize());
+  }
+
+  static String buildCudaCompatibilityProbeSignature(
+      Path enginePath, Path modelPath, Path configPath, String driverVersion) {
+    StringBuilder signature = new StringBuilder();
+    signature
+        .append("schema=1")
+        .append("|katago=")
+        .append(KataGoAssetCatalog.get().katagoVersion())
+        .append("|driver=")
+        .append(normalizeDriverVersion(driverVersion));
+    appendPathFingerprint(signature, enginePath);
+    appendPathFingerprint(signature, modelPath);
+    appendPathFingerprint(signature, configPath);
+    return signature.toString();
+  }
+
+  static boolean hasMatchingCudaCompatibilityProbe(Path marker, String signature) {
+    if (marker == null || signature == null || signature.isEmpty() || !Files.isRegularFile(marker)) {
+      return false;
+    }
+    try {
+      return signature.equals(Files.readString(marker, StandardCharsets.UTF_8).trim());
+    } catch (IOException e) {
+      return false;
+    }
+  }
+
+  static void rememberCudaCompatibilityProbe(Path marker, String signature) throws IOException {
+    if (marker == null || signature == null || signature.isEmpty()) {
+      throw new IOException("CUDA compatibility probe marker is unavailable.");
+    }
+    Files.createDirectories(marker.getParent());
+    Path temporaryMarker = marker.resolveSibling(marker.getFileName() + ".tmp");
+    Files.writeString(
+        temporaryMarker,
+        signature,
+        StandardCharsets.UTF_8,
+        StandardOpenOption.CREATE,
+        StandardOpenOption.TRUNCATE_EXISTING,
+        StandardOpenOption.WRITE);
+    try {
+      Files.move(
+          temporaryMarker,
+          marker,
+          StandardCopyOption.REPLACE_EXISTING,
+          StandardCopyOption.ATOMIC_MOVE);
+    } catch (AtomicMoveNotSupportedException e) {
+      Files.move(temporaryMarker, marker, StandardCopyOption.REPLACE_EXISTING);
+    }
+  }
+
+  private static void runCudaCompatibilityInferenceProbe(
+      Path enginePath, CudaCompatibilityProbeInputs inputs, String driverVersion)
+      throws IOException {
+    List<String> command = buildCudaCompatibilityProbeCommand(enginePath, inputs);
+
+    ProcessBuilder processBuilder = new ProcessBuilder(command);
+    processBuilder.redirectErrorStream(true);
+    configureBundledProcessBuilder(processBuilder, enginePath);
+    Process process = processBuilder.start();
+    StringBuilder output = new StringBuilder();
+    Thread outputReader = startCompatibilityProbeOutputReader(process, output);
+    boolean finished;
+    try {
+      finished = process.waitFor(CUDA_COMPATIBILITY_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      if (!finished) {
+        process.destroyForcibly();
+      }
+      outputReader.join(2000L);
+    } catch (InterruptedException e) {
+      process.destroyForcibly();
+      Thread.currentThread().interrupt();
+      throw new InterruptedIOException("CUDA compatibility probe interrupted");
+    }
+
+    KataGoBenchmarkObservation observation = KataGoBenchmarkParser.parse(output.toString(), 1);
+    boolean successfulInference =
+        finished
+            && process.exitValue() == 0
+            && !observation.failureDetected()
+            && observation
+                .recommendedMetric()
+                .filter(KataGoBenchmarkObservation.ThreadMetrics::validForThroughputSelection)
+                .isPresent();
+    if (!successfulInference) {
+      String detail = summarizeCompatibilityProbeOutput(output.toString());
+      throw new IOException(
+          String.format(
+                  resource(
+                      "AutoSetup.cudaProbeFailed",
+                      "CUDA 12.8 could not complete a real neural-network test with NVIDIA driver %s."),
+                  driverVersion == null || driverVersion.trim().isEmpty()
+                      ? resource("AutoSetup.cudaDriverUnknown", "unknown")
+                      : driverVersion.trim())
+              + (detail.isEmpty() ? "" : " " + detail));
+    }
+  }
+
+  static List<String> buildCudaCompatibilityProbeCommand(
+      Path enginePath, CudaCompatibilityProbeInputs inputs) {
+    List<String> command = new ArrayList<String>();
+    command.add(enginePath.toAbsolutePath().normalize().toString());
+    command.add("benchmark");
+    command.add("-config");
+    command.add(inputs.configPath.toString());
+    command.add("-model");
+    command.add(inputs.modelPath.toString());
+    command.add("-t");
+    command.add("1");
+    command.add("-n");
+    command.add("1");
+    command.add("-v");
+    // KataGo rejects visits <= 1. Two visits is the smallest legal real inference probe.
+    command.add("2");
+    command.add("-time");
+    command.add("1");
+    command.add("-no-server-thread-test");
+    command.add("-no-half-batch-size-test");
+    return KataGoCommandSpec.parse(command)
+        .withForcedOverrides(
+            Map.of(
+                "logToStderr", "false",
+                "logAllGTPCommunication", "false",
+                "logSearchInfo", "false"));
+  }
+
+  private static Thread startCompatibilityProbeOutputReader(
+      Process process, StringBuilder output) {
+    Thread reader =
+        new Thread(
+            () -> {
+              try (BufferedReader buffered =
+                  new BufferedReader(
+                      new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = buffered.readLine()) != null) {
+                  synchronized (output) {
+                    output.append(line).append('\n');
+                  }
+                }
+              } catch (IOException ignored) {
+              }
+            },
+            "katago-cuda-compatibility-probe-output");
+    reader.setDaemon(true);
+    reader.start();
+    return reader;
+  }
+
+  private static String summarizeCompatibilityProbeOutput(String output) {
+    String normalized = output == null ? "" : output.replace('\r', '\n').trim();
+    if (normalized.isEmpty()) {
+      return "";
+    }
+    String[] lines = normalized.split("\\n+");
+    StringBuilder summary = new StringBuilder();
+    int start = Math.max(0, lines.length - 4);
+    for (int i = start; i < lines.length; i++) {
+      String line = lines[i].trim();
+      if (line.isEmpty()) {
+        continue;
+      }
+      if (summary.length() > 0) {
+        summary.append(" | ");
+      }
+      summary.append(line.length() > 180 ? line.substring(0, 180) + "..." : line);
+    }
+    return summary.toString();
+  }
+
+  private static Path cudaCompatibilityProbeMarker() {
+    Path runtimeDir = getNvidiaRuntimeDir();
+    return runtimeDir == null
+        ? null
+        : runtimeDir
+            .resolve(NVIDIA_RUNTIME_CACHE_DIR)
+            .resolve("compatibility")
+            .resolve(CUDA_COMPATIBILITY_PROBE_MARKER);
+  }
+
+  static final class CudaCompatibilityProbeInputs {
+    final Path modelPath;
+    final Path configPath;
+
+    private CudaCompatibilityProbeInputs(Path modelPath, Path configPath) {
+      this.modelPath = modelPath;
+      this.configPath = configPath;
+    }
   }
 
   public static void configureBundledProcessBuilder(
@@ -827,8 +1109,49 @@ public final class KataGoRuntimeHelper {
     }
     if (purpose == LaunchPurpose.MAIN_GTP) {
       launchCommand = applyStoredAppleTuningProfile(launchCommand, enginePath);
+      launchCommand = applyStoredOfficialBenchmarkGpuSettings(launchCommand, enginePath);
     }
     return launchCommand;
+  }
+
+  static List<String> applyStoredOfficialBenchmarkGpuSettings(
+      List<String> command, Path enginePath) {
+    if (command == null
+        || enginePath == null
+        || Lizzie.config == null
+        || Lizzie.config.uiConfig == null) {
+      return command;
+    }
+    Path modelPath = findCommandPath(command, "-model", "--model", "-weights", "--weights");
+    Path configPath = findCommandPath(command, "-config", "--config");
+    if (modelPath == null || configPath == null) {
+      return command;
+    }
+    try {
+      SetupSnapshot snapshot =
+          KataGoAutoSetupHelper.inspectSelectedLocalKataGo(enginePath, configPath, modelPath)
+              .toSnapshot();
+      BenchmarkResult stored = getStoredBenchmarkResult(snapshot);
+      if (stored == null
+          || (stored.nnServerThreadsPerModel <= 0 && stored.maxBatchSize <= 0)) {
+        return command;
+      }
+      KataGoCommandSpec spec = KataGoCommandSpec.parse(command);
+      Map<String, String> managed = new LinkedHashMap<String, String>();
+      if (stored.nnServerThreadsPerModel > 0
+          && !spec.hasOverrideMatching(
+              key -> "numNNServerThreadsPerModel".equalsIgnoreCase(key))) {
+        managed.put(
+            "numNNServerThreadsPerModel", String.valueOf(stored.nnServerThreadsPerModel));
+      }
+      if (stored.maxBatchSize > 0
+          && !spec.hasOverrideMatching(key -> "nnMaxBatchSize".equalsIgnoreCase(key))) {
+        managed.put("nnMaxBatchSize", String.valueOf(stored.maxBatchSize));
+      }
+      return managed.isEmpty() ? command : spec.withManagedOverrides(managed);
+    } catch (RuntimeException staleOrInvalidBenchmark) {
+      return command;
+    }
   }
 
   static Path resolveHumanSlCudaCompanion(Path tensorRtEnginePath) {
@@ -1159,7 +1482,7 @@ public final class KataGoRuntimeHelper {
         collectRuntimeSearchDirs(enginePath, runtimeDir, runtimeSearchPath);
     List<List<String>> requiredDllGroups = requiredRuntimeDllGroups(enginePath, backend);
     List<String> missing = collectMissingRuntimeGroups(searchDirs, requiredDllGroups);
-    if ((NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(backend) || isTensorRtBackend(backend))
+    if ((usesCuda12_8Runtime(enginePath, backend) || isTensorRtBackend(backend))
         && !hasPinnedCuda12_8NvrtcManifest(searchDirs)) {
       missing.add("CUDA NVRTC " + CUDA_12_8_NVRTC_VERSION + " manifest");
     }
@@ -1239,8 +1562,8 @@ public final class KataGoRuntimeHelper {
           spec.totalDownloadBytes,
           resource(
               "AutoSetup.tensorRtNeedNvidia",
-              "TensorRT can be installed from Windows NVIDIA packages. Recommended for RTX 20/30/40/50. "
-                  + "GTX 10 series and older NVIDIA GPUs should use CUDA/OpenCL."),
+              "TensorRT is optional for RTX 30 series and earlier in the unified Windows NVIDIA package. "
+                  + "RTX 40/50 should use CUDA."),
           null,
           NvidiaGpuDetector.TensorRtRecommendation.UNKNOWN,
           "");
@@ -1330,8 +1653,8 @@ public final class KataGoRuntimeHelper {
       throw new IOException(
           resource(
               "AutoSetup.tensorRtNeedNvidia",
-              "TensorRT can be installed from Windows NVIDIA packages. Recommended for RTX 20/30/40/50. "
-                  + "GTX 10 series and older NVIDIA GPUs should use CUDA/OpenCL."));
+              "TensorRT is optional for RTX 30 series and earlier in the unified Windows NVIDIA package. "
+                  + "RTX 40/50 should use CUDA."));
     }
     if (snapshot.gtpConfigPath == null || !Files.isRegularFile(snapshot.gtpConfigPath)) {
       throw new IOException(
@@ -1375,8 +1698,8 @@ public final class KataGoRuntimeHelper {
       throw new IOException(
           resource(
               "AutoSetup.tensorRtNeedNvidia",
-              "TensorRT can be installed from Windows NVIDIA packages. Recommended for RTX 20/30/40/50. "
-                  + "GTX 10 series and older NVIDIA GPUs should use CUDA/OpenCL."));
+              "TensorRT is optional for RTX 30 series and earlier in the unified Windows NVIDIA package. "
+                  + "RTX 40/50 should use CUDA."));
     }
     if (snapshot.gtpConfigPath == null || !Files.isRegularFile(snapshot.gtpConfigPath)) {
       throw new IOException(
@@ -1439,7 +1762,10 @@ public final class KataGoRuntimeHelper {
           resource("AutoSetup.missingWeight", "No local KataGo weight file was found."));
     }
     if (isWindowsPlatform() && isNvidiaBundledPath(snapshot.enginePath)) {
-      ensureBundledRuntimeReady(snapshot.enginePath, null);
+      ensureBundledRuntimeReady(
+          snapshot.enginePath,
+          buildBenchmarkCommand(snapshot),
+          null);
     }
     return KataGoAutoSetupHelper.applyAutoSetup(
         snapshot.withActiveWeight(snapshot.activeWeightPath), true);
@@ -1582,7 +1908,7 @@ public final class KataGoRuntimeHelper {
     return resource(
         "HumanSlGame.error.tensorRtCompanionMissing",
         "AI Coach requires a verified CUDA 12.8/cuDNN 9 companion for TensorRT. "
-            + "Repair or reinstall the NVIDIA 50 CUDA package, then install TensorRT again.");
+            + "Repair or reinstall the unified NVIDIA CUDA package, then install TensorRT again.");
   }
 
   private static boolean ensureTensorRtHumanSlCompanion(
@@ -1612,6 +1938,7 @@ public final class KataGoRuntimeHelper {
         Lizzie.config.uiConfig.optString("katago-benchmark-summary", "").trim(),
         Lizzie.config.uiConfig.optLong("katago-benchmark-updated-at", 0L),
         Lizzie.config.uiConfig.optString("katago-benchmark-topology", "").trim(),
+        Lizzie.config.uiConfig.optInt("katago-benchmark-nn-server-threads", 0),
         Lizzie.config.uiConfig.optInt("katago-benchmark-batch-size", 0),
         Lizzie.config.uiConfig.optDouble("katago-benchmark-visits-per-second", 0.0),
         Lizzie.config.uiConfig.optDouble("katago-benchmark-nn-evals-per-second", 0.0),
@@ -1619,21 +1946,25 @@ public final class KataGoRuntimeHelper {
         null);
   }
 
-  /** Returns the displayed result only when it still belongs to the selected Apple setup. */
+  /** Returns the displayed result only when it still belongs to the selected setup. */
   public static BenchmarkResult getStoredBenchmarkResult(SetupSnapshot snapshot) {
     BenchmarkResult stored = getStoredBenchmarkResult();
-    if (stored == null || !isAppleSiliconOptimizationEligible(snapshot)) {
-      return stored;
+    if (stored == null || snapshot == null) {
+      return null;
     }
     String expectedSignature = buildBenchmarkSignature(snapshot);
     String storedSignature = Lizzie.config.uiConfig.optString(BENCHMARK_SIGNATURE_KEY, "").trim();
+    if (expectedSignature.isEmpty() || !expectedSignature.equals(storedSignature)) {
+      return null;
+    }
+    if (!isAppleSiliconOptimizationEligible(snapshot)) {
+      return stored;
+    }
     boolean currentVersion =
         Lizzie.config.uiConfig.optInt(APPLE_AUTO_OPTIMIZE_VERSION_KEY, 0)
             == APPLE_AUTO_OPTIMIZE_VERSION;
     boolean matchingProfile = matchingAppleTuningProfile(snapshot).isPresent();
-    return currentVersion && matchingProfile && expectedSignature.equals(storedSignature)
-        ? stored
-        : null;
+    return currentVersion && matchingProfile ? stored : null;
   }
 
   public static BenchmarkResult runBenchmark(
@@ -1683,7 +2014,7 @@ public final class KataGoRuntimeHelper {
       requireLayeredBenchmarkComputeIsolation();
     }
     if (isWindowsPlatform() && isNvidiaBundledPath(snapshot.enginePath)) {
-      ensureBundledRuntimeReady(snapshot.enginePath, null);
+      ensureBundledRuntimeReady(snapshot.enginePath, command, null);
     }
     notifyProgress(
         listener,
@@ -2021,18 +2352,24 @@ public final class KataGoRuntimeHelper {
                   }
                   long now = System.currentTimeMillis();
                   long sinceLastProgress = now - lastProgressAt.get();
-                  if (sinceLastProgress >= 1200L
-                      && (progressTracker == null
-                          || !progressTracker.hasObservedPositionProgress())) {
+                  if (sinceLastProgress >= 1200L) {
                     int syntheticPermille =
-                        estimatePrePositionBenchmarkPermille(
-                            now - benchmarkStartedAt.get(), lastProgressPermille.get());
+                        progressTracker == null || !progressTracker.hasObservedPositionProgress()
+                            ? estimatePrePositionBenchmarkPermille(
+                                now - benchmarkStartedAt.get(), lastProgressPermille.get())
+                            : smoothSilentBenchmarkProgress(
+                                lastProgressPermille.get(), sinceLastProgress);
                     int displayPermille =
                         advanceAtomicBenchmarkProgress(lastProgressPermille, syntheticPermille);
+                    String status =
+                        progressTracker == null
+                            ? formatBenchmarkHeartbeatStatus(
+                                now - benchmarkStartedAt.get(), displayPermille)
+                            : progressTracker.heartbeatStatus(
+                                now - benchmarkStartedAt.get(), displayPermille);
                     notifyProgress(
                         listener,
-                        formatBenchmarkHeartbeatStatus(
-                            now - benchmarkStartedAt.get(), displayPermille),
+                        status,
                         displayPermille,
                         1000L);
                   }
@@ -2166,7 +2503,14 @@ public final class KataGoRuntimeHelper {
         || trimmed.contains("Your GTP config is currently set to use numSearchThreads")
         || trimmed.contains("Testing using ")
         || trimmed.contains("Ordered summary of results")
-        || trimmed.contains("So APPROXIMATELY based on this benchmark");
+        || trimmed.contains("So APPROXIMATELY based on this benchmark")
+        || trimmed.contains(BENCHMARK_EXTRA_START)
+        || trimmed.contains(BENCHMARK_EXTRA_BASELINE)
+        || trimmed.contains(BENCHMARK_EXTRA_SERVER_THREADS)
+        || trimmed.contains(BENCHMARK_EXTRA_BATCH)
+        || trimmed.contains(BENCHMARK_EXTRA_SERVER_RESULT)
+        || trimmed.contains(BENCHMARK_EXTRA_BATCH_RESULT)
+        || trimmed.startsWith(BENCHMARK_ADDITIONAL_RECOMMENDATION);
   }
 
   public static BenchmarkResult runBenchmarkAndApply(
@@ -2249,7 +2593,8 @@ public final class KataGoRuntimeHelper {
         officialSummary,
         completedAt,
         "",
-        0,
+        parsed.nnServerThreadsPerModel,
+        parsed.maxBatchSize,
         metrics.visitsPerSecond(),
         metrics.nnEvalsPerSecond(),
         metrics.averageBatchSize(),
@@ -2526,6 +2871,7 @@ public final class KataGoRuntimeHelper {
         summary,
         completedAt,
         topology,
+        0,
         candidate.batch(),
         selectedMetrics.visitsPerSecond(),
         selectedMetrics.nnEvalsPerSecond(),
@@ -2567,6 +2913,7 @@ public final class KataGoRuntimeHelper {
     candidateUi.put("katago-benchmark-summary", result.summary);
     candidateUi.put("katago-benchmark-updated-at", result.completedAtMillis);
     candidateUi.put("katago-benchmark-topology", result.topologyLabel);
+    candidateUi.put("katago-benchmark-nn-server-threads", result.nnServerThreadsPerModel);
     candidateUi.put("katago-benchmark-batch-size", result.maxBatchSize);
     candidateUi.put("katago-benchmark-visits-per-second", result.visitsPerSecond);
     candidateUi.put("katago-benchmark-nn-evals-per-second", result.nnEvalsPerSecond);
@@ -3197,17 +3544,35 @@ public final class KataGoRuntimeHelper {
     private static final int MODEL_LOAD_PROGRESS = 30;
     private static final int THREAD_LIST_PROGRESS = 80;
     private static final int SEARCH_PROGRESS_START = 100;
-    private static final int SEARCH_PROGRESS_SPAN = 870;
+    private static final int SEARCH_PROGRESS_SPAN = 680;
+    private static final int SEARCH_SUMMARY_PROGRESS = 795;
+    private static final int EXTRA_START_PROGRESS = 810;
+    private static final int EXTRA_BASELINE_START = 820;
+    private static final int EXTRA_BASELINE_SPAN = 45;
+    private static final int EXTRA_SERVER_START = 875;
+    private static final int EXTRA_SERVER_SPAN = 45;
+    private static final int EXTRA_BATCH_START = 930;
+    private static final int EXTRA_BATCH_SPAN = 50;
     private static final int SUMMARY_PROGRESS = 990;
     private static final int FALLBACK_EXPECTED_THREAD_COUNT = 12;
 
+    private enum Phase {
+      SEARCH,
+      EXTRA_BASELINE,
+      EXTRA_SERVER_THREADS,
+      EXTRA_BATCH,
+      FINALIZING
+    }
+
     private final Map<Integer, Integer> completedPositionsByThread =
         new HashMap<Integer, Integer>();
+    private final boolean fixedThreadBenchmark;
     private int expectedTestedThreadCount;
     private int observedThreadCount = 0;
     private int positionsPerThread = 0;
     private int lastPermille = 0;
     private volatile boolean observedPositionProgress = false;
+    private Phase phase = Phase.SEARCH;
 
     BenchmarkProgressTracker() {
       this(0);
@@ -3217,6 +3582,7 @@ public final class KataGoRuntimeHelper {
       if (expectedThreadTests < 0) {
         throw new IllegalArgumentException("expectedThreadTests must not be negative");
       }
+      fixedThreadBenchmark = expectedThreadTests > 0;
       expectedTestedThreadCount = expectedThreadTests;
     }
 
@@ -3227,6 +3593,34 @@ public final class KataGoRuntimeHelper {
       }
       if (status.contains("Loading model") || status.contains("Initializing benchmark")) {
         return advanceTo(MODEL_LOAD_PROGRESS);
+      }
+
+      if (status.contains(BENCHMARK_EXTRA_START)) {
+        phase = Phase.EXTRA_BASELINE;
+        return advanceTo(EXTRA_START_PROGRESS);
+      }
+      if (status.contains(BENCHMARK_EXTRA_BASELINE)) {
+        phase = Phase.EXTRA_BASELINE;
+        return advanceTo(EXTRA_BASELINE_START);
+      }
+      if (status.contains(BENCHMARK_EXTRA_SERVER_THREADS)) {
+        phase = Phase.EXTRA_SERVER_THREADS;
+        return advanceTo(EXTRA_SERVER_START);
+      }
+      if (status.contains(BENCHMARK_EXTRA_BATCH)) {
+        phase = Phase.EXTRA_BATCH;
+        return advanceTo(EXTRA_BATCH_START);
+      }
+      if (status.contains(BENCHMARK_EXTRA_SERVER_RESULT)) {
+        return advanceTo(EXTRA_SERVER_START + EXTRA_SERVER_SPAN);
+      }
+      if (status.contains(BENCHMARK_EXTRA_BATCH_RESULT)) {
+        phase = Phase.FINALIZING;
+        return advanceTo(EXTRA_BATCH_START + EXTRA_BATCH_SPAN);
+      }
+      if (status.startsWith(BENCHMARK_ADDITIONAL_RECOMMENDATION)) {
+        phase = Phase.FINALIZING;
+        return advanceTo(SUMMARY_PROGRESS);
       }
 
       Matcher possibleThreadsMatcher = BENCHMARK_POSSIBLE_THREADS_PATTERN.matcher(status);
@@ -3247,6 +3641,22 @@ public final class KataGoRuntimeHelper {
           return lastPermille;
         }
         observedPositionProgress = true;
+        if (phase != Phase.SEARCH) {
+          int start;
+          int span;
+          if (phase == Phase.EXTRA_SERVER_THREADS) {
+            start = EXTRA_SERVER_START;
+            span = EXTRA_SERVER_SPAN;
+          } else if (phase == Phase.EXTRA_BATCH) {
+            start = EXTRA_BATCH_START;
+            span = EXTRA_BATCH_SPAN;
+          } else {
+            start = EXTRA_BASELINE_START;
+            span = EXTRA_BASELINE_SPAN;
+          }
+          int clampedCompleted = Math.max(0, Math.min(completed, total));
+          return advanceTo(start + (int) ((clampedCompleted * (long) span) / total));
+        }
         if (!completedPositionsByThread.containsKey(threadCount)) {
           observedThreadCount += 1;
         }
@@ -3267,18 +3677,19 @@ public final class KataGoRuntimeHelper {
           completedUnits += Math.max(0, value.intValue());
         }
         int totalUnits = Math.max(1, expectedTestedThreadCount * positionsPerThread);
+        int progressSpan = fixedThreadBenchmark ? 870 : SEARCH_PROGRESS_SPAN;
         int progress =
             SEARCH_PROGRESS_START
                 + (int)
                     Math.min(
-                        SEARCH_PROGRESS_SPAN,
-                        (completedUnits * (long) SEARCH_PROGRESS_SPAN) / totalUnits);
-        return advanceTo(Math.min(progress, 985));
+                        progressSpan, (completedUnits * (long) progressSpan) / totalUnits);
+        return advanceTo(
+            Math.min(progress, fixedThreadBenchmark ? 970 : SEARCH_SUMMARY_PROGRESS - 5));
       }
 
       if (status.contains("Ordered summary of results")
           || status.contains("So APPROXIMATELY based on this benchmark")) {
-        return advanceTo(SUMMARY_PROGRESS);
+        return advanceTo(SEARCH_SUMMARY_PROGRESS);
       }
 
       return lastPermille;
@@ -3286,6 +3697,27 @@ public final class KataGoRuntimeHelper {
 
     boolean hasObservedPositionProgress() {
       return observedPositionProgress;
+    }
+
+    String heartbeatStatus(long elapsedMillis, int displayPermille) {
+      String key;
+      String fallback;
+      if (phase == Phase.EXTRA_BASELINE) {
+        key = "AutoSetup.benchmarkExtraBaseline";
+        fallback = "Rechecking the recommended thread setting...";
+      } else if (phase == Phase.EXTRA_SERVER_THREADS) {
+        key = "AutoSetup.benchmarkExtraServerThreads";
+        fallback = "Testing NN server thread throughput...";
+      } else if (phase == Phase.EXTRA_BATCH) {
+        key = "AutoSetup.benchmarkExtraBatch";
+        fallback = "Testing neural-network batch throughput...";
+      } else if (phase == Phase.FINALIZING) {
+        key = "AutoSetup.benchmarkFinalizing";
+        fallback = "KataGo is summarizing benchmark results...";
+      } else {
+        return formatBenchmarkHeartbeatStatus(elapsedMillis, displayPermille);
+      }
+      return resource(key, fallback) + "  " + formatDuration(elapsedMillis);
     }
 
     private int advanceTo(int permille) {
@@ -3323,7 +3755,6 @@ public final class KataGoRuntimeHelper {
     if (Lizzie.config == null || Lizzie.config.uiConfig == null) return;
     if (isAppleSiliconHost()) return;
     if (!Lizzie.config.enableStartupBenchmark) return;
-    if (getStoredBenchmarkResult() != null) return;
 
     Thread worker =
         new Thread(
@@ -3346,7 +3777,7 @@ public final class KataGoRuntimeHelper {
                   || !snapshot.hasWeight()) {
                 return;
               }
-              if (getStoredBenchmarkResult() != null) return;
+              if (getStoredBenchmarkResult(snapshot) != null) return;
               if (isStartupBenchmarkDismissed(snapshot)) return;
 
               final DownloadSession benchmarkSession = new DownloadSession();
@@ -3534,20 +3965,10 @@ public final class KataGoRuntimeHelper {
     if (output == null || output.trim().isEmpty()) {
       return null;
     }
-    Matcher recommendedMatcher = BENCHMARK_RECOMMENDED_PATTERN.matcher(output);
-    int recommendedThreads = 0;
-    while (recommendedMatcher.find()) {
-      recommendedThreads = parseIntSafely(recommendedMatcher.group(1));
-    }
-    if (recommendedThreads <= 0) {
+    KataGoBenchmarkObservation observation = KataGoBenchmarkParser.parse(output, 0);
+    if (observation.failureDetected() || observation.recommendedThreads() <= 0) {
       return null;
     }
-
-    Matcher currentMatcher = BENCHMARK_CURRENT_PATTERN.matcher(output);
-    int currentThreads = currentMatcher.find() ? parseIntSafely(currentMatcher.group(1)) : 0;
-
-    Matcher backendMatcher = BENCHMARK_BACKEND_PATTERN.matcher(output);
-    String backend = backendMatcher.find() ? backendMatcher.group(1).trim() : "";
 
     List<String> summaryLines = new ArrayList<String>();
     try (BufferedReader reader =
@@ -3566,8 +3987,21 @@ public final class KataGoRuntimeHelper {
       return null;
     }
     String summary = String.join(" | ", summaryLines);
+    KataGoBenchmarkObservation.ThreadMetrics metrics =
+        observation.recommendedMetric().orElse(null);
     return new BenchmarkResult(
-        recommendedThreads, currentThreads, backend, summary, System.currentTimeMillis());
+        observation.recommendedThreads(),
+        observation.currentThreads(),
+        observation.backend(),
+        summary,
+        System.currentTimeMillis(),
+        "",
+        observation.recommendedNnServerThreadsPerModel(),
+        observation.recommendedMaxBatchSize(),
+        metrics == null ? 0.0 : metrics.visitsPerSecond(),
+        metrics == null ? 0.0 : metrics.nnEvalsPerSecond(),
+        metrics == null ? 0.0 : metrics.averageBatchSize(),
+        null);
   }
 
   private static void prependPath(ProcessBuilder processBuilder, Path path) {
@@ -4251,7 +4685,7 @@ public final class KataGoRuntimeHelper {
   }
 
   private static void rememberBenchmarkContext(SetupSnapshot snapshot, BenchmarkResult result) {
-    if (!isAppleSiliconOptimizationEligible(snapshot)
+    if (snapshot == null
         || result == null
         || result.recommendedThreads <= 0
         || Lizzie.config == null
@@ -4259,7 +4693,9 @@ public final class KataGoRuntimeHelper {
       return;
     }
     Lizzie.config.uiConfig.put(BENCHMARK_SIGNATURE_KEY, buildBenchmarkSignature(snapshot));
-    Lizzie.config.uiConfig.put(APPLE_AUTO_OPTIMIZE_VERSION_KEY, APPLE_AUTO_OPTIMIZE_VERSION);
+    if (isAppleSiliconOptimizationEligible(snapshot)) {
+      Lizzie.config.uiConfig.put(APPLE_AUTO_OPTIMIZE_VERSION_KEY, APPLE_AUTO_OPTIMIZE_VERSION);
+    }
     try {
       Lizzie.config.save();
     } catch (IOException e) {
@@ -4464,13 +4900,36 @@ public final class KataGoRuntimeHelper {
     if (isTensorRtBackend(backend)) {
       return REQUIRED_NVIDIA_TRT10_9_RUNTIME_DLL_GROUPS;
     }
-    if (NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(backend)) {
+    if (usesCuda12_8Runtime(enginePath, backend)) {
       return REQUIRED_NVIDIA_CUDA12_8_RUNTIME_DLL_GROUPS;
     }
     if (usesLegacyCudnn8Runtime(enginePath)) {
       return REQUIRED_NVIDIA_CUDA12_1_CUDNN8_RUNTIME_DLL_GROUPS;
     }
     return REQUIRED_NVIDIA_CUDA12_1_CUDNN9_RUNTIME_DLL_GROUPS;
+  }
+
+  private static boolean usesCuda12_8Runtime(Path enginePath, String backend) {
+    if (NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(backend)) {
+      return true;
+    }
+    if (!NVIDIA_BACKEND.equalsIgnoreCase(backend)
+        || enginePath == null
+        || enginePath.getParent() == null) {
+      return false;
+    }
+    Path manifest =
+        enginePath.getParent().resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+    if (!Files.isRegularFile(manifest)) {
+      return false;
+    }
+    try {
+      return Files.readString(manifest, StandardCharsets.UTF_8)
+          .toLowerCase(Locale.ROOT)
+          .contains("profile: cuda12.8-cudnn9");
+    } catch (IOException e) {
+      return false;
+    }
   }
 
   private static boolean usesLegacyCudnn8Runtime(Path enginePath) {
@@ -4735,10 +5194,14 @@ public final class KataGoRuntimeHelper {
       candidates.add(targetEnginePath.getParent().resolve(HUMAN_SL_CUDA_COMPANION_NAME));
     }
     if (snapshot != null) {
+      addNvidiaCudaCompanionCandidate(candidates, snapshot.appRoot);
+      addNvidiaCudaCompanionCandidate(candidates, snapshot.workingDir);
       addNvidia50CudaCompanionCandidate(candidates, snapshot.appRoot);
       addNvidia50CudaCompanionCandidate(candidates, snapshot.workingDir);
     }
     if (Lizzie.config != null) {
+      addNvidiaCudaCompanionCandidate(
+          candidates, Lizzie.config.getRuntimeWorkDirectory().toPath());
       addNvidia50CudaCompanionCandidate(
           candidates, Lizzie.config.getRuntimeWorkDirectory().toPath());
       if (Lizzie.config.leelazConfig != null) {
@@ -4761,7 +5224,8 @@ public final class KataGoRuntimeHelper {
 
     for (Path candidate : candidates) {
       if (candidate != null
-          && NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(resolveNvidiaBackend(candidate))
+          && (NVIDIA_BACKEND.equalsIgnoreCase(resolveNvidiaBackend(candidate))
+              || NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(resolveNvidiaBackend(candidate)))
           && isPinnedHumanSlCudaExecutable(candidate)) {
         return candidate.toAbsolutePath().normalize();
       }
@@ -4778,6 +5242,14 @@ public final class KataGoRuntimeHelper {
         tensorRtEngineDir(root, NVIDIA50_CUDA_ENGINE_DIR).resolve("katago.exe"));
   }
 
+  private static void addNvidiaCudaCompanionCandidate(
+      LinkedHashSet<Path> candidates, Path root) {
+    if (candidates == null || root == null) {
+      return;
+    }
+    candidates.add(tensorRtEngineDir(root, NVIDIA_ENGINE_DIR).resolve("katago.exe"));
+  }
+
   private static boolean isTensorRtBackend(String backend) {
     return NVIDIA_TRT_BACKEND.equalsIgnoreCase(backend)
         || NVIDIA50_TRT_BACKEND.equalsIgnoreCase(backend);
@@ -4789,8 +5261,8 @@ public final class KataGoRuntimeHelper {
     }
     return resource(
         "AutoSetup.tensorRtGpuHint",
-        "Recommended for RTX 20/30/40/50 NVIDIA GPUs. "
-            + "GTX 10 series and older NVIDIA GPUs should use CUDA/OpenCL.");
+        "TensorRT is optional for RTX 30 series and earlier NVIDIA GPUs. "
+            + "RTX 40/50 should use CUDA; GTX 10 series and older should use CUDA/OpenCL.");
   }
 
   private static long resolveLongProperty(String key, long fallback) {
@@ -4937,7 +5409,8 @@ public final class KataGoRuntimeHelper {
   private static void requirePinnedTensorRtCompanionSource(Path companionSource)
       throws IOException {
     String backend = resolveNvidiaBackend(companionSource);
-    if (!NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(backend)
+    if (!(NVIDIA_BACKEND.equalsIgnoreCase(backend)
+            || NVIDIA50_CUDA_BACKEND.equalsIgnoreCase(backend))
         || !isPinnedHumanSlCudaExecutable(companionSource)) {
       throw new IOException(
           "TensorRT HumanSL companion must be the pinned CUDA 12.8/cuDNN 9 KataGo executable.");
@@ -5776,6 +6249,25 @@ public final class KataGoRuntimeHelper {
       return resource(
           "AutoSetup.benchmarkOfficialTune", "Running KataGo official benchmark thread search...");
     }
+    if (trimmed.contains(BENCHMARK_EXTRA_START)
+        || trimmed.contains(BENCHMARK_EXTRA_BASELINE)) {
+      return resource(
+          "AutoSetup.benchmarkExtraBaseline", "Rechecking the recommended thread setting...");
+    }
+    if (trimmed.contains(BENCHMARK_EXTRA_SERVER_THREADS)) {
+      return resource(
+          "AutoSetup.benchmarkExtraServerThreads", "Testing NN server thread throughput...");
+    }
+    if (trimmed.contains(BENCHMARK_EXTRA_BATCH)) {
+      return resource(
+          "AutoSetup.benchmarkExtraBatch", "Testing neural-network batch throughput...");
+    }
+    if (trimmed.contains(BENCHMARK_EXTRA_SERVER_RESULT)
+        || trimmed.contains(BENCHMARK_EXTRA_BATCH_RESULT)
+        || trimmed.startsWith(BENCHMARK_ADDITIONAL_RECOMMENDATION)) {
+      return resource(
+          "AutoSetup.benchmarkFinalizing", "KataGo is summarizing benchmark results...");
+    }
     if (trimmed.length() > 120) {
       return trimmed.substring(0, 120) + "...";
     }
@@ -5904,8 +6396,13 @@ public final class KataGoRuntimeHelper {
     if (result.topologyLabel != null && !result.topologyLabel.isEmpty()) {
       builder.append("  |  Metal ").append(result.topologyLabel);
     }
+    if (result.nnServerThreadsPerModel > 0) {
+      builder
+          .append("  |  numNNServerThreadsPerModel ")
+          .append(result.nnServerThreadsPerModel);
+    }
     if (result.maxBatchSize > 0) {
-      builder.append("  |  batch ").append(result.maxBatchSize);
+      builder.append("  |  nnMaxBatchSize ").append(result.maxBatchSize);
     }
     if (result.visitsPerSecond > 0.0) {
       builder

@@ -143,7 +143,7 @@ public final class WindowsUpdatePaths {
         String raw = Files.readString(installedManifest, StandardCharsets.UTF_8);
         String flavor = new org.json.JSONObject(raw).optString("flavor", "").trim();
         if (!flavor.isEmpty()) {
-          return flavor.toLowerCase(Locale.ROOT);
+          return normalizeDetectedFlavor(flavor);
         }
       } catch (Exception ignored) {
       }
@@ -164,7 +164,7 @@ public final class WindowsUpdatePaths {
           return "nvidia";
         }
         if ("nvidia50-cuda".equalsIgnoreCase(backend)) {
-          return "nvidia50.cuda";
+          return "nvidia";
         }
         if ("cpu".equalsIgnoreCase(backend)) {
           return "with-katago";
@@ -176,5 +176,15 @@ public final class WindowsUpdatePaths {
       return "with-katago";
     }
     return "without.engine";
+  }
+
+  private static String normalizeDetectedFlavor(String flavor) {
+    String normalized = flavor == null ? "" : flavor.trim().toLowerCase(Locale.ROOT);
+    if ("nvidia50.cuda".equals(normalized)
+        || "nvidia50-cuda".equals(normalized)
+        || "nvidia.50.cuda".equals(normalized)) {
+      return "nvidia";
+    }
+    return normalized;
   }
 }

@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Parser for the stable human-readable output emitted by KataGo 1.17.x benchmark. */
+/** Parser for the stable human-readable output emitted by KataGo 1.17 and 1.18 benchmark. */
 public final class KataGoBenchmarkParser {
   private static final String NUMBER =
       "(?:[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?|NaN|Infinity)";
@@ -29,6 +29,16 @@ public final class KataGoBenchmarkParser {
               + ")\\s+avgBatchSize\\s*=\\s*("
               + NUMBER
               + ")(?:\\s+.*)?$");
+  private static final Pattern ADDITIONAL_SERVER_THREADS_PATTERN =
+      Pattern.compile(
+          "^ADDITIONAL RECOMMENDATION:.*\\bset\\s+numNNServerThreadsPerModel\\s*=\\s*(\\d+)\\b.*$",
+          Pattern.CASE_INSENSITIVE);
+  private static final Pattern ADDITIONAL_BATCH_SIZE_PATTERN =
+      Pattern.compile(
+          "^ADDITIONAL RECOMMENDATION:.*\\bset\\s+nnMaxBatchSize\\s*=\\s*(\\d+)\\b.*$",
+          Pattern.CASE_INSENSITIVE);
+  private static final Pattern SERVER_THREADS_ASSIGNMENT_PATTERN =
+      Pattern.compile("^numNNServerThreadsPerModel\\s*=\\s*(\\d+)\\s*$", Pattern.CASE_INSENSITIVE);
 
   private KataGoBenchmarkParser() {}
 
@@ -44,9 +54,13 @@ public final class KataGoBenchmarkParser {
     String backend = "";
     int currentThreads = 0;
     int recommendedThreads = 0;
+    int recommendedNnServerThreadsPerModel = 0;
+    int recommendedMaxBatchSize = 0;
     boolean mpsGraphInitialized = false;
     boolean coreMlInitialized = false;
     boolean failureDetected = false;
+    boolean additionalTuningStarted = false;
+    boolean serverThreadRecommendationBlock = false;
     Map<Integer, KataGoBenchmarkObservation.ThreadMetrics> metricsByThread =
         new LinkedHashMap<Integer, KataGoBenchmarkObservation.ThreadMetrics>();
 
@@ -73,8 +87,33 @@ public final class KataGoBenchmarkParser {
         recommendedThreads = parseInteger(recommendedMatcher.group(1));
       }
 
+      if (line.startsWith("Running additional tests of a few other settings")) {
+        additionalTuningStarted = true;
+      }
+
+      Matcher serverThreadsMatcher = ADDITIONAL_SERVER_THREADS_PATTERN.matcher(line);
+      if (serverThreadsMatcher.matches()) {
+        recommendedNnServerThreadsPerModel = parseInteger(serverThreadsMatcher.group(1));
+        serverThreadRecommendationBlock = false;
+      } else if (line.startsWith(
+          "ADDITIONAL RECOMMENDATION: 2 NN server threads per GPU measured faster.")) {
+        serverThreadRecommendationBlock = true;
+      }
+      if (serverThreadRecommendationBlock) {
+        Matcher assignmentMatcher = SERVER_THREADS_ASSIGNMENT_PATTERN.matcher(line);
+        if (assignmentMatcher.matches()) {
+          recommendedNnServerThreadsPerModel = parseInteger(assignmentMatcher.group(1));
+          serverThreadRecommendationBlock = false;
+        }
+      }
+
+      Matcher batchSizeMatcher = ADDITIONAL_BATCH_SIZE_PATTERN.matcher(line);
+      if (batchSizeMatcher.matches()) {
+        recommendedMaxBatchSize = parseInteger(batchSizeMatcher.group(1));
+      }
+
       Matcher metricsMatcher = DETAILED_METRICS_PATTERN.matcher(line);
-      if (metricsMatcher.matches()) {
+      if (metricsMatcher.matches() && !additionalTuningStarted) {
         KataGoBenchmarkObservation.ThreadMetrics metrics = parseMetrics(metricsMatcher);
         if (metrics != null) {
           metricsByThread.put(metrics.numSearchThreads(), metrics);
@@ -102,6 +141,8 @@ public final class KataGoBenchmarkParser {
         backend,
         currentThreads,
         recommendedThreads,
+        recommendedNnServerThreadsPerModel,
+        recommendedMaxBatchSize,
         new ArrayList<KataGoBenchmarkObservation.ThreadMetrics>(metricsByThread.values()),
         mpsGraphInitialized,
         coreMlInitialized,

@@ -60,7 +60,9 @@ class GenerateReleaseNotesTest(unittest.TestCase):
         self.assertIn("智子云算力", notes)
         self.assertIn("Zhizi Cloud", notes)
         self.assertIn("100% / 150% / 200%", notes)
-        self.assertIn("windows64.nvidia50.cuda.portable.zip", notes)
+        self.assertIn("windows64.nvidia.portable.zip", notes)
+        self.assertIn("windows64.experimental.directml.portable.zip", notes)
+        self.assertNotIn("windows64.nvidia50.cuda.portable.zip", notes)
         self.assertIn("windows64.nvidia.tensorrt.portable.7z.001", notes)
         self.assertNotIn("知子", notes)
         self.assertNotIn("新增“腾讯棋谱”入口", notes)
@@ -80,6 +82,22 @@ class GenerateReleaseNotesTest(unittest.TestCase):
         self.assert_current_release_content(notes)
         self.assertIn("自动匹配电脑的系统语言", notes)
         self.assertIn("matching system language", notes)
+
+    def test_bundle_metadata_comes_from_the_shared_katago_asset_catalog(self) -> None:
+        metadata = NOTES.load_bundle_metadata()
+
+        self.assertEqual("v1.18.1", metadata["katago_version"])
+        self.assertEqual(
+            "b11c768h12nbt3tflrs-fson-silu.bin.gz", metadata["model_source"]
+        )
+        self.assertEqual(
+            "katago-v1.18.1-cuda12.8-cudnn9.8.0-windows-x64.zip",
+            metadata["windows_nvidia_bundle"],
+        )
+        self.assertEqual(
+            metadata["windows_nvidia_bundle"],
+            metadata["windows_nvidia50_cuda_bundle"],
+        )
 
 
 if __name__ == "__main__":

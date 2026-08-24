@@ -11,7 +11,8 @@
 - 野狐棋谱同步仍然可用，而且明确写成“野狐昵称”
 - 普通 Windows 包支持“智能优化”的信息要写清楚
 - NVIDIA Windows 包“首次自动准备官方运行库”的信息要写清楚
-- RTX 50 系列用户要能明确看到 CUDA 12.8 包是默认下载项；RTX 20/30/40/50 普通用户通过软件内按需安装 TensorRT，高级离线分卷仍作为非默认推荐的发布资产
+- RTX 20/30/40/50 用户要能明确看到统一 CUDA 12.8 包；RTX 40/50 默认推荐 CUDA，TensorRT 是 RTX 30 系及以下的可选项，离线分卷不是默认推荐
+- B11 默认权重的棋力优势与搜索速度取舍必须在六语发布说明中显著可见，B10 切换入口要写清楚
 - README、安装文档、发布页文案、真实资产名保持一致
 - 软件内“关于”、主窗口标题、安装包启动参数、GitHub release 标题必须显示同一个 release tag，不能停在 `1.0.0`，也不要再把 `1.0.0-` 作为公开 tag 前缀
 - 程序窗口图标、安装包图标、README 展示图标不要混成两套
@@ -30,10 +31,14 @@
 - `windows64.with-katago.installer.exe`
 - `windows64.nvidia.portable.zip`
 - `windows64.nvidia.installer.exe`
-- `windows64.nvidia50.cuda.portable.zip`
-- `windows64.nvidia50.cuda.installer.exe`
 - `windows64.without.engine.portable.zip`
 - `windows64.without.engine.installer.exe`
+- `windows64.experimental.directml.portable.zip`
+- `windows64.experimental.openvino.portable.zip`
+- `windows64.experimental.rocm.gfx103x.portable.zip`
+- `windows64.experimental.rocm.gfx110x.portable.zip`
+- `windows64.experimental.rocm.gfx1151.portable.zip`
+- `windows64.experimental.rocm.gfx120x.portable.zip`
 - `windows64.core-update.zip`
 - `lizzieyzy-next-update-manifest.json`（唯一不带 `<date>-` 前缀的更新清单）
 - `windows64.nvidia.tensorrt.portable.7z.001`
@@ -47,8 +52,8 @@
 - `linux64.opencl.zip`
 - `linux64.nvidia.zip`
 
-这里的“强制公开”不等于“普通用户默认推荐”。TensorRT 分卷只面向需要离线预装的高级
-用户，普通用户仍应从软件内按需安装；但在当前 fail-closed 预发布链路中，分卷及其 README、
+这里的“强制公开”不等于“普通用户默认推荐”。TensorRT 分卷只面向需要离线预装的
+用户，普通用户仍应从软件内按需安装；实验后端也必须明确标注未覆盖全部真实硬件。但在当前 fail-closed 预发布链路中，分卷及其 README、
 manifest、SHA-256 文件仍是缺一不可的强制资产。
 
 `windows64-install.txt`、`mac-apple-silicon-install.txt`、`mac-intel-install.txt` 等安装说明
@@ -96,7 +101,8 @@ GitHub Actions：
 - `README.md` 和 `README_EN.md` 的包名与计划上传的文件完全一致
 - 安装文档里的 Windows 主路径仍然是 `portable.zip`
 - 如果提供 NVIDIA 极速包，要同时核对 `nvidia.installer.exe` 和 `nvidia.portable.zip`
-- 必须核对 `nvidia50.cuda.*`，并在发布说明里写清：普通用户从软件内按需安装 TensorRT，安装界面会检测 NVIDIA GPU / Compute Capability；Release 中的 TensorRT 分卷是高级离线选项，不是默认推荐，但仍是当前预发布链路的强制资产
+- 必须确认不再生成 `nvidia50.cuda.*`，统一 `nvidia.*` 内为 CUDA 12.8 + cuDNN 9.8，并在发布说明里写清 TensorRT 是 RTX 30 系及以下的可选项；离线分卷仍是当前预发布链路的强制资产
+- 必须核对 6 个 `windows64.experimental.*.portable.zip`，其中 ROCm 包的架构目录和完整 `rocblas` / `hipblaslt` 数据不能被扁平化或漏包
 - 如果提供 OpenCL 包，要同时核对 `opencl.installer.exe` 和 `opencl.portable.zip`
 - 如果提供 Windows 无引擎包，要同时核对 `without.engine.installer.exe` 和 `without.engine.portable.zip`
 - 必须核对 `windows64.core-update.zip` 与 `lizzieyzy-next-update-manifest.json`，并确认更新清单中的 tag、资产名、大小和 SHA-256 对应本次构建
@@ -141,13 +147,14 @@ python3 scripts/generate_app_icons.py
 
 当前默认：
 
-- KataGo 版本：`v1.17.1`
-- 默认模型：`b10c512h8nbt3tflrs-fson-silu-rsnh.bin.gz`
-- 默认模型 SHA-256：`c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995`
-- 默认模型大小：`94,281,753` 字节；架构：`transformer`；最低 KataGo：`1.17.0`
-- Windows NVIDIA 包：官方 `cuda12.1-cudnn9.8.0` 构建
-- Windows RTX 50 CUDA 包：官方 `cuda12.8-cudnn9.8.0` 构建
-- Windows TensorRT：不内嵌到普通 Windows 主推荐包；RTX 20/30/40/50 普通用户由软件内 `KataGo 一键设置` 显式下载安装官方 KataGo `v1.17.2` `trt10.9.0-cuda12.8` 构建和所需运行库，并通过 NVIDIA GPU / Compute Capability 检测给出推荐状态；当前预发布链路仍强制生成并上传高级离线 TensorRT 分卷及其 README、manifest、SHA-256 文件，缺少任一项都不能公开 pre-release；GTX 10 系不建议 TensorRT，普通 NVIDIA 包要求驱动 `527.41` 或更高，仍启动失败时使用 OpenCL 包
+- KataGo 版本：`v1.18.1`
+- 默认模型：`b11c768h12nbt3tflrs-fson-silu.bin.gz`
+- 默认模型 SHA-256：`1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6`
+- 默认模型大小：`211,660,960` 字节；架构：`transformer`；最低 KataGo：`1.17.0`
+- Windows NVIDIA 包：官方 `cuda12.8-cudnn9.8.0` 构建，统一覆盖 RTX 20/30/40/50
+- Linux NVIDIA 包：官方 CUDA `12.1` 构建，避免提高现有 Linux 系统运行时要求
+- Windows TensorRT：不内嵌到普通 Windows 主推荐包；RTX 30 系及以下用户由软件内 `KataGo 一键设置` 显式下载安装官方 KataGo `v1.18.1` `trt10.9.0-cuda12.8` 构建和所需运行库；RTX 40/50 默认使用 CUDA；当前预发布链路仍强制生成并上传可选离线 TensorRT 分卷及其 README、manifest、SHA-256 文件，缺少任一项都不能公开 pre-release
+- Windows 实验后端：DirectML、OpenVINO、ROCm `gfx103x/gfx110x/gfx1151/gfx120x` 只提供便携包；没有对应硬件时只能标记构建验证，不能冒充真机通过
 - `core-update.zip` 必须确认不含 `engines/`、`weights/`、NVIDIA runtime 或 TensorRT
 
 ### 5. 构建 Windows 安装器和便携包

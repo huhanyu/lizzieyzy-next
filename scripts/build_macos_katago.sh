@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KATAGO_TAG="${KATAGO_TAG:-v1.17.1}"
-KATAGO_COMMIT="${KATAGO_COMMIT:-5246793f77b480dee91a3b92902d1a9b92860bd0}"
+KATAGO_TAG="${KATAGO_TAG:-v1.18.1}"
+KATAGO_COMMIT="${KATAGO_COMMIT:-92ee95c0a4b25fec214da00951ab69e97e207729}"
 CACHE_DIR="${CACHE_DIR:-$ROOT_DIR/.cache/katago-source}"
 SOURCE_DIR="$CACHE_DIR/source-$KATAGO_COMMIT"
 ARCH="$(uname -m)"

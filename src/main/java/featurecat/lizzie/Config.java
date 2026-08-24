@@ -660,7 +660,7 @@ public class Config {
       for (String line : Files.readAllLines(versionFile)) {
         if (line.regionMatches(true, 0, "Model source:", 0, "Model source:".length())) {
           String model = line.substring("Model source:".length()).trim();
-          return KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_FILE_NAME.equalsIgnoreCase(model);
+          return KataGoAutoSetupHelper.isTransformerWeight(model);
         }
       }
     } catch (IOException e) {

@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 
-# katago.exe from the pinned official KataGo v1.17.1 CUDA 12.8/cuDNN 9.8 Windows archive.
-# The archive itself is pinned by expected_asset_sha256() in prepare_bundled_katago.sh.
-HUMAN_SL_CUDA_COMPANION_SHA256="4134f9a3ecd980039947efd59262e511cce18460c47a9eb1390e1a9395bc4ae5"
+# Compatibility entry point for packaging scripts. All values come from the shared JSON catalog.
+_KATAGO_PINS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  else
+    echo "Python 3 is required to read katago-assets.json." >&2
+    return 1 2>/dev/null || exit 1
+  fi
+fi
+
+_katago_pin_get() {
+  "$PYTHON_BIN" "$_KATAGO_PINS_ROOT/scripts/katago_asset_catalog.py" get "$1"
+}
+
+KATAGO_RELEASE_TAG="${KATAGO_RELEASE_TAG:-$(_katago_pin_get katagoReleaseTag)}"
+HUMAN_SL_CUDA_COMPANION_SHA256="${HUMAN_SL_CUDA_COMPANION_SHA256:-$(_katago_pin_get assets.windows-nvidia.executableSha256)}"
+TENSORRT_KATAGO_TAG="${TENSORRT_KATAGO_TAG:-$KATAGO_RELEASE_TAG}"
+TENSORRT_KATAGO_ASSET="${TENSORRT_KATAGO_ASSET:-$(_katago_pin_get assets.windows-tensorrt.assetName)}"
+TENSORRT_KATAGO_SHA256="${TENSORRT_KATAGO_SHA256:-$(_katago_pin_get assets.windows-tensorrt.sha256)}"
+TENSORRT_KATAGO_URL="${TENSORRT_KATAGO_URL:-https://github.com/lightvector/KataGo/releases/download/${TENSORRT_KATAGO_TAG}/${TENSORRT_KATAGO_ASSET}}"
+
+unset -f _katago_pin_get
+unset _KATAGO_PINS_ROOT

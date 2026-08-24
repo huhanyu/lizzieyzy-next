@@ -353,7 +353,8 @@ public class AnalysisEngine {
       Path engineExecutable = KataGoRuntimeHelper.resolveCommandExecutable(commands);
       if (Config.isBundledKataGoCommand(engineCommand)) {
         try {
-          KataGoRuntimeHelper.ensureBundledRuntimeReady(engineExecutable, Lizzie.frame);
+          KataGoRuntimeHelper.ensureBundledRuntimeReady(
+              engineExecutable, commands, Lizzie.frame);
         } catch (IOException e) {
           showErrMsg(
               resourceBundle.getString("Leelaz.engineFailed") + ": " + e.getLocalizedMessage());

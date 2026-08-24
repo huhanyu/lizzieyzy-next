@@ -119,7 +119,7 @@ public final class PlatformUpdateService {
   static String currentFlavor(String platform) {
     String override = System.getProperty("lizzie.update.flavor", "").trim();
     if (!override.isEmpty()) {
-      return override.toLowerCase(Locale.ROOT);
+      return normalizeFlavor(override);
     }
     if ("macos".equals(platform)) {
       return "with-katago";
@@ -179,10 +179,10 @@ public final class PlatformUpdateService {
         continue;
       }
       try {
-        return new JSONObject(Files.readString(candidate, StandardCharsets.UTF_8))
-            .optString("flavor", "")
-            .trim()
-            .toLowerCase(Locale.ROOT);
+        String flavor =
+            new JSONObject(Files.readString(candidate, StandardCharsets.UTF_8))
+                .optString("flavor", "");
+        return normalizeFlavor(flavor);
       } catch (Exception ignored) {
       }
     }
@@ -215,12 +215,22 @@ public final class PlatformUpdateService {
         return "with-katago";
       }
       if ("nvidia50-cuda".equals(value)) {
-        return "nvidia50.cuda";
+        return "nvidia";
       }
       return value;
     } catch (IOException ignored) {
       return "";
     }
+  }
+
+  static String normalizeFlavor(String flavor) {
+    String normalized = flavor == null ? "" : flavor.trim().toLowerCase(Locale.ROOT);
+    if ("nvidia50.cuda".equals(normalized)
+        || "nvidia50-cuda".equals(normalized)
+        || "nvidia.50.cuda".equals(normalized)) {
+      return "nvidia";
+    }
+    return normalized;
   }
 
   private static boolean containsKataGo(Path appRoot) {

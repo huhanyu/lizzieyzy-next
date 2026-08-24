@@ -37,7 +37,7 @@ MAX_PUBLIC_METADATA_BYTES = 2 * 1024 * 1024
 
 WINDOWS_PORTABLE = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2})-windows64\."
-    r"(?P<flavor>opencl|with-katago|nvidia|nvidia50\.cuda|without\.engine)"
+    r"(?P<flavor>opencl|with-katago|nvidia|without\.engine)"
     r"\.portable\.zip$"
 )
 WINDOWS_CORE = re.compile(
@@ -132,7 +132,7 @@ def select_r2_assets(release: dict[str, Any], public_base: str) -> list[Asset]:
                 else:
                     match = TENSORRT_ASSET.fullmatch(name)
                     if match:
-                        category = "tensorrt-advanced"
+                        category = "tensorrt-optional"
                         kwargs = {"flavor": "nvidia-tensorrt", "arch": "x64"}
                         counts["tensorrt"] += 1
         if not category:
@@ -140,7 +140,7 @@ def select_r2_assets(release: dict[str, Any], public_base: str) -> list[Asset]:
         asset = Asset.from_github(raw, category, **kwargs)
         selected.append(dataclasses.replace(asset, r2_key=f"releases/{tag}/{name}"))
 
-    expected = {"windows": 5, "core": 1, "mac": 2, "tensorrt": 5}
+    expected = {"windows": 4, "core": 1, "mac": 2, "tensorrt": 5}
     if counts != expected:
         raise ReleaseError(f"R2 asset whitelist mismatch: expected {expected}, found {counts}")
     names = [asset.name for asset in selected]
@@ -301,9 +301,8 @@ def catalog_label(asset: Asset) -> tuple[str, str, bool]:
         "opencl": ("Windows OpenCL", "Windows OpenCL", False),
         "with-katago": ("Windows CPU / 通用版", "Windows CPU / universal", False),
         "nvidia": ("Windows NVIDIA", "Windows NVIDIA", False),
-        "nvidia50.cuda": ("Windows RTX 50 CUDA", "Windows RTX 50 CUDA", False),
         "without.engine": ("Windows 无引擎版", "Windows without engine", False),
-        "nvidia-tensorrt": ("高级可选 TensorRT", "Advanced optional TensorRT", True),
+        "nvidia-tensorrt": ("RTX 30 系及以下可选 TensorRT", "Optional TensorRT for RTX 30 and earlier", True),
     }
     if asset.category == "macos-dmg":
         return (
@@ -459,7 +458,6 @@ def render_index(catalog: dict[str, Any], *, maintenance: bool = False) -> str:
         flavor: find_entry("windows-portable", flavor=flavor)
         for flavor in (
             "nvidia",
-            "nvidia50.cuda",
             "opencl",
             "with-katago",
             "without.engine",
@@ -472,7 +470,7 @@ def render_index(catalog: dict[str, Any], *, maintenance: bool = False) -> str:
         (
             entry
             for entry in assets
-            if entry.get("category") == "tensorrt-advanced"
+            if entry.get("category") == "tensorrt-optional"
             and re.search(r"\.7z\.\d{3}$", str(entry.get("name") or ""))
         ),
         key=lambda entry: str(entry["name"]),
@@ -484,30 +482,24 @@ def render_index(catalog: dict[str, Any], *, maintenance: bool = False) -> str:
         [
             download_row(
                 windows_entries["nvidia"],
-                "NVIDIA 显卡",
-                "RTX 20 / 30 / 40 系",
+                "NVIDIA CUDA 统一版",
+                "RTX 20 / 30 / 40 / 50 系",
                 "gpu-card",
                 recommended=True,
-            ),
-            download_row(
-                windows_entries["nvidia50.cuda"],
-                "RTX 50 CUDA",
-                "RTX 5070 / 5080 / 5090",
-                "gpu-card",
             ),
             (
                 '<li class="download-row trt-row">'
                 '<div class="download-main">'
                 f'{decorative_icon("speedometer")}'
                 '<div class="download-copy">'
-                '<div class="download-title">TensorRT 高性能版</div>'
-                '<div class="download-description">RTX 20 至 50 · 两个分卷都要下载</div>'
+                '<div class="download-title">RTX 30 系及以下可选 TensorRT</div>'
+                '<div class="download-description">RTX 40 / 50 请使用 CUDA · 两个分卷都要下载</div>'
                 "</div>"
                 "</div>"
                 f'<span class="download-size">{format_size(sum(int(entry["sizeBytes"]) for entry in trt_parts))}</span>'
                 '<div class="volume-actions">'
-                f'{download_action(trt_parts[0], "分卷 1", "TensorRT 高性能版")}'
-                f'{download_action(trt_parts[1], "分卷 2", "TensorRT 高性能版")}'
+                f'{download_action(trt_parts[0], "分卷 1", "RTX 30 系及以下可选 TensorRT")}'
+                f'{download_action(trt_parts[1], "分卷 2", "RTX 30 系及以下可选 TensorRT")}'
                 "</div>"
                 "</li>"
             ),

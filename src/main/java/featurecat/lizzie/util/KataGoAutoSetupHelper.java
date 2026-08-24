@@ -42,6 +42,13 @@ import org.jdesktop.swingx.util.OS;
 import org.json.JSONObject;
 
 public final class KataGoAutoSetupHelper {
+  private static final KataGoAssetCatalog ASSET_CATALOG = KataGoAssetCatalog.get();
+  private static final KataGoAssetCatalog.Model TRANSFORMER_LIGHTWEIGHT =
+      ASSET_CATALOG.model("b10-lightweight");
+  private static final KataGoAssetCatalog.Model TRANSFORMER_BALANCED =
+      ASSET_CATALOG.model("b10-balanced");
+  private static final KataGoAssetCatalog.Model TRANSFORMER_STRONGEST =
+      ASSET_CATALOG.model("b11-flagship");
   private static final String AUTO_SETUP_ENGINE_NAME = "KataGo Auto Setup";
   private static final String WEIGHT_ENGINE_NAME_PREFIX = "KataGo · ";
   private static final String TENSORRT_ENGINE_NAME = "KataGo TensorRT";
@@ -50,8 +57,10 @@ public final class KataGoAutoSetupHelper {
           + "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
   private static final String NETWORKS_URL = "https://katagotraining.org/networks/";
   private static final String NETWORKS_URL_PROPERTY = "lizzie.katago.networks.url";
-  private static final String KATAGO_117_RELEASE_BASE =
-      "https://github.com/lightvector/KataGo/releases/download/v1.17.1/";
+  private static final String KATAGO_MODEL_RELEASE_BASE =
+      "https://github.com/lightvector/KataGo/releases/download/"
+          + ASSET_CATALOG.modelReleaseTag()
+          + "/";
   private static final Pattern STRONGEST_PATTERN =
       Pattern.compile(
           "Strongest confidently-rated network:</span>\\s*<a href=\"([^\"]+)\">([^<]+)</a>",
@@ -85,22 +94,23 @@ public final class KataGoAutoSetupHelper {
           Arrays.asList("b28", "b40", "b60", "b20", "b18", "b15", "b10", "b6"));
   private static final String DEFAULT_WEIGHT_FILE_NAME = "default.bin.gz";
   public static final String LEGACY_DEFAULT_WEIGHT_MODEL = "kata1-zhizi-b28c512nbt-muonfd2";
-  public static final String TRANSFORMER_MINIMUM_KATAGO_VERSION = "1.17.0";
-  private static final String TRANSFORMER_LIGHTWEIGHT_MODEL = "b10c384h6nbttflrs";
-  private static final String TRANSFORMER_BALANCED_MODEL = "b10c512h8nbt3tflrs-fson-silu-rsnh";
-  private static final String TRANSFORMER_STRONGEST_MODEL = "b11c768h12nbt3tflrs-fson-silu";
-  public static final String DEFAULT_TRANSFORMER_MODEL = TRANSFORMER_BALANCED_MODEL;
-  public static final String DEFAULT_TRANSFORMER_FILE_NAME = DEFAULT_TRANSFORMER_MODEL + ".bin.gz";
-  public static final long DEFAULT_TRANSFORMER_SIZE_BYTES = 94_281_753L;
-  public static final String DEFAULT_TRANSFORMER_SHA256 =
-      "c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995";
-  public static final String QUICK_ANALYSIS_MODEL_FILE_NAME =
-      TRANSFORMER_LIGHTWEIGHT_MODEL + ".bin.gz";
+  public static final String TRANSFORMER_MINIMUM_KATAGO_VERSION =
+      ASSET_CATALOG.defaultModel().minimumKataGoVersion();
+  private static final String TRANSFORMER_LIGHTWEIGHT_MODEL =
+      TRANSFORMER_LIGHTWEIGHT.modelName();
+  private static final String TRANSFORMER_BALANCED_MODEL = TRANSFORMER_BALANCED.modelName();
+  private static final String TRANSFORMER_STRONGEST_MODEL = TRANSFORMER_STRONGEST.modelName();
+  public static final String DEFAULT_TRANSFORMER_MODEL = ASSET_CATALOG.defaultModel().modelName();
+  public static final String DEFAULT_TRANSFORMER_FILE_NAME =
+      ASSET_CATALOG.defaultModel().fileName();
+  public static final long DEFAULT_TRANSFORMER_SIZE_BYTES =
+      ASSET_CATALOG.defaultModel().sizeBytes();
+  public static final String DEFAULT_TRANSFORMER_SHA256 = ASSET_CATALOG.defaultModel().sha256();
+  public static final String QUICK_ANALYSIS_MODEL_FILE_NAME = TRANSFORMER_LIGHTWEIGHT.fileName();
   public static final String QUICK_ANALYSIS_MODEL_DOWNLOAD_URL =
-      KATAGO_117_RELEASE_BASE + QUICK_ANALYSIS_MODEL_FILE_NAME;
-  public static final long QUICK_ANALYSIS_MODEL_SIZE_BYTES = 38_245_488L;
-  public static final String QUICK_ANALYSIS_MODEL_SHA256 =
-      "0ba27eced5180b3e3d0b898b280c541112989765e789d1eb6cd0d31b2b2c1229";
+      ASSET_CATALOG.modelDownloadUrl(TRANSFORMER_LIGHTWEIGHT);
+  public static final long QUICK_ANALYSIS_MODEL_SIZE_BYTES = TRANSFORMER_LIGHTWEIGHT.sizeBytes();
+  public static final String QUICK_ANALYSIS_MODEL_SHA256 = TRANSFORMER_LIGHTWEIGHT.sha256();
   private static final String QUICK_ANALYSIS_MODEL_URL_PROPERTY =
       "lizzie.quick-analysis.model.url";
   private static final String QUICK_ANALYSIS_MODEL_SHA256_PROPERTY =
@@ -1077,16 +1087,16 @@ public final class KataGoAutoSetupHelper {
     return Arrays.asList(
         transformerWeight(
             officialTransformer,
-            TRANSFORMER_BALANCED_MODEL,
+            TRANSFORMER_STRONGEST_MODEL,
             DEFAULT_TRANSFORMER_SIZE_BYTES,
             DEFAULT_TRANSFORMER_SHA256,
-            TransformerTier.BALANCED),
+            TransformerTier.STRONGEST),
         transformerWeight(
             officialTransformer,
-            TRANSFORMER_STRONGEST_MODEL,
-            211_660_960L,
-            "1881600caab9e9d85a3dd6a019e9b8e7d2c237b5f984e13ed49a8645be3077c6",
-            TransformerTier.STRONGEST),
+            TRANSFORMER_BALANCED_MODEL,
+            TRANSFORMER_BALANCED.sizeBytes(),
+            TRANSFORMER_BALANCED.sha256(),
+            TransformerTier.BALANCED),
         quickAnalysisWeightInfo(officialTransformer));
   }
 
@@ -1104,10 +1114,10 @@ public final class KataGoAutoSetupHelper {
     return new RemoteWeightInfo(
         typeLabel,
         modelName,
-        KATAGO_117_RELEASE_BASE + modelName + ".bin.gz",
+        KATAGO_MODEL_RELEASE_BASE + modelName + ".bin.gz",
         "2026-07-29",
         "",
-        tier == TransformerTier.BALANCED,
+        tier == TransformerTier.STRONGEST,
         true,
         sha256,
         sizeBytes,
@@ -1519,9 +1529,14 @@ public final class KataGoAutoSetupHelper {
   }
 
   public static HumanSlModelStatus inspectHumanSlModel() {
-    SetupSnapshot snapshot = inspectLocalSetup();
-    List<Path> candidates = collectHumanSlModelCandidates(snapshot.workingDir, snapshot.appRoot);
-    Path configured = humanSlModelFromConfig(snapshot.workingDir);
+    return inspectHumanSlModel(null);
+  }
+
+  public static HumanSlModelStatus inspectHumanSlModel(SetupSnapshot snapshot) {
+    SetupSnapshot resolvedSnapshot = snapshot == null ? inspectLocalSetup() : snapshot;
+    List<Path> candidates =
+        collectHumanSlModelCandidates(resolvedSnapshot.workingDir, resolvedSnapshot.appRoot);
+    Path configured = humanSlModelFromConfig(resolvedSnapshot.workingDir);
     if (configured != null) {
       candidates = prependUnique(configured, candidates);
       return new HumanSlModelStatus(configured, candidates);
@@ -1546,14 +1561,21 @@ public final class KataGoAutoSetupHelper {
   }
 
   public static QuickAnalysisModelStatus inspectQuickAnalysisModel() {
-    SetupSnapshot snapshot = inspectLocalSetup();
+    return inspectQuickAnalysisModel(null);
+  }
+
+  public static QuickAnalysisModelStatus inspectQuickAnalysisModel(SetupSnapshot snapshot) {
+    SetupSnapshot resolvedSnapshot = snapshot == null ? inspectLocalSetup() : snapshot;
     Path configured =
         configuredWeightPath(
-            QUICK_ANALYSIS_MODEL_CONFIG_KEY, snapshot.workingDir, snapshot.appRoot);
+            QUICK_ANALYSIS_MODEL_CONFIG_KEY,
+            resolvedSnapshot.workingDir,
+            resolvedSnapshot.appRoot);
     if (isValidQuickAnalysisModelFile(configured)) {
       return new QuickAnalysisModelStatus(configured);
     }
-    Path managed = quickAnalysisModelsDir(snapshot.workingDir).resolve(QUICK_ANALYSIS_MODEL_FILE_NAME);
+    Path managed =
+        quickAnalysisModelsDir(resolvedSnapshot.workingDir).resolve(QUICK_ANALYSIS_MODEL_FILE_NAME);
     return new QuickAnalysisModelStatus(isValidQuickAnalysisModelFile(managed) ? managed : null);
   }
 
@@ -1765,26 +1787,30 @@ public final class KataGoAutoSetupHelper {
         snapshot.analysisConfigPath != null ? snapshot.analysisConfigPath : snapshot.gtpConfigPath;
     Path estimateConfig =
         snapshot.estimateConfigPath != null ? snapshot.estimateConfigPath : snapshot.gtpConfigPath;
+    String backendOverrides = experimentalBackendOverrides(snapshot);
 
     String engineCommand =
         quoteCommandPath(snapshot.workingDir, snapshot.enginePath)
             + " gtp -model "
             + quoteCommandPath(snapshot.workingDir, snapshot.activeWeightPath)
             + " -config "
-            + quoteCommandPath(snapshot.workingDir, snapshot.gtpConfigPath);
+            + quoteCommandPath(snapshot.workingDir, snapshot.gtpConfigPath)
+            + backendOverrides;
     String analysisCommand =
         quoteCommandPath(snapshot.workingDir, snapshot.enginePath)
             + " analysis -model "
             + quoteCommandPath(snapshot.workingDir, snapshot.activeWeightPath)
             + " -config "
             + quoteCommandPath(snapshot.workingDir, analysisConfig)
+            + backendOverrides
             + " -quit-without-waiting";
     String estimateCommand =
         quoteCommandPath(snapshot.workingDir, snapshot.enginePath)
             + " gtp -model "
             + quoteCommandPath(snapshot.workingDir, snapshot.activeWeightPath)
             + " -config "
-            + quoteCommandPath(snapshot.workingDir, estimateConfig);
+            + quoteCommandPath(snapshot.workingDir, estimateConfig)
+            + backendOverrides;
 
     ArrayList<EngineData> engines = Utils.getEngineData();
     // Treat an entirely unspecified startup mode as part of this setup transaction. The engine
@@ -1877,6 +1903,47 @@ public final class KataGoAutoSetupHelper {
 
   private static float normalizeKomi(float komi) {
     return Float.isFinite(komi) ? komi : 7.5F;
+  }
+
+  private static String experimentalBackendOverrides(SetupSnapshot snapshot) {
+    if (snapshot == null || snapshot.enginePath == null || snapshot.enginePath.getParent() == null) {
+      return "";
+    }
+    return experimentalBackendOverrides(snapshot.enginePath, snapshot.workingDir);
+  }
+
+  static String experimentalBackendOverrides(Path enginePath, Path workingDir) {
+    if (enginePath == null || enginePath.getParent() == null) {
+      return "";
+    }
+    Path marker =
+        enginePath.getParent().resolve("lizzieyzy-next-engine-backend.txt");
+    String backend;
+    try {
+      backend = Files.readString(marker, StandardCharsets.UTF_8).trim().toLowerCase(Locale.ROOT);
+    } catch (IOException e) {
+      return "";
+    }
+    if ("directml".equals(backend)) {
+      return " -override-config \"onnxProvider=directml\"";
+    }
+    if ("openvino".equals(backend) || "openvino-npu".equals(backend)) {
+      Path cacheRoot =
+          Lizzie.config == null
+              ? workingDir.resolve("runtime").resolve("katago-openvino-cache")
+              : Lizzie.config
+                  .getRuntimeWorkDirectory()
+                  .toPath()
+                  .resolve("katago-openvino-cache");
+      StringBuilder override =
+          new StringBuilder("onnxProvider=openvino,onnxOpenVINOCacheDir=")
+              .append(cacheRoot.toAbsolutePath().normalize());
+      if ("openvino-npu".equals(backend)) {
+        override.append(",onnxOpenVINODeviceType=NPU");
+      }
+      return " -override-config \"" + override + "\"";
+    }
+    return "";
   }
 
   private static String safeString(String value) {
