@@ -69,11 +69,9 @@ class WindowsUpdateDialogResourceTest {
     assertEquals("Official", bundle.getString("WindowsUpdate.channel.stable"));
     assertEquals("Test", bundle.getString("WindowsUpdate.channel.beta"));
     assertEquals("Check update", bundle.getString("WindowsUpdate.btnCheck"));
-    assertEquals(
-        "Official releases only.", bundle.getString("WindowsUpdate.page.channelHint.stable"));
-    assertEquals(
-        "Test builds come from GitHub only.",
-        bundle.getString("WindowsUpdate.page.channelHint.beta"));
+    assertEquals("Update source", bundle.getString("WindowsUpdate.page.source"));
+    assertEquals("Official site", bundle.getString("WindowsUpdate.source.official"));
+    assertEquals("GitHub", bundle.getString("WindowsUpdate.source.github"));
   }
 
   @Test
@@ -122,8 +120,9 @@ class WindowsUpdateDialogResourceTest {
     assertEquals("正式", bundle.getString("WindowsUpdate.channel.stable"));
     assertEquals("测试", bundle.getString("WindowsUpdate.channel.beta"));
     assertEquals("检查更新", bundle.getString("WindowsUpdate.btnCheck"));
-    assertEquals("正式通道跟随已发布版本。", bundle.getString("WindowsUpdate.page.channelHint.stable"));
-    assertEquals("测试版只从 GitHub 获取。", bundle.getString("WindowsUpdate.page.channelHint.beta"));
+    assertEquals("更新源", bundle.getString("WindowsUpdate.page.source"));
+    assertEquals("官网", bundle.getString("WindowsUpdate.source.official"));
+    assertEquals("GitHub", bundle.getString("WindowsUpdate.source.github"));
   }
 
   @Test
@@ -136,5 +135,11 @@ class WindowsUpdateDialogResourceTest {
         ResourceBundle.getBundle("l10n.DisplayStrings", Locale.forLanguageTag("zh-HK"));
     assertEquals("發現新版本", hk.getString("WindowsUpdate.title"));
     assertEquals("啟動更新器失敗", hk.getString("WindowsUpdate.status.launchFailed"));
+    tw.getString("WindowsUpdate.page.source");
+    tw.getString("WindowsUpdate.source.official");
+    tw.getString("WindowsUpdate.source.github");
+    hk.getString("WindowsUpdate.page.source");
+    hk.getString("WindowsUpdate.source.official");
+    hk.getString("WindowsUpdate.source.github");
   }
 }
