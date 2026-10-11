@@ -16608,14 +16608,13 @@ public class Leelaz {
       }
       boolean restore = false;
       boolean startParameters = false;
+      boolean parameterFailure = false;
       synchronized (engineArbitrationLock()) {
         if (exclusiveGtpSession == session && !session.closing) {
           if (session.parametersRestoring) {
             if (session.restoringSearchParameters.containsKey(responseCommandId)
                 && trimmed.startsWith("?")) {
-              failForegroundLeaseRelease(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED,
-                  "search parameter restore failed");
-              return true;
+              parameterFailure = true;
             }
             if (trimmed.isEmpty()) session.restoringSearchParameters.remove(session.responseHeaderId);
           }
@@ -16623,7 +16622,7 @@ public class Leelaz {
               && session.responseHeaderId == session.releaseStopCommandId) {
             session.releaseStopComplete = true;
           }
-          if (session.releaseStopComplete && session.finiteSearchId == 0) {
+          if (!parameterFailure && session.releaseStopComplete && session.finiteSearchId == 0) {
             if (!session.parametersRestoring && !session.originalSearchParameters.isEmpty()) {
               session.parametersRestoring = true;
               startParameters = true;
@@ -16633,6 +16632,12 @@ public class Leelaz {
             }
           }
         }
+      }
+      if (parameterFailure) {
+        // Failure completion takes Board; navigation takes Board before arbitration.
+        failForegroundLeaseRelease(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED,
+            "search parameter restore failed");
+        return true;
       }
       if (startParameters) restoreForegroundSearchParameters(session);
       if (restore) {

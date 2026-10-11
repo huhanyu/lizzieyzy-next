@@ -113,6 +113,65 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void parameterRestoreErrorAllowsSnapshotNavigationAndCompletesFailureOnce() throws Exception {
+    try (RestoreHarness harness = RestoreHarness.open(false, false, true);
+        var transport = new featurecat.lizzie.analysis.remote.ZhiziGtpTransport(null, "", "--kata-weight 10b512t")) {
+      bindZhiziReader(harness.engine, transport);
+      assertTrue(harness.owner.installSearchParameter(101, "maxVisits", "999", "16"));
+      AtomicInteger failed = new AtomicInteger();
+      assertTrue(harness.owner.release(harness.completions::incrementAndGet, failed::incrementAndGet));
+      String stop = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).orElseThrow();
+      dispatch(harness.engine, "=" + stop.split(" ")[0]);
+      dispatch(harness.engine, "");
+      String restore = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).orElseThrow();
+      assertTrue(restore.endsWith("kata-set-param maxVisits 999"));
+      String rejection = "?" + restore.split(" ")[0] + " parameter rejected";
+      AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+      Thread reader = new Thread(() -> {
+        try { dispatch(harness.engine, rejection); }
+        catch (Throwable failure) { readerFailure.set(failure); }
+      }, "parameter-restore-error-reader");
+      Method lockMethod = Leelaz.class.getDeclaredMethod("engineArbitrationLock");
+      lockMethod.setAccessible(true);
+      Object arbitration = lockMethod.invoke(harness.engine);
+      var threads = java.lang.management.ManagementFactory.getThreadMXBean();
+      boolean heldArbitration;
+      boolean navigationReturned = false;
+      try {
+        synchronized (harness.board) {
+          reader.start();
+          waitUntil(() -> {
+            var info = threads.getThreadInfo(reader.getId());
+            return info != null && info.getThreadState() == Thread.State.BLOCKED
+                && info.getLockOwnerId() == Thread.currentThread().getId();
+          });
+          var info = threads.getThreadInfo(new long[] {reader.getId()}, true, false)[0];
+          heldArbitration = java.util.Arrays.stream(info.getLockedMonitors())
+              .anyMatch(monitor -> monitor.getIdentityHashCode() == System.identityHashCode(arbitration));
+          // Gate navigation on the proven lock boundary: a regression fails without stranding threads.
+          if (!heldArbitration) {
+            try { harness.engine.captureHistoryNavigationExactSnapshotRestoreAdmission(null); }
+            catch (Leelaz.ExactSnapshotRestoreAdmissionException expectedUnavailable) { }
+            navigationReturned = true;
+          }
+        }
+      } finally {
+        reader.join(3000L);
+      }
+      assertFalse(reader.isAlive());
+      assertEquals(null, readerFailure.get());
+      assertFalse(heldArbitration, "parameter failure must release arbitration before waiting for Board");
+      assertTrue(navigationReturned);
+      dispatch(harness.engine, rejection);
+      dispatch(harness.engine, "");
+      assertEquals(1, failed.get());
+      assertEquals(0, harness.completions.get());
+      assertFalse(harness.engine.isLoaded());
+      assertEquals(0, harness.engine.ponderCount);
+    }
+  }
+
+  @Test
   void missingParameterRestoreBoundaryTimesOutDespiteUnrelatedNameSuccess() throws Exception {
     try (RestoreHarness harness = RestoreHarness.open(false, false, true);
         var transport = new featurecat.lizzie.analysis.remote.ZhiziGtpTransport(null, "", "--kata-weight 10b512t")) {
