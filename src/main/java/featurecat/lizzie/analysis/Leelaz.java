@@ -17184,6 +17184,21 @@ public class Leelaz {
       return engine.hasExclusiveGtpLeaseOwnedBy(this);
     }
 
+    public boolean isActiveBuiltInZhizi() {
+      synchronized (engine.engineArbitrationLock()) {
+        ExclusiveGtpSession session = engine.exclusiveGtpSession;
+        return session != null
+            && session.owner == this
+            && session.active
+            && !session.closing
+            && !session.releaseRequested
+            && session.readerBinding != null
+            && session.readerBinding == engine.readerStreamBinding
+            && !session.readerBinding.terminated
+            && session.readerBinding.remoteTransport instanceof ZhiziGtpTransport;
+      }
+    }
+
     public boolean setRestoreRules(String rules) {
       return engine.setForegroundAnalysisLeaseRestoreRules(this, rules);
     }

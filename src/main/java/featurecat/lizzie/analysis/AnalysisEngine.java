@@ -71,6 +71,7 @@ public class AnalysisEngine {
   private static final long REMOTE_GTP_STOP_ACK_TIMEOUT_MILLIS = 1200L;
   private static final long REMOTE_GTP_ANALYZE_STALL_TIMEOUT_MILLIS = 8000L;
   private static final long REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS = 8000L;
+  private static final int REMOTE_GTP_PREPARATION_WINDOW = 8;
   private static final String CURRENT_FOREGROUND_RULES = "__current_foreground_rules__";
   public Process process;
   public boolean isNormalEnd = false;
@@ -153,7 +154,11 @@ public class AnalysisEngine {
   private int remoteGtpExpectedAnalyzeCommandId;
   private int remoteGtpNextAnalyzeCommandId = REMOTE_GTP_ANALYZE_COMMAND_ID_BASE;
   private int remoteGtpExpectedRulesCommandId;
-  private int remoteGtpExpectedSetupCommandId;
+  private ArrayDeque<PendingSetupCommand> remoteGtpSetupInFlight;
+  private boolean remoteGtpSetupDraining;
+  private boolean remoteGtpNonAnalyzeResponse;
+  private volatile AutomaticRequestUse automaticRequestUse;
+  private volatile Object retiredAutomaticUseIdentity;
   private int remoteGtpNextSetupCommandId = REMOTE_GTP_SETUP_COMMAND_ID_BASE;
   private long remoteGtpSetupAckGeneration;
   private ScheduledExecutorService remoteGtpSetupAckTimeoutExecutor;
@@ -179,6 +184,18 @@ public class AnalysisEngine {
   private Runnable sharedForegroundRestoreCompletion;
   private Runnable sharedForegroundRestoreFailure;
   private Leelaz.ExclusiveGtpLeaseAvailability foregroundLeaseAvailability;
+
+  private static final class AutomaticRequestUse {
+    private final Object identity;
+    private boolean retired;
+    private boolean pipeline;
+
+    private AutomaticRequestUse(Object identity) {
+      this.identity = identity;
+    }
+  }
+
+  private record PendingSetupCommand(int id, long deadlineNanos, boolean replay) {}
 
   public AnalysisEngine(boolean isPreLoad) throws IOException {
     this(
@@ -706,10 +723,19 @@ public class AnalysisEngine {
 
   private boolean handleRemoteGtpLine(String line) {
     String trimmed = line == null ? "" : line.trim();
+    if (automaticRequestRetired()) return true;
+    if (trimmed.startsWith("=") || trimmed.startsWith("?")) {
+      remoteGtpNonAnalyzeResponse =
+          !isExpectedRemoteGtpSuccessResponse(trimmed, remoteGtpExpectedAnalyzeCommandId)
+              && !isExpectedRemoteGtpErrorResponse(trimmed, remoteGtpExpectedAnalyzeCommandId);
+    } else if (trimmed.isEmpty() && remoteGtpNonAnalyzeResponse) {
+      remoteGtpNonAnalyzeResponse = false;
+      return true;
+    }
     if (remoteGtpExpectedRulesCommandId > 0) {
       return handleRemoteGtpRulesResponse(trimmed);
     }
-    if (remoteGtpExpectedSetupCommandId > 0) {
+    if (remoteGtpSetupInFlight != null && !remoteGtpSetupInFlight.isEmpty()) {
       return handleRemoteGtpSetupResponse(trimmed);
     }
     if (remoteGtpWaitingForStopAck) {
@@ -919,22 +945,25 @@ public class AnalysisEngine {
   }
 
   private boolean handleRemoteGtpSetupResponse(String line) {
-    int commandId = remoteGtpExpectedSetupCommandId;
-    if (isExpectedRemoteGtpErrorResponse(line, commandId)) {
-      failRemoteGtpSetup();
-      return true;
+    PendingSetupCommand acknowledged = null;
+    for (PendingSetupCommand pending : remoteGtpSetupInFlight) {
+      if (isExpectedRemoteGtpErrorResponse(line, pending.id())) {
+        failRemoteGtpSetup();
+        return true;
+      }
+      if (isExpectedRemoteGtpSuccessResponse(line, pending.id())) {
+        acknowledged = pending;
+        break;
+      }
     }
-    if (!isExpectedRemoteGtpSuccessResponse(line, commandId)) {
-      return line.isEmpty() || line.startsWith("=") || line.startsWith("?");
+    if (acknowledged == null) {
+      return line.isEmpty() || line.startsWith("=") || line.startsWith("?") || line.startsWith("info ");
     }
-    remoteGtpExpectedSetupCommandId = 0;
-    cancelRemoteGtpSetupAckTimeout();
-    if (startupDiagnosticAttempt != null) {
-      startupDiagnosticAttempt.ready();
-    }
-    if (!sendNextSharedForegroundSetupCommand()) {
-      failRemoteGtpSetup();
-    }
+    boolean oldest = remoteGtpSetupInFlight.peekFirst() == acknowledged;
+    remoteGtpSetupInFlight.remove(acknowledged);
+    if (oldest) scheduleOldestSetupTimeout();
+    if (startupDiagnosticAttempt != null) startupDiagnosticAttempt.ready();
+    if (!sendNextSharedForegroundSetupCommand()) failRemoteGtpSetup();
     return true;
   }
 
@@ -1043,6 +1072,7 @@ public class AnalysisEngine {
               synchronized (AnalysisEngine.this) {
                 if (!remoteGtpWaitingForStopAck
                     || !remoteGtpStopSent
+                    || automaticRequestRetired()
                     || generation != remoteGtpStopAckGeneration) {
                   return;
                 }
@@ -1292,6 +1322,16 @@ public class AnalysisEngine {
   }
 
   public void startRequestAllBranches(boolean showProgressDialog) {
+    if (useRemoteCompute) {
+      synchronized (this) {
+        dispatchAllBranches(showProgressDialog);
+      }
+    } else {
+      dispatchAllBranches(showProgressDialog);
+    }
+  }
+
+  private void dispatchAllBranches(boolean showProgressDialog) {
     if (!isLoaded) return;
     startRequestAllBranchesNow(showProgressDialog);
     finishSuccessfulEmptyRequestIfNeeded();
@@ -1320,6 +1360,16 @@ public class AnalysisEngine {
   }
 
   public void startRequest(int startMove, int endMove, boolean showProgressDialog) {
+    if (useRemoteCompute) {
+      synchronized (this) {
+        dispatchRequestRange(startMove, endMove, showProgressDialog);
+      }
+    } else {
+      dispatchRequestRange(startMove, endMove, showProgressDialog);
+    }
+  }
+
+  private void dispatchRequestRange(int startMove, int endMove, boolean showProgressDialog) {
     if (!isLoaded) return;
     startRequestNow(startMove, endMove, showProgressDialog);
     finishSuccessfulEmptyRequestIfNeeded();
@@ -1385,14 +1435,65 @@ public class AnalysisEngine {
 
 
   public int startRequestMissingMainline(boolean showProgressDialog) {
-    if (!isLoaded || shutdownRequested) return -1;
-    if (countMissingMainlineRequests() == 0) return 0;
-    return startRequestMissingMainlineNow(showProgressDialog);
+    if (useRemoteCompute) {
+      synchronized (this) {
+        return dispatchMissingMainline(showProgressDialog);
+      }
+    }
+    return dispatchMissingMainline(showProgressDialog);
   }
 
-  private int startRequestMissingMainlineNow(boolean showProgressDialog) {
+  private int dispatchMissingMainline(boolean showProgressDialog) {
     if (!isLoaded || shutdownRequested) return -1;
-    prepareRequestState(showProgressDialog);
+    if (countMissingMainlineRequests() == 0) return 0;
+    return startRequestMissingMainlineNow(showProgressDialog, null);
+  }
+
+  /** Marks this use explicitly, including automatic work on a preloaded worker. */
+  public int startAutomaticQuickAnalysisRequest(Object useIdentity) {
+    if (useRemoteCompute) {
+      synchronized (this) {
+        return dispatchAutomaticQuickAnalysis(useIdentity);
+      }
+    }
+    return dispatchAutomaticQuickAnalysis(useIdentity);
+  }
+
+  private int dispatchAutomaticQuickAnalysis(Object useIdentity) {
+    if (useIdentity == null || !isLoaded || shutdownRequested) return -1;
+    AutomaticRequestUse use = new AutomaticRequestUse(useIdentity);
+    automaticRequestUse = use;
+    synchronized (use) {
+      if (retiredAutomaticUseIdentity == useIdentity) use.retired = true;
+      if (use.retired) return -1;
+      use.pipeline = sharedForegroundLease != null && sharedForegroundLease.isActiveBuiltInZhizi();
+    }
+    if (countMissingMainlineRequests() == 0) return 0;
+    return startRequestMissingMainlineNow(false, use);
+  }
+
+  /** Revokes new send permits without waiting for a physical write or the request monitor. */
+  public void retireAutomaticQuickAnalysisRequest(Object useIdentity) {
+    retiredAutomaticUseIdentity = useIdentity;
+    AutomaticRequestUse use = automaticRequestUse;
+    if (use != null && use.identity == useIdentity) {
+      synchronized (use) {
+        use.retired = true;
+      }
+    }
+  }
+
+  private boolean automaticRequestRetired() {
+    AutomaticRequestUse use = automaticRequestUse;
+    if (use == null) return false;
+    synchronized (use) {
+      return use.retired;
+    }
+  }
+
+  private int startRequestMissingMainlineNow(boolean showProgressDialog, AutomaticRequestUse use) {
+    if (!isLoaded || shutdownRequested) return -1;
+    prepareRequestState(showProgressDialog, use);
     // Background completion also runs on reusable preloaded workers, not just AUTO_QUICK_ANALYSIS.
     preserveBoardPositionOnCompletion = true;
     captureCurrentGameIdentity();
@@ -1434,6 +1535,18 @@ public class AnalysisEngine {
 
   /** Starts a resumable, non-blocking whole-game stage with an explicit visit target. */
   public int startWholeGameRequest(
+      List<BoardHistoryNode> requestedNodes, int targetVisits, boolean includeOwnership) {
+    // GTP preparation shares state with ACK callbacks. Local JSON must keep draining stdout
+    // while a request write is blocked on process stdin, so it cannot hold the reader monitor.
+    if (useRemoteCompute) {
+      synchronized (this) {
+        return dispatchWholeGameRequest(requestedNodes, targetVisits, includeOwnership);
+      }
+    }
+    return dispatchWholeGameRequest(requestedNodes, targetVisits, includeOwnership);
+  }
+
+  private int dispatchWholeGameRequest(
       List<BoardHistoryNode> requestedNodes, int targetVisits, boolean includeOwnership) {
     if (!isLoaded || shutdownRequested) return -1;
     List<BoardHistoryNode> pendingNodes =
@@ -1540,6 +1653,11 @@ public class AnalysisEngine {
   }
 
   private void prepareRequestState(boolean showProgressDialog) {
+    prepareRequestState(showProgressDialog, null);
+  }
+
+  private void prepareRequestState(boolean showProgressDialog, AutomaticRequestUse use) {
+    automaticRequestUse = use;
     foregroundRestoreResult = ForegroundRestoreResult.NOT_REQUIRED;
     analyzeMap.clear();
     remoteGtpQueue().clear();
@@ -1670,6 +1788,8 @@ public class AnalysisEngine {
       Runnable afterForegroundRestore,
       Runnable afterForegroundRestoreFailure) {
     Consumer<ForegroundRestoreResult> failedRequestCallback = failureCallback;
+    AutomaticRequestUse use = automaticRequestUse;
+    if (use != null) retireAutomaticQuickAnalysisRequest(use.identity);
     analyzeMap.clear();
     remoteGtpQueue().clear();
     remoteGtpActiveJob = null;
@@ -1908,6 +2028,7 @@ public class AnalysisEngine {
   }
 
   private boolean startNextRemoteGtpJob() {
+    if (automaticRequestRetired()) return true;
     if (shutdownRequested) {
       requestDispatchFailed = true;
       return false;
@@ -1920,6 +2041,9 @@ public class AnalysisEngine {
     }
     if (sharedForegroundEngine != null && remoteGtpExpectedRulesCommandId > 0) {
       return true;
+    }
+    if (sharedForegroundEngine != null && sharedForegroundOriginalRules == null) {
+      return beginSharedForegroundRulesCapture();
     }
     RemoteGtpAnalyzeJob job = remoteGtpQueue().pollFirst();
     if (job == null) {
@@ -1986,27 +2110,60 @@ public class AnalysisEngine {
   }
 
   private boolean sendNextSharedForegroundSetupCommand() {
-    if (remoteGtpPendingSetupCommands != null && !remoteGtpPendingSetupCommands.isEmpty()) {
-      String command =
-          resolveSharedForegroundSetupCommand(remoteGtpPendingSetupCommands.removeFirst());
-      int commandId = nextRemoteGtpSetupCommandId();
-      remoteGtpExpectedSetupCommandId = commandId;
-      if (!sendCommand(commandId + " " + command)) {
-        remoteGtpExpectedSetupCommandId = 0;
-        return false;
+    if (remoteGtpSetupDraining) return true;
+    remoteGtpSetupDraining = true;
+    try {
+      if (remoteGtpSetupInFlight == null) remoteGtpSetupInFlight = new ArrayDeque<>();
+      while (remoteGtpPendingSetupCommands != null && !remoteGtpPendingSetupCommands.isEmpty()) {
+        if (automaticRequestRetired() || shutdownRequested) return true;
+        if (requestDispatchFailed || !requestStillTargetsCurrentGame()) return false;
+        String next = remoteGtpPendingSetupCommands.peekFirst();
+        AutomaticRequestUse use = automaticRequestUse;
+        boolean replay = use != null && use.pipeline && next.startsWith("play ");
+        int window = replay ? REMOTE_GTP_PREPARATION_WINDOW : 1;
+        if (remoteGtpSetupInFlight.size() >= window
+            || (!remoteGtpSetupInFlight.isEmpty()
+                && (!replay || !remoteGtpSetupInFlight.peekFirst().replay()))) return true;
+        String command = resolveSharedForegroundSetupCommand(remoteGtpPendingSetupCommands.removeFirst());
+        int commandId = nextRemoteGtpSetupCommandId();
+        remoteGtpSetupInFlight.addLast(new PendingSetupCommand(commandId,
+            System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS), replay));
+        if (remoteGtpSetupInFlight.size() == 1) scheduleOldestSetupTimeout();
+        // Registration and deadline precede physical output, including synchronous replies.
+        if (!sendAdmittedPreparationCommand(commandId + " " + command)) return false;
       }
-      scheduleRemoteGtpSetupAckTimeout(commandId);
+      if (requestDispatchFailed || !requestStillTargetsCurrentGame()) return false;
+      if (automaticRequestRetired() || shutdownRequested || !remoteGtpSetupInFlight.isEmpty()) return true;
+      String analyzeCommand = remoteGtpPendingAnalyzeCommand;
+      remoteGtpPendingAnalyzeCommand = null;
+      remoteGtpPendingSetupCommands = null;
+      if (analyzeCommand == null) return true;
+      int commandId = nextRemoteGtpAnalyzeCommandId();
+      remoteGtpExpectedAnalyzeCommandId = commandId;
+      return sendAdmittedPreparationCommand(commandId + " " + analyzeCommand);
+    } finally {
+      remoteGtpSetupDraining = false;
+    }
+  }
+
+  private boolean sendAdmittedPreparationCommand(String command) {
+    AutomaticRequestUse use = automaticRequestUse;
+    if (use != null) {
+      synchronized (use) {
+        if (use.retired || shutdownRequested || automaticRequestUse != use) return true;
+        // The permit ends here; retirement does not wait for or retract physical output.
+      }
+    } else if (shutdownRequested) {
       return true;
     }
-    String analyzeCommand = remoteGtpPendingAnalyzeCommand;
-    remoteGtpPendingAnalyzeCommand = null;
-    remoteGtpPendingSetupCommands = null;
-    if (analyzeCommand == null) {
-      return false;
-    }
-    int commandId = nextRemoteGtpAnalyzeCommandId();
-    remoteGtpExpectedAnalyzeCommandId = commandId;
-    return sendCommand(commandId + " " + analyzeCommand);
+    return sendCommand(command);
+  }
+
+  private void scheduleOldestSetupTimeout() {
+    PendingSetupCommand oldest = remoteGtpSetupInFlight.peekFirst();
+    if (oldest == null) cancelRemoteGtpSetupAckTimeout();
+    else scheduleRemoteGtpSetupAckTimeout(oldest.id(),
+        Math.max(0L, oldest.deadlineNanos() - System.nanoTime()));
   }
 
   private String resolveSharedForegroundSetupCommand(String command) {
@@ -2017,6 +2174,11 @@ public class AnalysisEngine {
   }
 
   private synchronized void scheduleRemoteGtpSetupAckTimeout(int commandId) {
+    scheduleRemoteGtpSetupAckTimeout(commandId,
+        TimeUnit.MILLISECONDS.toNanos(REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS));
+  }
+
+  private synchronized void scheduleRemoteGtpSetupAckTimeout(int commandId, long delayNanos) {
     cancelRemoteGtpSetupAckTimeout();
     long generation = ++remoteGtpSetupAckGeneration;
     remoteGtpSetupAckTimeout =
@@ -2026,15 +2188,18 @@ public class AnalysisEngine {
                   synchronized (AnalysisEngine.this) {
                     boolean stillWaiting =
                         generation == remoteGtpSetupAckGeneration
+                            && !automaticRequestRetired() && !shutdownRequested
                             && (remoteGtpExpectedRulesCommandId == commandId
-                                || remoteGtpExpectedSetupCommandId == commandId);
+                                || (remoteGtpSetupInFlight != null
+                                    && !remoteGtpSetupInFlight.isEmpty()
+                                    && remoteGtpSetupInFlight.peekFirst().id() == commandId));
                     if (stillWaiting) {
                       failRemoteGtpSetup();
                     }
                   }
                 },
-                REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS,
-                TimeUnit.MILLISECONDS);
+                delayNanos,
+                TimeUnit.NANOSECONDS);
   }
 
   private ScheduledExecutorService remoteGtpSetupAckTimeoutExecutor() {
@@ -2069,11 +2234,11 @@ public class AnalysisEngine {
   private boolean beginSharedForegroundRulesCapture() {
     int commandId = nextRemoteGtpSetupCommandId();
     remoteGtpExpectedRulesCommandId = commandId;
-    if (!sendCommand(commandId + " kata-get-rules")) {
+    scheduleRemoteGtpSetupAckTimeout(commandId);
+    if (!sendAdmittedPreparationCommand(commandId + " kata-get-rules")) {
       remoteGtpExpectedRulesCommandId = 0;
       return false;
     }
-    scheduleRemoteGtpSetupAckTimeout(commandId);
     return true;
   }
 
@@ -2090,9 +2255,14 @@ public class AnalysisEngine {
       return false;
     }
     sharedForegroundLeaseStarting = true;
+    AtomicReference<Leelaz.ForegroundAnalysisLease> boundLease = new AtomicReference<>();
     Leelaz.ForegroundAnalysisLeaseAcquisition acquisition =
         sharedForegroundEngine.acquireForegroundAnalysisLease(
-            this::parseLine,
+            line -> {
+              synchronized (AnalysisEngine.this) {
+                if (sharedForegroundLease == boundLease.get()) parseLine(line);
+              }
+            },
             lease -> {
               synchronized (AnalysisEngine.this) {
                 if (sharedForegroundLease != lease || !sharedForegroundLeaseStarting) {
@@ -2100,6 +2270,9 @@ public class AnalysisEngine {
                 }
                 sharedForegroundLeaseStarting = false;
                 sharedForegroundLeaseActive = true;
+                AutomaticRequestUse use = automaticRequestUse;
+                if (use != null) use.pipeline = lease.isActiveBuiltInZhizi();
+                if (automaticRequestRetired() || shutdownRequested) return;
                 if (!beginSharedForegroundRulesCapture()) {
                   requestDispatchFailed = true;
                   finishFailedRequestDispatch(!silentProgress);
@@ -2121,6 +2294,7 @@ public class AnalysisEngine {
             shouldReportSharedForegroundRestoreFailure(purpose()));
     Leelaz.ExclusiveGtpLeaseAvailability availability = acquisition.availability();
     sharedForegroundLease = acquisition.lease();
+    boundLease.set(sharedForegroundLease);
     foregroundLeaseAvailability = availability;
     if (availability != Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE) {
       sharedForegroundLeaseStarting = false;
@@ -2377,14 +2551,14 @@ public class AnalysisEngine {
 
   private synchronized void resetRemoteGtpSetupState() {
     remoteGtpExpectedRulesCommandId = 0;
-    remoteGtpExpectedSetupCommandId = 0;
+    if (remoteGtpSetupInFlight != null) remoteGtpSetupInFlight.clear();
     cancelRemoteGtpSetupAckTimeout();
     if (remoteGtpPendingSetupCommands != null) {
       remoteGtpPendingSetupCommands.clear();
     }
     remoteGtpPendingSetupCommands = null;
     remoteGtpPendingAnalyzeCommand = null;
-    sharedForegroundOriginalRules = null;
+    if (!sharedForegroundLeaseActive) sharedForegroundOriginalRules = null;
   }
 
   private static BoardHistoryNode firstHistoryActionNode(BoardHistoryNode node) {
@@ -2629,6 +2803,8 @@ public class AnalysisEngine {
   /** Closes request admission immediately without waiting for background dispatch or handback. */
   public void requestShutdown() {
     shutdownRequested = true;
+    AutomaticRequestUse use = automaticRequestUse;
+    if (use != null) retireAutomaticQuickAnalysisRequest(use.identity);
   }
 
   public void shutdown() {
@@ -2713,6 +2889,8 @@ public class AnalysisEngine {
   }
 
   public void clearRequestCallbacks() {
+    AutomaticRequestUse use = automaticRequestUse;
+    if (use != null) retireAutomaticQuickAnalysisRequest(use.identity);
     completionCallback = null;
     failureCallback = null;
     progressListener = null;
@@ -2744,6 +2922,9 @@ public class AnalysisEngine {
 
   private boolean requestStillTargetsCurrentGame() {
     return !shutdownRequested
+        && !automaticRequestRetired()
+        && (automaticRequestUse == null || sharedForegroundEngine == null
+            || Lizzie.leelaz == sharedForegroundEngine)
         && (requestHistoryRoot == null
             || (Lizzie.board != null
                 && Lizzie.board.getHistory() != null

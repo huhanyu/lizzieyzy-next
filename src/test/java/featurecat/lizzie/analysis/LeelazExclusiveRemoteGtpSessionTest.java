@@ -52,6 +52,72 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void preparationCapabilityRequiresAnActiveLeaseOnTheActualZhiziReader() throws Exception {
+    for (boolean zhizi : List.of(false, true)) {
+      Leelaz engine = reusableKatagoEngine(false, false);
+      ByteArrayOutputStream output = installOutput(engine);
+      try (var transport = new featurecat.lizzie.analysis.remote.ZhiziGtpTransport(null, "", "--kata-weight 10b512t");
+          ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+        Field readerField = Leelaz.class.getDeclaredField("readerStreamBinding");
+        readerField.setAccessible(true);
+        Object reader = readerField.get(engine);
+        if (zhizi) {
+          Field transportField = reader.getClass().getDeclaredField("remoteTransport");
+          transportField.setAccessible(true);
+          transportField.set(reader, transport);
+        }
+        var acquisition = engine.acquireForegroundAnalysisLease(line -> {}, lease -> {}, lease -> {}, false);
+        var lease = acquisition.lease();
+        assertNotNull(lease);
+        assertFalse(lease.isActiveBuiltInZhizi());
+        String stop = output.toString(StandardCharsets.UTF_8).trim();
+        dispatch(engine, "=" + stop.substring(0, stop.indexOf(' ')));
+        assertFalse(lease.isActiveBuiltInZhizi(), "initial stop needs its terminating blank line");
+        dispatch(engine, "");
+        assertEquals(zhizi, lease.isActiveBuiltInZhizi());
+        lease.release(() -> {}, () -> {});
+        assertFalse(lease.isActiveBuiltInZhizi());
+        engine.installFreshCommandOutputForTest(new ByteArrayOutputStream());
+        assertFalse(lease.isActiveBuiltInZhizi(), "a replacement reader cannot inherit eligibility");
+      }
+    }
+  }
+
+  @Test
+  void outstandingPreparationRepliesCannotReleaseLeaseOrResumePausedPonder() throws Exception {
+    try (RestoreHarness harness = RestoreHarness.open(true, false, true)) {
+      List<Integer> outstanding = List.of(101, 102, 103, 104, 105, 106, 107, 108);
+      List<String> moves = List.of("B D4", "W Q16", "B D16", "W Q4", "B C6", "W R3", "B F3", "W R14");
+      for (int i = 0; i < outstanding.size(); i++) {
+        assertTrue(harness.engine.sendExclusiveGtpCommand(outstanding.get(i) + " play " + moves.get(i)));
+      }
+      Method pause = LizzieFrame.class.getDeclaredMethod("pauseFromAnalysisControl");
+      pause.setAccessible(true);
+      pause.invoke(Lizzie.frame);
+      harness.board.currentMarker = 7;
+      String rules = "{\"koRule\":\"POSITIONAL\",\"scoringRule\":\"AREA\",\"taxRule\":\"NONE\"}";
+      assertTrue(harness.owner.setRestoreRules(rules));
+      assertTrue(harness.owner.release(harness.completions::incrementAndGet, () -> {}));
+      String finalStop = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).get();
+      assertFalse(harness.engine.sendExclusiveGtpCommand("109 play W Q16"));
+      for (int id : outstanding) {
+        dispatch(harness.engine, "=" + id);
+        dispatch(harness.engine, "");
+      }
+      assertEquals(0, harness.board.resendCount);
+      assertEquals(0, harness.completions.get());
+      dispatch(harness.engine, "=" + finalStop.substring(0, finalStop.indexOf(' ')));
+      dispatch(harness.engine, "");
+      waitUntil(() -> harness.board.resendCount == 1);
+      assertEquals(7, harness.board.restoredMarker);
+      assertTrue(harness.output.toString(StandardCharsets.UTF_8).contains("kata-set-rules " + rules));
+      completeForegroundRestore(harness.engine);
+      waitUntil(() -> harness.completions.get() == 1);
+      assertEquals(0, harness.engine.ponderCount);
+    }
+  }
+
+  @Test
   void initialStopCompletesThroughReaderWhileAnotherStrictRequestIsPending() throws Exception {
     Leelaz engine = reusableKatagoEngine(false, false);
     installInput(engine, "=800000001\n\n=800000000\n\n");
