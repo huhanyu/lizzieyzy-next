@@ -1826,6 +1826,33 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
+  void finiteSearchUsesTerminalOutputIntervalAndValidatesCapturedCloudBudget() throws Exception {
+    // Captured same-session interval1/10000 responses: zhizi-finite-02-interval1/gtp.jsonl:48,62.
+    List<String> payloads = List.of(
+        "info move D16 visits 2 edgeVisits 2 utility 0.302024 winrate 0.649161 scoreMean 0.942547 scoreStdev 12.9215 scoreLead 0.942547 scoreSelfplay 1.48592 prior 0.303762 lcb 0.109765 utilityLcb -1.20828 weight 6.4315 order 0 pv D16 Q16 rootInfo visits 4 utility 0.300658 winrate 0.64796 scoreMean 0.901886 scoreStdev 12.9778 scoreLead 0.901886 scoreSelfplay 1.47476 weight 12.6758 rawStWrError 0.0385319 rawStScoreError 0.357069 rawVarTimeLeft 57.3263",
+        "info move D16 visits 9 edgeVisits 9 utility 0.302071 winrate 0.646977 scoreMean 0.956443 scoreStdev 13.0187 scoreLead 0.956443 scoreSelfplay 1.50381 prior 0.303762 lcb 0.615269 utilityLcb 0.213288 weight 28.8412 order 0 pv D16 C4 Q16 rootInfo visits 17 utility 0.296664 winrate 0.64552 scoreMean 0.930724 scoreStdev 13.0863 scoreLead 0.930724 scoreSelfplay 1.48404 weight 54.6925 rawStWrError 0.0385319 rawStScoreError 0.357069 rawVarTimeLeft 57.3263");
+    for (int i = 0; i < payloads.size(); i++) {
+      try (PreparationFixture fixture = new PreparationFixture(true)) {
+        fixture.start();
+        fixture.finiteReady();
+        fixture.finishPreparation();
+        String search = fixture.last();
+        assertEquals("kata-search_analyze_cancellable B 10000 maxmoves 1 rootInfo true",
+            search.substring(search.indexOf(' ') + 1));
+        fixture.reply("=" + fixture.id(search));
+        fixture.reply(payloads.get(i));
+        assertEquals(0, fixture.target.getData().getPlayouts());
+        assertEquals(search, fixture.last());
+        fixture.reply("play D16");
+        assertEquals(0, fixture.target.getData().getPlayouts());
+        fixture.reply("");
+        assertEquals(i == 0 ? 0 : 17, fixture.target.getData().getPlayouts());
+        assertFalse(fixture.engine.isAnalysisInProgress());
+      }
+    }
+  }
+
+  @Test
   void finiteSearchWaitsForNaturalTerminalAndUsesRootVisits() throws Exception {
     try (PreparationFixture fixture = new PreparationFixture(true)) {
       fixture.start();

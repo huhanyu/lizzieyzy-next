@@ -225,6 +225,7 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - 同一自动用途凭据与实际内置智子 reader 的前台租约可在完整编号 `list_commands` 确认 `kata-search_analyze_cancellable`、`kata-get-param`、`kata-set-param`、`stop` 后选择有限搜索；每租约只选择一次。明确缺能力沿用持续分析，查询错误、畸形或超时失败；本地、其他远程与非自动请求保持原策略。
 - 有限搜索先以四条独立编号命令完整捕获 `maxVisits/maxPlayouts/maxTime/ponderingEnabled`，再以四条独立编号命令安装原批次 visits、同值 playouts、`1e20`、`false`；全部捕获成功前不覆盖，全部覆盖完整确认前不准备局面。各阶段固定截止不被后续 ACK 延长，参数小批次不扩大真实 play 窗口。租约在写出前持有原值及恢复义务，取消或不确定写出不能丢弃该义务。
 - 每节点以编号有限搜索的成功头、有效候选及 root visits、非取消 `play` 和终止空行为完成边界；root visits 至少达到原目标才通过同一结果准入采纳一次。选点不执行落子，不要求等于第一候选；中间 info 不触发逐节点 stop 或提前发布。完成 watchdog 从物理发送起计时，info 不续期。
+- 智子有限命令使用 `10000` 厘秒输出间隔，以取得自然结束时完整预算的最后 payload；持续分析保留既有输出间隔。该间隔不改变 visits/playouts 预算、不延长完成 watchdog，也不替代完整终态与 root visits 准入。
 - 有限搜索归还保留租约最终 stop，并等待原搜索终态与该 stop 的精确完整响应；随后由同一租约在原 reader 恢复所有可能覆盖的参数，全部成功确认后进入既有规则、最新棋盘和稳定恢复屏障。参数错误、缺 ACK、超时或 reader 替换均不能由后续 name 成功覆盖。恢复 ponder 参数不授予分析；预加载手动移交也等待该边界，用户暂停后的继续只恢复前台。
 
 ## ReadBoard 单次同步分析恢复（Issue #429 / Ticket 03）

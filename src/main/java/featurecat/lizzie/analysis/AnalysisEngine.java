@@ -2349,7 +2349,9 @@ public class AnalysisEngine {
       int commandId = nextRemoteGtpAnalyzeCommandId();
       remoteGtpExpectedAnalyzeCommandId = commandId;
       if (finitePreparation == FinitePreparation.READY) {
-        analyzeCommand = analyzeCommand.replaceFirst("kata-analyze", "kata-search_analyze_cancellable");
+        // Zhizi needs the terminal-output interval to expose the completed root budget.
+        analyzeCommand = analyzeCommand.replaceFirst(
+            "^kata-analyze ([BW]) [0-9]+", "kata-search_analyze_cancellable $1 10000");
         finitePlayed = false;
         remoteGtpStoppingMoves = null;
         remoteGtpStoppingRootInfo = null;
