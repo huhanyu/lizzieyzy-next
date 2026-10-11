@@ -84,6 +84,69 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void finiteHandbackRequiresSearchTerminalEvenWhenFinalStopCompletesFirst() throws Exception {
+    try (RestoreHarness harness = RestoreHarness.open(false, false, true);
+        var transport = new featurecat.lizzie.analysis.remote.ZhiziGtpTransport(null, "", "--kata-weight 10b512t")) {
+      bindZhiziReader(harness.engine, transport);
+      harness.board.restoreHistory = new BoardHistoryList(BoardData.empty(19, 19));
+      assertTrue(harness.owner.installSearchParameter(101, "maxVisits", "999", "16"));
+      assertTrue(harness.engine.sendExclusiveGtpCommand("102 kata-search_analyze_cancellable B 1 rootInfo true"));
+      assertTrue(harness.owner.release(harness.completions::incrementAndGet, () -> {}));
+      String stop = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).orElseThrow();
+      dispatch(harness.engine, "=" + stop.split(" ")[0]);
+      dispatch(harness.engine, "");
+      assertFalse(harness.output.toString(StandardCharsets.UTF_8).contains("kata-set-param maxVisits 999"));
+      assertEquals(0, harness.board.resendCount);
+      dispatch(harness.engine, "=102");
+      dispatch(harness.engine, "play cancelled");
+      assertEquals(0, harness.board.resendCount);
+      dispatch(harness.engine, "");
+      String restore = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).orElseThrow();
+      assertTrue(restore.endsWith("kata-set-param maxVisits 999"));
+      dispatch(harness.engine, "=" + restore.split(" ")[0]);
+      assertEquals(0, harness.board.resendCount);
+      dispatch(harness.engine, "");
+      waitUntil(() -> harness.board.resendCount == 1);
+      completeForegroundRestore(harness.engine);
+      waitUntil(() -> harness.completions.get() == 1);
+    }
+  }
+
+  @Test
+  void missingParameterRestoreBoundaryTimesOutDespiteUnrelatedNameSuccess() throws Exception {
+    try (RestoreHarness harness = RestoreHarness.open(false, false, true);
+        var transport = new featurecat.lizzie.analysis.remote.ZhiziGtpTransport(null, "", "--kata-weight 10b512t")) {
+      bindZhiziReader(harness.engine, transport);
+      assertTrue(harness.owner.installSearchParameter(101, "ponderingEnabled", "true", "false"));
+      harness.engine.releaseStopTimeoutMillis = 100L;
+      AtomicInteger failed = new AtomicInteger();
+      assertTrue(harness.owner.release(harness.completions::incrementAndGet, failed::incrementAndGet));
+      String stop = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).orElseThrow();
+      dispatch(harness.engine, "=" + stop.split(" ")[0]);
+      dispatch(harness.engine, "");
+      String restore = harness.output.toString(StandardCharsets.UTF_8).lines().reduce((a, b) -> b).orElseThrow();
+      dispatch(harness.engine, "=" + restore.split(" ")[0]);
+      dispatch(harness.engine, "=199999999 KataGo");
+      dispatch(harness.engine, "");
+      waitUntil(() -> failed.get() == 1);
+      assertEquals(0, harness.completions.get());
+      assertEquals(0, harness.board.resendCount);
+      assertFalse(harness.engine.isLoaded());
+      assertEquals(0, harness.engine.ponderCount);
+    }
+  }
+
+  private static void bindZhiziReader(Leelaz engine,
+      featurecat.lizzie.analysis.remote.ZhiziGtpTransport transport) throws Exception {
+    Field readerField = Leelaz.class.getDeclaredField("readerStreamBinding");
+    readerField.setAccessible(true);
+    Object reader = readerField.get(engine);
+    Field transportField = reader.getClass().getDeclaredField("remoteTransport");
+    transportField.setAccessible(true);
+    transportField.set(reader, transport);
+  }
+
+  @Test
   void outstandingPreparationRepliesCannotReleaseLeaseOrResumePausedPonder() throws Exception {
     try (RestoreHarness harness = RestoreHarness.open(true, false, true)) {
       List<Integer> outstanding = List.of(101, 102, 103, 104, 105, 106, 107, 108);

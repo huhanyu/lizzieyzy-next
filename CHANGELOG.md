@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Use cancellable, visits-bounded searches for eligible built-in Zhizi automatic game analysis after checking capabilities. Accept complete natural results without per-position stop commands, and restore borrowed search parameters, rules and the latest board before cancellation or manual handoff releases the engine. Other engines and unsupported sessions retain their existing analysis path.
 - Keep pending game imports recoverable when comparison mode is exited during a local engine restart, including exit before the queued restart notification is delivered: retain the admitted restart token, then reconfirm the remaining primary engine before releasing the import gate and resuming analysis.
 - Show foreground recovery guidance on the first Space or analysis-button operation even while automatic quick analysis is retrying after a failed handback; preserve pause intent and the task, while keeping normal pause/cancel behavior for healthy engines.
 - Resume pending game synchronization after an explicit local engine restart, so changing games after a quick-analysis handback failure no longer leaves Space blocked. Reconfirm rules and position on the new reader, preserve pause and failure gates, and reject stale game or engine callbacks.

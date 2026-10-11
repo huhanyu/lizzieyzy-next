@@ -356,12 +356,14 @@ final class AutomaticQuickAnalysisEngineAdapter implements AutomaticQuickAnalysi
               synchronized (dispatchLock) {
                 engine.clearRequestCallbacks();
               }
-              onEdt(
-                  () -> {
-                    if (owner == this) owner = null;
-                    finished.accept(requestRestore);
-                    if (!transfer) ensureWorker();
-                  });
+              engine.returnAutomaticQuickAnalysisUse(
+                  restore -> onEdt(
+                      () -> {
+                        if (owner == this) owner = null;
+                        finished.accept(requestRestore == ForegroundRestoreResult.FAILED
+                            || restore == ForegroundRestoreResult.NOT_REQUIRED ? requestRestore : restore);
+                        if (!transfer) ensureWorker();
+                      }));
             });
         return;
       }

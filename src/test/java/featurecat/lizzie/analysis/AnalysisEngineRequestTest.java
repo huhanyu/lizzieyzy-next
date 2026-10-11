@@ -1455,15 +1455,45 @@ class AnalysisEngineRequestTest {
     void reply(String line) throws Exception { dispatchExclusiveLine(foreground, line); }
     void ack(String command) throws Exception {
       reply("=" + id(command) + (command.endsWith("kata-get-rules")
-          ? " {\"koRule\":\"POSITIONAL\",\"scoringRule\":\"AREA\",\"taxRule\":\"NONE\"}" : ""));
+          ? " {\"koRule\":\"POSITIONAL\",\"scoringRule\":\"AREA\",\"taxRule\":\"NONE\"}"
+          : command.endsWith("list_commands") ? " kata-analyze stop" : ""));
       reply("");
     }
     void reachReplay() throws Exception {
-      for (int i = 0; i < 8 && plays().isEmpty(); i++) {
+      for (int i = 0; i < 10 && plays().isEmpty(); i++) {
         assertFalse(hasAnalyze());
         ack(last());
       }
       assertFalse(plays().isEmpty());
+    }
+    void finiteReady() throws Exception {
+      ack(last());
+      String query = last();
+      assertTrue(query.endsWith(" list_commands"));
+      reply("=" + id(query) + " kata-search_analyze_cancellable kata-get-param kata-set-param stop");
+      reply("");
+      List<String> captures = commands().stream().filter(s -> s.contains(" kata-get-param ")).toList();
+      assertEquals(4, captures.size());
+      for (String command : captures) {
+        reply("=" + id(command) + (command.endsWith("ponderingEnabled") ? " true" : " 1234"));
+        reply("");
+      }
+      List<String> installs = commands().stream().filter(s -> s.contains(" kata-set-param ")).toList();
+      assertEquals(4, installs.size());
+      for (String command : installs) ack(command);
+    }
+    void finishPreparation() throws Exception {
+      java.util.Set<String> acknowledged = new java.util.HashSet<>();
+      for (int round = 0; round < 30; round++) {
+        if (last().contains(" kata-search_analyze_cancellable ")) return;
+        for (String command : List.copyOf(commands())) {
+          if ((command.contains(" kata-get-rules") || command.contains(" boardsize ")
+              || command.contains(" clear_board") || command.contains(" komi ")
+              || command.contains(" kata-set-rules ") || command.contains(" play ")
+              || command.contains(" set_position")) && acknowledged.add(command)) ack(command);
+        }
+      }
+      throw new AssertionError("finite search was not dispatched");
     }
     @Override public void close() throws Exception {
       engine.requestShutdown();
@@ -1471,6 +1501,348 @@ class AnalysisEngineRequestTest {
       closeExclusiveSessionForTest(foreground);
       Lizzie.gtpConsole = oldConsole;
       environment.close();
+    }
+  }
+
+  @Test
+  void automaticZhiziSelectsFiniteSearchOnlyAfterCompleteCapabilities() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true)) {
+      fixture.start();
+      fixture.ack(fixture.last());
+      String query = fixture.last();
+      assertTrue(query.endsWith(" list_commands"));
+      fixture.reply("=" + fixture.id(query) + " kata-search_analyze_cancellable");
+      fixture.reply("kata-get-param");
+      fixture.reply("kata-set-param");
+      fixture.reply("stop");
+      assertEquals(query, fixture.last());
+      fixture.reply("");
+      assertEquals(4, fixture.commands().stream().filter(s -> s.contains(" kata-get-param ")).count());
+      assertFalse(fixture.commands().stream().anyMatch(s -> s.contains(" kata-set-param ")));
+    }
+  }
+
+  @Test
+  void automaticRequestAcceptsMultipleNodesAndReturnsLease() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true, "(;SZ[19];B[dd];W[pp])")) {
+      BoardHistoryNode first = fixture.history.getStart().next().orElseThrow();
+      first.getData().setPlayouts(0);
+      List<ForegroundRestoreResult> completed = new CopyOnWriteArrayList<>();
+      fixture.engine.setCompletionCallback(completed::add);
+      assertEquals(2, fixture.engine.startAutomaticQuickAnalysisRequest(fixture.use));
+      fixture.finiteReady();
+      java.util.Set<String> acknowledged = new java.util.HashSet<>(fixture.commands());
+      acknowledged.remove(fixture.last());
+      for (BoardHistoryNode target : List.of(first, fixture.target)) {
+        for (int round = 0; round < 20; round++) {
+          if (fixture.last().contains(" kata-search_analyze_cancellable ")) break;
+          for (String command : List.copyOf(fixture.commands())) {
+            if (acknowledged.add(command)) fixture.ack(command);
+          }
+        }
+        String search = fixture.last();
+        assertTrue(search.contains(" kata-search_analyze_cancellable "));
+        acknowledged.add(search);
+        fixture.reply("=" + fixture.id(search));
+        fixture.reply(remoteGtpInfoLine(3, 17, 61.0, 3.5));
+        assertEquals(0, target.getData().getPlayouts(), "info must remain pending");
+        assertEquals(search, fixture.last());
+        fixture.reply("play pass");
+        fixture.reply("");
+        assertEquals(17, target.getData().getPlayouts());
+      }
+      String finalStop = fixture.last();
+      assertTrue(finalStop.endsWith(" stop"));
+      assertTrue(completed.isEmpty());
+      int cursor = fixture.commands().size();
+      fixture.ack(finalStop);
+      int restoreStart = cursor;
+      fixture.history.setHead(first);
+      Method response = Leelaz.class.getDeclaredMethod("runPendingResponseHandlerForLine", String.class);
+      response.setAccessible(true);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (completed.isEmpty() && System.nanoTime() < deadline) {
+        List<String> commands = fixture.commands();
+        while (cursor < commands.size()) {
+          String command = commands.get(cursor++);
+          String token = command.split(" ", 2)[0];
+          String reply = "=" + (token.matches("[0-9]+") ? token : "");
+          if (!dispatchExclusiveLine(fixture.foreground, reply)) response.invoke(fixture.foreground, reply);
+          dispatchExclusiveLine(fixture.foreground, "");
+        }
+        javax.swing.SwingUtilities.invokeAndWait(() -> {});
+        Thread.sleep(5);
+      }
+      assertEquals(List.of(ForegroundRestoreResult.SUCCEEDED), completed, fixture.commands().toString());
+      assertFalse(fixture.foreground.hasForegroundAnalysisLeaseWorkInProgress());
+      assertEquals(2, fixture.commands().stream().filter(s -> s.endsWith(" stop")).count());
+      assertSame(first, fixture.history.getCurrentHistoryNode());
+      assertTrue(fixture.commands().subList(restoreStart, fixture.commands().size()).stream()
+          .anyMatch(s -> s.endsWith(" play B D16")), fixture.commands().toString());
+    }
+  }
+
+  @Test
+  void retiringDuringParameterWriteRestoresThePermittedWriteWithoutSendingTheRest() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true)) {
+      fixture.start();
+      fixture.ack(fixture.last());
+      fixture.reply("=" + fixture.id(fixture.last())
+          + " kata-search_analyze_cancellable kata-get-param kata-set-param stop");
+      fixture.reply("");
+      List<String> captures = fixture.commands().stream().filter(s -> s.contains(" kata-get-param ")).toList();
+      for (int i = 0; i < 3; i++) {
+        fixture.reply("=" + fixture.id(captures.get(i)) + " 1234");
+        fixture.reply("");
+      }
+      var entered = new java.util.concurrent.CountDownLatch(1);
+      var proceed = new java.util.concurrent.CountDownLatch(1);
+      var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+      fixture.foreground.installCommandOutputForTest(new ByteArrayOutputStream() {
+        @Override public synchronized void flush() throws IOException {
+          entered.countDown();
+          try { if (!proceed.await(5, TimeUnit.SECONDS)) throw new IOException("write gate not released"); }
+          catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IOException(e); }
+          fixture.output.write(toByteArray());
+          reset();
+        }
+      });
+      Thread writer = new Thread(() -> {
+        try {
+          fixture.reply("=" + fixture.id(captures.get(3)) + " true");
+          fixture.reply("");
+        } catch (Throwable e) { failure.set(e); }
+      });
+      writer.start();
+      try {
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        fixture.engine.retireAutomaticQuickAnalysisRequest(fixture.use);
+      } finally {
+        proceed.countDown();
+        writer.join(5000);
+      }
+      assertFalse(writer.isAlive());
+      assertNull(failure.get());
+      assertEquals(1, fixture.commands().stream().filter(s -> s.contains(" kata-set-param ")).count());
+      fixture.engine.normalQuit();
+      fixture.ack(fixture.last());
+      List<String> writes = fixture.commands().stream().filter(s -> s.contains(" kata-set-param ")).toList();
+      assertEquals(2, writes.size());
+      assertTrue(writes.get(1).endsWith(" maxVisits 1234"));
+      assertTrue(fixture.plays().isEmpty());
+    }
+  }
+
+  @Test
+  void replacedReaderCannotReceiveOldFiniteParameterRestoration() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true)) {
+      fixture.start();
+      fixture.finiteReady();
+      Object oldReader = getField(Leelaz.class, fixture.foreground, "readerStreamBinding");
+      var replacementOutput = new ByteArrayOutputStream();
+      fixture.foreground.installFreshCommandOutputForTest(replacementOutput);
+      fixture.engine.normalQuit();
+      Method dispatch = Leelaz.class.getDeclaredMethod("dispatchExclusiveGtpLine", oldReader.getClass(), String.class);
+      dispatch.setAccessible(true);
+      assertFalse((boolean) dispatch.invoke(fixture.foreground, oldReader, "=800000001"));
+      assertEquals("", replacementOutput.toString(StandardCharsets.UTF_8));
+      assertEquals(0, fixture.target.getData().getPlayouts());
+    }
+  }
+
+  @Test
+  void capabilityErrorsFailWithoutFallbackOrParameterWrites() throws Exception {
+    for (String response : List.of("error", "empty", "malformed", "duplicate")) {
+      try (PreparationFixture fixture = new PreparationFixture(true)) {
+        fixture.start();
+        fixture.ack(fixture.last());
+        String query = fixture.last();
+        fixture.reply((response.equals("error") ? "?" : "=") + fixture.id(query)
+            + (response.equals("malformed") ? " {broken}" : ""));
+        if (response.equals("duplicate")) fixture.reply("=" + fixture.id(query));
+        fixture.reply("");
+        assertFalse(fixture.engine.isAnalysisInProgress(), response);
+        assertFalse(fixture.commands().stream().anyMatch(s -> s.contains(" kata-get-param ")
+            || s.contains(" kata-set-param ") || s.contains(" kata-analyze ")));
+      }
+    }
+  }
+
+  @Test
+  void finitePreparationDeadlinesDoNotRenewAfterLaterReplies() throws Exception {
+    for (int stage = 0; stage < 3; stage++) {
+      try (PreparationFixture fixture = new PreparationFixture(true);
+          ControlledSetupScheduler clock = new ControlledSetupScheduler()) {
+        setField(AnalysisEngine.class, fixture.engine, "remoteGtpSetupAckTimeoutExecutor", clock);
+        fixture.start();
+        fixture.ack(fixture.last());
+        if (stage > 0) {
+          fixture.reply("=" + fixture.id(fixture.last())
+              + " kata-search_analyze_cancellable kata-get-param kata-set-param stop");
+          fixture.reply("");
+          List<String> captures = fixture.commands().stream()
+              .filter(s -> s.contains(" kata-get-param ")).toList();
+          for (int i = stage == 1 ? 1 : 0; i < 4; i++) {
+            fixture.reply("=" + fixture.id(captures.get(i)) + (i == 3 ? " true" : " 1234"));
+            fixture.reply("");
+          }
+        }
+        int scheduled = clock.callbacks.size();
+        Runnable deadline = clock.callbacks.get(scheduled - 1);
+        if (stage == 2) {
+          List<String> installs = fixture.commands().stream()
+              .filter(s -> s.contains(" kata-set-param ")).toList();
+          for (int i = 1; i < 4; i++) fixture.ack(installs.get(i));
+        }
+        assertEquals(scheduled, clock.callbacks.size());
+        deadline.run();
+        assertFalse(fixture.engine.isAnalysisInProgress());
+        assertEquals(0, fixture.target.getData().getPlayouts());
+        assertTrue(fixture.plays().isEmpty());
+      }
+    }
+  }
+
+  @Test
+  void parameterStagesRequireEveryCompleteReplyAndRetirementPreservesObligations() throws Exception {
+    for (boolean install : List.of(false, true)) {
+      try (PreparationFixture fixture = new PreparationFixture(true);
+          ControlledSetupScheduler clock = new ControlledSetupScheduler()) {
+        setField(AnalysisEngine.class, fixture.engine, "remoteGtpSetupAckTimeoutExecutor", clock);
+        fixture.start();
+        fixture.ack(fixture.last());
+        fixture.reply("=" + fixture.id(fixture.last())
+            + " kata-search_analyze_cancellable kata-get-param kata-set-param stop");
+        fixture.reply("");
+        List<String> captures = fixture.commands().stream().filter(s -> s.contains(" kata-get-param ")).toList();
+        assertEquals(4, captures.size());
+        for (int i = 1; i < 4; i++) {
+          fixture.reply("=" + fixture.id(captures.get(i)) + (i == 3 ? " true" : " 1234"));
+          fixture.reply("");
+        }
+        assertFalse(fixture.commands().stream().anyMatch(s -> s.contains(" kata-set-param ")));
+        if (install) {
+          fixture.reply("=" + fixture.id(captures.get(0)) + " 1234");
+          assertFalse(fixture.commands().stream().anyMatch(s -> s.contains(" kata-set-param ")));
+          fixture.reply("");
+          List<String> writes = fixture.commands().stream().filter(s -> s.contains(" kata-set-param ")).toList();
+          assertEquals(4, writes.size());
+          for (int i = 1; i < 4; i++) fixture.ack(writes.get(i));
+        }
+        assertTrue(fixture.plays().isEmpty());
+        fixture.engine.retireAutomaticQuickAnalysisRequest(fixture.use);
+        for (Runnable callback : List.copyOf(clock.callbacks)) callback.run();
+        fixture.engine.normalQuit();
+        if (install) fixture.ack(fixture.last());
+        long parameterWrites = fixture.commands().stream().filter(s -> s.contains(" kata-set-param ")).count();
+        assertEquals(install ? 8 : 0, parameterWrites);
+        assertEquals(0, fixture.target.getData().getPlayouts());
+      }
+    }
+  }
+
+  @Test
+  void finiteTerminalRejectsMissingRootInsufficientBudgetAndCancelled() throws Exception {
+    for (String variant : List.of("missing", "legacy", "low", "cancelled", "duplicate", "error")) {
+      try (PreparationFixture fixture = new PreparationFixture(true)) {
+        fixture.start();
+        fixture.finiteReady();
+        fixture.finishPreparation();
+        String search = fixture.last();
+        fixture.reply("=" + fixture.id(search));
+        if (!variant.equals("missing")) fixture.reply(remoteGtpInfoLine(3, 61.0, 3.5)
+            + (variant.equals("legacy") ? "" : " rootInfo visits "
+                + (variant.equals("low") ? "15" : "17") + " winrate 0.61 scoreLead 3.5"));
+        if (variant.equals("duplicate")) fixture.reply("=" + fixture.id(search));
+        else if (variant.equals("error")) fixture.reply("?" + fixture.id(search) + " failed");
+        else {
+          fixture.reply(variant.equals("cancelled") ? "play cancelled" : "play Q16");
+          fixture.reply("");
+        }
+        assertEquals(0, fixture.target.getData().getPlayouts(), variant);
+        assertFalse(fixture.engine.isAnalysisInProgress(), variant);
+      }
+    }
+  }
+
+  @Test
+  void finiteSearchWatchdogIgnoresIntermediateInfoAndUnrelatedResponses() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true);
+        ControlledSetupScheduler clock = new ControlledSetupScheduler()) {
+      setField(AnalysisEngine.class, fixture.engine, "remoteGtpSetupAckTimeoutExecutor", clock);
+      fixture.start();
+      fixture.finiteReady();
+      fixture.finishPreparation();
+      String search = fixture.last();
+      Runnable deadline = clock.callbacks.get(clock.callbacks.size() - 1);
+      fixture.reply("=199999999 unrelated");
+      fixture.reply(remoteGtpInfoLine(99, 61.0, 3.5));
+      fixture.reply("");
+      fixture.reply("=" + fixture.id(search));
+      for (int i = 0; i < 4; i++) fixture.reply(remoteGtpInfoLine(3, 17, 61.0, 3.5));
+      assertEquals(search, fixture.last());
+      deadline.run();
+      assertFalse(fixture.engine.isAnalysisInProgress());
+      assertEquals(0, fixture.target.getData().getPlayouts());
+    }
+  }
+
+  @Test
+  void cancelledFiniteSearchRestoresAllParametersOnlyAfterBothStopBoundaries() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true)) {
+      fixture.start();
+      fixture.finiteReady();
+      fixture.finishPreparation();
+      String search = fixture.last();
+      fixture.reply("=" + fixture.id(search));
+      fixture.reply(remoteGtpInfoLine(3, 17, 61.0, 3.5));
+      fixture.engine.retireAutomaticQuickAnalysisRequest(fixture.use);
+      fixture.engine.requestShutdown();
+      fixture.engine.normalQuit();
+      String stop = fixture.last();
+      assertTrue(stop.endsWith(" stop"));
+      fixture.reply("play cancelled");
+      fixture.reply("");
+      assertEquals(stop, fixture.last());
+      fixture.reply("=" + fixture.id(stop));
+      assertEquals(stop, fixture.last());
+      fixture.reply("");
+      List<String> restores = fixture.commands().stream().filter(s -> s.contains(" kata-set-param "))
+          .skip(4).toList();
+      assertEquals(4, restores.size());
+      assertTrue(restores.get(0).endsWith(" maxVisits 1234"));
+      assertTrue(restores.get(1).endsWith(" maxPlayouts 1234"));
+      assertTrue(restores.get(2).endsWith(" maxTime 1234"));
+      assertTrue(restores.get(3).endsWith(" ponderingEnabled true"));
+      for (int i = 1; i < restores.size(); i++) fixture.ack(restores.get(i));
+      assertTrue(fixture.foreground.hasForegroundAnalysisLeaseWorkInProgress());
+      fixture.reply("=199999999 name");
+      fixture.reply("");
+      assertEquals(0, fixture.target.getData().getPlayouts());
+      assertTrue(fixture.foreground.hasForegroundAnalysisLeaseWorkInProgress());
+      fixture.reply("?" + fixture.id(restores.get(0)) + " restore rejected");
+      assertFalse(fixture.foreground.isLoaded());
+    }
+  }
+
+  @Test
+  void finiteSearchWaitsForNaturalTerminalAndUsesRootVisits() throws Exception {
+    try (PreparationFixture fixture = new PreparationFixture(true)) {
+      fixture.start();
+      fixture.finiteReady();
+      fixture.finishPreparation();
+      String search = fixture.last();
+      long stops = fixture.commands().stream().filter(s -> s.endsWith(" stop")).count();
+      fixture.reply("=" + fixture.id(search));
+      fixture.reply(remoteGtpInfoLine(3, 61.0, 3.5) + " rootInfo visits 17 winrate 0.61 scoreLead 3.5");
+      assertEquals(0, fixture.target.getData().getPlayouts());
+      assertEquals(search, fixture.last());
+      fixture.reply("play pass");
+      assertEquals(0, fixture.target.getData().getPlayouts());
+      fixture.reply("");
+      assertEquals(17, fixture.target.getData().getPlayouts());
+      assertEquals(stops + 1, fixture.commands().stream().filter(s -> s.endsWith(" stop")).count(),
+          "only lease handback stop remains");
     }
   }
 

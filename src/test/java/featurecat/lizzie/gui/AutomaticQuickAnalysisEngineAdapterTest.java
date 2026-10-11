@@ -370,6 +370,7 @@ class AutomaticQuickAnalysisEngineAdapterTest {
 
   private void assertManualHandoff(boolean dispatched) throws Exception {
     PhysicalWorker worker = worker();
+    worker.delayTransfer = dispatched;
     Client automatic = new Client();
     onEdt(automatic::acquire);
     executor.run(STARTUP);
@@ -393,10 +394,19 @@ class AutomaticQuickAnalysisEngineAdapterTest {
     Consumer<ForegroundRestoreResult> staleFailure = worker.failure;
     // The manual owner is authorized only once the transfer callback has run.
     executor.run(RETURN);
+    if (dispatched) {
+      onEdt(() -> {
+        assertTrue(automatic.releases.isEmpty(), "manual use must wait for finite parameter handback");
+        assertSame(worker, Lizzie.frame.analysisEngine);
+      });
+      worker.transferFinished.accept(ForegroundRestoreResult.SUCCEEDED);
+      flushEdt();
+    }
     List<ForegroundRestoreResult> manualResults = new ArrayList<>();
     onEdt(
         () -> {
-          assertEquals(List.of(ForegroundRestoreResult.NOT_REQUIRED), automatic.releases);
+          assertEquals(List.of(dispatched ? ForegroundRestoreResult.SUCCEEDED
+              : ForegroundRestoreResult.NOT_REQUIRED), automatic.releases);
           assertNull(adapter.ownedEngine());
           assertSame(worker, Lizzie.frame.analysisEngine);
           worker.setCompletionCallback(manualResults::add);
@@ -570,6 +580,8 @@ class AutomaticQuickAnalysisEngineAdapterTest {
     private Consumer<ForegroundRestoreResult> completion;
     private Consumer<ForegroundRestoreResult> failure;
     private Consumer<ForegroundRestoreResult> closeFinished;
+    private boolean delayTransfer;
+    private Consumer<ForegroundRestoreResult> transferFinished;
 
     private PhysicalWorker() throws IOException {
       super(false);
@@ -679,6 +691,12 @@ class AutomaticQuickAnalysisEngineAdapterTest {
     public void requestShutdown() {
       super.requestShutdown();
       admissionClosed = true;
+    }
+
+    @Override
+    public void returnAutomaticQuickAnalysisUse(Consumer<ForegroundRestoreResult> finished) {
+      if (delayTransfer) transferFinished = finished;
+      else finished.accept(ForegroundRestoreResult.NOT_REQUIRED);
     }
 
     @Override
