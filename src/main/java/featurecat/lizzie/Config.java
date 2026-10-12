@@ -630,7 +630,8 @@ public class Config {
 
   private static String rebindManagedBundledCommand(String command, Path currentRoot) {
     List<String> parts = Utils.splitCommand(command);
-    if (parts.size() < 2 || !"gtp".equals(parts.get(1))) return command;
+    if (parts.size() < 2
+        || !("gtp".equals(parts.get(1)) || "analysis".equals(parts.get(1)))) return command;
     Path executable = Path.of(parts.get(0));
     Path platform = executable.getParent();
     Path katago = platform == null ? null : platform.getParent();
@@ -722,8 +723,8 @@ public class Config {
     }
     // Rebind package paths while retaining model/config choices made by Auto Setup.
     String bundledCommand = bundledEngine.optString("command");
-    if (!BundledKataGoProfile.isManaged(bundledEngine)
-        || BundledKataGoProfile.isDefaultCommand(bundledCommand, bundledConfig.appRoot, true)) {
+    boolean managedBundledProfile = BundledKataGoProfile.isManaged(bundledEngine);
+    if (!managedBundledProfile) {
       bundledCommand = bundledConfig.engineCommand;
     } else {
       bundledCommand = rebindManagedBundledCommand(bundledCommand, bundledConfig.appRoot);
@@ -737,11 +738,16 @@ public class Config {
                 ui.optBoolean("analysis-engine-command-customized", false),
                 ui.optString("analysis-engine-command", ""));
         String analysisCommand = ui.optString("analysis-engine-command", "");
+        boolean brokenAnalysisLauncher = isClearlyBrokenJavaJarCommand(analysisCommand);
         if ((!analysisCustomized
                 && !analysisCommandUsesJavaSsh(leelaz)
                 && isManagedBundledDefaultCommand(analysisCommand, bundledConfig.appRoot))
-            || isClearlyBrokenJavaJarCommand(analysisCommand)) {
-          ui.put("analysis-engine-command", bundledConfig.analysisCommand);
+            || brokenAnalysisLauncher) {
+          ui.put(
+              "analysis-engine-command",
+              managedBundledProfile && !brokenAnalysisLauncher && !analysisCommand.isBlank()
+                  ? rebindManagedBundledCommand(analysisCommand, bundledConfig.appRoot)
+                  : bundledConfig.analysisCommand);
           ui.put("analysis-engine-command-customized", false);
         }
         if (bundledConfig.transformerDefault) {

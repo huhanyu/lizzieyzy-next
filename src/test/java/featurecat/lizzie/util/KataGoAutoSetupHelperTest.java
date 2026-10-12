@@ -37,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
@@ -1908,8 +1909,14 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void autoSetupWeightChangeRetainsRenamedProfileAcrossRestarts(boolean newAutoSetup)
+  @CsvSource({
+    "false, alternate.bin.gz",
+    "true, alternate.bin.gz",
+    "false, kata1-zhizi-b28c512nbt-muonfd2.bin.gz",
+    "true, kata1-zhizi-b28c512nbt-muonfd2.bin.gz"
+  })
+  void autoSetupWeightChangeRetainsRenamedProfileAcrossRestarts(
+      boolean newAutoSetup, String weightFileName)
       throws Exception {
     Path root = Files.createTempDirectory("katago-managed-weight-restart");
     Files.createDirectories(root.resolve("save"));
@@ -1922,7 +1929,7 @@ public class KataGoAutoSetupHelperTest {
     Path gtp = touch(root.resolve("engines/katago/configs/gtp.cfg"));
     touch(root.resolve("engines/katago/configs/analysis.cfg"));
     touch(root.resolve("weights/default.bin.gz"));
-    Path alternate = touch(root.resolve("weights/alternate.bin.gz"));
+    Path alternate = touch(root.resolve("weights").resolve(weightFileName));
     withUserDirAndConfig(
         root,
         () -> {
@@ -1938,9 +1945,13 @@ public class KataGoAutoSetupHelperTest {
           entries.get(0).komi = 6.5F;
           Utils.saveEngineSettings(entries);
           String expectedCommand = engineData("", engine, gtp, alternate, true).commands;
+          String expectedAnalysis = Lizzie.config.analysisEngineCommand;
 
           for (int restart = 0; restart < 4; restart++) {
             Lizzie.config = ConfigTestHelper.createBootstrapped(root);
+            // Verify bootstrap itself before the later path-repair hook could hide a reset.
+            assertEquals(expectedCommand, Utils.getEngineData().get(0).commands);
+            assertEquals(expectedAnalysis, Lizzie.config.analysisEngineCommand);
             Utils.applyMaintainedDefaultSettings();
             entries = Utils.getEngineData();
             assertEquals(List.of(expectedId), entries.stream().map(entry -> entry.id).toList());
@@ -1951,6 +1962,8 @@ public class KataGoAutoSetupHelperTest {
             assertTrue(retained.preload);
             assertTrue(retained.isDefault);
             assertEquals(0, Lizzie.config.uiConfig.getInt("default-engine"));
+            assertEquals(expectedAnalysis, Lizzie.config.analysisEngineCommand);
+            assertTrue(BundledKataGoProfile.isManaged(retained));
           }
           KataGoAutoSetupHelper.applyAutoSetup(KataGoAutoSetupHelper.inspectLocalSetup(), false);
           assertEquals(List.of(expectedId),
@@ -1959,8 +1972,14 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void movedManagedWeightProfileRebindsWithoutChangingManualDefault(boolean removeOldEngine)
+  @CsvSource({
+    "false, alternate.bin.gz",
+    "true, alternate.bin.gz",
+    "false, kata1-zhizi-b28c512nbt-muonfd2.bin.gz",
+    "true, kata1-zhizi-b28c512nbt-muonfd2.bin.gz"
+  })
+  void movedManagedWeightProfileRebindsWithoutChangingManualDefault(
+      boolean removeOldEngine, String weightFileName)
       throws Exception {
     Path previousRoot = Files.createTempDirectory("katago previous package ");
     Path currentRoot = Files.createTempDirectory("katago current package ");
@@ -1972,7 +1991,7 @@ public class KataGoAutoSetupHelperTest {
       touch(root.resolve("engines/katago/configs/gtp.cfg"));
       touch(root.resolve("engines/katago/configs/analysis.cfg"));
       touch(root.resolve("weights/default.bin.gz"));
-      touch(root.resolve("weights/alternate.bin.gz"));
+      touch(root.resolve("weights").resolve(weightFileName));
     }
     withUserDirAndConfig(
         previousRoot,
@@ -1980,7 +1999,7 @@ public class KataGoAutoSetupHelperTest {
           Lizzie.config = ConfigTestHelper.createBootstrapped(previousRoot);
           KataGoAutoSetupHelper.applyAutoSetup(
               KataGoAutoSetupHelper.inspectLocalSetup()
-                  .withActiveWeight(previousRoot.resolve("weights/alternate.bin.gz")), true);
+                  .withActiveWeight(previousRoot.resolve("weights").resolve(weightFileName)), true);
           ArrayList<EngineData> entries = Utils.getEngineData();
           EngineData managed = entries.get(0);
           managed.name = "Auto setup";
