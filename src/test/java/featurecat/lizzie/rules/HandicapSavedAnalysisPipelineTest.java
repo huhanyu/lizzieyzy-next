@@ -142,10 +142,17 @@ class HandicapSavedAnalysisPipelineTest {
         assertEquals(0.5, engine.komi, 0.0001);
         assertEquals(7.5, engine.orikomi, 0.0001);
         assertEquals(0.5, env.board().getHistory().getGameInfo().getKomi(), 0.0001);
-        assertTrue(transport.commands().contains("komi 0.5"));
+        // A local exact restore applies komi through the acknowledged snapshot SGF.
+        // Only the remote in-band restore path requires a separate komi command.
+        assertTrue(
+            transport.commands().stream().anyMatch(command -> command.startsWith("loadsgf ")),
+            "local komi synchronization must use the real loadsgf/ACK path");
         assertFalse(restoredSnapshots.isEmpty(), "setup must use an ACK-backed loadsgf snapshot");
         BoardData root = env.board().getHistory().getStart().getData();
         BoardHistoryList restoredRoot = SGFParser.parseSgf(restoredSnapshots.get(0), true);
+        assertTrue(
+            restoredRoot.getStart().getData().getProperties().containsKey("KM"),
+            "the acknowledged restore SGF must explicitly carry the game komi");
         assertEquals(0.5, restoredRoot.getGameInfo().getKomi(), 0.0001);
         assertArrayEquals(root.stones, restoredRoot.getStart().getData().stones);
         assertEquals(root.blackToPlay, restoredRoot.getStart().getData().blackToPlay);
