@@ -65,6 +65,7 @@ public final class WindowsUpdateDialog extends JDialog {
     this.coordinator = coordinator;
     this.offered = result;
     this.plan = result.windowsPlan;
+    setAutoRequestFocus(coordinator.state().origin() != UpdateCheckCoordinator.Origin.AUTOMATIC);
     buildUi(parent, checkWarning);
     coordinator.subscribe(observer);
   }
@@ -162,10 +163,15 @@ public final class WindowsUpdateDialog extends JDialog {
     StringBuilder text = new StringBuilder();
     text.append(
             tr(
-                "WindowsUpdate.summary.intro",
-                "这次会先下载并校验更新文件，然后关闭当前程序，由独立更新器替换文件并重新打开。",
-                "The update is downloaded and verified first; the app then closes and a standalone"
-                    + " updater replaces the files and restarts it."))
+                coordinator.state().ready() ? "WindowsUpdate.summary.readyIntro" : "WindowsUpdate.summary.intro",
+                coordinator.state().ready()
+                    ? "更新文件已下载并校验。点击“立即更新”后，将关闭当前程序，由独立更新器安装并重新打开。"
+                    : "这次会先下载并校验更新文件，然后关闭当前程序，由独立更新器替换文件并重新打开。",
+                coordinator.state().ready()
+                    ? "Update files are downloaded and verified. Click Update now to close the app,"
+                        + " install the update and restart it."
+                    : "The update is downloaded and verified first; the app then closes and a standalone"
+                        + " updater replaces the files and restarts it."))
         .append("\n\n");
     text.append(tr("WindowsUpdate.summary.coreSize", "本次主程序小更新", "Core update download") + ": ")
         .append(formatBytes(plan.coreSizeBytes()))
@@ -236,8 +242,7 @@ public final class WindowsUpdateDialog extends JDialog {
 
   private void startUpdate() {
     if (coordinator.state().result() != offered) return;
-    if (coordinator.state().ready()) coordinator.openOffer();
-    else coordinator.startDownload(offered, true);
+    coordinator.startDownload(offered, true);
   }
 
   private void togglePause() {
@@ -247,8 +252,6 @@ public final class WindowsUpdateDialog extends JDialog {
   private void showState(UpdateCheckCoordinator.State state) {
     boolean current = state.result() == offered;
     updateButton.setEnabled(current && !coordinator.busy());
-    updateButton.setText(state.ready() ? UpdateDownloadText.action(offered)
-        : tr("WindowsUpdate.btnUpdate", "立即更新", "Update now"));
     pauseButton.setEnabled(current && state.downloading());
     pauseButton.setText(UpdateDownloadText.pauseAction(state));
     cancelButton.setEnabled(current && state.downloading());

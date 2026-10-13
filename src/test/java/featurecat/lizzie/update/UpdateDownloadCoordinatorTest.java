@@ -35,6 +35,10 @@ class UpdateDownloadCoordinatorTest {
     f.coordinator.applicationReady();
     assertEquals(1, f.prepares);
     f.coordinator.openOffer();
+    assertEquals(1, f.handoffs);
+    assertEquals(0, f.applies, "Viewing a ready offer must not install it");
+    f.coordinator.startDownload(offer, true);
+    assertEquals(1, f.prepares, "Explicit confirmation must reuse prepared files");
     assertEquals(1, f.applies);
     assertEquals(UpdateCheckCoordinator.Origin.AUTOMATIC, f.coordinator.state().origin());
   }
@@ -164,11 +168,11 @@ class UpdateDownloadCoordinatorTest {
     f.runner.work();
     f.runner.deliver();
     f.failApply = true;
-    f.coordinator.openOffer();
+    f.coordinator.startDownload(offer, true);
     assertTrue(f.coordinator.state().ready());
     assertNotNull(f.coordinator.state().download().error());
     f.failApply = false;
-    f.coordinator.openOffer();
+    f.coordinator.startDownload(offer, true);
     assertEquals(2, f.applies);
   }
 

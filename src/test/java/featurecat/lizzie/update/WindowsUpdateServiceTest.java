@@ -81,7 +81,7 @@ class WindowsUpdateServiceTest {
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(s -> offer,
           new UpdateCheckCoordinator.OfferHandoff() {
             public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) {
-              throw new AssertionError("Automatic preparation must not open a manual dialog");
+              assertEquals(0, launches.get(), "Viewing prepared files must not launch the updater");
             }
             public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) {
               throw new AssertionError("Wrong platform");
@@ -109,6 +109,9 @@ class WindowsUpdateServiceTest {
       assertEquals(0, launches.get());
       assertEquals(1, proxy.requests.get());
       coordinator.openOffer();
+      assertEquals(0, launches.get());
+      coordinator.startDownload(offer, true);
+      assertEquals(1, proxy.requests.get(), "Confirmation must not download the prepared update again");
       assertEquals(1, launches.get());
     }
   }

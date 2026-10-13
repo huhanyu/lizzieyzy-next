@@ -49,6 +49,7 @@ public final class PackageUpdateDialog extends JDialog {
     this.coordinator = coordinator;
     this.offered = result;
     this.plan = result.packagePlan;
+    setAutoRequestFocus(coordinator.state().origin() != UpdateCheckCoordinator.Origin.AUTOMATIC);
     buildUi(parent, checkWarning);
     coordinator.subscribe(observer);
   }
@@ -165,8 +166,7 @@ public final class PackageUpdateDialog extends JDialog {
 
   private void startDownload() {
     if (coordinator.state().result() != offered) return;
-    if (coordinator.state().ready()) coordinator.openOffer();
-    else coordinator.startDownload(offered, true);
+    coordinator.startDownload(offered, true);
   }
 
   private void togglePause() {

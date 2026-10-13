@@ -83,7 +83,7 @@ class UpdatePauseRecoveryTest {
             platform.dispatchEvent(new WindowEvent(platform, WindowEvent.WINDOW_CLOSING));
             assertFalse(platform.isDisplayable());
             assertFalse(control.isCancelled());
-            CheckUpdateDialog page = new CheckUpdateDialog(null, c, false);
+            CheckUpdateDialog page = new CheckUpdateDialog(null, c);
             views.add(page);
             page.setVisible(true);
             assertTrue(status(page).contains("paused"));
@@ -148,7 +148,7 @@ class UpdatePauseRecoveryTest {
         assertEquals(manual ? UpdateCheckCoordinator.Origin.MANUAL : UpdateCheckCoordinator.Origin.AUTOMATIC,
             coordinator.state().origin());
         if (!manual) {
-          coordinator.openOffer();
+          coordinator.startDownload(offer, true);
           assertEquals(1, applies[0]);
         }
       } finally {

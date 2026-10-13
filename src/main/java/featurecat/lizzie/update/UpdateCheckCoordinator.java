@@ -164,10 +164,9 @@ final class UpdateCheckCoordinator {
     } else openOffer();
   }
 
-  /** Explicit user action; inspecting an automatic result never changes its origin. */
+  /** Viewing an offer never grants download or installation authority. */
   void openOffer() {
     if (!state.hasOffer() || presentingOffer || inFlight) return;
-    if (state.ready()) { applyPrepared(); return; }
     State offered = state;
     presentingOffer = true;
     try {
@@ -183,7 +182,14 @@ final class UpdateCheckCoordinator {
 
   /** A manual confirmation grants completion authority; merely viewing never calls this. */
   void startDownload(UpdateCheckResult expected, boolean completeWhenReady) {
-    if (expected != state.result() || inFlight || !state.hasOffer() || state.ready()) return;
+    if (expected != state.result() || inFlight || !state.hasOffer()) return;
+    if (state.ready()) {
+      if (completeWhenReady) {
+        manualDownload = true;
+        applyPrepared();
+      }
+      return;
+    }
     State offered = state;
     manualDownload = completeWhenReady;
     automaticInvalidated = false;

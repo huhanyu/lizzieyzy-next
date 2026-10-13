@@ -35,7 +35,6 @@ final class UpdateDownloadText {
   }
 
   static String action(UpdateCheckResult result) {
-    if (result.windowsPlan != null) return UpdateText.tr("WindowsUpdate.installRestart", "安装并重启", "Install and restart");
     return "macos".equals(result.packagePlan.platform)
         ? UpdateText.tr("WindowsUpdate.openDmg", "打开 DMG", "Open DMG")
         : UpdateText.tr("WindowsUpdate.openFolder", "打开下载目录", "Open download folder");

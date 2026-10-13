@@ -7,13 +7,13 @@ import javax.swing.SwingUtilities;
 public final class WindowsUpdateController {
   private static final UpdateCheckCoordinator COORDINATOR =
       new UpdateCheckCoordinator(UpdateDiscovery::check, new ProductionHandoff(),
-          new SwingRunner(), state -> showPage(Lizzie.frame, true));
+          new SwingRunner(), state -> coordinator().openOffer());
   private static CheckUpdateDialog page;
 
   private WindowsUpdateController() {}
 
   public static void openCheckUpdatePage(Component parent) {
-    SwingUtilities.invokeLater(() -> showPage(parent, false));
+    SwingUtilities.invokeLater(() -> showPage(parent));
   }
 
   public static void captureStartupPolicy() {
@@ -30,22 +30,19 @@ public final class WindowsUpdateController {
 
   static void automaticPolicyChanged() {
     COORDINATOR.invalidateAutomatic();
-    if (page != null && page.isAutomaticReminder()) page.dispose();
   }
 
   static void automaticDownloadDisabled() {
     COORDINATOR.disableAutomaticDownload();
   }
 
-  private static void showPage(Component parent, boolean automatic) {
+  private static void showPage(Component parent) {
     if (page != null && page.isDisplayable()) {
-      if (!automatic) {
-        page.setVisible(true);
-        page.toFront();
-      }
+      page.setVisible(true);
+      page.toFront();
       return;
     }
-    page = new CheckUpdateDialog(parent, COORDINATOR, automatic);
+    page = new CheckUpdateDialog(parent, COORDINATOR);
     page.setVisible(true);
   }
 

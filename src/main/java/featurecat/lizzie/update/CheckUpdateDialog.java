@@ -50,22 +50,17 @@ public final class CheckUpdateDialog extends JDialog {
   private final JFontButton retryButton = new JFontButton(
       UpdateText.tr("WindowsUpdate.btnResume", "继续", "Resume"));
   private final UpdateCheckCoordinator coordinator;
-  private final boolean automaticReminder;
   private final Consumer<UpdateCheckCoordinator.State> observer = this::showState;
 
-  CheckUpdateDialog(Component parent, UpdateCheckCoordinator coordinator, boolean automatic) {
+  CheckUpdateDialog(Component parent, UpdateCheckCoordinator coordinator) {
     super(parent instanceof java.awt.Window ? (java.awt.Window) parent
             : parent == null ? null : SwingUtilities.getWindowAncestor(parent),
         UpdateText.tr("WindowsUpdate.page.title", "检查更新", "Check update"),
         ModalityType.MODELESS);
     this.coordinator = coordinator;
-    this.automaticReminder = automatic;
-    if (automatic) setAutoRequestFocus(false);
     buildUi(parent);
     coordinator.subscribe(observer);
   }
-
-  boolean isAutomaticReminder() { return automaticReminder; }
 
   @Override
   public void dispose() {
@@ -263,8 +258,7 @@ public final class CheckUpdateDialog extends JDialog {
         && state.download().phase() != UpdateCheckCoordinator.DownloadPhase.CANCELLED
         && state.download().phase() != UpdateCheckCoordinator.DownloadPhase.FAILED);
     offerButton.setEnabled(!coordinator.busy());
-    offerButton.setText(state.ready() ? UpdateDownloadText.action(state.result())
-        : UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
+    offerButton.setText(UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
     cancelButton.setVisible(state.downloading());
     pauseButton.setVisible(state.downloading());
     pauseButton.setText(UpdateDownloadText.pauseAction(state));
