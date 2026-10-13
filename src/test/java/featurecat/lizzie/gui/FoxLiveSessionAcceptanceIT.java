@@ -221,6 +221,11 @@ public final class FoxLiveSessionAcceptanceIT {
         assertTrue(find(fox, JTextArea.class).getText().contains("%"), "current valid candidate immediately returns");
         assertTrue(hasText(fox, "Fox.pending"));
         assertEquals(beforeReturn, commands(work));
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.getRootPane().paintImmediately(0, 0, Lizzie.frame.getWidth(), Lizzie.frame.getHeight());
+          fox.getRootPane().paintImmediately(0, 0, fox.getWidth(), fox.getHeight());
+        });
+        robot.delay(100);
         ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-return-current.png").toFile());
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
@@ -231,7 +236,7 @@ public final class FoxLiveSessionAcceptanceIT {
             5, "automatic choice confirmed while browsing");
         assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
         Files.writeString(work.resolve("history-evidence.txt"), "navigationCommands=unchanged\nreturnCommands=unchanged\n"
-            + "displayMove=2 liveMove=4\ncacheUnchanged=true\nautomaticWhileBrowsing=" + browsingSubmission + "\n");
+            + "displayMove=2 liveMove=5\ncacheUnchanged=true\nautomaticWhileBrowsing=" + browsingSubmission + "\n");
         send(peer, "FARESULT,W+R", "FASTATUS,0");
         await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "confirmed terminal handback");
         assertTrue(target.isLoaded());
