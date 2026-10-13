@@ -98,6 +98,8 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - 这些被隔离的 live state 包含 `hasStartStone/startStonelist`、player title、komi、引擎 komi/best-move 等当前窗口状态；相关副作用只允许在调用方显式采用解析结果后发生。
 - SGF 分析标签 `LZ` / `LZ2` / `LZOP` / `LZOP2`（含双引擎对应 payload）在 detached `parseSgf(...)` 阶段必须写入解析目标 history/node 的 `BoardData`，不能读写或覆盖当前 live board 的分析字段。
 - detached `parseSgf(...) -> setHistory(...) -> saveToString(...)` round-trip 必须保留 analysis payload（`engineName` / `engineName2`、playouts、best-move 列表）。
+- 文件和字符串 SGF 导入保留谱内已保存的 analysis payload；让子／setup 或 `KM` 不等于默认贴目本身不构成分析失效证据，不能据此清空全谱缓存。让子／setup 导入继续采用谱内贴目并按既有流程同步引擎。
+- 启用 Lizzie 缓存时，导航回载入的已分析节点后，普通新分析流只有在可比计算量超过已保存值时才替换候选点、胜率、目差与变化图；既有显式缓存失效、PDA 变化、专用分析模式和 ownership 单独补全规则保持不变。
 - 文件、字符串、编辑态和 detached SGF 导入统一兼容属性值之外、结构空白位置的字面量 `\n` 与 `\r\n`；属性值原文继续交给既有 SGF 转义解析，不全文反转义，不改写输入文件。
 - 未知结构转义、双重包装、被转义换行拆开的属性名，以及含本次结构转义的未闭合树/属性值，必须导入失败；live 入口保留原棋谱，detached 入口返回 `null`。普通 SGF 的既有无关容错保持不变。
 - detached 与 live 导入都把 `RE` 保存为 `GameInfo.result`；不能将结果伪造成根或末节点注释，保存重开保持真实注释与对局结果。
