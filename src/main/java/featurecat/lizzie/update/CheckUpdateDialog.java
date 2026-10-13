@@ -13,12 +13,12 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
+import java.util.function.Consumer;
 import javax.swing.JDialog;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
@@ -27,7 +27,7 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
 /** 检查更新页: current version, 更新通道, 更新源, and Check. Opening the page does not use the network. */
-public final class CheckUpdateDialog extends JDialog implements UpdateCheckCoordinator.Page {
+public final class CheckUpdateDialog extends JDialog {
   private static final Color PAGE_BACKGROUND = new Color(246, 247, 249);
   private static final Color MUTED_TEXT = new Color(90, 96, 104);
 
@@ -42,27 +42,34 @@ public final class CheckUpdateDialog extends JDialog implements UpdateCheckCoord
   private final JFontButton checkButton =
       new JFontButton(UpdateText.tr("WindowsUpdate.btnCheck", "检查更新", "Check update"));
   private final JTextArea resultLabel = new JTextArea(4, 36);
-  private boolean closeAllowed = true;
+  private final JFontButton offerButton = new JFontButton(
+      UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
+  private final UpdateCheckCoordinator coordinator;
+  private final boolean automaticReminder;
+  private final Consumer<UpdateCheckCoordinator.State> observer = this::showState;
 
-  public CheckUpdateDialog(Component parent) {
-    super(
-        parent == null ? null : SwingUtilities.getWindowAncestor(parent),
+  CheckUpdateDialog(Component parent, UpdateCheckCoordinator coordinator, boolean automatic) {
+    super(parent instanceof java.awt.Window ? (java.awt.Window) parent
+            : parent == null ? null : SwingUtilities.getWindowAncestor(parent),
         UpdateText.tr("WindowsUpdate.page.title", "检查更新", "Check update"),
-        ModalityType.APPLICATION_MODAL);
+        ModalityType.MODELESS);
+    this.coordinator = coordinator;
+    this.automaticReminder = automatic;
+    if (automatic) setAutoRequestFocus(false);
     buildUi(parent);
+    coordinator.subscribe(observer);
+  }
+
+  boolean isAutomaticReminder() { return automaticReminder; }
+
+  @Override
+  public void dispose() {
+    coordinator.unsubscribe(observer);
+    super.dispose();
   }
 
   private void buildUi(Component parent) {
-    setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-    addWindowListener(
-        new WindowAdapter() {
-          @Override
-          public void windowClosing(WindowEvent e) {
-            if (closeAllowed) {
-              dispose();
-            }
-          }
-        });
+    setDefaultCloseOperation(DISPOSE_ON_CLOSE);
     JPanel root = new JPanel(new BorderLayout(0, 16));
     root.setBorder(BorderFactory.createEmptyBorder(18, 20, 16, 20));
     root.setBackground(PAGE_BACKGROUND);
@@ -175,6 +182,15 @@ public final class CheckUpdateDialog extends JDialog implements UpdateCheckCoord
     constraints.insets = new Insets(0, 0, 14, 0);
     form.add(sourceRow, constraints);
 
+    JCheckBox autoCheck = new JCheckBox(UpdateText.tr(
+        "WindowsUpdate.autoCheck", "启动时自动检查更新（下次启动生效）",
+        "Check for updates at startup (from next launch)"), UpdatePreferences.autoCheck());
+    autoCheck.setOpaque(false);
+    autoCheck.setFont(stableButton.getFont());
+    autoCheck.addActionListener(e -> UpdatePreferences.persistAutoCheck(autoCheck.isSelected()));
+    constraints.gridy = 4;
+    form.add(autoCheck, constraints);
+
     resultLabel.setForeground(mutedText());
     resultLabel.setFont(stableButton.getFont());
     resultLabel.setOpaque(false);
@@ -182,7 +198,7 @@ public final class CheckUpdateDialog extends JDialog implements UpdateCheckCoord
     resultLabel.setFocusable(false);
     resultLabel.setLineWrap(true);
     resultLabel.setWrapStyleWord(true);
-    constraints.gridy = 4;
+    constraints.gridy = 5;
     constraints.insets = new Insets(0, 0, 0, 0);
     form.add(resultLabel, constraints);
     return form;
@@ -192,45 +208,47 @@ public final class CheckUpdateDialog extends JDialog implements UpdateCheckCoord
     JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
     footer.setOpaque(false);
     checkButton.addActionListener(e -> startCheck());
+    offerButton.addActionListener(e -> { dispose(); coordinator.openOffer(); });
+    footer.add(offerButton);
+    JFontButton later = new JFontButton(UpdateText.tr("WindowsUpdate.later", "稍后", "Later"));
+    later.addActionListener(e -> dispose());
+    footer.add(later);
     footer.add(checkButton);
     getRootPane().setDefaultButton(checkButton);
     return footer;
   }
 
   static void persistSelection(UpdateChannel channel, UpdateSource source) {
+    boolean changed = UpdateChannel.current() != channel
+        || (channel != UpdateChannel.BETA && UpdateSource.current() != source);
     UpdateChannel.persist(channel);
     if (channel != UpdateChannel.BETA) {
       UpdateSource.persist(source);
     }
+    if (changed) WindowsUpdateController.automaticPolicyChanged();
   }
 
   private void startCheck() {
-    WindowsUpdateController.checkForUpdate(
-        this, UpdateCheckSelection.of(selectedChannel(), selectedSource(), Lizzie.nextVersion));
+    coordinator.checkManually(
+        UpdateCheckSelection.of(selectedChannel(), selectedSource(), Lizzie.nextVersion));
   }
 
-  @Override
-  public void setCheckEnabled(boolean enabled) {
-    checkButton.setEnabled(enabled);
-  }
-
-  @Override
-  public void setCloseAllowed(boolean allowed) {
-    closeAllowed = allowed;
-  }
-
-  @Override
-  public void showStayOnPage(UpdateCheckResult result, UpdateCheckSelection snapshot) {
-    String message =
-        UpdateCheckFeedback.message(
-            result, snapshot == null ? selectedChannel() : snapshot.channel);
-    String warning = UpdateCheckFeedback.warning(result);
+  private void showState(UpdateCheckCoordinator.State state) {
+    checkButton.setEnabled(!state.checking());
+    offerButton.setVisible(state.hasOffer());
+    if (state.checking()) {
+      resultLabel.setText(UpdateText.tr("WindowsUpdate.checking", "正在检查更新…", "Checking for updates…"));
+      return;
+    }
+    if (state.result() == null) {
+      resultLabel.setText("");
+      return;
+    }
+    String message = state.hasOffer()
+        ? UpdateText.tr("WindowsUpdate.available", "发现可用更新。", "An update is available.")
+        : UpdateCheckFeedback.message(state.result(), state.selection().channel);
+    String warning = UpdateCheckFeedback.warning(state.result());
     resultLabel.setText(warning.isEmpty() ? message : message + "\n" + warning);
-  }
-
-  @Override
-  public void disposeForOffer() {
-    dispose();
   }
 
   private UpdateChannel selectedChannel() {

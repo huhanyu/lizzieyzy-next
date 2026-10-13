@@ -5,23 +5,40 @@ import java.awt.Component;
 import javax.swing.SwingUtilities;
 
 public final class WindowsUpdateController {
-  private static final UpdateCheckCoordinator COORDINATOR = new UpdateCheckCoordinator();
-  private static final UpdateCheckCoordinator.OfferHandoff HANDOFF = new ProductionHandoff();
-  private static final UpdateCheckCoordinator.Runner RUNNER = new SwingRunner();
+  private static final UpdateCheckCoordinator COORDINATOR =
+      new UpdateCheckCoordinator(UpdateDiscovery::check, new ProductionHandoff(),
+          new SwingRunner(), state -> showPage(Lizzie.frame, true));
+  private static CheckUpdateDialog page;
 
   private WindowsUpdateController() {}
 
   public static void openCheckUpdatePage(Component parent) {
-    SwingUtilities.invokeLater(() -> new CheckUpdateDialog(parent).setVisible(true));
+    SwingUtilities.invokeLater(() -> showPage(parent, false));
   }
 
-  static void checkForUpdate(UpdateCheckCoordinator.Page page, UpdateCheckSelection snapshot) {
-    COORDINATOR.start(page, snapshot, UpdateDiscovery::check, HANDOFF, RUNNER);
+  public static void applicationReady() {
+    SwingUtilities.invokeLater(() -> COORDINATOR.applicationReady(
+        UpdatePreferences.autoCheck(), UpdateCheckSelection.of(
+            UpdateChannel.current(), UpdateSource.current(), Lizzie.nextVersion)));
+  }
+
+  static UpdateCheckCoordinator coordinator() { return COORDINATOR; }
+
+  static void automaticPolicyChanged() {
+    COORDINATOR.invalidateAutomatic();
+    if (page != null && page.isAutomaticReminder()) page.dispose();
+  }
+
+  private static void showPage(Component parent, boolean automatic) {
+    if (page != null && page.isDisplayable()) return;
+    page = new CheckUpdateDialog(parent, COORDINATOR, automatic);
+    page.setVisible(true);
   }
 
   private static final class ProductionHandoff implements UpdateCheckCoordinator.OfferHandoff {
     @Override
     public void openWindows(UpdateCheckSelection selection, UpdateCheckResult result) {
+      if (page != null) page.dispose();
       WindowsUpdateService service = new WindowsUpdateService();
       new WindowsUpdateDialog(
               Lizzie.frame, service, result.windowsPlan, UpdateCheckFeedback.warning(result))
@@ -30,6 +47,7 @@ public final class WindowsUpdateController {
 
     @Override
     public void openPackage(UpdateCheckSelection selection, UpdateCheckResult result) {
+      if (page != null) page.dispose();
       PlatformUpdateService service = new PlatformUpdateService();
       new PackageUpdateDialog(
               Lizzie.frame, service, result.packagePlan, UpdateCheckFeedback.warning(result))
@@ -40,7 +58,7 @@ public final class WindowsUpdateController {
   private static final class SwingRunner implements UpdateCheckCoordinator.Runner {
     @Override
     public void runBackground(Runnable work) {
-      Thread thread = new Thread(work, "lizzie-update-manual");
+      Thread thread = new Thread(work, "lizzie-update-discovery");
       thread.setDaemon(true);
       thread.start();
     }

@@ -1006,6 +1006,7 @@ public class Lizzie {
     frame.reSetLoc();
     frame.showMainPanel();
     logApplicationReady();
+    featurecat.lizzie.update.WindowsUpdateController.applicationReady();
     frame.addResizeLis();
     // 引擎跟随控制器：试下期间让引擎跟随 displayNode 实时分析
     EngineCommandSink sink = new LeelazEngineCommandSink();
