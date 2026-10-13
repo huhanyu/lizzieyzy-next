@@ -676,6 +676,7 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 ## Fox 官方 AI 实时会话
 
 - 从文件菜单显式启动本机 loopback 单客户端监听；关闭窗口不隐式停止会话，停止按钮负责释放。用户确认规则与自动落子告知后，同一实时搜索提供候选与最终选择；仅在权威己方回合、历史完整、当前时钟和 owner 有效时自动发送一次 `AFPLAY` / `AFSKIP`。
+- 规则选择使用现有多语言资源显示中国、日本、AGA/BGA 与 Tromp-Taylor 规则名称；模型及选中值保持 `chinese`、`japanese`、`aga`、`tromp-taylor`，显示翻译不改变传给 KataGo 的规则标识。
 - `FoxGameState` 分开保存协议编号 placements 与有完整证据的 `MOVE/PASS` actions。完整初始化需要规则、状态、时钟与回合；全量状态不能补造 pass，也不能把冷接入的中盘提升为完整历史。
 - 初始让子通过 `AB/HA/PL` setup 基座进入历史，不计作普通手数。实时尾节点、显示游标与带 connection/game/revision/search 身份的候选分别保存。Board 的前后、步进、分支、手数和任意节点导航以及 BoardHistoryList 的直接游标操作只改变显示；实战期间不转发历史 play/undo/restore/analyze，不改变实战搜索、时钟或 pending。
 - 已采用 history 的游标边界通知唯一 `FoxLiveSession.displayCursor`；controller 追加确认动作时临时操作 liveTail，随后恢复用户选定节点。导航不写实战分析到历史缓存；既有缓存仍属于原节点。回看提示与返回按钮独立于连接/时钟状态；回看不显示实时候选数值，返回只显示当前身份候选或等待，不重启搜索。

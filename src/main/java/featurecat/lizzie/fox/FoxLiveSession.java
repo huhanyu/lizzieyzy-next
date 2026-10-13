@@ -98,6 +98,23 @@ public final class FoxLiveSession {
     controls.add(port);
     controls.add(start);
     controls.add(new JLabel(text("Fox.rules")));
+    rules.setRenderer(new DefaultListCellRenderer() {
+      @Override
+      public java.awt.Component getListCellRendererComponent(
+          JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+        super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+        if (value instanceof String rule) {
+          setText(switch (rule) {
+            case "chinese" -> text("SetKataRules.btnChnRule");
+            case "japanese" -> text("SetKataRules.btnJpnRule");
+            case "aga" -> text("MatchRules.option.agaBga");
+            case "tromp-taylor" -> text("SetKataRules.btnTTRule");
+            default -> rule;
+          });
+        }
+        return this;
+      }
+    });
     controls.add(rules);
     controls.add(stop);
     output.setEditable(false);
