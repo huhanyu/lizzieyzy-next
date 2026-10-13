@@ -171,7 +171,10 @@ public final class FoxLiveSession {
     boolean browsing = ownsBoard && liveHistory != null && displayCursor != liveTail;
     browsingStatus.setText(browsing ? text(browsingStatusKey()) : " ");
     returnLive.setEnabled(browsing && !restoring);
-    if (browsing) output.setText(text(browsingStatusKey()));
+    FoxGameState.Snapshot state = game.snapshot();
+    if (state.active() && state.automationBlocked())
+      output.setText(text(state.statusKey()) + (browsing ? "\n" + text(browsingStatusKey()) : ""));
+    else if (browsing) output.setText(text(browsingStatusKey()));
     else if (liveCandidates != null) showCandidates(liveCandidates);
     else output.setText(text("Fox.automatic") + "\n\n" + text("Fox.waitingCandidate"));
   }
@@ -268,6 +271,11 @@ public final class FoxLiveSession {
       return;
     }
     if (!state.initialized()) return;
+    if (state.automationBlocked()) {
+      recover.setEnabled(false);
+      observe(state.statusKey());
+      return;
+    }
     if (!state.complete()) {
       if (game.hasCheckpoint() && !recoveryEngineCurrent())
         game.revokeRecovery("Fox.recoveryEngineChanged");

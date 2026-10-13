@@ -27,8 +27,9 @@ public final class FoxGameState {
   public record Snapshot(long connection, long game, long revision, Rules rules,
       Clock clock, char ai, Character toPlay, List<Placement> placements,
       List<Action> actions, boolean initialized, boolean complete, boolean active,
-      String statusKey, boolean clockRefreshed, long submitDeadlineNanos, Submission pending) {
-    public boolean searchable() { return initialized && complete && active; }
+      String statusKey, boolean clockRefreshed, long submitDeadlineNanos, Submission pending,
+      boolean automationBlocked) {
+    public boolean searchable() { return initialized && complete && active && !automationBlocked; }
     public boolean ownTurn() { return toPlay != null && toPlay == ai; }
   }
 
@@ -36,6 +37,7 @@ public final class FoxGameState {
   private long game;
   private long revision;
   private Rules rules;
+  private boolean awaitingRules = true;
   private Clock clock;
   private char ai;
   private Character toPlay;
@@ -52,6 +54,7 @@ public final class FoxGameState {
   private boolean refreshRequested;
   private boolean clockRefreshed;
   private boolean automationBlocked;
+  private String automationStopReason;
   private Submission pending;
   private boolean written;
   private final List<SubmissionFact> submissions = new ArrayList<>();
@@ -157,6 +160,7 @@ public final class FoxGameState {
 
   public synchronized void stopAutomation(String reason, long now) {
     automationBlocked = true;
+    automationStopReason = reason;
     statusKey = reason;
     clockRefreshed = false;
     resolveSubmission(SubmissionOutcome.FAILED, reason, now);
@@ -226,6 +230,7 @@ public final class FoxGameState {
     refreshRequested = clockRefreshed = false;
     revision++;
     rules = null;
+    awaitingRules = true;
     clock = null;
     remainingMainNanos = Long.MAX_VALUE;
     ai = 0;
@@ -238,7 +243,8 @@ public final class FoxGameState {
   public synchronized Snapshot snapshot() {
     return new Snapshot(connection, game, revision, rules, clock, ai, toPlay,
         placements, List.copyOf(actions), rules != null && statusSeen && clock != null
-        && toPlay != null, complete, active, statusKey, clockRefreshed, submitDeadlineNanos, pending);
+        && toPlay != null, complete, active, active && automationBlocked ? automationStopReason : statusKey,
+        clockRefreshed, submitDeadlineNanos, pending, automationBlocked);
   }
 
   public synchronized void reject() {
@@ -267,9 +273,20 @@ public final class FoxGameState {
           require(p.color == 'B' && occupied.add(p.y * size + p.x));
           setup.add(p);
         }
+        Rules incoming = new Rules(size, main, byo, periods, komi / 100.0, List.copyOf(setup));
+        if (!awaitingRules) {
+          // FARULE is not a game identity. Only an observed terminal/idle opens a new game.
+          if (!incoming.equals(rules)) {
+            stopAutomation("Fox.protocolError", now);
+            revokeRecovery("Fox.protocolError");
+            revision++;
+          }
+          return;
+        }
         reset();
         game++;
-        rules = new Rules(size, main, byo, periods, komi / 100.0, List.copyOf(setup));
+        rules = incoming;
+        awaitingRules = false;
         statusKey = "Fox.syncing";
       }
       case "FASTATUS" -> {
@@ -278,6 +295,7 @@ public final class FoxGameState {
           revision++;
           active = false;
           disconnectedGame = false;
+          awaitingRules = true;
           revokeRecovery("Fox.noCheckpoint");
           statusKey = "Fox.terminal";
           return;
@@ -378,13 +396,13 @@ public final class FoxGameState {
         revision++;
         active = false;
         disconnectedGame = false;
+        awaitingRules = true;
         revokeRecovery("Fox.noCheckpoint");
         statusKey = "Fox.terminal";
       }
       case "FASCORE" -> {
         stopAutomation("Fox.officialAction", now);
         revision++;
-        complete = false;
         statusKey = "Fox.officialAction";
       }
       default -> throw new IllegalArgumentException("Unsupported Fox message");

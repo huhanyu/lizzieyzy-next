@@ -7,6 +7,70 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FoxProtocolStateTest {
+  @Test void repeatedInitializationCannotResetIdentityBudgetHistoryOrFailedSubmission() {
+    FoxGameState state = initialized();
+    refresh(state, 0, "60,30,3");
+    var initial = state.snapshot();
+    state.receive("FARULE,19,60,30,3,650", 10_000_000_000L);
+    state.receive("FASTATUS,1,B", 10_000_000_000L);
+    state.receive("FATIMELEFT,60,30,3", 10_000_000_000L);
+    state.receive("FAMOVE,1,B,0^0^0^N", 10_000_000_000L);
+    assertEquals(initial.game(), state.snapshot().game());
+    assertEquals(initial.revision(), state.snapshot().revision());
+    assertEquals(initial.submitDeadlineNanos(), state.snapshot().submitDeadlineNanos());
+    assertFalse(state.beginClockRefresh(10_000_000_001L));
+    var pending = state.prepareSubmission(state.snapshot(), 1, "R16", 11_000_000_000L);
+    assertTrue(state.claimSubmission(pending, 11_000_000_001L));
+    state.stopAutomation("Fox.confirmationFailed", 16_000_000_000L);
+    var failed = state.submissions();
+    state.receive("FARULE,19,60,30,3,650", 20_000_000_000L);
+    state.receive("FASTATUS,1,B", 20_000_000_000L);
+    state.receive("FATIMELEFT,60,30,3", 20_000_000_000L);
+    state.receive("FAMOVE,1,B,0^0^0^N", 20_000_000_000L);
+    assertEquals(initial.game(), state.snapshot().game());
+    assertEquals(initial.submitDeadlineNanos(), state.snapshot().submitDeadlineNanos());
+    assertFalse(state.snapshot().searchable());
+    assertEquals("Fox.confirmationFailed", state.snapshot().statusKey());
+    assertEquals(failed, state.submissions());
+    assertNull(state.prepareSubmission(state.snapshot(), 2, "D4", 21_000_000_000L));
+    state.receive("FASTATUS,0", 22_000_000_000L);
+    state.receive("FARULE,19,60,30,3,650", 23_000_000_000L);
+    state.receive("FASTATUS,1,B", 23_000_000_000L);
+    state.receive("FATIMELEFT,60,30,3", 23_000_000_000L);
+    state.receive("FAMOVE,1,B,0^0^0^N", 23_000_000_000L);
+    assertTrue(state.snapshot().game() > initial.game());
+    assertTrue(state.snapshot().searchable());
+    assertEquals(82_000_000_000L, state.snapshot().submitDeadlineNanos());
+    assertEquals(failed, state.submissions());
+
+    state.receive("FAMOVE,0,B,1^16^3^B", 24_000_000_000L);
+    var confirmed = state.snapshot();
+    state.receive("FARULE,19,60,30,3,750", 25_000_000_000L);
+    assertEquals(confirmed.game(), state.snapshot().game());
+    assertEquals(confirmed.rules(), state.snapshot().rules());
+    assertEquals(confirmed.actions(), state.snapshot().actions());
+    assertFalse(state.snapshot().searchable());
+    assertEquals("Fox.protocolError", state.snapshot().statusKey());
+  }
+
+  @Test void officialOperationStopsAutomationWithoutDiscardingConfirmedHistory() {
+    FoxGameState state = initialized();
+    state.receive("FAMOVE,0,B,1^16^3^B", 1);
+    var confirmed = state.snapshot().actions();
+    state.receive("FASCORE", 2);
+    state.receive("FASTATUS,1,B,1^16^3^B", 3);
+    state.receive("FAMOVE,0,B,1^16^3^B", 4);
+    state.receive("FATIMELEFT,59,30,3", 5);
+    assertTrue(state.snapshot().complete());
+    assertEquals(confirmed, state.snapshot().actions());
+    assertEquals("Fox.officialAction", state.snapshot().statusKey());
+    assertFalse(state.snapshot().searchable());
+    assertFalse(state.beginClockRefresh(6));
+    assertNull(state.prepareSubmission(state.snapshot(), 2, "pass", 6));
+    state.disconnected();
+    assertFalse(state.hasCheckpoint(), "official operation must not become recovery permission");
+  }
+
   @Test void emptyPlacementReconnectPreservesObservedPassRatherThanAssumingOpeningTurn() {
     FoxGameState state = initialized();
     state.receive("FASKIP,0,B", 1);

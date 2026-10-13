@@ -237,6 +237,9 @@ public final class FoxLiveSessionAcceptanceIT {
         assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
         Files.writeString(work.resolve("history-evidence.txt"), "navigationCommands=unchanged\nreturnCommands=unchanged\n"
             + "displayMove=2 liveMove=5\ncacheUnchanged=true\nautomaticWhileBrowsing=" + browsingSubmission + "\n");
+        send(peer, "FASCORE");
+        await(() -> hasText(fox, "Fox.officialAction"), 5, "official request before terminal");
+        assertTrue(target.hasExclusiveGtpLease());
         send(peer, "FARESULT,W+R", "FASTATUS,0");
         await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "confirmed terminal handback");
         assertTrue(target.isLoaded());
@@ -257,6 +260,37 @@ public final class FoxLiveSessionAcceptanceIT {
         assertTrue(hasText(fox, "Fox.confirmationFailed"), "query retains failure notice");
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-unconfirmed.png").toFile());
+        String failedCommands = commands(work);
+        var failedHistory = Lizzie.board.getHistory();
+        send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,58,30,3",
+            "FAMOVE,1,B,0^0^0^N");
+        peer.setSoTimeout(1500);
+        assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(),
+            "same-socket reinit cannot issue another query or submission");
+        assertTrue(hasText(fox, "Fox.confirmationFailed"));
+        assertSame(failedHistory, Lizzie.board.getHistory());
+        assertTrue(target.hasExclusiveGtpLease());
+        assertEquals(failedCommands, commands(work), "reinit cannot restart or replace held owner work");
+        capture(fox, work.resolve("fox-reinit-blocked.png"));
+        send(peer, "FASTATUS,0");
+        await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "idle confirms failed-owner handback");
+        String idleHandback = commands(work).substring(failedCommands.length());
+        assertTrue(idleHandback.contains("kata-time_settings none"));
+        send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3",
+            "FAMOVE,1,B,0^0^0^N");
+        peer.setSoTimeout(15000);
+        assertEquals("AFSTATUS,B", receive(peer));
+        send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
+        String freshSubmission = receive(peer);
+        assertTrue(freshSubmission.startsWith("AFPLAY,B,1^"), freshSubmission);
+        assertNotSame(failedHistory, Lizzie.board.getHistory());
+        assertTrue(target.hasExclusiveGtpLease());
+        String freshCommands = commands(work).substring(failedCommands.length());
+        assertTrue(freshCommands.indexOf("kata-time_settings none")
+            < freshCommands.lastIndexOf("kgs-time_settings"), freshCommands);
+        Files.writeString(work.resolve("reinit-idle-new-game-gtp.txt"), gtp(work));
+        capture(fox, work.resolve("fox-reinit-fresh-game.png"));
+        await(() -> hasText(fox, "Fox.confirmationFailed"), 15, "fresh pending also remains unconfirmed");
       }
       await(() -> hasText(fox, "Fox.disconnected"), 5, "disconnect invalidation");
       try (Socket reconnected = new Socket("127.0.0.1", port)) {
@@ -283,9 +317,28 @@ public final class FoxLiveSessionAcceptanceIT {
         send(reconnected, "FAMOVE,0,B," + lastSubmission.substring("AFPLAY,B,".length()));
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "last confirmed live move");
         await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "last opponent search");
+        send(reconnected, "FASCORE");
+        await(() -> hasText(fox, "Fox.officialAction") && find(fox, JTextArea.class).getText()
+            .contains(Lizzie.resourceBundle.getString("Fox.officialAction")), 5, "stable official action instruction");
+        send(reconnected, "FASTATUS,1,B," + lastSubmission.substring("AFPLAY,B,".length()),
+            "FATIMELEFT,58,30,3", "FAMOVE,0,B," + lastSubmission.substring("AFPLAY,B,".length()));
+        reconnected.setSoTimeout(500);
+        assertThrows(SocketTimeoutException.class, () -> reconnected.getInputStream().read(),
+            "official score request never sends score, pass or move");
+        String scoreCommands = commands(work);
         BoardHistoryNode exitDisplay = Lizzie.board.getHistory().root();
         SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(exitDisplay));
         await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == exitDisplay, 5, "historical Stop target");
+        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
+        SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(exitDisplay));
+        assertTrue(hasText(fox, "Fox.officialAction"));
+        assertTrue(find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.officialAction")));
+        assertEquals(scoreCommands, commands(work), "official request queries and navigation never resume search");
+        assertEquals(1, Lizzie.board.getHistory().getMainEnd().getData().moveNumber);
+        assertTrue(target.hasExclusiveGtpLease());
+        capture(fox, work.resolve("fox-score-after-query-navigation.png"));
+        Files.writeString(work.resolve("score-status.txt"), find(fox, JTextArea.class).getText());
+        Files.writeString(work.resolve("score-gtp.txt"), gtp(work));
         String beforeStop = commands(work);
         SwingUtilities.invokeAndWait(() -> {
           button(fox, "Fox.stop").doClick();
