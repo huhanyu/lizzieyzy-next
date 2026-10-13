@@ -50,6 +50,8 @@ public final class FoxLiveSessionAcceptanceIT {
       System.setProperty("lizzie.work.dir", work.toString());
       Lizzie.main(new String[0]);
       await(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), 30, "main Swing window");
+      featurecat.lizzie.logging.LoggingRuntime.current().orElseThrow().startFullTrace(
+          java.util.Set.of(featurecat.lizzie.logging.TraceScope.ENGINE_GTP));
       SwingUtilities.invokeAndWait(() -> {
         for (Window window : Window.getWindows()) if (window instanceof Dialog) window.dispose();
       });
@@ -98,6 +100,17 @@ public final class FoxLiveSessionAcceptanceIT {
         send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
         await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "real current candidates");
         String candidates = find(fox, JTextArea.class).getText();
+        SwingUtilities.invokeAndWait(() -> {
+          assertFalse(Lizzie.frame.getBestMoves().isEmpty(), "current Fox candidates reach ordinary table");
+          assertTrue(Lizzie.frame.listTable.getRowCount() > 0, "actual candidate table has live rows");
+          assertEquals(Lizzie.frame.getBestMoves().get(0).coordinate,
+              Lizzie.frame.listTable.getValueAt(0, 1).toString());
+          Lizzie.frame.boardRenderer.selectNormalVariation();
+          assertTrue(Lizzie.frame.boardRenderer.bestMoveCoordinateName().isPresent(),
+              "current Fox candidates reach main-board renderer");
+          assertTrue(Lizzie.board.getData().bestMoves.isEmpty(), "live results never enter node cache");
+        });
+        captureMain(work.resolve("fox-main-live.png"));
         String submission = receive(peer);
         long submitted = System.nanoTime();
         assertTrue(submission.startsWith("AFPLAY,B,1^"), submission);
@@ -130,7 +143,44 @@ public final class FoxLiveSessionAcceptanceIT {
             && line.endsWith("play B " + vertex)), 5, "timely confirmed engine sync");
         long synchronizedAt = System.nanoTime();
         await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "opponent candidates");
+        await(() -> log(work.resolve("logs/app.log")).contains("outcome=CONFIRMED"),
+            5, "production on-disk submission confirmation");
+        String durable = log(work.resolve("logs/app.log"));
+        for (String field : List.of("fox search", "reader=", "clock=", "deadlineNanos=",
+            "elapsedSinceClockNanos=", "remainingNanos=", "searchLimitSeconds=", "fox selection",
+            "completedNanos=", "fox write", "writtenNanos=", "resolvedNanos=", "connection=", "game=", "revision=", "search="))
+          assertTrue(durable.contains(field), "durable field: " + field);
+        assertTrue(durable.contains("turnStartedNanos=") && durable.contains("elapsedTurnNanos="));
+        String confirmedEvent = durable.lines().filter(line -> line.contains("fox submission")
+            && line.contains("outcome=CONFIRMED")).findFirst().orElseThrow();
+        String selectedEvent = durable.lines().filter(line -> line.contains("fox selection"))
+            .findFirst().orElseThrow();
+        for (String identity : List.of("connection", "game", "revision", "search"))
+          assertEquals(number(selectedEvent, identity), number(confirmedEvent, identity));
+        assertTrue(selectedEvent.contains("vertex=" + vertex));
+        assertTrue(number(selectedEvent, "completedNanos") <= number(confirmedEvent, "preparedNanos"));
+        assertTrue(number(confirmedEvent, "preparedNanos") <= number(confirmedEvent, "writtenNanos"));
+        assertTrue(number(confirmedEvent, "writtenNanos") < number(confirmedEvent, "deadlineNanos"));
+        assertTrue(number(confirmedEvent, "writtenNanos") <= number(confirmedEvent, "resolvedNanos"));
+        await(() -> log(work.resolve("logs/engine-trace.log"))
+            .contains("kata-search_analyze_cancellable"), 5, "production exclusive GTP trace");
+        String trace = log(work.resolve("logs/engine-trace.log"));
+        assertTrue(trace.contains("gtp raw stream=info move"), "exclusive candidate stream traced");
+        assertTrue(trace.contains("gtp raw stream=play " + vertex), "exclusive final choice traced");
+        var searchCommands = trace.lines().filter(line -> line.contains("gtp raw command=")
+            && line.contains("kata-search_analyze_cancellable")).map(line -> line.substring(line.indexOf("gtp raw"))).toList();
+        assertEquals(searchCommands.size(), searchCommands.stream().distinct().count(), "no duplicate trace events");
+        Files.writeString(work.resolve("durable-first-turn.txt"), durable);
         assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "opponent never submits");
+        String previewCommands = commands(work);
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.setMouseOverCoords(0);
+          Lizzie.frame.refresh();
+        });
+        await(() -> Lizzie.frame.boardRenderer.branchOpt.isPresent(), 5, "live candidate ordinary preview");
+        captureMain(work.resolve("fox-main-preview.png"));
+        assertEquals(previewCommands, commands(work), "preview does not request another search");
+        SwingUtilities.invokeAndWait(() -> Lizzie.frame.clearMouseOverCoordinate(false));
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-confirmed.png").toFile());
         Files.writeString(work.resolve("timing.txt"), "turnStart=" + turnStart + "\nsubmitted=" + submitted
@@ -189,6 +239,7 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == pass, 5, "actual tree click");
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
+        assertDisplayCandidates(false);
         assertEquals(navigationCommands, commands(work), "browsing sends no GTP at all");
         int oldPlayouts = historical.getData().getPlayouts();
         var oldMoves = new ArrayList<>(historical.getData().bestMoves);
@@ -209,6 +260,7 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return while waiting");
         assertTrue(find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.waitingCandidate")));
         assertFalse(find(fox, JTextArea.class).getText().contains("%"), "no old candidate flicker");
+        assertDisplayCandidates(false);
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         send(peer, "FASTATUS,1,B," + tuple + "," + white + "," + fourth,
             "FATIMELEFT,57,30,3", "FAMOVE,1,B," + fourth);
@@ -219,19 +271,15 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals(oldPlayouts, historical.getData().getPlayouts());
         assertEquals(oldMoves, historical.getData().bestMoves);
         assertFalse(find(fox, JTextArea.class).getText().contains("%"));
+        assertDisplayCandidates(false);
         String beforeReturn = commands(work);
         SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return to current live tail");
         assertTrue(find(fox, JTextArea.class).getText().contains("%"), "current valid candidate immediately returns");
         assertTrue(hasText(fox, "Fox.pending"));
         assertEquals(beforeReturn, commands(work));
-        SwingUtilities.invokeAndWait(() -> {
-          Lizzie.frame.getRootPane().paintImmediately(0, 0, Lizzie.frame.getWidth(), Lizzie.frame.getHeight());
-          fox.getRootPane().paintImmediately(0, 0, fox.getWidth(), fox.getHeight());
-        });
-        robot.delay(100);
-        ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
-            "png", work.resolve("fox-return-current.png").toFile());
+        assertDisplayCandidates(true);
+        captureMain(work.resolve("fox-main-return-current.png"));
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         if (browsingSubmission.startsWith("AFPLAY"))
           send(peer, "FAMOVE,0,B," + browsingSubmission.substring("AFPLAY,B,".length()));
@@ -366,6 +414,7 @@ public final class FoxLiveSessionAcceptanceIT {
       }
       retainedReconnect(fox, port, target, work);
       unconfirmedRetainedStop(fox, port, target, work);
+      naturalPassReconnect(fox, port, target, work);
       assertTrue(target.isLoaded());
       assertTrue(target.beginExclusiveGtpLifecycleTransition());
       target.endExclusiveGtpLifecycleTransition();
@@ -390,6 +439,14 @@ public final class FoxLiveSessionAcceptanceIT {
         observedClocks++;
       }
       assertEquals(2, observedClocks);
+      target.ponder();
+      await(() -> Lizzie.board.getData().getPlayouts() > 0, 15, "ordinary analysis after confirmed handback");
+      SwingUtilities.invokeAndWait(() -> assertSame(Lizzie.board.getData().bestMoves, Lizzie.frame.getBestMoves()));
+      captureMain(work.resolve("fox-ordinary-analysis-restored.png"));
+      target.notPondering();
+      target.sendCommand("137002 name");
+      await(() -> gtp(work).contains("=137002 KataGo"), 5, "ordinary pause fence");
+      assertFalse(target.isPondering());
       Files.writeString(result, "PASS Swing TCP one KataGo same-search candidates final automatic send pending no-preadvance confirmed timely-sync opponent init blocked no-send terminal disconnect Stop restore\n"
           + "engine=" + args[0] + "\nmodel=" + args[1] + "\nprocess=" + ProcessHandle.current().pid() + "\n");
       target.sendCommand("quit");
@@ -399,6 +456,101 @@ public final class FoxLiveSessionAcceptanceIT {
       failure.printStackTrace();
       if (engine != null) engine.sendCommand("quit");
       System.exit(1);
+    }
+  }
+
+  private static long number(String line, String key) {
+    var match = java.util.regex.Pattern.compile("\\b" + key + "=(\\d+)").matcher(line);
+    assertTrue(match.find(), key + " missing: " + line);
+    return Long.parseLong(match.group(1));
+  }
+
+  private static String log(Path file) {
+    try { return Files.exists(file) ? Files.readString(file) : ""; }
+    catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+  }
+
+  private static void assertDisplayCandidates(boolean present) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      assertEquals(present, !Lizzie.frame.getBestMoves().isEmpty());
+      assertEquals(present, Lizzie.frame.listTable.getRowCount() > 0);
+      Lizzie.frame.boardRenderer.selectNormalVariation();
+      assertEquals(present, Lizzie.frame.boardRenderer.bestMoveCoordinateName().isPresent());
+    });
+  }
+
+  private static void captureMain(Path image) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      Lizzie.frame.toFront();
+      Lizzie.frame.refresh();
+    });
+    Robot robot = new Robot();
+    robot.delay(200);
+    ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+        "png", image.toFile());
+  }
+
+  /** A legal two-eye setup leaves White no legal stone placement; the real engine chooses PASS. */
+  private static void naturalPassReconnect(JDialog fox, int port, Leelaz target, Path work) throws Exception {
+    SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
+    await(() -> modal() != null, 5, "natural pass rules confirmation");
+    answerModal(JOptionPane.OK_OPTION);
+    await(() -> modal() != null, 5, "natural pass history replacement");
+    SwingUtilities.invokeAndWait(() -> button(modal(), "Fox.replace").doClick());
+    await(() -> button(fox, "Fox.stop").isEnabled(), 5, "natural pass listener");
+    StringBuilder rules = new StringBuilder("FARULE,5,60,30,3,650");
+    for (int y = 0; y < 5; y++) for (int x = 0; x < 5; x++) {
+      if ((x == 1 && y == 1) || (x == 3 && y == 3)) continue;
+      rules.append(",0^").append(x).append('^').append(y).append("^B");
+    }
+    BoardHistoryNode[] pass = new BoardHistoryNode[1];
+    String before = commands(work);
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      peer.setSoTimeout(20000);
+      send(peer, "FASTATUS,0", rules.toString(), "FASTATUS,1,W", "FATIMELEFT,60,30,3",
+          "FAMOVE,1,W,0^0^0^N");
+      assertEquals("AFSTATUS,W", receive(peer));
+      send(peer, "FASTATUS,1,W", "FATIMELEFT,59,30,3", "FAMOVE,1,W,0^0^0^N");
+      assertEquals("AFSKIP,W", receive(peer), "unfiltered real engine natural PASS reaches production transport");
+      assertEquals(0, Lizzie.board.getHistory().getMoveNumber(), "unconfirmed PASS never advances board");
+      assertTrue(Lizzie.board.getData().isSnapshotNode());
+      String searched = commands(work).substring(before.length());
+      assertTrue(searched.contains("set_free_handicap"));
+      assertFalse(searched.contains("play W pass"), "search itself does not play PASS");
+      send(peer, "FASKIP,0,W");
+      await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "controlled PASS confirmation");
+      pass[0] = Lizzie.board.getHistory().getCurrentHistoryNode();
+      assertTrue(pass[0].getData().isPassNode());
+      await(() -> commands(work).substring(before.length()).contains("play W pass"), 10, "confirmed PASS engine replay");
+      send(peer, "FASTATUS,1,W", "FATIMELEFT,58,30,3", "FAMOVE,0,W,0^0^0^N");
+      Thread.sleep(250);
+      assertSame(pass[0], Lizzie.board.getHistory().getCurrentHistoryNode(), "pass-less full query retains tail PASS");
+      captureMain(work.resolve("fox-natural-pass-confirmed.png"));
+      Files.writeString(work.resolve("natural-pass-gtp.txt"), gtp(work));
+    }
+    await(() -> hasText(fox, "Fox.disconnected"), 5, "natural pass disconnect");
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      peer.setSoTimeout(300);
+      send(peer, rules.toString(), "FASTATUS,1,W", "FATIMELEFT,40,30,3", "FAMOVE,0,W,0^0^0^N");
+      await(() -> button(fox, "Fox.recoveryConfirm").isEnabled(), 5, "natural tail PASS recovery assertion");
+      String recovery = commands(work);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
+      assertEquals(recovery, commands(work), "no search before assertion");
+      SwingUtilities.invokeLater(() -> button(fox, "Fox.recoveryConfirm").doClick());
+      await(() -> modal() != null, 5, "natural pass same-game dialog");
+      answerModal(JOptionPane.YES_OPTION);
+      await(() -> commands(work).substring(recovery.length()).contains("kata-search_analyze_cancellable B"),
+          20, "new opponent search after retained PASS recovery");
+      String replay = commands(work).substring(recovery.length());
+      assertTrue(replay.indexOf("play W pass") >= 0);
+      assertTrue(replay.indexOf("play W pass") < replay.indexOf("kata-search_analyze_cancellable B"));
+      assertSame(pass[0], Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "recovery never resends PASS");
+      Files.writeString(work.resolve("natural-pass-recovery-gtp.txt"), replay);
+      capture(fox, work.resolve("fox-natural-pass-recovered.png"));
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(),
+          35, "natural pass confirmed handback");
     }
   }
 

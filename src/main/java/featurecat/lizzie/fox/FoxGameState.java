@@ -28,7 +28,7 @@ public final class FoxGameState {
       Clock clock, char ai, Character toPlay, List<Placement> placements,
       List<Action> actions, boolean initialized, boolean complete, boolean active,
       String statusKey, boolean clockRefreshed, long submitDeadlineNanos, Submission pending,
-      boolean automationBlocked) {
+      boolean automationBlocked, long turnStartedNanos) {
     public boolean searchable() { return initialized && complete && active && !automationBlocked; }
     public boolean ownTurn() { return toPlay != null && toPlay == ai; }
   }
@@ -114,6 +114,9 @@ public final class FoxGameState {
   }
 
   public synchronized List<SubmissionFact> submissions() { return List.copyOf(submissions); }
+  public synchronized SubmissionFact latestSubmission() {
+    return submissions.isEmpty() ? null : submissions.get(submissions.size() - 1);
+  }
 
   /** One refresh per authoritative turn; queuing and query latency belong to that turn. */
   public synchronized boolean beginClockRefresh(long now) {
@@ -244,7 +247,7 @@ public final class FoxGameState {
     return new Snapshot(connection, game, revision, rules, clock, ai, toPlay,
         placements, List.copyOf(actions), rules != null && statusSeen && clock != null
         && toPlay != null, complete, active, active && automationBlocked ? automationStopReason : statusKey,
-        clockRefreshed, submitDeadlineNanos, pending, automationBlocked);
+        clockRefreshed, submitDeadlineNanos, pending, automationBlocked, turnStartedNanos);
   }
 
   public synchronized void reject() {

@@ -2,6 +2,8 @@ package featurecat.lizzie.analysis;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.fox.FoxGameState;
+import featurecat.lizzie.logging.EngineObservation;
+import featurecat.lizzie.logging.FoxObservation;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -18,6 +20,7 @@ public final class FoxEngineSession {
   private static final AtomicInteger COMMAND = new AtomicInteger(700000000);
   private final Leelaz engine;
   private final Object readerIdentity;
+  private final String loggingEngineId;
   private final Object owner = new Object();
   private final BlockingQueue<String> lines = new LinkedBlockingQueue<>(4096);
   private final AtomicLong search = new AtomicLong();
@@ -40,6 +43,7 @@ public final class FoxEngineSession {
       Consumer<Candidates> candidates, Consumer<String> failure) {
     this.engine = engine;
     this.readerIdentity = readerIdentity;
+    this.loggingEngineId = EngineObservation.identityFor(engine);
     this.candidates = candidates;
     this.failure = failure;
   }
@@ -93,6 +97,7 @@ public final class FoxEngineSession {
     if (closing || !prepared || !state.searchable()) return null;
     long generation = search.incrementAndGet();
     SearchIdentity identity = new SearchIdentity(state.connection(), state.game(), state.revision(), generation);
+    FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "synchronizing", 0);
     request("boardsize " + state.rules().size(), null, 5000);
     request("clear_board", null, 5000);
     request("komi " + state.rules().komi(), null, 5000);
@@ -130,6 +135,8 @@ public final class FoxEngineSession {
       long timeout = state.ownTurn()
           ? (state.submitDeadlineNanos() - System.nanoTime()) / 1_000_000L : 7000;
       if (timeout <= 0) throw new IllegalStateException("Fox turn budget exhausted in queue");
+      FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "started",
+          Math.min(originalMaxTime, limit));
       String result = request("kata-search_analyze_cancellable " + state.toPlay() + " 10",
           line -> {
             if (!closing && search.get() == generation && Lizzie.leelaz == engine
@@ -144,9 +151,13 @@ public final class FoxEngineSession {
       if (!vertex.matches("(?i:pass)|[A-HJ-Z][0-9]{1,2}")) {
         throw new IllegalStateException("Fox search returned no valid final choice: " + result);
       }
-      return new Selection(identity, vertex, System.nanoTime());
+      long completed = System.nanoTime();
+      FoxObservation.selection(loggingEngineId, identity, vertex, completed);
+      return new Selection(identity, vertex, completed);
     } finally {
       searching = false;
+      FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "finished",
+          Math.min(originalMaxTime, limit));
     }
   }
 

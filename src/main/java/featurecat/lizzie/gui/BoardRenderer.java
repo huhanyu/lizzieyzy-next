@@ -1594,7 +1594,11 @@ public class BoardRenderer {
 
     // calculate best moves and branch
     BoardData candidateData = capture.analysisData;
-    synchronized (candidateData) {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) {
+      bestMoves = new ArrayList<>(
+          featurecat.lizzie.fox.FoxLiveSession.displayedCandidates(Lizzie.frame.getDisplayNode()));
+      estimateArray = null;
+    } else synchronized (candidateData) {
       if (boardIndex == 1) {
         bestMoves = new ArrayList<>(candidateData.bestMoves2);
         estimateArray = candidateData.estimateArray2;
@@ -1808,7 +1812,8 @@ public class BoardRenderer {
           }
         }
       }
-    if (mouseOverTemp != null && mouseOverTempNode == Lizzie.frame.getDisplayNode()) {
+    if (!featurecat.lizzie.fox.FoxLiveSession.isActive()
+        && mouseOverTemp != null && mouseOverTempNode == Lizzie.frame.getDisplayNode()) {
       boolean needAddback = false;
       Optional<int[]> coords = Board.asCoordinates(mouseOverTemp.coordinate);
       if (coords.isPresent()) {

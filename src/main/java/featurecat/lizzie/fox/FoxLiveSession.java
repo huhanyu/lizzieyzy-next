@@ -3,7 +3,9 @@ package featurecat.lizzie.fox;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.FoxEngineSession;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.logging.FoxObservation;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
@@ -12,6 +14,8 @@ import featurecat.lizzie.rules.Stone;
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.*;
@@ -55,6 +59,8 @@ public final class FoxLiveSession {
   private long blockedGame = -1;
   private long ownerGeneration;
   private FoxEngineSession.Candidates liveCandidates;
+  private List<MoveData> liveMoves = List.of();
+  private FoxGameState.SubmissionFact loggedSubmission;
   private String selectedRules;
   private final JButton recover = new JButton(text("Fox.recoveryConfirm"));
   private Leelaz retainedEngine;
@@ -192,7 +198,7 @@ public final class FoxLiveSession {
     if (state.active() && state.automationBlocked())
       output.setText(text(state.statusKey()) + (browsing ? "\n" + text(browsingStatusKey()) : ""));
     else if (browsing) output.setText(text(browsingStatusKey()));
-    else if (liveCandidates != null) showCandidates(liveCandidates);
+    else if (liveCandidates != null) showCandidates();
     else output.setText(text("Fox.automatic") + "\n\n" + text("Fox.waitingCandidate"));
   }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
@@ -206,6 +212,21 @@ public final class FoxLiveSession {
     return current != null && current.ownsBoard && current.liveHistory != null
         && current.displayCursor != current.liveTail;
   }
+
+  /** Display-only results; never install these in a historical BoardData analysis slot. */
+  public static List<MoveData> displayedCandidates(BoardHistoryNode node) {
+    FoxLiveSession current = instance;
+    if (current == null || !current.ownsBoard || current.restoring
+        || node != current.liveTail || current.displayCursor != current.liveTail
+        || current.liveCandidates == null || current.engine == null
+        || Lizzie.board.getHistory() != current.liveHistory
+        || !current.engine.isCurrent(current.liveCandidates)) return List.of();
+    FoxGameState.Snapshot state = current.game.snapshot();
+    FoxEngineSession.SearchIdentity identity = current.liveCandidates.identity();
+    return state.searchable() && identity.connection() == state.connection()
+        && identity.game() == state.game() && identity.revision() == state.revision()
+        ? current.liveMoves : List.of();
+  }
   public BoardHistoryNode liveTail() { return liveTail; }
   public BoardHistoryNode displayCursor() { return displayCursor; }
   public FoxEngineSession.Candidates liveCandidates() { return liveCandidates; }
@@ -213,7 +234,14 @@ public final class FoxLiveSession {
   public java.util.List<FoxGameState.SubmissionFact> submissions() { return game.submissions(); }
 
   private static String text(String key) { return Lizzie.resourceBundle.getString(key); }
-  private void showStatus(String key) { status.setText(text(key)); }
+  private void showStatus(String key) {
+    status.setText(text(key));
+    FoxGameState.SubmissionFact fact = game.latestSubmission();
+    if (fact != null && fact != loggedSubmission) {
+      FoxObservation.submission(fact);
+      loggedSubmission = fact;
+    }
+  }
   private void owned(Runnable action) {
     OWNED_MUTATION.set(true);
     try { action.run(); } finally { OWNED_MUTATION.remove(); }
@@ -266,6 +294,7 @@ public final class FoxLiveSession {
       port.setEnabled(false);
       rules.setEnabled(false);
       showStatus("Fox.listening");
+      Lizzie.frame.refresh();
     } catch (IOException failure) {
       showStatus("Fox.portBusy");
     }
@@ -277,6 +306,7 @@ public final class FoxLiveSession {
     try { game.receive(body, System.nanoTime()); }
     catch (IllegalArgumentException failure) { game.reject(); }
     FoxGameState.Snapshot state = game.snapshot();
+    FoxObservation.state(state);
     if (state.active()) ownsBoard = true;
     if (before.revision() != state.revision()) invalidate();
     showStatus(state.statusKey());
@@ -311,17 +341,15 @@ public final class FoxLiveSession {
     update(state);
   }
 
-  private void showCandidates(FoxEngineSession.Candidates candidates) {
+  private void showCandidates() {
     StringBuilder display = new StringBuilder(text("Fox.automatic")).append("\n\n");
     display.append(text("AnalysisFrame.column2")).append("   ")
         .append(text("AnalysisFrame.column5")).append("   ")
         .append(text("AnalysisFrame.column4")).append("   ")
         .append(text("AnalysisFrame.column8")).append('\n');
     int count = 0;
-    for (String part : candidates.info().split("info ")) {
-      if (!part.startsWith("move ") || count++ >= 12) continue;
-      featurecat.lizzie.analysis.MoveData move =
-          featurecat.lizzie.analysis.MoveData.fromInfoKatago(part);
+    for (MoveData move : liveMoves) {
+      if (count++ >= 12) break;
       display.append(String.format(java.util.Locale.ROOT, "%s   %d   %.1f%%   %+.1f%n",
           move.coordinate, move.playouts, move.winrate, move.scoreMean));
     }
@@ -347,8 +375,14 @@ public final class FoxLiveSession {
               || candidates.identity().game() != current.game()
               || candidates.identity().revision() != current.revision()) return;
           liveCandidates = candidates;
+          List<MoveData> moves = new ArrayList<>();
+          for (String part : candidates.info().split("info ")) {
+            if (part.startsWith("move ")) moves.add(MoveData.fromInfoKatago(part));
+          }
+          liveMoves = List.copyOf(moves);
           showStatus(current.statusKey());
-          if (displayCursor == liveTail) showCandidates(candidates);
+          if (displayCursor == liveTail) showCandidates();
+          Lizzie.frame.refresh();
         }), key -> onEdt(() -> {
           if (ownerToken != ownerGeneration || engine == null) return;
           blockedGame = game.snapshot().game();
@@ -366,7 +400,7 @@ public final class FoxLiveSession {
             }
           });
         } catch (Exception failure) {
-          System.err.println("Fox engine preparation failed: " + failure);
+          FoxObservation.failure("prepare", failure);
           onEdt(() -> {
             if (engine == owner) {
               blockedGame = game.snapshot().game();
@@ -421,7 +455,7 @@ public final class FoxLiveSession {
         onEdt(() -> finishSearch(owner, state, generation, selection));
       }
       catch (Exception failure) {
-        System.err.println("Fox engine search failed: " + failure);
+        FoxObservation.failure("search", failure);
         onEdt(() -> {
           if (engine == owner && generation == workGeneration) {
             fail(state.ownTurn() ? "Fox.clockRisk" : "Fox.engineError");
@@ -446,10 +480,11 @@ public final class FoxLiveSession {
       try {
         boolean sent = transport.send(token, pending.body(), () -> owner.claimSubmission(selection,
             () -> generation == workGeneration && game.claimSubmission(pending, System.nanoTime())));
-        System.out.println("Fox submit search=" + selection.identity() + " completed=" + selection.completedNanos()
-            + " deadline=" + pending.deadlineNanos() + " writeReturned=" + System.nanoTime() + " sent=" + sent);
+        FoxObservation.write(pending, sent ? "sent" : "not-claimed");
         if (!sent) onEdt(() -> { if (generation == workGeneration) fail("Fox.confirmationFailed"); });
       } catch (IOException failure) {
+        FoxObservation.write(pending, "io-failure");
+        FoxObservation.failure("write", failure);
         onEdt(() -> { if (generation == workGeneration) fail("Fox.confirmationFailed"); });
       }
     });
@@ -536,8 +571,10 @@ public final class FoxLiveSession {
     scheduledRevision = -1;
     refreshDeadlineNanos = 0;
     liveCandidates = null;
+    liveMoves = List.of();
     refreshDisplay();
     if (engine != null) engine.invalidate();
+    Lizzie.frame.refresh();
   }
 
   private void release(String finalStatus, boolean keepConfirmed) {

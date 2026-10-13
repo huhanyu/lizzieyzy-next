@@ -10191,6 +10191,7 @@ public class Leelaz {
           continue;
         }
         if (dispatchExclusiveGtpLine(binding, line)) {
+          EngineObservation.traceRawStream(loggingEngineId, null, line);
           lineInProgress = false;
           endReaderLine(binding);
           continue;
@@ -16557,6 +16558,7 @@ public class Leelaz {
         currentOutputStream.write((command + "\n").getBytes());
         currentOutputStream.flush();
       }
+      EngineObservation.traceRawCommand(loggingEngineId, null, command);
       return ExclusiveGtpWriteResult.SENT;
     } catch (IOException ex) {
       clearBufferedCommandBytesAfterSendFailure(currentOutputStream);

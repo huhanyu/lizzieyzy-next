@@ -680,6 +680,7 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 - `FoxGameState` 分开保存协议编号 placements 与有完整证据的 `MOVE/PASS` actions。完整初始化需要规则、状态、时钟与回合；全量状态不能补造 pass，也不能把冷接入的中盘提升为完整历史。
 - 初始让子通过 `AB/HA/PL` setup 基座进入历史，不计作普通手数。实时尾节点、显示游标与带 connection/game/revision/search 身份的候选分别保存。Board 的前后、步进、分支、手数和任意节点导航以及 BoardHistoryList 的直接游标操作只改变显示；实战期间不转发历史 play/undo/restore/analyze，不改变实战搜索、时钟或 pending。
 - 已采用 history 的游标边界通知唯一 `FoxLiveSession.displayCursor`；controller 追加确认动作时临时操作 liveTail，随后恢复用户选定节点。导航不写实战分析到历史缓存；既有缓存仍属于原节点。回看提示与返回按钮独立于连接/时钟状态；回看不显示实时候选数值，返回只显示当前身份候选或等待，不重启搜索。
+- 主棋盘候选、普通候选表及其 PV 预览直接消费同一 fenced 实战结果，沿用普通绘制设置；直连对话框保留。结果仅保存在 Fox display 层，不写 `BoardData`。回看、恢复观察、失效或等待新结果时，这些入口统一隐藏实时候选；旧 hover 缓存不能补回已失效候选。返回当前节点不发 GTP、不重启搜索。
 - 停止或终局归还以实际显示节点为恢复目标，归还期间冻结导航和普通修改，直到原 reader 上完成规则、时间覆盖、运行参数与棋盘确认。不完整观察仍回到接入前稳定棋盘，不将观察信息升级为可重放历史。
 - `FoxEngineSession` 通过当前 `Leelaz` 的独占 owner 使用同一 KataGo，普通快速分析取消不能释放该 owner。先失效候选再取消搜索；每次候选只属于其原始连接、棋局、修订和搜索。
 - 停止及终局通过既有恢复管线重建确认的棋盘；断线保留已采用历史时暂停实战并持有 owner，直到显式归还。原始 rules 与 maxTime 必须分别收到成功响应，且当前 reader/引擎仍一致，才可宣告交还成功；失败显示未恢复，不以最终 `name` 响应掩盖前序拒绝。
@@ -687,6 +688,7 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 - 最终选择先登记 immutable pending，再在 loopback 输出锁取得后的 write-start 边界核对连接、棋局、局面修订、搜索、截止、未消费 pending 及同一 Leelaz owner/reader。该一次性 claim 与身份撤销串行化；已开始的物理写入不能撤回。socket 写成功不表示接受，任何情况下都不重发或用旧候选、随机动作、pass 兜底。
 - pending 不推进 Board 或引擎；仅匹配的 `FAMOVE` / 新增单个 matching placement 的 `FASTATUS`，或预期回合转换的 `FASKIP` 确认后追加真实动作并立即排队同步引擎。PASS 不增加 placements 编号，后继 `AFPLAY` 取 placements.size + 1。
 - 确认等待五秒仍无匹配证据、拒绝、矛盾、停止、断线或终局撤销提交权。`SubmissionFact` 保留原 connection/game/revision/search、动作、准备/写入/截止/结清单调时间和 CONFIRMED/FAILED 原因；FAILED 不被后续查询、重连或迟到证据改写成可恢复请求。05 必须检查此历史，不能仅以当前 pending == null 推断可靠检查点。
+- 搜索同步/开始/结束、权威时钟与回合起点、已用时间/截止/有效搜索上限、最终选择、物理写入返回及确认/失败事实通过现有 `lizzie.engine` 持久通道记录，按 connection/game/revision/search 关联，并记录原 engine/reader。确认事件保留实际 write-start 与结清单调时间；socket 写出事件不替代确认。日志不含账号或原始 Fox 帧，不改变准入/预算。启用 `engine-gtp` Full Trace 时，Leelaz 唯一 reader/writer 对独占命令和消费的响应逐次记录，复用既有有界、脱敏及 scope 生命周期，不重复经过普通 parser；生产证据不依赖宿主 stdout 捕获。
 - `FASCORE` 或引擎 resign 停止自动提交并提示用户操作官方客户端；不发送分数、自动认输或替代 PASS。时钟无效、非正预算或截止前没有有效最终选择时同样停止并提示超时风险；一秒余量不是永不超时保证，官方短时限校准仍须完成。
 - Fox 取得所有权前要求 `kata-time_settings` 与 `kata-list_time_settings` 的 `none` 能力。归还时在同一 reader 上确认 `kata-time_settings none`，清除实战外部时钟后才开放普通命令；不重建或恢复另一盘对局的旧时钟。后续引擎自身时间模式不发送时间覆盖，因此不能让它继承 Fox 读秒。reset 拒绝/超时按同一归还失败屏障处理。KataGo v1.18.2 [GTP Extensions](https://github.com/lightvector/KataGo/blob/v1.18.2/docs/GTP_Extensions.md) 定义 `none` 为无外部 time control；此 disposition 不改变已捕获 rules/maxTime 的原值恢复。
 - 断线先撤销候选、搜索和提交身份，再取消搜索。仅完整动作历史且本局所有提交均已确认时保留内存检查点；FAILED/PENDING 的 `SubmissionFact` 不会因当前 pending 为空而洗成可靠历史。完整新局仍通过明确终局/空闲边界重新准入。

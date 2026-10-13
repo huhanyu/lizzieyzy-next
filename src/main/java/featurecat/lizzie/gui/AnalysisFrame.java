@@ -492,9 +492,12 @@ public class AnalysisFrame extends JFrame {
     int maxMoveVisits = 0;
     double stable = 0;
     List<MoveData> bestMoves = null;
-    if (index == 1) bestMoves = Lizzie.board.getData().bestMoves;
+    if (index == 1) bestMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
+        ? Lizzie.frame.getBestMoves() : Lizzie.board.getData().bestMoves;
     else if (index == 2) bestMoves = Lizzie.board.getData().bestMoves2;
     if (bestMoves == null || bestMoves.isEmpty()) return;
+    if (index == 1 && featurecat.lizzie.fox.FoxLiveSession.isActive())
+      totalPlayouts = MoveData.getPlayouts(bestMoves);
     int totalAllocation = MoveData.getAllocationVisits(bestMoves);
     Graphics2D g = (Graphics2D) g0;
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -780,7 +783,8 @@ public class AnalysisFrame extends JFrame {
       public int getRowCount() {
         data2 = new ArrayList<MoveData>();
         if (index == 1) {
-          if (EngineGamePresentation.current().playing()
+          if (featurecat.lizzie.fox.FoxLiveSession.isActive()) bestMoves = Lizzie.frame.getBestMoves();
+          else if (EngineGamePresentation.current().playing()
               && Lizzie.config.showPreviousBestmovesInEngineGame) {
             if (Lizzie.board.getHistory().getCurrentHistoryNode().previous().isPresent())
               if ((bestMoves = Lizzie.leelaz.getBestMoves()).isEmpty())
