@@ -30,7 +30,13 @@ public final class WindowsUpdateController {
   }
 
   private static void showPage(Component parent, boolean automatic) {
-    if (page != null && page.isDisplayable()) return;
+    if (page != null && page.isDisplayable()) {
+      if (!automatic) {
+        page.setVisible(true);
+        page.toFront();
+      }
+      return;
+    }
     page = new CheckUpdateDialog(parent, COORDINATOR, automatic);
     page.setVisible(true);
   }
