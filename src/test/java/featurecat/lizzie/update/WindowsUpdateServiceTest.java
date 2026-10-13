@@ -69,6 +69,50 @@ class WindowsUpdateServiceTest {
   }
 
   @Test
+  void automaticWindowsPreparationNeedsExplicitActionForCurrentRequest() throws Exception {
+    byte[] archive = "verified Windows component".getBytes(StandardCharsets.UTF_8);
+    try (OneShotHttp proxy = new OneShotHttp(archive)) {
+      useManualProxy(proxy.port());
+      configureUpdatePaths();
+      WindowsUpdatePlan plan = updatePlan("http://example.invalid/core.zip", archive);
+      UpdateCheckResult offer = UpdateCheckResult.offerWindows(plan);
+      AtomicInteger launches = new AtomicInteger();
+      java.util.concurrent.atomic.AtomicReference<Path> prepared = new java.util.concurrent.atomic.AtomicReference<>();
+      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(s -> offer,
+          new UpdateCheckCoordinator.OfferHandoff() {
+            public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) {
+              throw new AssertionError("Automatic preparation must not open a manual dialog");
+            }
+            public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) {
+              throw new AssertionError("Wrong platform");
+            }
+          }, new UpdateCheckCoordinator.Runner() {
+            public void runBackground(Runnable r) { r.run(); }
+            public void runOnEdt(Runnable r) { r.run(); }
+          }, s -> {}, new UpdateCheckCoordinator.DownloadService() {
+            public Path prepare(UpdateCheckResult r, ResumableDownloader.Control control,
+                ResumableDownloader.ProgressListener listener) throws Exception {
+              Path request = new WindowsUpdateService().downloadAndPrepare(r.windowsPlan, control, listener);
+              prepared.set(request);
+              return request;
+            }
+            public void apply(UpdateCheckResult r, Path request) throws Exception {
+              assertEquals(prepared.get(), request);
+              assertEquals(ProcessHandle.current().pid(), new JSONObject(Files.readString(request)).getLong("mainPid"));
+              launches.incrementAndGet();
+            }
+          });
+      coordinator.applicationReady(true, true, UpdateCheckSelection.of(
+          UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-06-01.1"));
+      assertTrue(coordinator.state().ready());
+      assertEquals(0, launches.get());
+      assertEquals(1, proxy.requests.get());
+      coordinator.openOffer();
+      assertEquals(1, launches.get());
+    }
+  }
+
+  @Test
   void legacyNvidia50PackageUsesUnifiedNvidiaUpdateFlavor() throws Exception {
     Path fromManifest = Files.createDirectories(tempDir.resolve("legacy-manifest").resolve("app"));
     Files.writeString(

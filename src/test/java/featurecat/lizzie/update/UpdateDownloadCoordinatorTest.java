@@ -52,6 +52,19 @@ class UpdateDownloadCoordinatorTest {
   }
 
   @Test
+  void invalidatedDiscoveryCannotQueueAnAutomaticDownload() {
+    Fixture f = new Fixture();
+    f.coordinator.applicationReady(true, true, selection);
+    f.runner.work();
+    f.coordinator.invalidateAutomatic();
+    f.runner.deliver();
+    assertNull(f.coordinator.state().result());
+    assertTrue(f.runner.background.isEmpty());
+    assertEquals(0, f.prepares);
+    assertEquals(0, f.reminders);
+  }
+
+  @Test
   void lateSuccessAndFailureCannotRestoreInvalidatedAutomaticTarget() {
     for (boolean fail : List.of(false, true)) {
       Fixture f = new Fixture();
