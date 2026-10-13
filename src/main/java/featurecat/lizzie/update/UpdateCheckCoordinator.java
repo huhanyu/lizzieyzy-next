@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 /** Application-owned update lifecycle. State and callbacks are confined to the EDT. */
 final class UpdateCheckCoordinator {
   enum Origin { AUTOMATIC, MANUAL }
-  enum DownloadPhase { NONE, DOWNLOADING, CANCELLED, FAILED, READY }
+  enum DownloadPhase { NONE, DOWNLOADING, PAUSED, CANCELLED, FAILED, READY }
 
   record Download(DownloadPhase phase, ResumableDownloader.Progress progress, String error) {}
 
@@ -23,7 +23,10 @@ final class UpdateCheckCoordinator {
     State(boolean checking, Origin origin, UpdateCheckSelection selection, UpdateCheckResult result) {
       this(checking, origin, selection, result, new Download(DownloadPhase.NONE, null, null));
     }
-    boolean downloading() { return download.phase() == DownloadPhase.DOWNLOADING; }
+    boolean downloading() {
+      return download.phase() == DownloadPhase.DOWNLOADING || paused();
+    }
+    boolean paused() { return download.phase() == DownloadPhase.PAUSED; }
     boolean ready() { return download.phase() == DownloadPhase.READY; }
     boolean hasOffer() {
       return result != null && result.reason == UpdateCheckResult.Reason.OFFER;
@@ -196,7 +199,8 @@ final class UpdateCheckCoordinator {
         task.checkCancelled();
         path = downloads.prepare(offered.result(), task, progress -> runner.runOnEdt(() -> {
           if (control == task && !task.isCancelled() && !automaticInvalidated && inFlight) {
-            publishDownload(DownloadPhase.DOWNLOADING, progress, null);
+            publishDownload(task.isPaused() ? DownloadPhase.PAUSED : DownloadPhase.DOWNLOADING,
+                progress, null);
           }
         }));
       } catch (Exception e) { failure = e; }
@@ -238,6 +242,8 @@ final class UpdateCheckCoordinator {
   void togglePause() {
     if (!state.downloading() || control == null) return;
     if (control.isPaused()) control.resume(); else control.pause();
+    publishDownload(control.isPaused() ? DownloadPhase.PAUSED : DownloadPhase.DOWNLOADING,
+        state.download().progress(), null);
   }
 
   boolean busy() { return inFlight; }

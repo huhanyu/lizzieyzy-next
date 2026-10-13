@@ -179,6 +179,7 @@ public final class PackageUpdateDialog extends JDialog {
     downloadButton.setText(state.ready() ? UpdateDownloadText.action(offered)
         : UpdateText.tr("WindowsUpdate.btnDownload", "下载新版", "Download update"));
     pauseButton.setEnabled(current && state.downloading());
+    pauseButton.setText(UpdateDownloadText.pauseAction(state));
     cancelButton.setEnabled(current && state.downloading());
     if (!current) { dispose(); return; }
     progressBar.setVisible(state.download().phase() != UpdateCheckCoordinator.DownloadPhase.NONE);

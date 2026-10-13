@@ -202,6 +202,30 @@ class UpdateDownloadCoordinatorTest {
     assertEquals(0, f.applies);
   }
 
+  @Test
+  void pausedAutomaticWorkStillCancelsAndFencesLateCompletion() {
+    for (boolean invalidate : List.of(false, true)) {
+      Fixture f = new Fixture();
+      f.start();
+      f.coordinator.togglePause();
+      assertTrue(f.coordinator.state().paused());
+      assertTrue(f.coordinator.busy());
+      if (invalidate) f.coordinator.invalidateAutomatic();
+      else f.coordinator.disableAutomaticDownload();
+      f.coordinator.togglePause();
+      assertFalse(f.coordinator.checkManually(selection));
+      f.runner.work();
+      f.runner.deliver();
+      assertFalse(f.coordinator.busy());
+      assertEquals(0, f.prepares);
+      assertEquals(0, f.applies);
+      assertEquals(0, f.reminders);
+      if (invalidate) assertNull(f.coordinator.state().result());
+      else assertEquals(UpdateCheckCoordinator.DownloadPhase.CANCELLED,
+          f.coordinator.state().download().phase());
+    }
+  }
+
   private final class Fixture implements UpdateCheckCoordinator.DownloadService,
       UpdateCheckCoordinator.OfferHandoff {
     final QueueRunner runner = new QueueRunner();

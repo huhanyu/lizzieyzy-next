@@ -46,6 +46,7 @@ public final class CheckUpdateDialog extends JDialog {
       UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
   private final JFontButton cancelButton = new JFontButton(
       UpdateText.tr("WindowsUpdate.btnCancel", "取消", "Cancel"));
+  private final JFontButton pauseButton = new JFontButton();
   private final JFontButton retryButton = new JFontButton(
       UpdateText.tr("WindowsUpdate.btnResume", "继续", "Resume"));
   private final UpdateCheckCoordinator coordinator;
@@ -227,8 +228,10 @@ public final class CheckUpdateDialog extends JDialog {
     checkButton.addActionListener(e -> startCheck());
     offerButton.addActionListener(e -> coordinator.openOffer());
     cancelButton.addActionListener(e -> coordinator.cancelDownload());
+    pauseButton.addActionListener(e -> coordinator.togglePause());
     retryButton.addActionListener(e -> coordinator.retryDownload());
     footer.add(cancelButton);
+    footer.add(pauseButton);
     footer.add(retryButton);
     footer.add(offerButton);
     JFontButton later = new JFontButton(UpdateText.tr("WindowsUpdate.later", "稍后", "Later"));
@@ -263,6 +266,8 @@ public final class CheckUpdateDialog extends JDialog {
     offerButton.setText(state.ready() ? UpdateDownloadText.action(state.result())
         : UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
     cancelButton.setVisible(state.downloading());
+    pauseButton.setVisible(state.downloading());
+    pauseButton.setText(UpdateDownloadText.pauseAction(state));
     retryButton.setVisible(state.hasOffer() && (state.download().phase() == UpdateCheckCoordinator.DownloadPhase.CANCELLED
         || state.download().phase() == UpdateCheckCoordinator.DownloadPhase.FAILED));
     retryButton.setEnabled(!coordinator.busy());
