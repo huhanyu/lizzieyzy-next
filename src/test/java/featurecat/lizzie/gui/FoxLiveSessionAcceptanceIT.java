@@ -291,10 +291,15 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(),
             35, "active explicit stop handback");
         assertSame(exitDisplay, Lizzie.board.getHistory().getCurrentHistoryNode());
+        assertFalse(FoxLiveSession.isBrowsingHistory());
         String restoredCommands = commands(work).substring(beforeStop.length());
         assertTrue(restoredCommands.contains("clear_board"), restoredCommands);
         assertFalse(restoredCommands.lines().anyMatch(line -> line.matches(".*Controller: (?:[0-9]+ )?play [BW] .*")),
             "handback restores displayed root, not the live MOVE");
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.getRootPane().paintImmediately(0, 0, Lizzie.frame.getWidth(), Lizzie.frame.getHeight());
+          fox.getRootPane().paintImmediately(0, 0, fox.getWidth(), fox.getHeight());
+        });
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-history-stopped.png").toFile());
         Files.writeString(work.resolve("history-stop-gtp.txt"), restoredCommands);

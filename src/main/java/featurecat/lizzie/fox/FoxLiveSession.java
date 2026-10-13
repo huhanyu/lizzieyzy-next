@@ -440,6 +440,8 @@ public final class FoxLiveSession {
     if (engine == null || restoring) {
       if (engine == null && !game.snapshot().active()) ownsBoard = false;
       showStatus(finalStatus);
+      refreshDisplay();
+      Lizzie.frame.refresh();
       return;
     }
     restoring = true;
@@ -457,6 +459,7 @@ public final class FoxLiveSession {
     ownsBoard = connection != null && game.snapshot().active();
     showStatus(key);
     refreshDisplay();
+    Lizzie.frame.refresh();
     if (connection == null) start.setEnabled(success);
     else if (success && game.snapshot().searchable() && blockedGame != game.snapshot().game()) {
       acquire(game.snapshot());
