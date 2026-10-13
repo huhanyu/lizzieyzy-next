@@ -1296,6 +1296,43 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void foxOwnerIsNotInterruptibleQuickAnalysisAndRejectsForeignWrites() throws Exception {
+    Leelaz engine = reusableKatagoEngine(false, false);
+    ByteArrayOutputStream output = installOutput(engine);
+    Object owner = new Object();
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
+          engine.beginForegroundAnalysisLease(owner, line -> {}, () -> {}, () -> {}));
+      assertFalse(engine.hasForegroundAnalysisLeaseWorkInProgress());
+      dispatch(engine, "=800000000");
+      dispatch(engine, "");
+      assertFalse(engine.sendExclusiveGtpCommand(new Object(), "clear_board"));
+      assertTrue(engine.sendExclusiveGtpCommand(owner, "name"));
+      assertFalse(output.toString(StandardCharsets.UTF_8).contains("clear_board"));
+      engine.endExclusiveGtpSession();
+      assertFalse(engine.sendExclusiveGtpCommand(owner, "name"));
+    }
+  }
+
+  @Test
+  void foxRuntimeRestoreRejectionCannotBeHiddenByFinalName() throws Exception {
+    for (String rejected : List.of("kata-set-rules", "kata-set-param maxTime")) {
+      try (ProductionForegroundRestoreHarness harness =
+          ProductionForegroundRestoreHarness.open(true, rejected)) {
+        assertTrue(harness.engine.setFoxRestoreState(harness.lease, "chinese", 3.0));
+        assertTrue(harness.lease.release(harness.completions::incrementAndGet,
+            harness.failures::incrementAndGet));
+        dispatch(harness.engine, "=800000001");
+        dispatch(harness.engine, "");
+        waitUntil(() -> harness.failures.get() == 1);
+        assertEquals(0, harness.completions.get());
+        assertFalse(harness.engine.isLoaded());
+        assertEquals(0, harness.engine.ponderCount);
+      }
+    }
+  }
+
+  @Test
   void foregroundLeaseRestoresLatestBoardAndPreviousPonderingOnlyAfterRestoreResponse()
       throws Exception {
     Leelaz previousEngine = Lizzie.leelaz;
@@ -2690,6 +2727,11 @@ class LeelazExclusiveRemoteGtpSessionTest {
         return;
       }
       String response = "=";
+      int commandSeparator = command.indexOf(' ');
+      if (commandSeparator > 0
+          && command.substring(0, commandSeparator).chars().allMatch(Character::isDigit)) {
+        response += command.substring(0, commandSeparator);
+      }
       int loadSgf = command.indexOf("loadsgf ");
       if (loadSgf >= 0) {
         try {
@@ -2697,17 +2739,27 @@ class LeelazExclusiveRemoteGtpSessionTest {
         } catch (Exception ex) {
           throw new IOException("Failed to consume exact restore SGF", ex);
         }
-        int firstSpace = command.indexOf(' ');
-        if (firstSpace > 0 && command.substring(0, firstSpace).chars().allMatch(Character::isDigit)) {
-          response = "=" + command.substring(0, firstSpace);
-        }
       }
       if (rejectedCommand != null && command.contains(rejectedCommand)) {
         rejected = true;
         response = "?" + response.substring(1) + " injected restore rejection";
       }
       try {
-        invokeResponseHandlerForLine(engine, response);
+        if (command.contains("kata-set-rules") || command.contains("kata-set-param")) {
+          String reply = response;
+          Thread reader = new Thread(() -> {
+            try {
+              Thread.sleep(20);
+              processCommandResponse(engine, reply);
+            } catch (Exception failure) {
+              throw new AssertionError(failure);
+            }
+          }, "fox-restore-test-reader");
+          reader.setDaemon(true);
+          reader.start();
+        } else {
+          invokeResponseHandlerForLine(engine, response);
+        }
       } catch (Exception ex) {
         throw new IOException("Failed to settle test GTP response for " + command, ex);
       }

@@ -56,6 +56,7 @@ public class SGFParser {
 
   public static boolean load(String filename, boolean showHint, boolean syncPrimaryEngine)
       throws IOException {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     isExtraMode2 = false;
     Board.ClearStateSnapshot rollbackState = Lizzie.board.captureClearState();
     boolean finalizerScheduled = false;
@@ -163,6 +164,7 @@ public class SGFParser {
   }
 
   public static boolean loadFromString(String sgfString, boolean syncPrimaryEngine) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     sgfString = normalizeStructuralNewlines(sgfString);
     if (sgfString == null) {
       SgfObservation.record("import", "failed", null, null);
@@ -370,6 +372,7 @@ public class SGFParser {
   }
 
   public static boolean loadFromStringforedit(String sgfString) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     sgfString = normalizeStructuralNewlines(sgfString);
     if (sgfString == null) {
       SgfObservation.record("import", "failed", null, null);

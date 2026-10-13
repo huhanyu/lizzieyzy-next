@@ -672,3 +672,11 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
     独占的 analysis payload 不能在转换后遗留 board flag 或伪造 root `DZ`。
 47. 设置模式期间不发送普通引擎落子；退出时通过既有 exact snapshot restore 异步同步最终
     root setup，且 setup stones 不进入 movelist、save-load movelist 或普通引擎重放。
+
+## Fox 官方 AI 实时会话
+
+- 从文件菜单显式启动本机 loopback 单客户端监听；关闭窗口不隐式停止会话，停止按钮负责释放。当前阶段仅预览候选，不发送 `AFPLAY` / `AFSKIP`。
+- `FoxGameState` 分开保存协议编号 placements 与有完整证据的 `MOVE/PASS` actions。完整初始化需要规则、状态、时钟与回合；全量状态不能补造 pass，也不能把冷接入的中盘提升为完整历史。
+- 初始让子通过 `AB/HA/PL` setup 基座进入历史，不计作普通手数。实时尾节点、显示游标与带 connection/game/revision/search 身份的候选分别保存；当前阶段在 Board/history/import 入口拒绝普通导航和修改。
+- `FoxEngineSession` 通过当前 `Leelaz` 的独占 owner 使用同一 KataGo，普通快速分析取消不能释放该 owner。先失效候选再取消搜索；每次候选只属于其原始连接、棋局、修订和搜索。
+- 停止、断线及终局通过既有恢复管线重建确认的棋盘。原始 rules 与 maxTime 必须分别收到成功响应，且当前 reader/引擎仍一致，才可宣告交还成功；失败显示未恢复，不以最终 `name` 响应掩盖前序拒绝。

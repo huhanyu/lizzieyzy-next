@@ -269,7 +269,13 @@ public class BoardHistoryList {
     }
   }
 
+  private boolean rejectFoxNavigation() {
+    return Lizzie.board != null && Lizzie.board.getHistory() == this
+        && featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation();
+  }
+
   public void toBranchTop() {
+    if (rejectFoxNavigation()) return;
     BoardHistoryNode start = head;
     while (start.previous().isPresent()) {
       BoardHistoryNode pre = start.previous().get();
@@ -341,6 +347,7 @@ public class BoardHistoryList {
    * @return data of previous node, Optional.empty if there is no previous node
    */
   public Optional<BoardData> previous() {
+    if (rejectFoxNavigation()) return Optional.empty();
     if (!head.previous().isPresent()) return Optional.empty();
     else head = head.previous().get();
     return Optional.of(head.getData());
@@ -361,6 +368,7 @@ public class BoardHistoryList {
   }
 
   public Optional<BoardData> next(boolean includeDummay) {
+    if (rejectFoxNavigation()) return Optional.empty();
     Optional<BoardHistoryNode> n = head.next(includeDummay);
     // n.ifPresent(x -> head = x);
     if (n.isPresent()) {
@@ -377,6 +385,7 @@ public class BoardHistoryList {
    * @return the data of next node, Optional.empty if there is no variation with index.
    */
   public Optional<BoardData> nextVariation(int idx) {
+    if (rejectFoxNavigation()) return Optional.empty();
     Optional<BoardHistoryNode> n = head.getVariation(idx);
     if (n.isPresent()) {
       if (head.hasRemovedStone()) head.clearAndSyncBoard(true);
@@ -387,6 +396,7 @@ public class BoardHistoryList {
   }
 
   Optional<BoardData> nextVariationWithoutEngineSync(int idx) {
+    if (rejectFoxNavigation()) return Optional.empty();
     Optional<BoardHistoryNode> next = head.getVariation(idx);
     next.ifPresent(node -> head = node);
     return next.map(BoardHistoryNode::getData);
@@ -476,6 +486,7 @@ public class BoardHistoryList {
   }
 
   public void setHead(BoardHistoryNode node) {
+    if (rejectFoxNavigation()) return;
     head = node;
   }
 

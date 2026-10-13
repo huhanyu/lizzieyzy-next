@@ -14948,6 +14948,19 @@ public class Leelaz {
         session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
   }
 
+  /** Long-lived adapters must present their owner on every write, including cancellation. */
+  public boolean sendExclusiveGtpCommand(Object owner, String command) {
+    ExclusiveGtpSession session;
+    synchronized (engineArbitrationLock()) {
+      session = exclusiveGtpSession;
+      if (session == null || session.owner != owner || !session.active || session.closing
+          || session.readerBinding != readerStreamBinding || session.readerBinding == null
+          || session.readerBinding.terminated || session.releaseRequested
+          || command == null || command.trim().isEmpty()) return false;
+    }
+    return writeExclusiveGtpCommand(session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
+  }
+
 
 
 
@@ -15061,6 +15074,17 @@ public class Leelaz {
         return false;
       }
       session.originalRules = rules.trim();
+      return true;
+    }
+  }
+
+  boolean setFoxRestoreState(Object owner, String rules, double maxTime) {
+    synchronized (engineArbitrationLock()) {
+      ExclusiveGtpSession session = exclusiveGtpSession;
+      if (session == null || session.owner != owner || !session.active || session.closing
+          || !Double.isFinite(maxTime) || maxTime <= 0 || rules == null) return false;
+      session.originalRules = rules;
+      session.foxMaxTime = maxTime;
       return true;
     }
   }
@@ -15857,6 +15881,7 @@ public class Leelaz {
       return;
     }
     if (!canRestore) {
+      if (session.foxMaxTime != null) session.restoreFailed = true;
       completeForegroundRestore(session);
       return;
     }
@@ -15893,7 +15918,10 @@ public class Leelaz {
       if (restoreCapture == null) {
         throw new IllegalStateException("Foreground restore capture is unavailable");
       }
-      if (session.originalRules != null) {
+      if (session.foxMaxTime != null) {
+        confirmForegroundRestoreCommand(session, "kata-set-rules " + session.originalRules);
+        confirmForegroundRestoreCommand(session, "kata-set-param maxTime " + session.foxMaxTime);
+      } else if (session.originalRules != null) {
         sendCommand("kata-set-rules " + session.originalRules);
       }
       restoreCapture.execute(this);
@@ -15910,6 +15938,26 @@ public class Leelaz {
       failForegroundRestore(session, ex.getMessage());
     } finally {
       foregroundRestoreCommandSession.remove();
+    }
+  }
+
+  private void confirmForegroundRestoreCommand(ExclusiveGtpSession session, String command) {
+    CompletableFuture<Void> confirmed = new CompletableFuture<>();
+    sendCommand(command, () -> {
+      if (currentCommandResponseError) {
+        confirmed.completeExceptionally(new IllegalStateException(currentCommandResponseLine));
+      } else {
+        confirmed.complete(null);
+      }
+    }, confirmed::completeExceptionally, true, false);
+    try {
+      confirmed.get(5, java.util.concurrent.TimeUnit.SECONDS);
+      if (session.readerBinding != readerStreamBinding || session.readerBinding.terminated
+          || Lizzie.leelaz != this || isForegroundRestoreCompleted(session)) {
+        throw new IllegalStateException("Fox restore engine instance changed");
+      }
+    } catch (Exception failure) {
+      throw new IllegalStateException("Fox runtime restore was not confirmed", failure);
     }
   }
 
@@ -16074,7 +16122,7 @@ public class Leelaz {
           releaseStopFailed = session.releaseStopFailed;
           restoreTimeout = session.restoreTimeout;
           restoreThread = session.restoreThread;
-          if (restoreFailed) {
+          if (restoreFailed && session.readerBinding == readerStreamBinding) {
             isLoaded = false;
             unrestored = recordUnrestoredForegroundLeaseLocked(session);
           }
@@ -17193,6 +17241,7 @@ public class Leelaz {
     private boolean finiteSearchPlayed;
     private boolean finiteSearchError;
     private boolean releaseStopComplete;
+    private Double foxMaxTime;
     private Runnable afterRestore;
     private Runnable afterRestoreFailure;
     private Thread restoreThread;

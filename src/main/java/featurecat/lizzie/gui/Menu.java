@@ -285,6 +285,9 @@ public class Menu extends JMenuBar {
         });
 
     fileMenu.add(openUrl);
+    final JFontMenuItem foxAi = new JFontMenuItem(resourceBundle.getString("Fox.title"));
+    foxAi.addActionListener(e -> featurecat.lizzie.fox.FoxLiveSession.showDialog());
+    fileMenu.add(foxAi);
     fileMenu.addSeparator();
 
     final JFontMenuItem save =
