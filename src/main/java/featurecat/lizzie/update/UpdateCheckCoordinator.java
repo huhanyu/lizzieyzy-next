@@ -51,6 +51,8 @@ final class UpdateCheckCoordinator {
   private final List<Consumer<State>> observers = new ArrayList<>();
   private State state = new State(false, null, null, null);
   private boolean startupConsumed;
+  private boolean startupCaptured;
+  private UpdateCheckSelection startupSelection;
   private boolean inFlight;
   private boolean automaticInvalidated;
   private boolean presentingOffer;
@@ -84,11 +86,19 @@ final class UpdateCheckCoordinator {
 
   void unsubscribe(Consumer<State> observer) { observers.remove(observer); }
 
-  void applicationReady(boolean enabled, boolean download, UpdateCheckSelection selection) {
+  /** Called once before exposing preference controls; subsequent policy changes only revoke. */
+  void captureStartupPolicy(boolean enabled, boolean download, UpdateCheckSelection selection) {
+    if (startupCaptured) return;
+    startupCaptured = true;
+    startupSelection = enabled ? selection : null;
+    automaticDownload = enabled && download;
+  }
+
+  void applicationReady() {
     if (startupConsumed) return;
     startupConsumed = true;
-    automaticDownload = enabled && download;
-    if (enabled) start(Origin.AUTOMATIC, selection);
+    if (startupSelection != null) start(Origin.AUTOMATIC, startupSelection);
+    startupSelection = null;
   }
 
   boolean checkManually(UpdateCheckSelection selection) {
@@ -96,6 +106,7 @@ final class UpdateCheckCoordinator {
   }
 
   void invalidateAutomatic() {
+    startupSelection = null;
     if (state.origin() != Origin.AUTOMATIC || manualDownload) return;
     if (control != null) control.cancel();
     prepared = null;

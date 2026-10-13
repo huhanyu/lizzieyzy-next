@@ -102,8 +102,9 @@ class WindowsUpdateServiceTest {
               launches.incrementAndGet();
             }
           });
-      coordinator.applicationReady(true, true, UpdateCheckSelection.of(
+      coordinator.captureStartupPolicy(true, true, UpdateCheckSelection.of(
           UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-06-01.1"));
+      coordinator.applicationReady();
       assertTrue(coordinator.state().ready());
       assertEquals(0, launches.get());
       assertEquals(1, proxy.requests.get());

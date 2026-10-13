@@ -31,7 +31,8 @@ class UpdateDownloadCoordinatorTest {
     assertTrue(f.coordinator.state().ready());
     assertEquals(1, f.reminders);
     assertEquals(0, f.applies);
-    f.coordinator.applicationReady(true, true, selection);
+    f.coordinator.captureStartupPolicy(true, true, selection);
+    f.coordinator.applicationReady();
     assertEquals(1, f.prepares);
     f.coordinator.openOffer();
     assertEquals(1, f.applies);
@@ -41,7 +42,8 @@ class UpdateDownloadCoordinatorTest {
   @Test
   void disableDownloadDuringQueuedDiscoveryKeepsCheckOnlyOffer() {
     Fixture f = new Fixture();
-    f.coordinator.applicationReady(true, true, selection);
+    f.coordinator.captureStartupPolicy(true, true, selection);
+    f.coordinator.applicationReady();
     f.runner.work();
     f.coordinator.disableAutomaticDownload();
     f.runner.deliver();
@@ -54,7 +56,8 @@ class UpdateDownloadCoordinatorTest {
   @Test
   void invalidatedDiscoveryCannotQueueAnAutomaticDownload() {
     Fixture f = new Fixture();
-    f.coordinator.applicationReady(true, true, selection);
+    f.coordinator.captureStartupPolicy(true, true, selection);
+    f.coordinator.applicationReady();
     f.runner.work();
     f.coordinator.invalidateAutomatic();
     f.runner.deliver();
@@ -134,7 +137,8 @@ class UpdateDownloadCoordinatorTest {
       assertEquals(0, automatic.applies);
     }
     Fixture explicit = new Fixture();
-    explicit.coordinator.applicationReady(true, false, selection);
+    explicit.coordinator.captureStartupPolicy(true, false, selection);
+    explicit.coordinator.applicationReady();
     explicit.runner.work();
     explicit.runner.deliver();
     explicit.coordinator.startDownload(offer, true);
@@ -168,6 +172,36 @@ class UpdateDownloadCoordinatorTest {
     assertEquals(2, f.applies);
   }
 
+  @Test
+  void earlyDownloadDisableCannotBeRestoredBeforeReadiness() {
+    Fixture f = new Fixture();
+    f.coordinator.captureStartupPolicy(true, true, selection);
+    f.coordinator.disableAutomaticDownload();
+    f.coordinator.captureStartupPolicy(true, true, selection);
+    assertFalse(f.coordinator.busy());
+    f.coordinator.applicationReady();
+    f.runner.work();
+    f.runner.deliver();
+    assertTrue(f.coordinator.state().hasOffer());
+    assertEquals(1, f.reminders);
+    assertEquals(0, f.prepares);
+    assertEquals(0, f.applies);
+    assertTrue(f.runner.background.isEmpty());
+  }
+
+  @Test
+  void enablingDownloadBeforeReadinessCannotExpandCheckOnlySnapshot() {
+    Fixture f = new Fixture();
+    f.coordinator.captureStartupPolicy(true, false, selection);
+    f.coordinator.captureStartupPolicy(true, true, selection);
+    f.coordinator.applicationReady();
+    f.runner.work();
+    f.runner.deliver();
+    assertEquals(1, f.reminders);
+    assertEquals(0, f.prepares);
+    assertEquals(0, f.applies);
+  }
+
   private final class Fixture implements UpdateCheckCoordinator.DownloadService,
       UpdateCheckCoordinator.OfferHandoff {
     final QueueRunner runner = new QueueRunner();
@@ -181,7 +215,8 @@ class UpdateDownloadCoordinatorTest {
         s -> offer, this, runner, s -> reminders++, this);
 
     void start() {
-      coordinator.applicationReady(true, true, selection);
+      coordinator.captureStartupPolicy(true, true, selection);
+      coordinator.applicationReady();
       runner.work();
       runner.deliver();
     }

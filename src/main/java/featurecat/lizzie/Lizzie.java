@@ -999,6 +999,7 @@ public class Lizzie {
   }
 
   public static void start(int index, boolean loadDefault) {
+    featurecat.lizzie.update.WindowsUpdateController.captureStartupPolicy();
     setBoard(new Board());
     frame = new LizzieFrame();
     LizzieFrame.toolbar.setPopupMenu();

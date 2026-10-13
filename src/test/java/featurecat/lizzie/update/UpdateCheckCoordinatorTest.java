@@ -45,14 +45,62 @@ class UpdateCheckCoordinatorTest {
   }
 
   @Test
+  void enablingVisiblePreferencesBeforeReadinessOnlyAuthorizesNextProcess() {
+    RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
+    QueueRunner runner = new QueueRunner();
+    UpdateCheckCoordinator current = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
+    current.captureStartupPolicy(UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(),
+        officialSnapshot());
+    UpdatePreferences.persistAutoCheck(true);
+    UpdatePreferences.persistAutoDownload(true);
+    current.applicationReady();
+    current.applicationReady();
+    assertFalse(current.busy());
+    assertTrue(discovery.seen.isEmpty());
+    assertTrue(current.checkManually(officialSnapshot()));
+    runner.drain();
+    assertEquals(1, discovery.seen.size());
+
+    UpdateCheckCoordinator next = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
+    next.captureStartupPolicy(UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(),
+        officialSnapshot());
+    assertFalse(next.busy());
+    next.applicationReady();
+    next.applicationReady();
+    runner.drain();
+    assertEquals(2, discovery.seen.size());
+    assertEquals(UpdateCheckCoordinator.Origin.AUTOMATIC, next.state().origin());
+  }
+
+  @Test
+  void earlyDisableOrSelectionChangePermanentlyRevokesCapturedStartup() {
+    RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
+    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
+    coordinator.captureStartupPolicy(true, true, officialSnapshot());
+    coordinator.invalidateAutomatic();
+    coordinator.captureStartupPolicy(true, true, officialSnapshot());
+    coordinator.applicationReady();
+    coordinator.applicationReady();
+    assertTrue(discovery.seen.isEmpty());
+    assertNull(coordinator.state().result());
+    assertTrue(coordinator.checkManually(officialSnapshot()));
+    assertEquals(1, discovery.seen.size());
+  }
+
+  @Test
   void startupIsOnceAndManualJoinsUntilTerminalThenCanRetry() {
     QueueRunner runner = new QueueRunner();
     RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
     UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
         discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
     UpdateCheckSelection snapshot = officialSnapshot();
-    coordinator.applicationReady(true, false, snapshot);
-    coordinator.applicationReady(true, false, snapshot);
+    coordinator.captureStartupPolicy(true, false, snapshot);
+    coordinator.applicationReady();
+    coordinator.captureStartupPolicy(true, false, snapshot);
+    coordinator.applicationReady();
     assertTrue(coordinator.state().checking());
     assertFalse(coordinator.checkManually(snapshot));
     runner.drain();
@@ -69,8 +117,10 @@ class UpdateCheckCoordinatorTest {
     RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
     UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
         discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
-    coordinator.applicationReady(false, false, officialSnapshot());
-    coordinator.applicationReady(true, false, officialSnapshot());
+    coordinator.captureStartupPolicy(false, false, officialSnapshot());
+    coordinator.applicationReady();
+    coordinator.captureStartupPolicy(true, false, officialSnapshot());
+    coordinator.applicationReady();
     assertTrue(discovery.seen.isEmpty());
     assertTrue(coordinator.checkManually(officialSnapshot()));
     assertEquals(1, discovery.seen.size());
@@ -84,7 +134,8 @@ class UpdateCheckCoordinatorTest {
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
           s -> result, unusedHandoff(), ImmediateRunner.INSTANCE,
           s -> { throw new AssertionError(); });
-      coordinator.applicationReady(true, false, officialSnapshot());
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
       List<UpdateCheckCoordinator.State> view = new ArrayList<>();
       coordinator.subscribe(view::add);
       assertSame(result, view.get(0).result());
@@ -103,14 +154,16 @@ class UpdateCheckCoordinatorTest {
     List<UpdateCheckCoordinator.State> states = new ArrayList<>();
     java.util.function.Consumer<UpdateCheckCoordinator.State> view = states::add;
     coordinator.subscribe(view);
-    coordinator.applicationReady(true, false, officialSnapshot());
+    coordinator.captureStartupPolicy(true, false, officialSnapshot());
+    coordinator.applicationReady();
     coordinator.unsubscribe(view);
     runner.drain();
     assertEquals(1, reminders.get());
     assertNull(handoff.windowsPlan);
     coordinator.subscribe(view);
     assertTrue(states.get(states.size() - 1).hasOffer());
-    coordinator.applicationReady(true, false, officialSnapshot());
+    coordinator.captureStartupPolicy(true, false, officialSnapshot());
+    coordinator.applicationReady();
     assertEquals(1, reminders.get());
     coordinator.openOffer();
     assertSame(coordinator.state().result().windowsPlan, handoff.windowsPlan);
@@ -124,7 +177,8 @@ class UpdateCheckCoordinatorTest {
       QueueRunner runner = new QueueRunner();
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
           s -> result, unusedHandoff(), runner, s -> { throw new AssertionError(); });
-      coordinator.applicationReady(true, false, officialSnapshot());
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
       runner.background.run();
       coordinator.invalidateAutomatic();
       assertNull(coordinator.state().result());
@@ -132,7 +186,8 @@ class UpdateCheckCoordinatorTest {
       runner.edt.run();
       assertNull(coordinator.state().result());
       assertFalse(coordinator.state().checking());
-      coordinator.applicationReady(true, false, officialSnapshot());
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
       assertNull(coordinator.state().selection());
       assertTrue(coordinator.checkManually(officialSnapshot()));
     }
@@ -166,7 +221,8 @@ class UpdateCheckCoordinatorTest {
         s -> UpdateCheckResult.offerWindows(null), s -> { throw new IllegalStateException(); })) {
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
           discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
-      coordinator.applicationReady(true, false, officialSnapshot());
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
       assertEquals(UpdateCheckResult.Reason.FAILURE, coordinator.state().result().reason);
       assertTrue(coordinator.checkManually(officialSnapshot()));
     }

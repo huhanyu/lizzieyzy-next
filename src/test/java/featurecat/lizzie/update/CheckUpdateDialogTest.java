@@ -38,7 +38,8 @@ class CheckUpdateDialogTest {
           public void runBackground(Runnable work) { work.run(); }
           public void runOnEdt(Runnable work) { work.run(); }
         }, s -> {});
-        coordinator.applicationReady(true, false, UpdateCheckSelection.of(UpdateChannel.STABLE, UpdateSource.GITHUB, "next-2026-08-01.1"));
+        coordinator.captureStartupPolicy(true, false, UpdateCheckSelection.of(UpdateChannel.STABLE, UpdateSource.GITHUB, "next-2026-08-01.1"));
+        coordinator.applicationReady();
         first = new CheckUpdateDialog(null, coordinator, true);
         first.setVisible(true);
         assertFalse(first.isModal());

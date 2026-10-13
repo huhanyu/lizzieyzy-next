@@ -16,10 +16,14 @@ public final class WindowsUpdateController {
     SwingUtilities.invokeLater(() -> showPage(parent, false));
   }
 
-  public static void applicationReady() {
-    SwingUtilities.invokeLater(() -> COORDINATOR.applicationReady(
+  public static void captureStartupPolicy() {
+    COORDINATOR.captureStartupPolicy(
         UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(), UpdateCheckSelection.of(
-            UpdateChannel.current(), UpdateSource.current(), Lizzie.nextVersion)));
+            UpdateChannel.current(), UpdateSource.current(), Lizzie.nextVersion));
+  }
+
+  public static void applicationReady() {
+    SwingUtilities.invokeLater(COORDINATOR::applicationReady);
   }
 
   static UpdateCheckCoordinator coordinator() { return COORDINATOR; }
