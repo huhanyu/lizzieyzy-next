@@ -144,6 +144,17 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals("AFSTATUS,B", receive(peer));
         await(() -> target.hasExclusiveGtpLease() && Lizzie.board.getHistory().getMoveNumber() == 0,
             15, "new game independent admission");
+        send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
+        assertTrue(receive(peer).startsWith("AFPLAY,B,1^"));
+        assertEquals(0, Lizzie.board.getHistory().getMoveNumber());
+        await(() -> hasText(fox, "Fox.confirmationFailed") && !target.hasExclusiveGtpWorkInProgress(),
+            15, "unconfirmed request visibly stops and restores");
+        send(peer, "FASTATUS,1,B", "FATIMELEFT,58,30,3", "FAMOVE,1,B,0^0^0^N");
+        peer.setSoTimeout(300);
+        assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "failure never resends");
+        assertTrue(hasText(fox, "Fox.confirmationFailed"), "query retains failure notice");
+        ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-unconfirmed.png").toFile());
       }
       await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "disconnect handback");
       try (Socket reconnected = new Socket("127.0.0.1", port)) {
@@ -170,13 +181,24 @@ public final class FoxLiveSessionAcceptanceIT {
       String handback = gtp(work);
       assertTrue(handback.contains("kata-time_settings none"));
       int reset = handback.lastIndexOf("kata-time_settings none");
-      assertTrue(handback.substring(reset).matches("(?s).*=[0-9]+.*Controller:.*name.*"),
+      assertTrue(handback.substring(reset).matches("(?s)kata-time_settings none\\R[^\\n]*: =[^\\n]*\\R.*Controller:.*name.*"),
           "reset response precedes final handback fence");
       DesktopTimeControl.applyEngineGameTime(target, DesktopTimeControl.SideMode.ENGINE_OWNED, 0, "");
       target.sendCommand("kata-debug-print-tc");
       target.sendCommand("137001 name");
       await(() -> gtp(work).contains("=137001 KataGo"), 5, "post-stop engine-owned clock observation");
       Files.writeString(work.resolve("post-stop-time-control.txt"), gtp(work).substring(reset));
+      var clocks = java.util.regex.Pattern.compile(
+          "(Black|White) originalMainTime ([^ ]+) mainTimeLeft ([^ ]+) inOvertime ([01])")
+          .matcher(gtp(work).substring(reset));
+      int observedClocks = 0;
+      while (clocks.find()) {
+        assertTrue(Double.parseDouble(clocks.group(2)) >= 1e20);
+        assertTrue(Double.parseDouble(clocks.group(3)) >= 1e20);
+        assertEquals("0", clocks.group(4), "engine-owned mode has no Fox overtime");
+        observedClocks++;
+      }
+      assertEquals(2, observedClocks);
       Files.writeString(result, "PASS Swing TCP one KataGo same-search candidates final automatic send pending no-preadvance confirmed timely-sync opponent init blocked no-send terminal disconnect Stop restore\n"
           + "engine=" + args[0] + "\nmodel=" + args[1] + "\nprocess=" + ProcessHandle.current().pid() + "\n");
       target.sendCommand("quit");

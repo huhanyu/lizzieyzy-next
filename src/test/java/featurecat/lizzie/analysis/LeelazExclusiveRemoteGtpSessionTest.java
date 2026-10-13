@@ -1329,7 +1329,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
       dispatch(engine, "=800000000");
       dispatch(engine, "");
       assertTrue(engine.claimFoxSubmission(owner, () -> true));
-      installOutput(engine);
+      engine.installFreshCommandOutputForTest(new ByteArrayOutputStream());
       assertFalse(engine.claimFoxSubmission(owner, () -> true));
     }
   }
