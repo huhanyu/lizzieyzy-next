@@ -3141,6 +3141,7 @@ public class LizzieFrame extends JFrame {
   }
 
   public void tryPlay(boolean needRefresh) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (EngineGamePresentation.current().startingOrPlaying()) return;
     if (floatBoard != null && floatBoard.isVisible() && floatBoard.editMode)
       floatBoard.changeEetEditMode();
@@ -3849,6 +3850,7 @@ public class LizzieFrame extends JFrame {
   }
 
   private static void editGameInfo(boolean locateKomi) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (Lizzie.frame != null && Lizzie.frame.isWholeGameAnalysisStartingOrRunning()) {
       Utils.showMsg(Lizzie.resourceBundle.getString("WholeGameAnalysis.conflict.analysis"));
       return;
@@ -3967,6 +3969,7 @@ public class LizzieFrame extends JFrame {
       SwingUtilities.invokeLater(this::openFile);
       return;
     }
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (deferKifuOpenUntilAutomaticQuickAnalysisRestored(this::openFile)) {
       return;
     }
@@ -3995,6 +3998,7 @@ public class LizzieFrame extends JFrame {
   }
 
   boolean importDroppedKifuFiles(Transferable transferable) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     List<File> capturedFiles = new ArrayList<>();
     try {
       Object transferData = transferable.getTransferData(DataFlavor.javaFileListFlavor);
@@ -4022,6 +4026,7 @@ public class LizzieFrame extends JFrame {
   }
 
   private boolean finishDroppedKifuImport(List<File> files) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     try {
       if (files.size() == 1) {
         boolean ponder = Lizzie.leelaz.isPondering() || !Lizzie.leelaz.isLoaded;
@@ -4896,6 +4901,10 @@ public class LizzieFrame extends JFrame {
       }
       return loaded[0];
     }
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) {
+      notifySgfLoadCompletion(completion, false);
+      return false;
+    }
     if (deferUntilHumanSlExit(
         () ->
             loadSgfStringInternal(
@@ -5107,6 +5116,7 @@ public class LizzieFrame extends JFrame {
   }
 
   public boolean loadFile(File file, boolean fromTemp, boolean showHint) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     if (EngineGamePresentation.current().startingOrPlaying()
         || isPlayingAgainstLeelaz
         || isAnaPlayingAgainstLeelaz) {

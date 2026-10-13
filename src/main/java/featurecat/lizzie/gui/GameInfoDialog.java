@@ -257,6 +257,7 @@ public class GameInfoDialog extends JDialog {
   }
 
   public void apply() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (gameInfo != Lizzie.board.getHistory().getGameInfo()) {
       setVisible(false);
       return;

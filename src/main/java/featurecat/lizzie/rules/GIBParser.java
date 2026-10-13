@@ -15,6 +15,7 @@ public class GIBParser {
   };
 
   public static boolean load(String filename) throws IOException {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     File file = new File(filename);
     if (!file.exists() || !file.canRead()) {
       return false;
