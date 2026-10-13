@@ -285,11 +285,18 @@ public final class FoxLiveSessionAcceptanceIT {
           Lizzie.config.showScrollVariation = false;
           Lizzie.frame.refresh();
         });
-        await(() -> Lizzie.frame.currentVariationTreeImage() != null, 5, "published actual tree");
-        SwingUtilities.invokeAndWait(() -> {
-          var view = Lizzie.frame.currentVariationTreeImage().view();
-          Lizzie.frame.onClicked(view.x() + 25, view.y() + view.height() / 2 + 25);
-        });
+        boolean[] treeClicked = {false};
+        for (int attempt = 0; attempt < 100 && !treeClicked[0]; attempt++) {
+          SwingUtilities.invokeAndWait(() -> {
+            var image = Lizzie.frame.currentVariationTreeImage();
+            if (image == null) return;
+            var view = image.view();
+            Lizzie.frame.onClicked(view.x() + 25, view.y() + view.height() / 2 + 25);
+            treeClicked[0] = true;
+          });
+          if (!treeClicked[0]) Thread.sleep(50);
+        }
+        assertTrue(treeClicked[0], "published actual tree clicked on EDT");
         await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == pass, 5, "actual tree click");
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
