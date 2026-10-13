@@ -188,12 +188,24 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals(navigationCommands, commands(work), "browsing sends no GTP at all");
         int oldPlayouts = historical.getData().getPlayouts();
         var oldMoves = new ArrayList<>(historical.getData().bestMoves);
+        robot.waitForIdle();
+        robot.delay(200);
         ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-history.png").toFile());
+        SwingUtilities.invokeAndWait(() -> fox.toFront());
+        robot.waitForIdle();
+        robot.delay(100);
+        ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-history-controls.png").toFile());
         String fourth = "3^" + whiteX + "^15^W";
         send(peer, "FAMOVE,1,B," + fourth);
         peer.setSoTimeout(15000);
         assertEquals("AFSTATUS,B", receive(peer));
+        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return while waiting");
+        assertTrue(find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.waitingCandidate")));
+        assertFalse(find(fox, JTextArea.class).getText().contains("%"), "no old candidate flicker");
+        SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         send(peer, "FASTATUS,1,B," + tuple + "," + white + "," + fourth,
             "FATIMELEFT,57,30,3", "FAMOVE,1,B," + fourth);
         String browsingSubmission = receive(peer);
@@ -209,6 +221,9 @@ public final class FoxLiveSessionAcceptanceIT {
         assertTrue(find(fox, JTextArea.class).getText().contains("%")
             || find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.waitingCandidate")));
         assertEquals(beforeReturn, commands(work));
+        robot.waitForIdle();
+        ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-return-current.png").toFile());
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         Files.writeString(work.resolve("history-evidence.txt"), "navigationCommands=unchanged\nreturnCommands=unchanged\n"
             + "displayMove=2 liveMove=4\ncacheUnchanged=true\nautomaticWhileBrowsing=" + browsingSubmission + "\n");

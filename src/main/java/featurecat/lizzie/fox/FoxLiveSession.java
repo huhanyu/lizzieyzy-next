@@ -126,6 +126,8 @@ public final class FoxLiveSession {
         || history != current.liveHistory) return;
     current.displayCursor = history.getCurrentHistoryNode();
     current.refreshDisplay();
+    Lizzie.board.clearAfterMove();
+    Lizzie.frame.refresh();
   }
 
   private void refreshDisplay() {
@@ -137,6 +139,11 @@ public final class FoxLiveSession {
     else output.setText(text("Fox.automatic") + "\n\n" + text("Fox.waitingCandidate"));
   }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
+  public static boolean isBrowsingHistory() {
+    FoxLiveSession current = instance;
+    return current != null && current.ownsBoard && current.liveHistory != null
+        && current.displayCursor != current.liveTail;
+  }
   public BoardHistoryNode liveTail() { return liveTail; }
   public BoardHistoryNode displayCursor() { return displayCursor; }
   public FoxEngineSession.Candidates liveCandidates() { return liveCandidates; }

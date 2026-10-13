@@ -8174,6 +8174,10 @@ public class LizzieFrame extends JFrame {
     if (Lizzie.readMode || hasEngineStartupNotice()) {
       return;
     }
+    if (featurecat.lizzie.fox.FoxLiveSession.isBrowsingHistory()) {
+      text1 = Lizzie.resourceBundle.getString("Fox.browsing");
+      text2 = Lizzie.resourceBundle.getString("Fox.returnLive");
+    }
     int lineCount = Lizzie.config.userKnownX ? 2 : 3;
     int[][] lines = statusLineBounds(statusAreaTop, currentStatusAreaBottom(), lineCount);
     drawStatusTextInBounds(g, text1, x, lines[0], true);
