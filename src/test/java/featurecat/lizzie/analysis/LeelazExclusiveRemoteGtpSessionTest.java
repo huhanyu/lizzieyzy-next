@@ -1319,6 +1319,77 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void foxCancelledAndLateRealChoicesCannotAcquireSubmissionPermission() throws Exception {
+    for (String terminal : List.of("cancelled", "cancel-race", "late-choice")) {
+      Leelaz engine = reusableKatagoEngine(false, false);
+      ByteArrayOutputStream output = installOutput(engine);
+      try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+        AtomicReference<FoxEngineSession.Candidates> candidates = new AtomicReference<>();
+        FoxEngineSession adapter = new FoxEngineSession(engine, candidates::set,
+            reason -> { throw new AssertionError(reason); });
+        assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, adapter.acquire(() -> {}));
+        dispatch(engine, "=800000000");
+        dispatch(engine, "");
+        AtomicInteger consumed = new AtomicInteger(1);
+        var preparation = new java.util.concurrent.FutureTask<Void>(() -> { adapter.prepare("chinese"); return null; });
+        Thread preparationThread = new Thread(preparation, "fox-prepare-boundary-test");
+        preparationThread.setDaemon(true);
+        preparationThread.start();
+        for (int i = 0; i < 6; i++) {
+          String command = nextFoxCommand(output, consumed);
+          String payload = command.endsWith(" list_commands")
+              ? "kata-search_analyze_cancellable kata-get-rules kata-set-rules kata-get-param kata-set-param kgs-time_settings kata-time_settings kata-list_time_settings set_free_handicap time_left stop"
+              : command.endsWith(" kata-list_time_settings") ? "none byoyomi"
+              : command.endsWith(" kata-get-rules") ? "chinese"
+              : command.endsWith(" kata-get-param maxTime") ? "0.25" : "";
+          dispatch(engine, "=" + command.split(" ", 2)[0] + " " + payload);
+          dispatch(engine, "");
+        }
+        preparation.get(2, TimeUnit.SECONDS);
+        featurecat.lizzie.fox.FoxGameState state = new featurecat.lizzie.fox.FoxGameState();
+        long now = System.nanoTime();
+        state.connected();
+        state.receive("FARULE,19,60,30,3,650", now);
+        state.receive("FASTATUS,1,B", now);
+        state.receive("FATIMELEFT,60,30,3", now);
+        state.receive("FAMOVE,1,B,0^0^0^N", now);
+        assertTrue(state.beginClockRefresh(now));
+        state.receive("FATIMELEFT,60,30,3", now);
+        var search = new java.util.concurrent.FutureTask<FoxEngineSession.Selection>(() -> adapter.analyze(state.snapshot()));
+        Thread searchThread = new Thread(search, "fox-search-boundary-test");
+        searchThread.setDaemon(true);
+        searchThread.start();
+        String command;
+        while (!(command = nextFoxCommand(output, consumed)).contains("kata-search_analyze_cancellable")) {
+          if (command.contains("kata-set-param maxTime")) assertTrue(command.endsWith(" 0.25"));
+          dispatch(engine, "=" + command.split(" ", 2)[0]);
+          dispatch(engine, "");
+        }
+        dispatch(engine, "=" + command.split(" ", 2)[0]);
+        dispatch(engine, "info move D4 visits 12 winrate 0.55 scoreMean 1 pv D4");
+        waitUntil(() -> candidates.get() != null);
+        if (terminal.equals("cancel-race")) adapter.invalidate();
+        dispatch(engine, terminal.equals("cancelled") ? "play cancelled" : "play D4");
+        dispatch(engine, "");
+        FoxEngineSession.Selection selection = search.get(2, TimeUnit.SECONDS);
+        if (terminal.equals("late-choice")) {
+          assertNotNull(selection);
+          assertEquals(candidates.get().identity(), selection.identity());
+          assertEquals("D4", selection.vertex());
+          adapter.invalidate();
+          assertFalse(adapter.claimSubmission(selection, () -> true));
+        } else assertNull(selection);
+        assertTrue(state.snapshot().actions().isEmpty());
+      }
+    }
+  }
+
+  private static String nextFoxCommand(ByteArrayOutputStream output, AtomicInteger consumed) throws Exception {
+    waitUntil(() -> output.toString(StandardCharsets.UTF_8).lines().count() > consumed.get());
+    return output.toString(StandardCharsets.UTF_8).lines().toList().get(consumed.getAndIncrement());
+  }
+
+  @Test
   void foxSubmissionCannotCrossReaderReplacement() throws Exception {
     Leelaz engine = reusableKatagoEngine(false, false);
     installOutput(engine);
