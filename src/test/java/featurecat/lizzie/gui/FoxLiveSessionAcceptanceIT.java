@@ -242,6 +242,7 @@ public final class FoxLiveSessionAcceptanceIT {
         // A peer-observed pass is evidence, never an invented engine choice.
         int whiteX = Integer.parseInt(fields[1]) == 2 && Integer.parseInt(fields[2]) == 16 ? 3 : 2;
         String white = "2^" + whiteX + "^16^W";
+        peer.setSoTimeout(5000);
         send(peer, "FAMOVE,1,B," + white);
         assertEquals("AFSTATUS,B", receive(peer));
         // Observe the pass before refreshing the clock, so this turn cannot submit a choice.
