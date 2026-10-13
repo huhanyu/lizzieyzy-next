@@ -16025,16 +16025,21 @@ public class Leelaz {
         && !current.readerShutdownRequested;
   }
 
-  /** Records a settled automatic-lease failure for the reader that the lease actually borrowed. */
+  /** Records a settled borrowed-engine failure only for its original reader. */
   private UnrestoredForegroundLease recordUnrestoredForegroundLeaseLocked(
       ExclusiveGtpSession session) {
-    if (!(session.owner instanceof ForegroundAnalysisLease lease)
-        || lease.reportRestoreFailureToUser
-        || session.readerBinding == null
-        || session.readerBinding != readerStreamBinding) {
+    if (session.readerBinding == null || session.readerBinding != readerStreamBinding) {
       return null;
     }
-    ForegroundAnalysisLeaseFailure reason = lease.failureReason().orElse(null);
+    ForegroundAnalysisLeaseFailure reason;
+    if (session.foxMaxTime != null) {
+      reason = ForegroundAnalysisLeaseFailure.RESTORE_FAILED;
+    } else if (session.owner instanceof ForegroundAnalysisLease lease
+        && !lease.reportRestoreFailureToUser) {
+      reason = lease.failureReason().orElse(null);
+    } else {
+      return null;
+    }
     if (!isForegroundHandbackFailure(reason)) {
       return null;
     }

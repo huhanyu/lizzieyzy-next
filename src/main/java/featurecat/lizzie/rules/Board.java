@@ -4822,6 +4822,7 @@ public class Board {
    * @return void
    */
   public void moveToAnyPosition(BoardHistoryNode targetNode) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (isCollectingReadBoardSync() || isEngineAlignmentPending() || isLoadingFile) {
       synchronized (this) {
         if (history.getCurrentHistoryNode() == targetNode) return;
@@ -4839,6 +4840,7 @@ public class Board {
 
   /** Updates the authoritative ReadBoard position without forwarding commands to its engine owner. */
   public synchronized void applyReadBoardSyncLocally(Runnable localChanges) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     readBoardSyncThread = Thread.currentThread();
     try {
       localChanges.run();
@@ -4875,6 +4877,11 @@ public class Board {
       CompletableFuture<Void> syncConfirmation,
       BoardHistoryNode sourceNode,
       boolean fullRestore) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) {
+      if (syncConfirmation != null) syncConfirmation.completeExceptionally(
+          new IllegalStateException("Fox owns board synchronization"));
+      return;
+    }
     if (engineGamePlaying()) {
       if (syncConfirmation != null)
         syncConfirmation.completeExceptionally(

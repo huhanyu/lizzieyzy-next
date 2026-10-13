@@ -106,6 +106,7 @@ public final class FoxLiveSessionAcceptanceIT {
         SwingUtilities.invokeAndWait(() -> {
           assertFalse(Lizzie.board.previousMove(false));
           Lizzie.board.navigateToNode(Lizzie.board.getHistory().root());
+          Lizzie.board.moveToAnyPosition(Lizzie.board.getHistory().root());
           assertSame(tail, Lizzie.board.getHistory().getCurrentHistoryNode());
           assertFalse(SGFParser.loadFromString("(;SZ[9];B[aa])"));
         });
@@ -125,8 +126,19 @@ public final class FoxLiveSessionAcceptanceIT {
             15, "new game independent admission");
       }
       await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "disconnect handback");
-      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
-      await(() -> !FoxLiveSession.isActive(), 10, "explicit stop");
+      try (Socket reconnected = new Socket("127.0.0.1", port)) {
+        send(reconnected, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B",
+            "FATIMELEFT,60,30,3", "FAMOVE,0,B,1^16^3^B");
+        await(() -> find(fox, JTextArea.class).getText().contains(
+            Lizzie.resourceBundle.getString("Fox.incomplete")), 5, "cold reconnect blocked");
+        assertFalse(target.hasExclusiveGtpLease());
+        send(reconnected, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B",
+            "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
+        await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "new connection new game candidates");
+        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+        await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(),
+            35, "active explicit stop handback");
+      }
       assertTrue(target.isLoaded());
       assertTrue(target.beginExclusiveGtpLifecycleTransition());
       target.endExclusiveGtpLifecycleTransition();
