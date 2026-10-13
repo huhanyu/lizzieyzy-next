@@ -199,6 +199,8 @@ public final class FoxLiveSessionAcceptanceIT {
           Lizzie.frame.independentMainBoard.getRootPane().paintImmediately(0, 0,
               Lizzie.frame.independentMainBoard.getWidth(), Lizzie.frame.independentMainBoard.getHeight());
         });
+        new Robot().delay(300);
+        Toolkit.getDefaultToolkit().sync();
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-float-number-preview.png").toFile());
         Files.writeString(work.resolve("float-number-preview.txt"), "candidate=" + floatCandidate
