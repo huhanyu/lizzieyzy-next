@@ -2710,11 +2710,13 @@ public class Board {
   }
 
   private void modifyStart() {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) return;
     if (Lizzie.leelaz != null) Lizzie.leelaz.modifyStart();
     if (Lizzie.config.isDoubleEngineMode() && Lizzie.leelaz2 != null) Lizzie.leelaz2.modifyStart();
   }
 
   private void modifyEnd() {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) return;
     if (Lizzie.leelaz != null) Lizzie.leelaz.setModifyEnd();
     if (Lizzie.config.isDoubleEngineMode() && Lizzie.leelaz2 != null) Lizzie.leelaz2.setModifyEnd();
   }
@@ -3955,7 +3957,7 @@ public class Board {
   }
 
   public void navigateToNode(BoardHistoryNode targetNode) {
-    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return;
     if (targetNode == null || engineGamePlaying()) {
       return;
     }
@@ -4213,7 +4215,8 @@ public class Board {
   }
 
   private boolean shouldForwardHistoryNavigationToPrimaryEngine() {
-    return !isCollectingReadBoardSync()
+    return !featurecat.lizzie.fox.FoxLiveSession.isActive()
+        && !isCollectingReadBoardSync()
         && !isLoadingFile
         && !isEngineAlignmentPending()
         && isPrimaryEngineReady();
@@ -4307,7 +4310,7 @@ public class Board {
 
   private HistoryNavigationMutation moveHistoryForward(
       BoardHistoryList expectedHistory, BoardHistoryNode expectedChild) {
-    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return HistoryNavigationMutation.NOT_MOVED;
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return HistoryNavigationMutation.NOT_MOVED;
     markMoveNavigationForMovelistRefresh();
     synchronized (this) {
       if (expectedHistory != null && history != expectedHistory) {
@@ -4655,7 +4658,7 @@ public class Board {
   }
 
   public boolean goToMoveNumberHelper(int moveNumber, boolean withinBranch) {
-    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return false;
     if (engineGamePlaying()) return false;
     if (Lizzie.config.noRefreshOnMouseMove) {
       LizzieFrame.boardRenderer.clearBranch();
@@ -4686,7 +4689,7 @@ public class Board {
 
   /** Goes to the next variation, thread safe */
   public boolean nextVariation(int idx) {
-    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return false;
     synchronized (this) {
       modifyStart();
       updateWinrate();
@@ -4822,9 +4825,11 @@ public class Board {
    * @return void
    */
   public void moveToAnyPosition(BoardHistoryNode targetNode) {
-    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
-    if (isCollectingReadBoardSync() || isEngineAlignmentPending() || isLoadingFile) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return;
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()
+        || isCollectingReadBoardSync() || isEngineAlignmentPending() || isLoadingFile) {
       synchronized (this) {
+        if (targetNode == null || !belongsToCurrentHistory(targetNode)) return;
         if (history.getCurrentHistoryNode() == targetNode) return;
         if (Lizzie.leelaz != null) updateWinrate();
         history.setHead(targetNode);
@@ -5714,7 +5719,7 @@ public class Board {
   }
 
   private HistoryNavigationMutation moveHistoryBackward(BoardHistoryList expectedHistory) {
-    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return HistoryNavigationMutation.NOT_MOVED;
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return HistoryNavigationMutation.NOT_MOVED;
     markMoveNavigationForMovelistRefresh();
     synchronized (this) {
       if (expectedHistory != null && history != expectedHistory) {
@@ -6470,6 +6475,7 @@ public class Board {
   }
 
   public void updateWinrate() {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) return;
     updateMovelist(history.getCurrentHistoryNode());
     if ((Lizzie.leelaz != null && Lizzie.leelaz.isPondering() && !isLoadingFile)
         || engineGamePlaying()) {

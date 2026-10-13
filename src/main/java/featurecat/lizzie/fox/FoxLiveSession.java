@@ -38,6 +38,8 @@ public final class FoxLiveSession {
   private final JComboBox<String> rules = new JComboBox<>(new String[] {"chinese", "japanese", "aga", "tromp-taylor"});
   private final JButton start = new JButton(text("Fox.start"));
   private final JButton stop = new JButton(text("Fox.stop"));
+  private final JButton returnLive = new JButton(text("Fox.returnLive"));
+  private final JLabel browsingStatus = new JLabel();
   private FoxConnection connection;
   private long connectionToken;
   private volatile long workGeneration;
@@ -71,15 +73,23 @@ public final class FoxLiveSession {
     content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
     content.add(controls, BorderLayout.NORTH);
     content.add(new JScrollPane(output), BorderLayout.CENTER);
-    JPanel statePanel = new JPanel(new GridLayout(2, 1));
+    JPanel statePanel = new JPanel(new GridLayout(4, 1));
     statePanel.add(status);
     statePanel.add(clockStatus);
+    statePanel.add(browsingStatus);
+    statePanel.add(returnLive);
     content.add(statePanel, BorderLayout.SOUTH);
     dialog.setContentPane(content);
     dialog.pack();
     dialog.setLocationRelativeTo(Lizzie.frame);
     start.addActionListener(e -> start());
     stop.addActionListener(e -> stop());
+    returnLive.addActionListener(e -> {
+      if (!rejectHistoryNavigation() && liveHistory != null) {
+        Lizzie.board.navigateToNode(liveTail);
+      }
+    });
+    returnLive.setEnabled(false);
     showStatus("Fox.waiting");
     output.setText(text("Fox.automatic"));
     stop.setEnabled(false);
@@ -94,7 +104,7 @@ public final class FoxLiveSession {
     instance.dialog.setVisible(true);
   }
 
-  /** Central semantic admission: 04 will replace navigation rejection with display-only routing. */
+  /** Mutations remain excluded while display-only history navigation is admitted separately. */
   public static boolean rejectOrdinaryMutation() {
     FoxLiveSession current = instance;
     if (current == null || !current.ownsBoard || OWNED_MUTATION.get()) return false;
@@ -102,6 +112,30 @@ public final class FoxLiveSession {
     return true;
   }
 
+  public static boolean rejectHistoryNavigation() {
+    FoxLiveSession current = instance;
+    if (current == null || !current.ownsBoard || OWNED_MUTATION.get()) return false;
+    return current.restoring || current.liveHistory == null
+        || Lizzie.board.getHistory() != current.liveHistory;
+  }
+
+  /** Called by the adopted history's cursor boundary, never by engine or protocol workers. */
+  public static void historyCursorChanged(BoardHistoryList history) {
+    FoxLiveSession current = instance;
+    if (current == null || !current.ownsBoard || OWNED_MUTATION.get()
+        || history != current.liveHistory) return;
+    current.displayCursor = history.getCurrentHistoryNode();
+    current.refreshDisplay();
+  }
+
+  private void refreshDisplay() {
+    boolean browsing = ownsBoard && liveHistory != null && displayCursor != liveTail;
+    browsingStatus.setText(browsing ? text("Fox.browsing") : " ");
+    returnLive.setEnabled(browsing && !restoring);
+    if (browsing) output.setText(text("Fox.browsing"));
+    else if (liveCandidates != null) showCandidates(liveCandidates);
+    else output.setText(text("Fox.automatic") + "\n\n" + text("Fox.waitingCandidate"));
+  }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
   public BoardHistoryNode liveTail() { return liveTail; }
   public BoardHistoryNode displayCursor() { return displayCursor; }
@@ -361,6 +395,7 @@ public final class FoxLiveSession {
       appliedActions = 0;
       liveTail = displayCursor = liveHistory.getCurrentHistoryNode();
     }
+    boolean following = displayCursor == liveTail;
     liveHistory.setHead(liveTail);
     for (; appliedActions < state.actions().size(); appliedActions++) {
       FoxGameState.Action action = state.actions().get(appliedActions);
@@ -371,7 +406,9 @@ public final class FoxLiveSession {
       if (liveHistory.getCurrentHistoryNode() == prior) throw new IllegalStateException("Illegal Fox action");
     }
     liveTail = liveHistory.getCurrentHistoryNode();
-    displayCursor = liveTail;
+    if (following) displayCursor = liveTail;
+    liveHistory.setHead(displayCursor);
+    refreshDisplay();
     Lizzie.frame.refresh();
   }
 
@@ -380,7 +417,7 @@ public final class FoxLiveSession {
     scheduledRevision = -1;
     refreshDeadlineNanos = 0;
     liveCandidates = null;
-    output.setText(text("Fox.automatic"));
+    refreshDisplay();
     if (engine != null) engine.invalidate();
   }
 
@@ -412,6 +449,7 @@ public final class FoxLiveSession {
     restoring = false;
     ownsBoard = connection != null && game.snapshot().active();
     showStatus(key);
+    refreshDisplay();
     if (connection == null) start.setEnabled(success);
     else if (success && game.snapshot().searchable() && blockedGame != game.snapshot().game()) {
       acquire(game.snapshot());

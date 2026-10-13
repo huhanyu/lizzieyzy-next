@@ -69,6 +69,7 @@ public final class FoxLiveSessionAcceptanceIT {
       target.notPondering();
       target.sendCommand("stop");
       Thread.sleep(500);
+      BoardHistoryNode originalDisplay = Lizzie.board.getHistory().getCurrentHistoryNode();
       SwingUtilities.invokeAndWait(FoxLiveSession::showDialog);
       JDialog fox = dialog();
       int port;
@@ -135,6 +136,82 @@ public final class FoxLiveSessionAcceptanceIT {
         Files.writeString(work.resolve("timing.txt"), "turnStart=" + turnStart + "\nsubmitted=" + submitted
             + "\nconfirmed=" + confirmed + "\nengineSynchronized=" + synchronizedAt
             + "\nsubmission=" + submission + "\ncandidatesBeforeFinal=\n" + candidates);
+        // A peer-observed pass is evidence, never an invented engine choice.
+        int whiteX = Integer.parseInt(fields[1]) == 2 && Integer.parseInt(fields[2]) == 16 ? 3 : 2;
+        String white = "2^" + whiteX + "^16^W";
+        send(peer, "FAMOVE,1,B," + white, "FASKIP,0,B");
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 3, 5, "MOVE MOVE PASS history");
+        BoardHistoryNode pass = Lizzie.board.getHistory().getCurrentHistoryNode();
+        BoardHistoryNode historical = pass.previous().orElseThrow();
+        assertTrue(pass.getData().isPassNode());
+        await(() -> gtp(work).contains("play B pass"), 10, "real pass replay");
+        await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "pass-position candidate");
+        String navigationCommands = commands(work);
+        Controller[] controls = new Controller[1];
+        SwingUtilities.invokeAndWait(() -> {
+          controls[0] = new Controller(Lizzie.frame);
+          controls[0].setVisible(true);
+          literalButton(controls[0], "<").doClick();
+        });
+        assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
+        assertTrue(hasText(fox, "Fox.browsing"));
+        assertFalse(find(fox, JTextArea.class).getText().contains("%"));
+        SwingUtilities.invokeAndWait(() -> {
+          controls[0].dispose();
+          Lizzie.frame.toFront();
+          Lizzie.frame.setMainPanelFocus();
+        });
+        Robot robot = new Robot();
+        robot.delay(250);
+        robot.keyPress(java.awt.event.KeyEvent.VK_UP);
+        robot.keyRelease(java.awt.event.KeyEvent.VK_UP);
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "actual keyboard history");
+        Component keyboardHost = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        assertNotNull(keyboardHost);
+        Point hostOrigin = keyboardHost.getLocationOnScreen();
+        robot.mouseMove(hostOrigin.x + 10, hostOrigin.y + 10);
+        robot.mouseWheel(1);
+        await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == historical, 5, "actual wheel history");
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.config.showVariationGraph = true;
+          Lizzie.config.showScrollVariation = false;
+          Lizzie.frame.refresh();
+        });
+        await(() -> Lizzie.frame.currentVariationTreeImage() != null, 5, "published actual tree");
+        SwingUtilities.invokeAndWait(() -> {
+          var view = Lizzie.frame.currentVariationTreeImage().view();
+          Lizzie.frame.onClicked(view.x() + 25, view.y() + view.height() / 2 + 25);
+        });
+        await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == pass, 5, "actual tree click");
+        SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
+        assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
+        assertEquals(navigationCommands, commands(work), "browsing sends no GTP at all");
+        int oldPlayouts = historical.getData().getPlayouts();
+        var oldMoves = new ArrayList<>(historical.getData().bestMoves);
+        ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-history.png").toFile());
+        String fourth = "3^" + whiteX + "^15^W";
+        send(peer, "FAMOVE,1,B," + fourth);
+        peer.setSoTimeout(15000);
+        assertEquals("AFSTATUS,B", receive(peer));
+        send(peer, "FASTATUS,1,B," + tuple + "," + white + "," + fourth,
+            "FATIMELEFT,57,30,3", "FAMOVE,1,B," + fourth);
+        String browsingSubmission = receive(peer);
+        assertTrue(browsingSubmission.startsWith("AFPLAY,B,4^") || browsingSubmission.equals("AFSKIP,B"), browsingSubmission);
+        assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode(), "live messages preserve display");
+        assertEquals(4, Lizzie.board.getHistory().getMainEnd().getData().moveNumber);
+        assertEquals(oldPlayouts, historical.getData().getPlayouts());
+        assertEquals(oldMoves, historical.getData().bestMoves);
+        assertFalse(find(fox, JTextArea.class).getText().contains("%"));
+        String beforeReturn = commands(work);
+        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return to current live tail");
+        assertTrue(find(fox, JTextArea.class).getText().contains("%")
+            || find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.waitingCandidate")));
+        assertEquals(beforeReturn, commands(work));
+        SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
+        Files.writeString(work.resolve("history-evidence.txt"), "navigationCommands=unchanged\nreturnCommands=unchanged\n"
+            + "displayMove=2 liveMove=4\ncacheUnchanged=true\nautomaticWhileBrowsing=" + browsingSubmission + "\n");
         send(peer, "FARESULT,W+R", "FASTATUS,0");
         await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "confirmed terminal handback");
         assertTrue(target.isLoaded());
@@ -163,6 +240,8 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> find(fox, JTextArea.class).getText().contains(
             Lizzie.resourceBundle.getString("Fox.incomplete")), 5, "cold reconnect blocked");
         assertFalse(target.hasExclusiveGtpLease());
+        assertSame(originalDisplay, Lizzie.board.getHistory().getCurrentHistoryNode(),
+            "incomplete observation retains pre-entry stable board");
         reconnected.setSoTimeout(250);
         assertThrows(SocketTimeoutException.class, () -> reconnected.getInputStream().read(), "blocked has no send");
         send(reconnected, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B",
@@ -171,9 +250,29 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals("AFSTATUS,B", receive(reconnected));
         send(reconnected, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
         await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "new connection search candidates");
-        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+        String lastSubmission = receive(reconnected);
+        assertTrue(lastSubmission.startsWith("AFPLAY,B,1^"), lastSubmission);
+        send(reconnected, "FAMOVE,0,B," + lastSubmission.substring("AFPLAY,B,".length()));
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "last confirmed live move");
+        await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "last opponent search");
+        BoardHistoryNode exitDisplay = Lizzie.board.getHistory().root();
+        SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(exitDisplay));
+        await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == exitDisplay, 5, "historical Stop target");
+        String beforeStop = commands(work);
+        SwingUtilities.invokeAndWait(() -> {
+          button(fox, "Fox.stop").doClick();
+          assertTrue(FoxLiveSession.rejectOrdinaryMutation(), "ordinary commands blocked during handback");
+        });
         await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(),
             35, "active explicit stop handback");
+        assertSame(exitDisplay, Lizzie.board.getHistory().getCurrentHistoryNode());
+        String restoredCommands = commands(work).substring(beforeStop.length());
+        assertTrue(restoredCommands.contains("clear_board"), restoredCommands);
+        assertFalse(restoredCommands.lines().anyMatch(line -> line.matches(".*Controller: (?:[0-9]+ )?play [BW] .*")),
+            "handback restores displayed root, not the live MOVE");
+        ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-history-stopped.png").toFile());
+        Files.writeString(work.resolve("history-stop-gtp.txt"), restoredCommands);
       }
       assertTrue(target.isLoaded());
       assertTrue(target.beginExclusiveGtpLifecycleTransition());
@@ -211,6 +310,21 @@ public final class FoxLiveSessionAcceptanceIT {
     }
   }
 
+  private static String commands(Path work) {
+    return gtp(work).lines().filter(line -> line.contains("Controller:"))
+        .collect(java.util.stream.Collectors.joining("\n"));
+  }
+
+  private static JButton literalButton(Container parent, String label) {
+    for (Component child : parent.getComponents()) {
+      if (child instanceof JButton button && label.equals(button.getText())) return button;
+      if (child instanceof Container container) {
+        JButton found = literalButton(container, label);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
   private static String receive(Socket peer) throws Exception {
     java.io.ByteArrayOutputStream frame = new java.io.ByteArrayOutputStream();
     int value;
