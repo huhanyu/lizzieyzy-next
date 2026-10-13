@@ -18,7 +18,7 @@ public final class WindowsUpdateController {
 
   public static void applicationReady() {
     SwingUtilities.invokeLater(() -> COORDINATOR.applicationReady(
-        UpdatePreferences.autoCheck(), UpdateCheckSelection.of(
+        UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(), UpdateCheckSelection.of(
             UpdateChannel.current(), UpdateSource.current(), Lizzie.nextVersion)));
   }
 
@@ -27,6 +27,10 @@ public final class WindowsUpdateController {
   static void automaticPolicyChanged() {
     COORDINATOR.invalidateAutomatic();
     if (page != null && page.isAutomaticReminder()) page.dispose();
+  }
+
+  static void automaticDownloadDisabled() {
+    COORDINATOR.disableAutomaticDownload();
   }
 
   private static void showPage(Component parent, boolean automatic) {
@@ -45,18 +49,16 @@ public final class WindowsUpdateController {
     @Override
     public void openWindows(UpdateCheckSelection selection, UpdateCheckResult result) {
       if (page != null) page.dispose();
-      WindowsUpdateService service = new WindowsUpdateService();
       new WindowsUpdateDialog(
-              Lizzie.frame, service, result.windowsPlan, UpdateCheckFeedback.warning(result))
+              Lizzie.frame, COORDINATOR, result, UpdateCheckFeedback.warning(result))
           .setVisible(true);
     }
 
     @Override
     public void openPackage(UpdateCheckSelection selection, UpdateCheckResult result) {
       if (page != null) page.dispose();
-      PlatformUpdateService service = new PlatformUpdateService();
       new PackageUpdateDialog(
-              Lizzie.frame, service, result.packagePlan, UpdateCheckFeedback.warning(result))
+              Lizzie.frame, COORDINATOR, result, UpdateCheckFeedback.warning(result))
           .setVisible(true);
     }
   }

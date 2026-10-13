@@ -51,8 +51,8 @@ class UpdateCheckCoordinatorTest {
     UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
         discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
     UpdateCheckSelection snapshot = officialSnapshot();
-    coordinator.applicationReady(true, snapshot);
-    coordinator.applicationReady(true, snapshot);
+    coordinator.applicationReady(true, false, snapshot);
+    coordinator.applicationReady(true, false, snapshot);
     assertTrue(coordinator.state().checking());
     assertFalse(coordinator.checkManually(snapshot));
     runner.drain();
@@ -69,8 +69,8 @@ class UpdateCheckCoordinatorTest {
     RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
     UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
         discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
-    coordinator.applicationReady(false, officialSnapshot());
-    coordinator.applicationReady(true, officialSnapshot());
+    coordinator.applicationReady(false, false, officialSnapshot());
+    coordinator.applicationReady(true, false, officialSnapshot());
     assertTrue(discovery.seen.isEmpty());
     assertTrue(coordinator.checkManually(officialSnapshot()));
     assertEquals(1, discovery.seen.size());
@@ -84,7 +84,7 @@ class UpdateCheckCoordinatorTest {
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
           s -> result, unusedHandoff(), ImmediateRunner.INSTANCE,
           s -> { throw new AssertionError(); });
-      coordinator.applicationReady(true, officialSnapshot());
+      coordinator.applicationReady(true, false, officialSnapshot());
       List<UpdateCheckCoordinator.State> view = new ArrayList<>();
       coordinator.subscribe(view::add);
       assertSame(result, view.get(0).result());
@@ -103,14 +103,14 @@ class UpdateCheckCoordinatorTest {
     List<UpdateCheckCoordinator.State> states = new ArrayList<>();
     java.util.function.Consumer<UpdateCheckCoordinator.State> view = states::add;
     coordinator.subscribe(view);
-    coordinator.applicationReady(true, officialSnapshot());
+    coordinator.applicationReady(true, false, officialSnapshot());
     coordinator.unsubscribe(view);
     runner.drain();
     assertEquals(1, reminders.get());
     assertNull(handoff.windowsPlan);
     coordinator.subscribe(view);
     assertTrue(states.get(states.size() - 1).hasOffer());
-    coordinator.applicationReady(true, officialSnapshot());
+    coordinator.applicationReady(true, false, officialSnapshot());
     assertEquals(1, reminders.get());
     coordinator.openOffer();
     assertSame(coordinator.state().result().windowsPlan, handoff.windowsPlan);
@@ -124,7 +124,7 @@ class UpdateCheckCoordinatorTest {
       QueueRunner runner = new QueueRunner();
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
           s -> result, unusedHandoff(), runner, s -> { throw new AssertionError(); });
-      coordinator.applicationReady(true, officialSnapshot());
+      coordinator.applicationReady(true, false, officialSnapshot());
       runner.background.run();
       coordinator.invalidateAutomatic();
       assertNull(coordinator.state().result());
@@ -132,7 +132,7 @@ class UpdateCheckCoordinatorTest {
       runner.edt.run();
       assertNull(coordinator.state().result());
       assertFalse(coordinator.state().checking());
-      coordinator.applicationReady(true, officialSnapshot());
+      coordinator.applicationReady(true, false, officialSnapshot());
       assertNull(coordinator.state().selection());
       assertTrue(coordinator.checkManually(officialSnapshot()));
     }
@@ -166,7 +166,7 @@ class UpdateCheckCoordinatorTest {
         s -> UpdateCheckResult.offerWindows(null), s -> { throw new IllegalStateException(); })) {
       UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
           discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
-      coordinator.applicationReady(true, officialSnapshot());
+      coordinator.applicationReady(true, false, officialSnapshot());
       assertEquals(UpdateCheckResult.Reason.FAILURE, coordinator.state().result().reason);
       assertTrue(coordinator.checkManually(officialSnapshot()));
     }

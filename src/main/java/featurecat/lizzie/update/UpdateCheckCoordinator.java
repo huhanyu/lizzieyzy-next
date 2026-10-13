@@ -1,15 +1,30 @@
 package featurecat.lizzie.update;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** Application-owned discovery. All state and callbacks are confined to the EDT. */
+/** Application-owned update lifecycle. State and callbacks are confined to the EDT. */
 final class UpdateCheckCoordinator {
   enum Origin { AUTOMATIC, MANUAL }
+  enum DownloadPhase { NONE, DOWNLOADING, CANCELLED, FAILED, READY }
+
+  record Download(DownloadPhase phase, ResumableDownloader.Progress progress, String error) {}
+
+  interface DownloadService {
+    Path prepare(UpdateCheckResult result, ResumableDownloader.Control control,
+        ResumableDownloader.ProgressListener progress) throws Exception;
+    void apply(UpdateCheckResult result, Path prepared) throws Exception;
+  }
 
   record State(boolean checking, Origin origin, UpdateCheckSelection selection,
-      UpdateCheckResult result) {
+      UpdateCheckResult result, Download download) {
+    State(boolean checking, Origin origin, UpdateCheckSelection selection, UpdateCheckResult result) {
+      this(checking, origin, selection, result, new Download(DownloadPhase.NONE, null, null));
+    }
+    boolean downloading() { return download.phase() == DownloadPhase.DOWNLOADING; }
+    boolean ready() { return download.phase() == DownloadPhase.READY; }
     boolean hasOffer() {
       return result != null && result.reason == UpdateCheckResult.Reason.OFFER;
     }
@@ -39,9 +54,21 @@ final class UpdateCheckCoordinator {
   private boolean inFlight;
   private boolean automaticInvalidated;
   private boolean presentingOffer;
+  private final DownloadService downloads;
+  private boolean automaticDownload;
+  private boolean manualDownload;
+  private boolean reminded;
+  private ResumableDownloader.Control control;
+  private Path prepared;
 
   UpdateCheckCoordinator(Discovery discovery, OfferHandoff handoff, Runner runner,
       Consumer<State> reminder) {
+    this(discovery, handoff, runner, reminder, new UpdateDownloadService());
+  }
+
+  UpdateCheckCoordinator(Discovery discovery, OfferHandoff handoff, Runner runner,
+      Consumer<State> reminder, DownloadService downloads) {
+    this.downloads = downloads;
     this.discovery = discovery;
     this.handoff = handoff;
     this.runner = runner;
@@ -57,9 +84,10 @@ final class UpdateCheckCoordinator {
 
   void unsubscribe(Consumer<State> observer) { observers.remove(observer); }
 
-  void applicationReady(boolean enabled, UpdateCheckSelection selection) {
+  void applicationReady(boolean enabled, boolean download, UpdateCheckSelection selection) {
     if (startupConsumed) return;
     startupConsumed = true;
+    automaticDownload = enabled && download;
     if (enabled) start(Origin.AUTOMATIC, selection);
   }
 
@@ -68,15 +96,27 @@ final class UpdateCheckCoordinator {
   }
 
   void invalidateAutomatic() {
-    if (state.origin() != Origin.AUTOMATIC) return;
+    if (state.origin() != Origin.AUTOMATIC || manualDownload) return;
+    if (control != null) control.cancel();
+    prepared = null;
     automaticInvalidated = true;
     publish(new State(inFlight, Origin.AUTOMATIC, null, null));
+  }
+
+  void disableAutomaticDownload() {
+    automaticDownload = false;
+    if (state.origin() == Origin.AUTOMATIC && !manualDownload && state.downloading()) {
+      cancelDownload();
+    }
   }
 
   private boolean start(Origin origin, UpdateCheckSelection selection) {
     if (inFlight || presentingOffer) return false;
     inFlight = true;
     automaticInvalidated = false;
+    prepared = null;
+    control = null;
+    manualDownload = false;
     publish(new State(true, origin, selection, null));
     runner.runBackground(() -> {
       UpdateCheckResult result;
@@ -104,13 +144,16 @@ final class UpdateCheckCoordinator {
     }
     publish(new State(false, origin, selection, result));
     if (!state.hasOffer()) return;
-    if (origin == Origin.AUTOMATIC) reminder.accept(state);
-    else openOffer();
+    if (origin == Origin.AUTOMATIC) {
+      if (automaticDownload) startDownload(result, false);
+      else remind();
+    } else openOffer();
   }
 
   /** Explicit user action; inspecting an automatic result never changes its origin. */
   void openOffer() {
-    if (!state.hasOffer() || presentingOffer) return;
+    if (!state.hasOffer() || presentingOffer || inFlight) return;
+    if (state.ready()) { applyPrepared(); return; }
     State offered = state;
     presentingOffer = true;
     try {
@@ -122,6 +165,90 @@ final class UpdateCheckCoordinator {
     } finally {
       presentingOffer = false;
     }
+  }
+
+  /** A manual confirmation grants completion authority; merely viewing never calls this. */
+  void startDownload(UpdateCheckResult expected, boolean completeWhenReady) {
+    if (expected != state.result() || inFlight || !state.hasOffer() || state.ready()) return;
+    State offered = state;
+    manualDownload = completeWhenReady;
+    automaticInvalidated = false;
+    prepared = null;
+    ResumableDownloader.Control task = new ResumableDownloader.Control();
+    control = task;
+    inFlight = true;
+    publishDownload(DownloadPhase.DOWNLOADING, null, null);
+    runner.runBackground(() -> {
+      Path path = null;
+      Exception failure = null;
+      try {
+        task.checkCancelled();
+        path = downloads.prepare(offered.result(), task, progress -> runner.runOnEdt(() -> {
+          if (control == task && !task.isCancelled() && !automaticInvalidated && inFlight) {
+            publishDownload(DownloadPhase.DOWNLOADING, progress, null);
+          }
+        }));
+      } catch (Exception e) { failure = e; }
+      Path finished = path;
+      Exception error = failure;
+      runner.runOnEdt(() -> {
+        if (control != task) return;
+        inFlight = false;
+        if (automaticInvalidated) {
+          publish(new State(false, null, null, null));
+          return;
+        }
+        if (task.isCancelled()) {
+          publishDownload(DownloadPhase.CANCELLED, state.download().progress(), null);
+        } else if (error != null || finished == null) {
+          publishDownload(DownloadPhase.FAILED, state.download().progress(),
+              error == null ? "" : UpdateText.userFacingError(error));
+        } else {
+          prepared = finished;
+          publishDownload(DownloadPhase.READY, state.download().progress(), null);
+          if (manualDownload) applyPrepared();
+          else remind();
+        }
+      });
+    });
+  }
+
+  void retryDownload() {
+    startDownload(state.result(), manualDownload);
+  }
+
+  void cancelDownload() {
+    if (!state.downloading() || control == null) return;
+    control.cancel();
+    prepared = null;
+    publishDownload(DownloadPhase.CANCELLED, state.download().progress(), null);
+  }
+
+  void togglePause() {
+    if (!state.downloading() || control == null) return;
+    if (control.isPaused()) control.resume(); else control.pause();
+  }
+
+  boolean busy() { return inFlight; }
+
+  private void applyPrepared() {
+    if (!state.ready() || prepared == null || automaticInvalidated || inFlight) return;
+    try {
+      downloads.apply(state.result(), prepared);
+    } catch (Exception e) {
+      publishDownload(DownloadPhase.READY, state.download().progress(), UpdateText.userFacingError(e));
+    }
+  }
+
+  private void remind() {
+    if (reminded) return;
+    reminded = true;
+    reminder.accept(state);
+  }
+
+  private void publishDownload(DownloadPhase phase, ResumableDownloader.Progress progress, String error) {
+    publish(new State(false, state.origin(), state.selection(), state.result(),
+        new Download(phase, progress, error)));
   }
 
   private void publish(State next) {

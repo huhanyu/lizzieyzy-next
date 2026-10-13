@@ -30,7 +30,8 @@ public final class PlatformUpdateService {
       ResumableDownloader.Control control,
       ResumableDownloader.ProgressListener listener)
       throws IOException {
-    Path destination = downloadDirectory().resolve(plan.packageAsset.assetName);
+    Path destination = downloadDirectory().resolve(plan.packageAsset.sha256)
+        .resolve(plan.packageAsset.assetName);
     return downloader.download(
         ResumableDownloader.DownloadSpec.from(plan.packageAsset), destination, control, listener);
   }

@@ -48,7 +48,8 @@ class WindowsUpdateServiceTest {
 
       Path requestPath = new WindowsUpdateService().downloadAndPrepare(plan, null);
 
-      Path archivePath = requestPath.getParent().resolve("2026-06-12-windows64.core-update.zip");
+      Path archivePath = requestPath.getParent().resolve(sha256(archive))
+          .resolve("2026-06-12-windows64.core-update.zip");
       assertEquals("downloaded archive", Files.readString(archivePath));
       JSONObject request = new JSONObject(Files.readString(requestPath));
       assertEquals(
@@ -56,6 +57,14 @@ class WindowsUpdateServiceTest {
           request.getJSONArray("components").getJSONObject(0).getString("sourcePath"));
       assertEquals(1, proxy.requests.get());
       assertTrue(proxy.lastRequestLine.contains("http://example.invalid/core.zip"));
+      request.put("mainPid", -1L);
+      request.put("workDir", "stale");
+      Files.writeString(requestPath, request.toString());
+      new WindowsUpdateService().downloadAndPrepare(plan, null);
+      JSONObject refreshed = new JSONObject(Files.readString(requestPath));
+      assertEquals(ProcessHandle.current().pid(), refreshed.getLong("mainPid"));
+      assertEquals(tempDir.resolve("work").toString(), refreshed.getString("workDir"));
+      assertEquals(1, proxy.requests.get(), "Verified cache must not transfer again");
     }
   }
 

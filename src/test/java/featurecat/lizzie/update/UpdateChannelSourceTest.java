@@ -48,6 +48,29 @@ class UpdateChannelSourceTest {
   }
 
   @Test
+  void downloadDependsOnCheckAndClearedConsentDoesNotReturn() throws Exception {
+    Path directory = tempDir.resolve("download-policy");
+    java.nio.file.Files.createDirectories(directory);
+    Lizzie.config = ConfigTestHelper.createForTests(directory);
+    Lizzie.config.uiConfig = new JSONObject();
+    Lizzie.config.config = new JSONObject().put("ui", Lizzie.config.uiConfig);
+    assertFalse(UpdatePreferences.autoDownload());
+    Lizzie.config.uiConfig.put(UpdatePreferences.AUTO_DOWNLOAD, true);
+    assertFalse(UpdatePreferences.autoDownload());
+    UpdatePreferences.persistAutoDownload(true);
+    assertFalse(UpdatePreferences.autoDownload());
+    UpdatePreferences.persistAutoCheck(true);
+    UpdatePreferences.persistAutoDownload(true);
+    Lizzie.config.config = new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")));
+    Lizzie.config.uiConfig = Lizzie.config.config.getJSONObject("ui");
+    assertEquals(true, UpdatePreferences.autoDownload());
+    UpdatePreferences.persistAutoCheck(false);
+    assertFalse(Lizzie.config.uiConfig.getBoolean(UpdatePreferences.AUTO_DOWNLOAD));
+    UpdatePreferences.persistAutoCheck(true);
+    assertFalse(UpdatePreferences.autoDownload());
+  }
+
+  @Test
   void missingUpdateChannelConfigIsOfficial() {
     assertEquals(UpdateChannel.STABLE, UpdateChannel.fromConfigValue(null));
     assertEquals(UpdateChannel.STABLE, UpdateChannel.fromConfigValue(""));

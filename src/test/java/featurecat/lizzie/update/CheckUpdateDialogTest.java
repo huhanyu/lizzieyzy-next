@@ -38,7 +38,7 @@ class CheckUpdateDialogTest {
           public void runBackground(Runnable work) { work.run(); }
           public void runOnEdt(Runnable work) { work.run(); }
         }, s -> {});
-        coordinator.applicationReady(true, UpdateCheckSelection.of(UpdateChannel.STABLE, UpdateSource.GITHUB, "next-2026-08-01.1"));
+        coordinator.applicationReady(true, false, UpdateCheckSelection.of(UpdateChannel.STABLE, UpdateSource.GITHUB, "next-2026-08-01.1"));
         first = new CheckUpdateDialog(null, coordinator, true);
         first.setVisible(true);
         assertFalse(first.isModal());
@@ -56,12 +56,33 @@ class CheckUpdateDialogTest {
         assertTrue(UpdatePreferences.autoCheck());
         assertEquals(1, discoveries.get());
         assertEquals(UpdateCheckCoordinator.Origin.AUTOMATIC, coordinator.state().origin());
+        JCheckBox download = findDownload(reopened, preference);
+        assertTrue(download.isEnabled());
+        download.doClick();
+        assertTrue(UpdatePreferences.autoDownload());
+        preference.doClick();
+        assertFalse(download.isSelected());
+        assertFalse(download.isEnabled());
+        preference.doClick();
+        assertFalse(download.isSelected());
+        assertEquals(1, discoveries.get());
       } finally {
         if (first != null) first.dispose();
         if (reopened != null) reopened.dispose();
         Lizzie.config = previous;
       }
     });
+  }
+
+  private static JCheckBox findDownload(Container parent, JCheckBox excluded) {
+    for (Component child : parent.getComponents()) {
+      if (child instanceof JCheckBox box && box != excluded) return box;
+      if (child instanceof Container nested) {
+        JCheckBox found = findDownload(nested, excluded);
+        if (found != null) return found;
+      }
+    }
+    return null;
   }
 
   private static <T extends Component> T find(Container parent, Class<T> type) {

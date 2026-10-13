@@ -44,6 +44,10 @@ public final class CheckUpdateDialog extends JDialog {
   private final JTextArea resultLabel = new JTextArea(4, 36);
   private final JFontButton offerButton = new JFontButton(
       UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
+  private final JFontButton cancelButton = new JFontButton(
+      UpdateText.tr("WindowsUpdate.btnCancel", "取消", "Cancel"));
+  private final JFontButton retryButton = new JFontButton(
+      UpdateText.tr("WindowsUpdate.btnResume", "继续", "Resume"));
   private final UpdateCheckCoordinator coordinator;
   private final boolean automaticReminder;
   private final Consumer<UpdateCheckCoordinator.State> observer = this::showState;
@@ -187,9 +191,22 @@ public final class CheckUpdateDialog extends JDialog {
         "Check for updates at startup (from next launch)"), UpdatePreferences.autoCheck());
     autoCheck.setOpaque(false);
     autoCheck.setFont(stableButton.getFont());
-    autoCheck.addActionListener(e -> UpdatePreferences.persistAutoCheck(autoCheck.isSelected()));
+    JCheckBox autoDownload = new JCheckBox(UpdateText.tr(
+        "WindowsUpdate.autoDownload", "自动下载更新（下次启动生效）",
+        "Download updates automatically (from next launch)"), UpdatePreferences.autoDownload());
+    autoDownload.setOpaque(false);
+    autoDownload.setFont(stableButton.getFont());
+    autoDownload.setEnabled(autoCheck.isSelected());
+    autoDownload.addActionListener(e -> UpdatePreferences.persistAutoDownload(autoDownload.isSelected()));
+    autoCheck.addActionListener(e -> {
+      UpdatePreferences.persistAutoCheck(autoCheck.isSelected());
+      autoDownload.setEnabled(autoCheck.isSelected());
+      autoDownload.setSelected(UpdatePreferences.autoDownload());
+    });
     constraints.gridy = 4;
     form.add(autoCheck, constraints);
+    constraints.gridy = 5;
+    form.add(autoDownload, constraints);
 
     resultLabel.setForeground(mutedText());
     resultLabel.setFont(stableButton.getFont());
@@ -198,7 +215,7 @@ public final class CheckUpdateDialog extends JDialog {
     resultLabel.setFocusable(false);
     resultLabel.setLineWrap(true);
     resultLabel.setWrapStyleWord(true);
-    constraints.gridy = 5;
+    constraints.gridy = 6;
     constraints.insets = new Insets(0, 0, 0, 0);
     form.add(resultLabel, constraints);
     return form;
@@ -208,7 +225,11 @@ public final class CheckUpdateDialog extends JDialog {
     JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
     footer.setOpaque(false);
     checkButton.addActionListener(e -> startCheck());
-    offerButton.addActionListener(e -> { dispose(); coordinator.openOffer(); });
+    offerButton.addActionListener(e -> coordinator.openOffer());
+    cancelButton.addActionListener(e -> coordinator.cancelDownload());
+    retryButton.addActionListener(e -> coordinator.retryDownload());
+    footer.add(cancelButton);
+    footer.add(retryButton);
     footer.add(offerButton);
     JFontButton later = new JFontButton(UpdateText.tr("WindowsUpdate.later", "稍后", "Later"));
     later.addActionListener(e -> dispose());
@@ -234,8 +255,21 @@ public final class CheckUpdateDialog extends JDialog {
   }
 
   private void showState(UpdateCheckCoordinator.State state) {
-    checkButton.setEnabled(!state.checking());
-    offerButton.setVisible(state.hasOffer());
+    checkButton.setEnabled(!coordinator.busy());
+    offerButton.setVisible(state.hasOffer() && !state.downloading()
+        && state.download().phase() != UpdateCheckCoordinator.DownloadPhase.CANCELLED
+        && state.download().phase() != UpdateCheckCoordinator.DownloadPhase.FAILED);
+    offerButton.setEnabled(!coordinator.busy());
+    offerButton.setText(state.ready() ? UpdateDownloadText.action(state.result())
+        : UpdateText.tr("WindowsUpdate.viewOffer", "查看更新", "View update"));
+    cancelButton.setVisible(state.downloading());
+    retryButton.setVisible(state.hasOffer() && (state.download().phase() == UpdateCheckCoordinator.DownloadPhase.CANCELLED
+        || state.download().phase() == UpdateCheckCoordinator.DownloadPhase.FAILED));
+    retryButton.setEnabled(!coordinator.busy());
+    if (state.download().phase() != UpdateCheckCoordinator.DownloadPhase.NONE) {
+      resultLabel.setText(UpdateDownloadText.status(state));
+      return;
+    }
     if (state.checking()) {
       resultLabel.setText(UpdateText.tr("WindowsUpdate.checking", "正在检查更新…", "Checking for updates…"));
       return;
