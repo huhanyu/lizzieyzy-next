@@ -1,11 +1,13 @@
 package featurecat.lizzie.update;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.GraphicsEnvironment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -18,6 +20,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import org.json.JSONObject;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +28,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class CheckUpdateDialogTest {
   @TempDir Path directory;
+
+  @BeforeEach
+  void requireDisplay() {
+    boolean headless = GraphicsEnvironment.isHeadless();
+    assertFalse(Boolean.getBoolean("lizzie.desktop.required") && headless,
+        "Desktop lane requires java.awt.headless=false and an operational display");
+    assumeFalse(headless);
+  }
 
   @Test
   void preferencesAndResultSurviveClosingAndReopeningWithoutAnotherCheck() throws Exception {

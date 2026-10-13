@@ -1,11 +1,13 @@
 package featurecat.lizzie.update;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.GraphicsEnvironment;
 import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -17,11 +19,20 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class UpdatePauseRecoveryTest {
   @TempDir Path directory;
+
+  @BeforeEach
+  void requireDisplay() {
+    boolean headless = GraphicsEnvironment.isHeadless();
+    assertFalse(Boolean.getBoolean("lizzie.desktop.required") && headless,
+        "Desktop lane requires java.awt.headless=false and an operational display");
+    assumeFalse(headless);
+  }
 
   @Test
   void windowsManualDownloadCanResumeAfterClosingItsView() throws Exception {

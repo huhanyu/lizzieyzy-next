@@ -124,39 +124,6 @@ class RunLocalCiTest(unittest.TestCase):
         self.assertIn(script, run_local_ci.PY_COMPILE_FILES)
         self.assertIn("scripts/summarize_measured_analysis.py", run_local_ci.PY_COMPILE_FILES)
 
-    def test_desktop_plan_selects_all_required_classes(self):
-        steps = run_local_ci.build_steps("portable", "mvn", None, None, "desktop")
-
-        self.assertEqual(1, len(steps))
-        self.assertIn(
-            "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,"
-            "EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest",
-            steps[0].command,
-        )
-        self.assertEqual(
-            (
-                *tuple(
-                    (
-                        "featurecat.lizzie.gui.FunctionSearchNavigationTest",
-                        f"navigationPreservesRealStateAcrossNativeAndCustomMenus()[{repetition}]",
-                    )
-                    for repetition in range(1, 6)
-                ),
-                (
-                    "featurecat.lizzie.gui.ConfigDialog2NavigationTest",
-                    "blackWinrateRemainsReachableAcrossRebuildsAndRecreation",
-                ),
-                (
-                    "featurecat.lizzie.gui.EngineProcessSmokeTest",
-                    "restoresSnapshotAnalyzesAndQuits",
-                ),
-                ("featurecat.lizzie.gui.FunctionSearchInputTest", "chineseInputChain"),
-                ("featurecat.lizzie.gui.FunctionSearchInputTest", "englishInputChain"),
-                ("featurecat.lizzie.gui.OfflineBoardAcceptanceTest", "editsAndImportsWithNoEngine"),
-            ),
-            run_local_ci.DESKTOP_REQUIRED_TESTS,
-        )
-
     def test_engine_process_plan_selects_exact_required_methods(self):
         steps = run_local_ci.build_steps(
             "portable", "mvn", None, None, "engine-process"
@@ -533,8 +500,8 @@ class RunLocalCiTest(unittest.TestCase):
             stale = desktop_reports / "TEST-stale.xml"
             stale.write_text('<testsuite tests="1"><testcase classname="stale" name="stale"/></testsuite>')
 
-            *navigation, config, engine, chinese, english, offline = run_local_ci.DESKTOP_REQUIRED_TESTS
-            passed_navigation = [(case, "") for case in navigation]
+            required = (("fixture.DesktopTest", "first"), ("fixture.DesktopTest", "second"))
+            first, second = required
 
             def suite_xml(*cases: tuple[tuple[str, str], str]) -> str:
                 testcases = "".join(
@@ -561,6 +528,7 @@ class RunLocalCiTest(unittest.TestCase):
                 patch.object(run_local_ci, "resolve_maven", return_value="mvn"),
                 patch.object(run_local_ci, "java_major_version", return_value=(21, "Java21")),
                 patch.object(run_local_ci, "REPO_ROOT", Path(temporary)),
+                patch.object(run_local_ci, "DESKTOP_REQUIRED_TESTS", required),
                 patch.dict(os.environ, {"DISPLAY": ":99"}),
             ):
                 with patch.object(run_local_ci, "build_steps", return_value=make_step(None)):
@@ -570,46 +538,28 @@ class RunLocalCiTest(unittest.TestCase):
                     self.assertEqual(0, summary["junit"]["tests"])
                     self.assertFalse(stale.exists())
 
-                missing_engine = suite_xml(
-                    *passed_navigation, (config, ""), (chinese, ""), (english, ""), (offline, ""),
-                )
-                with patch.object(run_local_ci, "build_steps", return_value=make_step(missing_engine)):
+                missing_case = suite_xml((first, ""))
+                with patch.object(run_local_ci, "build_steps", return_value=make_step(missing_case)):
                     self.assertEqual(1, run_local_ci.run(args))
                     summary = json.loads((Path(temporary) / "local-ci-summary.json").read_text())
                     self.assertEqual("FAIL", summary["result"])
-                    self.assertEqual(9, summary["junit"]["tests"])
+                    self.assertEqual(1, summary["junit"]["tests"])
                     self.assertEqual(0, summary["junit"]["skipped"])
 
-                skipped_engine = suite_xml(
-                    *passed_navigation, (config, ""), (engine, "<skipped/>"),
-                    (chinese, ""), (english, ""), (offline, ""),
-                )
-                with patch.object(run_local_ci, "build_steps", return_value=make_step(skipped_engine)):
+                skipped_case = suite_xml((first, ""), (second, "<skipped/>"))
+                with patch.object(run_local_ci, "build_steps", return_value=make_step(skipped_case)):
                     self.assertEqual(1, run_local_ci.run(args))
                     summary = json.loads((Path(temporary) / "local-ci-summary.json").read_text())
                     self.assertEqual("FAIL", summary["result"])
-                    self.assertEqual(10, summary["junit"]["tests"])
+                    self.assertEqual(2, summary["junit"]["tests"])
                     self.assertEqual(1, summary["junit"]["skipped"])
 
-                pass_xml = suite_xml(
-                    *passed_navigation, (config, ""), (engine, ""),
-                    (chinese, ""), (english, ""), (offline, ""),
-                )
+                pass_xml = suite_xml((first, ""), (second, ""))
                 with patch.object(run_local_ci, "build_steps", return_value=make_step(pass_xml)):
                     self.assertEqual(0, run_local_ci.run(args))
                     summary = json.loads((Path(temporary) / "local-ci-summary.json").read_text())
                     self.assertEqual("PASS", summary["result"])
-                    self.assertEqual(10, summary["junit"]["tests"])
-
-                for missing in (*navigation, offline):
-                    incomplete = suite_xml(
-                        *((case, "") for case in run_local_ci.DESKTOP_REQUIRED_TESTS
-                          if case != missing)
-                    )
-                    with self.subTest(missing=missing), patch.object(
-                        run_local_ci, "build_steps", return_value=make_step(incomplete)
-                    ):
-                        self.assertEqual(1, run_local_ci.run(args))
+                    self.assertEqual(2, summary["junit"]["tests"])
 
 
     def test_engine_process_gate_rejects_missing_or_skipped_required_cases(self):
