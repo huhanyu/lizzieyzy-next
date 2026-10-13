@@ -88,40 +88,60 @@ public final class FoxLiveSessionAcceptanceIT {
       await(() -> button(fox, "Fox.stop").isEnabled(), 5, "listener start");
       try (Socket peer = new Socket("127.0.0.1", port)) {
         peer.setSoTimeout(200);
-        send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
+        send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3");
+        assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "no send before authoritative turn");
+        long turnStart = System.nanoTime();
+        send(peer, "FAMOVE,1,B,0^0^0^N");
+        peer.setSoTimeout(15000);
+        assertEquals("AFSTATUS,B", receive(peer));
+        send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
         await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "real current candidates");
+        String candidates = find(fox, JTextArea.class).getText();
+        String submission = receive(peer);
+        long submitted = System.nanoTime();
+        assertTrue(submission.startsWith("AFPLAY,B,1^"), submission);
+        String tuple = submission.substring("AFPLAY,B,".length());
+        String[] fields = tuple.split("\\^");
+        String vertex = "ABCDEFGHJKLMNOPQRSTUVWXYZ".charAt(Integer.parseInt(fields[1]))
+            + Integer.toString(19 - Integer.parseInt(fields[2]));
+        assertEquals(0, Lizzie.board.getHistory().getMoveNumber(), "pending is not a local move");
+        assertTrue(hasText(fox, "Fox.pending"));
         assertTrue(target.hasExclusiveGtpLease());
         assertFalse(target.hasForegroundAnalysisLeaseWorkInProgress());
-        long engineCount = ProcessHandle.current().descendants()
-            .filter(p -> p.info().command().orElse("").endsWith("katago")).count();
-        assertEquals(1, engineCount);
-        try (Socket duplicate = new Socket("127.0.0.1", port)) {
-          duplicate.setSoTimeout(1000);
-          assertEquals(-1, duplicate.getInputStream().read());
-        }
-        send(peer, "FAMOVE,0,B,1^16^3^B", "FAMOVE,1,B,2^3^15^W", "FASKIP,0,B");
-        await(() -> Lizzie.board.getHistory().getMoveNumber() == 3, 15, "MOVE MOVE PASS history");
-        BoardHistoryNode tail = Lizzie.board.getHistory().getCurrentHistoryNode();
-        assertTrue(tail.getData().isPassNode());
-        SwingUtilities.invokeAndWait(() -> {
-          assertFalse(Lizzie.board.previousMove(false));
-          Lizzie.board.navigateToNode(Lizzie.board.getHistory().root());
-          Lizzie.board.moveToAnyPosition(Lizzie.board.getHistory().root());
-          assertSame(tail, Lizzie.board.getHistory().getCurrentHistoryNode());
-          assertFalse(SGFParser.loadFromString("(;SZ[9];B[aa])"));
-        });
-        assertFalse(target.beginExclusiveGtpLifecycleTransition());
-        send(peer, "FASTATUS,1,B,1^16^3^B,2^3^15^W", "FATIMELEFT,59,30,3", "FAMOVE,0,B,2^3^15^W");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "post-pass candidates");
-        assertEquals(3, Lizzie.board.getHistory().getMoveNumber());
+        assertEquals(1, ProcessHandle.current().descendants()
+            .filter(p -> p.info().command().orElse("").endsWith("katago")).count());
+        String beforeConfirmation = gtp(work);
+        assertTrue(beforeConfirmation.contains("play " + vertex), "same real search final choice");
+        assertEquals(1, beforeConfirmation.lines().filter(line -> line.contains("Controller:")
+            && line.contains("kata-search_analyze_cancellable")).count());
+        assertFalse(beforeConfirmation.lines().anyMatch(line -> line.contains("Controller:")
+            && line.endsWith("play B " + vertex)), "engine not advanced before confirmation");
+        assertTrue(submitted - turnStart < TimeUnit.SECONDS.toNanos(58), "normal submit before deadline");
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
-            "png", work.resolve("fox-live.png").toFile());
-        assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "preview sends no move bytes");
+            "png", work.resolve("fox-pending.png").toFile());
+        peer.setSoTimeout(250);
+        send(peer, "FASTATUS,1,B", "FATIMELEFT,58,30,3", "FAMOVE,1,B,0^0^0^N");
+        assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "query never resends pending");
+        long confirmed = System.nanoTime();
+        send(peer, "FAMOVE,0,B," + tuple, "FATIMELEFT,58,30,3");
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "confirmed local MOVE");
+        await(() -> gtp(work).lines().anyMatch(line -> line.contains("Controller:")
+            && line.endsWith("play B " + vertex)), 5, "timely confirmed engine sync");
+        long synchronizedAt = System.nanoTime();
+        await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "opponent candidates");
+        assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "opponent never submits");
+        ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-confirmed.png").toFile());
+        Files.writeString(work.resolve("timing.txt"), "turnStart=" + turnStart + "\nsubmitted=" + submitted
+            + "\nconfirmed=" + confirmed + "\nengineSynchronized=" + synchronizedAt
+            + "\nsubmission=" + submission + "\ncandidatesBeforeFinal=\n" + candidates);
         send(peer, "FARESULT,W+R", "FASTATUS,0");
         await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "confirmed terminal handback");
         assertTrue(target.isLoaded());
         SwingUtilities.invokeAndWait(() -> assertTrue(Lizzie.board.previousMove(false)));
         send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
+        peer.setSoTimeout(5000);
+        assertEquals("AFSTATUS,B", receive(peer));
         await(() -> target.hasExclusiveGtpLease() && Lizzie.board.getHistory().getMoveNumber() == 0,
             15, "new game independent admission");
       }
@@ -132,9 +152,14 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> find(fox, JTextArea.class).getText().contains(
             Lizzie.resourceBundle.getString("Fox.incomplete")), 5, "cold reconnect blocked");
         assertFalse(target.hasExclusiveGtpLease());
+        reconnected.setSoTimeout(250);
+        assertThrows(SocketTimeoutException.class, () -> reconnected.getInputStream().read(), "blocked has no send");
         send(reconnected, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B",
             "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "new connection new game candidates");
+        reconnected.setSoTimeout(5000);
+        assertEquals("AFSTATUS,B", receive(reconnected));
+        send(reconnected, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
+        await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "new connection search candidates");
         SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
         await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(),
             35, "active explicit stop handback");
@@ -142,7 +167,17 @@ public final class FoxLiveSessionAcceptanceIT {
       assertTrue(target.isLoaded());
       assertTrue(target.beginExclusiveGtpLifecycleTransition());
       target.endExclusiveGtpLifecycleTransition();
-      Files.writeString(result, "PASS Swing TCP KataGo candidates MOVE PASS duplicate navigation conflicts terminal new-game disconnect stop restore no-outbound-moves\n"
+      String handback = gtp(work);
+      assertTrue(handback.contains("kata-time_settings none"));
+      int reset = handback.lastIndexOf("kata-time_settings none");
+      assertTrue(handback.substring(reset).matches("(?s).*=[0-9]+.*Controller:.*name.*"),
+          "reset response precedes final handback fence");
+      DesktopTimeControl.applyEngineGameTime(target, DesktopTimeControl.SideMode.ENGINE_OWNED, 0, "");
+      target.sendCommand("kata-debug-print-tc");
+      target.sendCommand("137001 name");
+      await(() -> gtp(work).contains("=137001 KataGo"), 5, "post-stop engine-owned clock observation");
+      Files.writeString(work.resolve("post-stop-time-control.txt"), gtp(work).substring(reset));
+      Files.writeString(result, "PASS Swing TCP one KataGo same-search candidates final automatic send pending no-preadvance confirmed timely-sync opponent init blocked no-send terminal disconnect Stop restore\n"
           + "engine=" + args[0] + "\nmodel=" + args[1] + "\nprocess=" + ProcessHandle.current().pid() + "\n");
       target.sendCommand("quit");
       System.exit(0);
@@ -152,6 +187,37 @@ public final class FoxLiveSessionAcceptanceIT {
       if (engine != null) engine.sendCommand("quit");
       System.exit(1);
     }
+  }
+
+  private static String receive(Socket peer) throws Exception {
+    java.io.ByteArrayOutputStream frame = new java.io.ByteArrayOutputStream();
+    int value;
+    while ((value = peer.getInputStream().read()) != -1) {
+      frame.write(value);
+      if (value == '\n') break;
+    }
+    List<String> messages = new ArrayList<>();
+    new FoxProtocol().accept(frame.toByteArray(), frame.size(), messages::add);
+    assertEquals(1, messages.size());
+    System.out.println("Fox peer received " + messages.get(0) + " at " + System.nanoTime());
+    return messages.get(0);
+  }
+
+  private static boolean hasText(Container parent, String key) {
+    String text = Lizzie.resourceBundle.getString(key);
+    for (Component child : parent.getComponents()) {
+      if (child instanceof JLabel label && label.getText().equals(text)) return true;
+      if (child instanceof Container c && hasText(c, key)) return true;
+    }
+    return false;
+  }
+
+  private static String gtp(Path work) {
+    try (var paths = Files.list(work.resolve("gtp-log"))) {
+      StringBuilder result = new StringBuilder();
+      for (Path path : paths.toList()) result.append(Files.readString(path));
+      return result.toString();
+    } catch (Exception failure) { throw new AssertionError(failure); }
   }
 
   private static String quote(String value) { return "\"" + value + "\""; }

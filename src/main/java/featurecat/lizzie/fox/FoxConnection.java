@@ -7,7 +7,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Explicitly opened loopback listener. No game submission command exists in this preview adapter. */
+/** Explicit loopback listener with generation-bound, one-shot guarded writes. */
 public final class FoxConnection implements AutoCloseable {
   public interface Listener {
     void connected(long connection);
@@ -20,6 +20,24 @@ public final class FoxConnection implements AutoCloseable {
   private Socket client;
   private static final AtomicLong CONNECTION_SEQUENCE = new AtomicLong();
   private boolean closed;
+  private long clientToken;
+  private final Object outputLock = new Object();
+
+  /** The nonblocking claim is the write-start linearization point; a started write is not retractable. */
+  public boolean send(long token, String body, java.util.function.BooleanSupplier claim) throws IOException {
+    byte[] frame = FoxProtocol.encode(body);
+    synchronized (outputLock) {
+      Socket target;
+      synchronized (this) {
+        if (closed || client == null || clientToken != token) return false;
+        target = client;
+        if (!claim.getAsBoolean()) return false;
+      }
+      target.getOutputStream().write(frame);
+      target.getOutputStream().flush();
+      return true;
+    }
+  }
 
   public FoxConnection(int port, Listener listener) throws IOException {
     if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid local port");
@@ -50,6 +68,7 @@ public final class FoxConnection implements AutoCloseable {
           incoming.setTcpNoDelay(true);
           client = incoming;
           token = CONNECTION_SEQUENCE.incrementAndGet();
+          clientToken = token;
         }
         listener.connected(token);
         Thread reader = new Thread(() -> read(incoming, token), "fox-ai-peer");

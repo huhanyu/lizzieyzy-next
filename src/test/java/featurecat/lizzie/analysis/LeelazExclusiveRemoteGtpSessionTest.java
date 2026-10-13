@@ -1304,19 +1304,39 @@ class LeelazExclusiveRemoteGtpSessionTest {
       assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
           engine.beginForegroundAnalysisLease(owner, line -> {}, () -> {}, () -> {}));
       assertFalse(engine.hasForegroundAnalysisLeaseWorkInProgress());
+      assertFalse(engine.claimFoxSubmission(owner, () -> true), "initial stop not yet confirmed");
       dispatch(engine, "=800000000");
       dispatch(engine, "");
+      assertTrue(engine.claimFoxSubmission(owner, () -> true));
+      assertFalse(engine.claimFoxSubmission(new Object(), () -> true));
       assertFalse(engine.sendExclusiveGtpCommand(new Object(), "clear_board"));
       assertTrue(engine.sendExclusiveGtpCommand(owner, "name"));
       assertFalse(output.toString(StandardCharsets.UTF_8).contains("clear_board"));
       engine.endExclusiveGtpSession();
       assertFalse(engine.sendExclusiveGtpCommand(owner, "name"));
+      assertFalse(engine.claimFoxSubmission(owner, () -> true), "retired owner cannot send a late choice");
+    }
+  }
+
+  @Test
+  void foxSubmissionCannotCrossReaderReplacement() throws Exception {
+    Leelaz engine = reusableKatagoEngine(false, false);
+    installOutput(engine);
+    Object owner = new Object();
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
+          engine.beginForegroundAnalysisLease(owner, line -> {}, () -> {}, () -> {}));
+      dispatch(engine, "=800000000");
+      dispatch(engine, "");
+      assertTrue(engine.claimFoxSubmission(owner, () -> true));
+      installOutput(engine);
+      assertFalse(engine.claimFoxSubmission(owner, () -> true));
     }
   }
 
   @Test
   void foxRuntimeRestoreRejectionCannotBeHiddenByFinalName() throws Exception {
-    for (String rejected : List.of("kata-set-rules", "kata-set-param maxTime")) {
+    for (String rejected : List.of("kata-set-rules", "kata-set-param maxTime", "kata-time_settings none")) {
       try (ProductionForegroundRestoreHarness harness =
           ProductionForegroundRestoreHarness.open(true, rejected)) {
         assertTrue(harness.engine.setFoxRestoreState(harness.lease, "chinese", 3.0));
@@ -2745,7 +2765,8 @@ class LeelazExclusiveRemoteGtpSessionTest {
         response = "?" + response.substring(1) + " injected restore rejection";
       }
       try {
-        if (command.contains("kata-set-rules") || command.contains("kata-set-param")) {
+        if (command.contains("kata-set-rules") || command.contains("kata-set-param")
+            || command.contains("kata-time_settings")) {
           String reply = response;
           Thread reader = new Thread(() -> {
             try {

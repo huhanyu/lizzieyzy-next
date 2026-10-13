@@ -19,11 +19,17 @@ public final class FoxGameState {
     public boolean isPass() { return placement == null; }
     public String vertex(int size) { return isPass() ? "pass" : placement.vertex(size); }
   }
+  public enum SubmissionOutcome { PENDING, CONFIRMED, FAILED }
+  public record Submission(long connection, long game, long revision, long search,
+      Action action, String body, long preparedNanos, long deadlineNanos) {}
+  public record SubmissionFact(Submission submission, SubmissionOutcome outcome,
+      long writtenNanos, long resolvedNanos, String reason) {}
   public record Snapshot(long connection, long game, long revision, Rules rules,
       Clock clock, char ai, Character toPlay, List<Placement> placements,
       List<Action> actions, boolean initialized, boolean complete, boolean active,
-      String statusKey) {
+      String statusKey, boolean clockRefreshed, long submitDeadlineNanos, Submission pending) {
     public boolean searchable() { return initialized && complete && active; }
+    public boolean ownTurn() { return toPlay != null && toPlay == ai; }
   }
 
   private long connection;
@@ -40,14 +46,111 @@ public final class FoxGameState {
   private boolean active;
   private boolean disconnectedGame;
   private String statusKey = "Fox.waiting";
+  private long turnStartedNanos;
+  private long submitDeadlineNanos;
+  private long refreshStartedNanos;
+  private boolean refreshRequested;
+  private boolean clockRefreshed;
+  private boolean automationBlocked;
+  private Submission pending;
+  private boolean written;
+  private final List<SubmissionFact> submissions = new ArrayList<>();
 
-  public void connected() {
+  public synchronized List<SubmissionFact> submissions() { return List.copyOf(submissions); }
+
+  /** One refresh per authoritative turn; queuing and query latency belong to that turn. */
+  public synchronized boolean beginClockRefresh(long now) {
+    Snapshot state = snapshot();
+    if (!state.searchable() || !state.ownTurn() || refreshRequested || automationBlocked) return false;
+    refreshRequested = true;
+    refreshStartedNanos = now;
+    return true;
+  }
+
+  public synchronized Submission prepareSubmission(Snapshot expected, long search, String vertex, long now) {
+    Snapshot current = snapshot();
+    if (expected.connection != connection || expected.game != game || expected.revision != revision
+        || !current.searchable() || !current.ownTurn() || !clockRefreshed || automationBlocked
+        || pending != null || now >= submitDeadlineNanos) return null;
+    Placement move = null;
+    if (!vertex.equalsIgnoreCase("pass")) {
+      require(vertex.matches("[A-HJ-Z][0-9]{1,2}"));
+      int x = "ABCDEFGHJKLMNOPQRSTUVWXYZ".indexOf(vertex.charAt(0));
+      int y = rules.size - Integer.parseInt(vertex.substring(1));
+      require(x >= 0 && x < rules.size && y >= 0 && y < rules.size);
+      move = new Placement(placements.size() + 1, x, y, ai);
+    }
+    Action action = new Action(move, ai, move == null ? placements.size() : move.number);
+    String body = move == null ? "AFSKIP," + ai
+        : "AFPLAY," + ai + "," + move.number + "^" + move.x + "^" + move.y + "^" + ai;
+    pending = new Submission(connection, game, revision, search, action, body, now, submitDeadlineNanos);
+    written = false;
+    submissions.add(new SubmissionFact(pending, SubmissionOutcome.PENDING, 0, 0, ""));
+    statusKey = "Fox.pending";
+    return pending;
+  }
+
+  /** Called only at the transport's write-start boundary. It consumes permission, not acceptance. */
+  public synchronized boolean claimSubmission(Submission expected, long now) {
+    if (pending != expected || written || automationBlocked || !active || !complete
+        || expected.connection != connection || expected.game != game || expected.revision != revision
+        || toPlay == null || toPlay != ai || now >= Math.min(expected.deadlineNanos, submitDeadlineNanos)) return false;
+    written = true;
+    submissions.set(submissions.size() - 1,
+        new SubmissionFact(pending, SubmissionOutcome.PENDING, now, 0, ""));
+    return true;
+  }
+
+  public synchronized void stopAutomation(String reason, long now) {
+    automationBlocked = true;
+    statusKey = reason;
+    clockRefreshed = false;
+    resolveSubmission(SubmissionOutcome.FAILED, reason, now);
+  }
+
+  private void resolveSubmission(SubmissionOutcome outcome, String reason, long now) {
+    if (pending == null) return;
+    SubmissionFact old = submissions.get(submissions.size() - 1);
+    submissions.set(submissions.size() - 1,
+        new SubmissionFact(pending, outcome, old.writtenNanos, now, reason));
+    pending = null;
+  }
+
+  private void confirm(Action action, long now) {
+    if (pending == null) return;
+    if (written && pending.action.equals(action)) resolveSubmission(SubmissionOutcome.CONFIRMED, "", now);
+    else { stopAutomation("Fox.confirmationFailed", now); gap(); }
+  }
+
+  private long remainingMainNanos = Long.MAX_VALUE;
+
+  private void endTurn(long now) {
+    if (toPlay != null && toPlay == ai && clock != null && clock.mainSeconds > 0) {
+      remainingMainNanos = Math.min(remainingMainNanos,
+          Math.max(0, submitDeadlineNanos + 1_000_000_000L - now));
+    }
+  }
+
+  private long clockNanos(Clock value) {
+    int seconds = value.mainSeconds > 0 ? value.mainSeconds : value.periods > 0 ? value.byoSeconds : 0;
+    long nanos = seconds * 1_000_000_000L;
+    return value.mainSeconds > 0 ? Math.min(nanos, remainingMainNanos) : nanos;
+  }
+
+  private void startTurn(long now) {
+    turnStartedNanos = now;
+    refreshRequested = clockRefreshed = false;
+    submitDeadlineNanos = clock == null ? now : now + clockNanos(clock) - 1_000_000_000L;
+  }
+
+  public synchronized void connected() {
     connection++;
     reset();
     statusKey = "Fox.syncing";
   }
 
-  public void disconnected() {
+  public synchronized void disconnected() {
+    stopAutomation("Fox.disconnected", System.nanoTime());
     disconnectedGame |= active;
     revision++;
     active = false;
@@ -55,9 +158,13 @@ public final class FoxGameState {
   }
 
   private void reset() {
+    stopAutomation("Fox.stopped", System.nanoTime());
+    automationBlocked = false;
+    refreshRequested = clockRefreshed = false;
     revision++;
     rules = null;
     clock = null;
+    remainingMainNanos = Long.MAX_VALUE;
     ai = 0;
     toPlay = null;
     placements = List.of();
@@ -65,20 +172,21 @@ public final class FoxGameState {
     statusSeen = complete = active = false;
   }
 
-  public Snapshot snapshot() {
+  public synchronized Snapshot snapshot() {
     return new Snapshot(connection, game, revision, rules, clock, ai, toPlay,
         placements, List.copyOf(actions), rules != null && statusSeen && clock != null
-        && toPlay != null, complete, active, statusKey);
+        && toPlay != null, complete, active, statusKey, clockRefreshed, submitDeadlineNanos, pending);
   }
 
-  public void reject() {
+  public synchronized void reject() {
+    stopAutomation("Fox.protocolError", System.nanoTime());
     complete = false;
     revision++;
     statusKey = "Fox.protocolError";
   }
 
   /** Each message validates its complete payload before mutating state. */
-  public void receive(String body, long now) {
+  public synchronized void receive(String body, long now) {
     String[] f = body.split(",", -1);
     switch (f[0]) {
       case "FARULE" -> {
@@ -102,6 +210,7 @@ public final class FoxGameState {
       }
       case "FASTATUS" -> {
         if (f.length == 2 && f[1].equals("0")) {
+          stopAutomation("Fox.terminal", now);
           revision++;
           active = false;
           disconnectedGame = false;
@@ -119,12 +228,25 @@ public final class FoxGameState {
           incoming.add(p);
         }
         if (!statusSeen) complete = incoming.isEmpty() && !disconnectedGame;
-        if (statusSeen && !incoming.equals(placements)) gap();
+        if (statusSeen && !incoming.equals(placements)) {
+          if (pending != null && written && !pending.action.isPass()
+              && incoming.size() == placements.size() + 1
+              && incoming.subList(0, placements.size()).equals(placements)
+              && incoming.get(incoming.size() - 1).equals(pending.action.placement)) {
+            Action confirmed = pending.action;
+            actions.add(confirmed);
+            confirm(confirmed, now);
+            endTurn(now);
+            toPlay = opposite(ai);
+            startTurn(now);
+          } else gap();
+        }
         if (!incoming.equals(placements)) revision++;
         placements = List.copyOf(incoming);
         ai = color;
         statusSeen = active = true;
         if (!complete) statusKey = "Fox.incomplete";
+        else if (toPlay != null && !automationBlocked) statusKey = pending != null ? "Fox.pending" : toPlay == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
       }
       case "FAMOVE", "FASKIP" -> {
         boolean pass = f[0].equals("FASKIP");
@@ -139,6 +261,7 @@ public final class FoxGameState {
               && actions.get(actions.size() - 1).equals(action)) return;
           require(toPlay != null && toPlay != next);
           actions.add(action);
+          confirm(action, now);
           revision++;
         } else {
           Placement move = placement(f[3], rules.size, false);
@@ -155,28 +278,43 @@ public final class FoxGameState {
             updated.add(move);
             placements = List.copyOf(updated);
             actions.add(new Action(move, move.color, move.number));
+            confirm(actions.get(actions.size() - 1), now);
             revision++;
           }
         }
-        if (toPlay == null || toPlay != next) revision++;
+        boolean changedTurn = toPlay == null || toPlay != next;
+        if (changedTurn) { revision++; endTurn(now); }
         toPlay = next;
-        if (complete) statusKey = next == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
+        if (changedTurn) startTurn(now);
+        if (complete && !automationBlocked) statusKey = pending != null ? "Fox.pending" : next == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
       }
       case "FATIMELEFT" -> {
         require(f.length == 4 && rules != null);
         Clock next = new Clock(integer(f[1], 0, Integer.MAX_VALUE),
             integer(f[2], 0, Integer.MAX_VALUE), integer(f[3], 0, Integer.MAX_VALUE), now);
-        require(next.byoSeconds <= rules.byoSeconds && next.periods <= rules.periods);
+        require(next.byoSeconds <= rules.byoSeconds && next.periods <= rules.periods
+            && next.mainSeconds <= rules.mainSeconds);
+        require(clock == null || (next.periods <= clock.periods && next.mainSeconds <= clock.mainSeconds));
+        remainingMainNanos = Math.min(remainingMainNanos, next.mainSeconds * 1_000_000_000L);
+        if (toPlay != null && toPlay == ai) {
+          long anchor = refreshRequested && !clockRefreshed ? refreshStartedNanos : now;
+          long deadline = anchor + clockNanos(next) - 1_000_000_000L;
+          submitDeadlineNanos = clock == null ? turnStartedNanos + clockNanos(next) - 1_000_000_000L
+              : Math.min(submitDeadlineNanos, deadline);
+          if (refreshRequested) clockRefreshed = true;
+        }
         clock = next;
       }
       case "FARESULT" -> {
         require(f.length == 2 && !f[1].isEmpty());
+        stopAutomation("Fox.terminal", now);
         revision++;
         active = false;
         disconnectedGame = false;
         statusKey = "Fox.terminal";
       }
       case "FASCORE" -> {
+        stopAutomation("Fox.officialAction", now);
         revision++;
         complete = false;
         statusKey = "Fox.officialAction";

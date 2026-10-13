@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 public final class FoxEngineSession {
   public record SearchIdentity(long connection, long game, long revision, long search) {}
   public record Candidates(SearchIdentity identity, String info) {}
+  public record Selection(SearchIdentity identity, String vertex, long completedNanos) {}
   private static final AtomicInteger COMMAND = new AtomicInteger(700000000);
   private final Leelaz engine;
   private final Object owner = new Object();
@@ -24,6 +25,15 @@ public final class FoxEngineSession {
   private volatile boolean closing;
   private volatile boolean searching;
   private volatile boolean prepared;
+  private double originalMaxTime;
+  private final Object searchLock = new Object();
+
+  public boolean claimSubmission(Selection selection, java.util.function.BooleanSupplier claim) {
+    synchronized (searchLock) {
+      return !closing && selection.identity.search == search.get() && Lizzie.leelaz == engine
+          && engine.claimFoxSubmission(owner, claim);
+    }
+  }
 
   public FoxEngineSession(Leelaz engine, Consumer<Candidates> candidates, Consumer<String> failure) {
     this.engine = engine;
@@ -39,13 +49,15 @@ public final class FoxEngineSession {
   }
 
   public void invalidate() {
-    search.incrementAndGet();
-    if (searching) engine.sendExclusiveGtpCommand(owner, COMMAND.getAndIncrement() + " stop");
+    synchronized (searchLock) {
+      search.incrementAndGet();
+      if (searching) engine.sendExclusiveGtpCommand(owner, COMMAND.getAndIncrement() + " stop");
+    }
   }
 
   public boolean isCurrent(Candidates value) {
     return !closing && value.identity().search() == search.get() && Lizzie.leelaz == engine
-        && engine.hasExclusiveGtpLeaseOwnedBy(owner);
+        && engine.claimFoxSubmission(owner, () -> true);
   }
 
   /** Runs on the adapter worker, never on EDT or Leelaz's reader. */
@@ -53,10 +65,13 @@ public final class FoxEngineSession {
     String commands = request("list_commands", null, 5000);
     for (String required : List.of("kata-search_analyze_cancellable", "kata-get-rules",
         "kata-set-rules", "kata-get-param", "kata-set-param", "kgs-time_settings",
-        "set_free_handicap", "stop")) {
+        "kata-time_settings", "kata-list_time_settings", "set_free_handicap", "time_left", "stop")) {
       if (!List.of(commands.split("\\s+")).contains(required)) {
         throw new IllegalStateException("Unsupported Fox engine capability: " + required);
       }
+    }
+    if (!List.of(request("kata-list_time_settings", null, 5000).trim().split("\\s+")).contains("none")) {
+      throw new IllegalStateException("Fox requires no-clock handback capability");
     }
     String rules = request("kata-get-rules", null, 5000).trim();
     double maxTime = Double.parseDouble(request("kata-get-param maxTime", null, 5000).trim());
@@ -65,12 +80,12 @@ public final class FoxEngineSession {
     }
     request("kata-set-rules " + selectedRules, null, 5000);
     request("kata-get-rules", null, 5000);
-    request("kata-set-param maxTime " + Math.min(maxTime, 5.0), null, 5000);
+    originalMaxTime = maxTime;
     prepared = true;
   }
 
-  public void analyze(FoxGameState.Snapshot state) throws Exception {
-    if (closing || !prepared || !state.searchable()) return;
+  public Selection analyze(FoxGameState.Snapshot state) throws Exception {
+    if (closing || !prepared || !state.searchable()) return null;
     long generation = search.incrementAndGet();
     SearchIdentity identity = new SearchIdentity(state.connection(), state.game(), state.revision(), generation);
     request("boardsize " + state.rules().size(), null, 5000);
@@ -84,30 +99,63 @@ public final class FoxEngineSession {
       request(setup.toString(), null, 5000);
     }
     for (FoxGameState.Action action : state.actions()) {
-      if (search.get() != generation || closing) return;
+      if (search.get() != generation || closing) return null;
       request("play " + action.color() + " " + action.vertex(state.rules().size()), null, 5000);
     }
-    if (search.get() != generation || closing) return;
-    searching = true;
+    if (search.get() != generation || closing) return null;
+    request("kgs-time_settings byoyomi " + state.rules().mainSeconds() + " "
+        + state.rules().byoSeconds() + " " + state.rules().periods(), null, 5000);
+    double seconds = state.clock().mainSeconds() > 0 ? state.clock().mainSeconds() : state.clock().byoSeconds();
+    int periods = state.clock().mainSeconds() > 0 ? 0 : state.clock().periods();
+    if (state.ownTurn()) {
+      if (!state.clockRefreshed()) return null;
+      seconds = (state.submitDeadlineNanos() - System.nanoTime()) / 1e9;
+      if (seconds <= 0) throw new IllegalStateException("Fox turn budget exhausted during synchronization");
+    }
+    request("time_left " + state.ai() + " " + seconds + " " + periods, null, 5000);
+    double limit = state.ownTurn()
+        ? (state.submitDeadlineNanos() - System.nanoTime()) / 1e9 : 5.0;
+    if (limit <= 0) throw new IllegalStateException("Fox turn budget exhausted before search");
+    request("kata-set-param maxTime " + Math.min(originalMaxTime, limit), null, 5000);
+    synchronized (searchLock) {
+      if (search.get() != generation || closing) return null;
+      searching = true;
+    }
     try {
+      long timeout = state.ownTurn()
+          ? (state.submitDeadlineNanos() - System.nanoTime()) / 1_000_000L : 7000;
+      if (timeout <= 0) throw new IllegalStateException("Fox turn budget exhausted in queue");
       String result = request("kata-search_analyze_cancellable " + state.toPlay() + " 10",
           line -> {
             if (!closing && search.get() == generation && Lizzie.leelaz == engine
-                && engine.hasExclusiveGtpLeaseOwnedBy(owner)) {
+                && engine.claimFoxSubmission(owner, () -> true)) {
               candidates.accept(new Candidates(identity, line));
             }
-          }, 7000);
-      if (search.get() == generation && result.contains("resign")) failure.accept("Fox.officialAction");
+          }, timeout, generation).trim();
+      if (search.get() != generation || closing || result.equals("cancelled")) return null;
+      String vertex = result.startsWith("play ") ? result.substring(5).trim() : result;
+      if (vertex.equals("cancelled")) return null;
+      if (vertex.equalsIgnoreCase("resign")) { failure.accept("Fox.officialAction"); return null; }
+      if (!vertex.matches("(?i:pass)|[A-HJ-Z][0-9]{1,2}")) {
+        throw new IllegalStateException("Fox search returned no valid final choice: " + result);
+      }
+      return new Selection(identity, vertex, System.nanoTime());
     } finally {
       searching = false;
     }
   }
 
   private String request(String command, Consumer<String> info, long timeout) throws Exception {
+    return request(command, info, timeout, -1);
+  }
+
+  private String request(String command, Consumer<String> info, long timeout, long generation) throws Exception {
     int id = COMMAND.getAndIncrement();
-    if (closing || Lizzie.leelaz != engine
-        || !engine.sendExclusiveGtpCommand(owner, id + " " + command)) {
-      throw new IllegalStateException("Fox engine ownership unavailable");
+    synchronized (searchLock) {
+      if (closing || Lizzie.leelaz != engine || (generation >= 0 && generation != search.get())
+          || !engine.sendExclusiveGtpCommand(owner, id + " " + command)) {
+        throw new IllegalStateException("Fox engine ownership unavailable");
+      }
     }
     long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeout);
     boolean response = false;

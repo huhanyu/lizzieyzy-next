@@ -96,6 +96,149 @@ class FoxProtocolStateTest {
     assertTrue(state.snapshot().searchable());
   }
 
+  @Test void refreshAndQueueTimeConsumeBudgetAndWriteIsNotConfirmation() {
+    FoxGameState state = initialized();
+    assertTrue(state.beginClockRefresh(2_000_000_000L));
+    state.receive("FATIMELEFT,58,30,3", 3_000_000_000L);
+    assertEquals(59_000_000_000L, state.snapshot().submitDeadlineNanos());
+    state.receive("FATIMELEFT,58,30,3", 8_000_000_000L);
+    assertEquals(59_000_000_000L, state.snapshot().submitDeadlineNanos());
+    FoxGameState.Snapshot position = state.snapshot();
+    FoxGameState.Submission pending = state.prepareSubmission(position, 7, "R16", 9_000_000_000L);
+    assertNotNull(pending);
+    assertEquals("AFPLAY,B,1^16^3^B", pending.body());
+    assertTrue(state.claimSubmission(pending, 10_000_000_000L));
+    assertFalse(state.claimSubmission(pending, 11_000_000_000L));
+    assertTrue(state.snapshot().actions().isEmpty());
+    state.receive("FASTATUS,1,B", 12_000_000_000L);
+    assertNotNull(state.snapshot().pending());
+    state.receive("FAMOVE,0,B,1^16^3^B", 13_000_000_000L);
+    assertNull(state.snapshot().pending());
+    assertEquals(1, state.snapshot().actions().size());
+    assertEquals(FoxGameState.SubmissionOutcome.CONFIRMED, state.submissions().get(0).outcome());
+  }
+
+  @Test void passConfirmationConsumesActionButNotNextPlacementNumber() {
+    FoxGameState state = initialized();
+    refresh(state, 0, "60,30,3");
+    var pass = state.prepareSubmission(state.snapshot(), 1, "pass", 1);
+    assertEquals("AFSKIP,B", pass.body());
+    assertTrue(state.claimSubmission(pass, 2));
+    state.receive("FASTATUS,1,B", 3);
+    assertNotNull(state.snapshot().pending(), "placement list cannot confirm PASS");
+    state.receive("FASKIP,0,B", 4);
+    state.receive("FASKIP,0,B", 5);
+    assertEquals(1, state.snapshot().actions().size());
+    assertTrue(state.snapshot().placements().isEmpty());
+    state.receive("FAMOVE,1,B,1^3^3^W", 6);
+    refresh(state, 7, "59,30,3");
+    assertEquals("AFPLAY,B,2^16^3^B",
+        state.prepareSubmission(state.snapshot(), 2, "R16", 8).body());
+  }
+
+  @Test void matchingFullStatusConfirmsPlacementWithoutInferringMissingPass() {
+    FoxGameState state = initialized();
+    refresh(state, 0, "60,30,3");
+    var pending = state.prepareSubmission(state.snapshot(), 1, "D4", 1);
+    assertTrue(state.claimSubmission(pending, 2));
+    state.receive("FASTATUS,1,B,1^3^15^B", 3);
+    state.receive("FAMOVE,0,B,1^3^15^B", 4);
+    assertNull(state.snapshot().pending());
+    assertEquals(1, state.snapshot().actions().size());
+    assertEquals('W', state.snapshot().toPlay());
+    assertTrue(state.snapshot().complete());
+  }
+
+  @Test void whiteNineByNineUsesAuthoritativeTurnAndCoordinateSpace() {
+    FoxGameState state = new FoxGameState();
+    state.connected();
+    state.receive("FARULE,9,60,10,2,50", 0);
+    state.receive("FASTATUS,1,W", 0);
+    state.receive("FATIMELEFT,60,10,2", 0);
+    state.receive("FAMOVE,0,W,0^0^0^N", 0);
+    assertFalse(state.beginClockRefresh(1));
+    assertNull(state.prepareSubmission(state.snapshot(), 1, "J9", 1));
+    state.receive("FAMOVE,1,W,1^4^4^B", 2);
+    refresh(state, 3, "60,10,2");
+    var pending = state.prepareSubmission(state.snapshot(), 2, "J9", 4);
+    assertEquals("AFPLAY,W,2^8^0^W", pending.body());
+    assertTrue(state.claimSubmission(pending, 5));
+    state.receive("FAMOVE,0,W,2^8^0^W", 6);
+    assertEquals(2, state.snapshot().actions().size());
+  }
+
+  @Test void deadlineAndInvalidationRejectLateOrQueuedSubmissions() {
+    for (String event : List.of("stop", "disconnect", "FASCORE", "FARESULT,W+R", "FAMOVE,0,B,1^3^15^B")) {
+      FoxGameState state = initialized();
+      refresh(state, 0, "60,30,3");
+      var original = state.snapshot();
+      var pending = state.prepareSubmission(original, 1, "D4", 1);
+      if (event.equals("stop")) state.stopAutomation("Fox.stopped", 2);
+      else if (event.equals("disconnect")) state.disconnected();
+      else state.receive(event, 2);
+      assertFalse(state.claimSubmission(pending, 3), event);
+      assertNull(state.prepareSubmission(original, 1, "Q16", 3), event);
+      assertEquals(FoxGameState.SubmissionOutcome.FAILED, state.submissions().get(0).outcome());
+    }
+    FoxGameState state = initialized();
+    refresh(state, 0, "60,30,3");
+    var pending = state.prepareSubmission(state.snapshot(), 1, "D4", 58_999_999_999L);
+    assertNotNull(pending);
+    assertFalse(state.claimSubmission(pending, 59_000_000_000L), "exact cutoff rejects");
+    state.stopAutomation("Fox.clockRisk", 59_000_000_000L);
+    assertNull(state.prepareSubmission(state.snapshot(), 2, "pass", 59_000_000_001L));
+  }
+
+  @Test void unconfirmedFailureSurvivesDisconnectAndNoResendOccurs() {
+    FoxGameState state = initialized();
+    refresh(state, 0, "60,30,3");
+    var pending = state.prepareSubmission(state.snapshot(), 1, "D4", 1);
+    assertTrue(state.claimSubmission(pending, 2));
+    state.stopAutomation("Fox.confirmationFailed", 5_000_000_001L);
+    state.receive("FASTATUS,1,B", 6_000_000_000L);
+    assertNull(state.prepareSubmission(state.snapshot(), 2, "pass", 6_000_000_000L));
+    state.disconnected();
+    initialize(state);
+    assertEquals(1, state.submissions().size());
+    var fact = state.submissions().get(0);
+    assertEquals(2, fact.writtenNanos());
+    assertEquals(FoxGameState.SubmissionOutcome.FAILED, fact.outcome());
+    assertEquals("Fox.confirmationFailed", fact.reason());
+    assertFalse(state.snapshot().searchable());
+  }
+
+  @Test void consumedMainTimeAndPeriodsAreNotResetByTurnsOrRepeatedQueries() {
+    FoxGameState state = initialized();
+    refresh(state, 0, "60,30,3");
+    state.receive("FASKIP,0,B", 10_000_000_000L);
+    state.receive("FAMOVE,1,B,1^3^3^W", 20_000_000_000L);
+    refresh(state, 21_000_000_000L, "60,30,3");
+    assertEquals(69_000_000_000L, state.snapshot().submitDeadlineNanos(), "opponent time excluded, own ten seconds retained");
+    state.receive("FATIMELEFT,0,30,2", 30_000_000_000L);
+    assertEquals(59_000_000_000L, state.snapshot().submitDeadlineNanos());
+    state.receive("FATIMELEFT,0,30,2", 40_000_000_000L);
+    assertEquals(59_000_000_000L, state.snapshot().submitDeadlineNanos());
+    assertThrows(IllegalArgumentException.class, () -> state.receive("FATIMELEFT,0,30,3", 41_000_000_000L));
+    state.receive("FASKIP,0,B", 42_000_000_000L);
+    state.receive("FAMOVE,1,B,2^4^4^W", 50_000_000_000L);
+    refresh(state, 51_000_000_000L, "0,30,2");
+    assertEquals(79_000_000_000L, state.snapshot().submitDeadlineNanos());
+    assertEquals(2, state.snapshot().clock().periods());
+  }
+
+  @Test void exhaustedOrContradictoryClockNeverAdmitsAChoice() {
+    FoxGameState state = initialized();
+    refresh(state, 0, "0,1,1");
+    assertNull(state.prepareSubmission(state.snapshot(), 1, "pass", 1));
+    assertThrows(IllegalArgumentException.class, () -> state.receive("FATIMELEFT,1,30,1", 2));
+    assertThrows(IllegalArgumentException.class, () -> state.receive("FATIMELEFT,0,31,1", 2));
+  }
+
+  private static void refresh(FoxGameState state, long now, String clock) {
+    assertTrue(state.beginClockRefresh(now));
+    state.receive("FATIMELEFT," + clock, now);
+  }
+
   private static FoxGameState initialized() {
     FoxGameState state = new FoxGameState(); initialize(state); return state;
   }

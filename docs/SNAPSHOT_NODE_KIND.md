@@ -675,8 +675,14 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 
 ## Fox 官方 AI 实时会话
 
-- 从文件菜单显式启动本机 loopback 单客户端监听；关闭窗口不隐式停止会话，停止按钮负责释放。当前阶段仅预览候选，不发送 `AFPLAY` / `AFSKIP`。
+- 从文件菜单显式启动本机 loopback 单客户端监听；关闭窗口不隐式停止会话，停止按钮负责释放。用户确认规则与自动落子告知后，同一实时搜索提供候选与最终选择；仅在权威己方回合、历史完整、当前时钟和 owner 有效时自动发送一次 `AFPLAY` / `AFSKIP`。
 - `FoxGameState` 分开保存协议编号 placements 与有完整证据的 `MOVE/PASS` actions。完整初始化需要规则、状态、时钟与回合；全量状态不能补造 pass，也不能把冷接入的中盘提升为完整历史。
 - 初始让子通过 `AB/HA/PL` setup 基座进入历史，不计作普通手数。实时尾节点、显示游标与带 connection/game/revision/search 身份的候选分别保存；当前阶段在 Board/history/import 入口拒绝普通导航和修改。
 - `FoxEngineSession` 通过当前 `Leelaz` 的独占 owner 使用同一 KataGo，普通快速分析取消不能释放该 owner。先失效候选再取消搜索；每次候选只属于其原始连接、棋局、修订和搜索。
 - 停止、断线及终局通过既有恢复管线重建确认的棋盘。原始 rules 与 maxTime 必须分别收到成功响应，且当前 reader/引擎仍一致，才可宣告交还成功；失败显示未恢复，不以最终 `name` 响应掩盖前序拒绝。
+- 每个己方回合请求一次 `AFSTATUS` 刷新时钟。单调截止从权威回合开始计入查询、同步、排队和搜索；刷新与重复快照只能收紧当前截止，不能延长。保留己方已用主时间与已消耗读秒次数，对手思考时间不扣己方主时间；日式读秒次数不作为剩余落子数。默认一秒余量，搜索 maxTime 不超过捕获的原有更短上限，不主动规划额外读秒段。
+- 最终选择先登记 immutable pending，再在 loopback 输出锁取得后的 write-start 边界核对连接、棋局、局面修订、搜索、截止、未消费 pending 及同一 Leelaz owner/reader。该一次性 claim 与身份撤销串行化；已开始的物理写入不能撤回。socket 写成功不表示接受，任何情况下都不重发或用旧候选、随机动作、pass 兜底。
+- pending 不推进 Board 或引擎；仅匹配的 `FAMOVE` / 新增单个 matching placement 的 `FASTATUS`，或预期回合转换的 `FASKIP` 确认后追加真实动作并立即排队同步引擎。PASS 不增加 placements 编号，后继 `AFPLAY` 取 placements.size + 1。
+- 确认等待五秒仍无匹配证据、拒绝、矛盾、停止、断线或终局撤销提交权。`SubmissionFact` 保留原 connection/game/revision/search、动作、准备/写入/截止/结清单调时间和 CONFIRMED/FAILED 原因；FAILED 不被后续查询、重连或迟到证据改写成可恢复请求。05 必须检查此历史，不能仅以当前 pending == null 推断可靠检查点。
+- `FASCORE` 或引擎 resign 停止自动提交并提示用户操作官方客户端；不发送分数、自动认输或替代 PASS。时钟无效、非正预算或截止前没有有效最终选择时同样停止并提示超时风险；一秒余量不是永不超时保证，官方短时限校准仍须完成。
+- Fox 取得所有权前要求 `kata-time_settings` 与 `kata-list_time_settings` 的 `none` 能力。归还时在同一 reader 上确认 `kata-time_settings none`，清除实战外部时钟后才开放普通命令；不重建或恢复另一盘对局的旧时钟。后续引擎自身时间模式不发送时间覆盖，因此不能让它继承 Fox 读秒。reset 拒绝/超时按同一归还失败屏障处理。KataGo v1.18.2 [GTP Extensions](https://github.com/lightvector/KataGo/blob/v1.18.2/docs/GTP_Extensions.md) 定义 `none` 为无外部 time control；此 disposition 不改变已捕获 rules/maxTime 的原值恢复。

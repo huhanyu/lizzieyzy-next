@@ -15061,6 +15061,17 @@ public class Leelaz {
       return exclusiveGtpSession != null && exclusiveGtpSession.owner == owner;
     }
   }
+  /** Fox's nonblocking write-start claim shares the physical reader ownership boundary. */
+  boolean claimFoxSubmission(Object owner, java.util.function.BooleanSupplier claim) {
+    synchronized (engineArbitrationLock()) {
+      ExclusiveGtpSession session = exclusiveGtpSession;
+      return session != null && session.owner == owner && session.active && !session.closing
+          && !session.releaseRequested && session.readerBinding != null
+          && session.readerBinding == readerStreamBinding && !session.readerBinding.terminated
+          && claim.getAsBoolean();
+    }
+  }
+
 
   boolean setForegroundAnalysisLeaseRestoreRules(Object owner, String rules) {
     synchronized (engineArbitrationLock()) {
@@ -15921,6 +15932,7 @@ public class Leelaz {
       if (session.foxMaxTime != null) {
         confirmForegroundRestoreCommand(session, "kata-set-rules " + session.originalRules);
         confirmForegroundRestoreCommand(session, "kata-set-param maxTime " + session.foxMaxTime);
+        confirmForegroundRestoreCommand(session, "kata-time_settings none");
       } else if (session.originalRules != null) {
         sendCommand("kata-set-rules " + session.originalRules);
       }
