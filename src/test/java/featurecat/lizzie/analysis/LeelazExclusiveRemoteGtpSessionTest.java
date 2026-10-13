@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ExtraMode;
@@ -1325,7 +1327,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
       ByteArrayOutputStream output = installOutput(engine);
       try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
         AtomicReference<FoxEngineSession.Candidates> candidates = new AtomicReference<>();
-        FoxEngineSession adapter = new FoxEngineSession(engine, candidates::set,
+        FoxEngineSession adapter = new FoxEngineSession(engine, engine.engineIncarnationToken(), candidates::set,
             reason -> { throw new AssertionError(reason); });
         assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, adapter.acquire(() -> {}));
         dispatch(engine, "=800000000");
@@ -1402,6 +1404,24 @@ class LeelazExclusiveRemoteGtpSessionTest {
       assertTrue(engine.claimFoxSubmission(owner, () -> true));
       engine.installFreshCommandOutputForTest(new ByteArrayOutputStream());
       assertFalse(engine.claimFoxSubmission(owner, () -> true));
+    }
+  }
+
+  @Test
+  void foxRecoveryAssertionCannotAcquireReplacementReader() throws Exception {
+    Leelaz engine = reusableKatagoEngine(false, false);
+    installOutput(engine);
+    Object assertedReader = engine.engineIncarnationToken();
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      ByteArrayOutputStream replacement = new ByteArrayOutputStream();
+      engine.installFreshCommandOutputForTest(replacement);
+      FoxEngineSession adapter = new FoxEngineSession(engine, assertedReader,
+          candidates -> fail("old assertion published candidates"), reason -> {});
+      assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY,
+          adapter.acquire(() -> fail("old assertion acquired replacement")));
+      assertThrows(IllegalStateException.class, () -> adapter.prepare("chinese"));
+      assertEquals("", replacement.toString(StandardCharsets.UTF_8));
+      assertFalse(engine.hasExclusiveGtpLease());
     }
   }
 

@@ -8175,7 +8175,7 @@ public class LizzieFrame extends JFrame {
       return;
     }
     if (featurecat.lizzie.fox.FoxLiveSession.isBrowsingHistory()) {
-      text1 = Lizzie.resourceBundle.getString("Fox.browsing");
+      text1 = Lizzie.resourceBundle.getString(featurecat.lizzie.fox.FoxLiveSession.browsingStatusKey());
       text2 = Lizzie.resourceBundle.getString("Fox.returnLive");
     }
     int lineCount = Lizzie.config.userKnownX ? 2 : 3;

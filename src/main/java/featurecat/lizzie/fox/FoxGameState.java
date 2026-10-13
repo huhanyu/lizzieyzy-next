@@ -55,6 +55,60 @@ public final class FoxGameState {
   private Submission pending;
   private boolean written;
   private final List<SubmissionFact> submissions = new ArrayList<>();
+  private Snapshot checkpoint;
+  private String recoveryFailure = "Fox.noCheckpoint";
+  private boolean recoveryContradiction;
+  private RecoveryConfirmation confirmation;
+  public record RecoveryConfirmation(long connection, long game, long revision) {}
+  public record RecoveryAssertion(RecoveryConfirmation confirmation, boolean sameGameNoOfflineActions) {}
+  private RecoveryAssertion recoveryAssertion;
+  public synchronized RecoveryAssertion recoveryAssertion() { return recoveryAssertion; }
+
+  public synchronized boolean hasCheckpoint() { return checkpoint != null; }
+
+  public synchronized String recoveryStatus() {
+    if (!snapshot().initialized() || !active) return "Fox.syncing";
+    if (checkpoint == null) return recoveryFailure;
+    if (recoveryContradiction || !rules.equals(checkpoint.rules())
+        || ai != checkpoint.ai() || !toPlay.equals(checkpoint.toPlay())
+        || !placements.equals(checkpoint.placements())) return "Fox.recoveryMismatch";
+    return "Fox.recoveryConfirm";
+  }
+
+  public synchronized RecoveryConfirmation requestRecoveryConfirmation() {
+    if (!recoveryStatus().equals("Fox.recoveryConfirm")) return null;
+    confirmation = new RecoveryConfirmation(connection, game, revision);
+    return confirmation;
+  }
+
+  /** User assertion is separate from the pass-less protocol match; never an inferred game ID. */
+  public synchronized boolean confirmRecovery(RecoveryConfirmation expected, boolean sameGame) {
+    if (expected == null || expected != confirmation || expected.connection() != connection
+        || expected.game() != game || expected.revision() != revision
+        || !recoveryStatus().equals("Fox.recoveryConfirm")) return false;
+    confirmation = null;
+    recoveryAssertion = new RecoveryAssertion(expected, sameGame);
+    if (!sameGame) {
+      checkpoint = null;
+      recoveryFailure = "Fox.recoveryDenied";
+      return false;
+    }
+    actions.clear();
+    actions.addAll(checkpoint.actions());
+    complete = true;
+    automationBlocked = false;
+    disconnectedGame = false;
+    revision++;
+    statusKey = toPlay == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
+    checkpoint = null;
+    return true;
+  }
+
+  public synchronized void revokeRecovery(String reason) {
+    checkpoint = null;
+    confirmation = null;
+    recoveryFailure = reason;
+  }
 
   public synchronized List<SubmissionFact> submissions() { return List.copyOf(submissions); }
 
@@ -150,6 +204,13 @@ public final class FoxGameState {
   }
 
   public synchronized void disconnected() {
+    Snapshot retained = snapshot();
+    boolean unresolved = submissions.stream().anyMatch(f -> f.submission().game() == game
+        && f.outcome() != SubmissionOutcome.CONFIRMED);
+    checkpoint = retained.searchable() && !unresolved ? retained : null;
+    recoveryFailure = unresolved ? "Fox.recoveryUnconfirmed" : "Fox.noCheckpoint";
+    confirmation = null;
+    recoveryContradiction = false;
     stopAutomation("Fox.disconnected", System.nanoTime());
     disconnectedGame |= active;
     revision++;
@@ -159,6 +220,8 @@ public final class FoxGameState {
 
   private void reset() {
     stopAutomation("Fox.stopped", System.nanoTime());
+    confirmation = null;
+    recoveryAssertion = null;
     automationBlocked = false;
     refreshRequested = clockRefreshed = false;
     revision++;
@@ -180,6 +243,7 @@ public final class FoxGameState {
 
   public synchronized void reject() {
     stopAutomation("Fox.protocolError", System.nanoTime());
+    revokeRecovery("Fox.protocolError");
     complete = false;
     revision++;
     statusKey = "Fox.protocolError";
@@ -214,6 +278,7 @@ public final class FoxGameState {
           revision++;
           active = false;
           disconnectedGame = false;
+          revokeRecovery("Fox.noCheckpoint");
           statusKey = "Fox.terminal";
           return;
         }
@@ -263,12 +328,13 @@ public final class FoxGameState {
           actions.add(action);
           confirm(action, now);
           revision++;
+          if (checkpoint != null) recoveryContradiction = true;
         } else {
           Placement move = placement(f[3], rules.size, false);
           if (move == null) {
             require(placements.isEmpty());
             if (toPlay != null && toPlay != next) gap();
-            if (actions.isEmpty() && next != (rules.setup.isEmpty() ? 'B' : 'W')) gap();
+            if (complete && actions.isEmpty() && next != (rules.setup.isEmpty() ? 'B' : 'W')) gap();
           } else if (!placements.isEmpty() && move.equals(placements.get(placements.size() - 1))) {
             if (toPlay != null && toPlay != next) gap();
           } else {
@@ -280,6 +346,7 @@ public final class FoxGameState {
             actions.add(new Action(move, move.color, move.number));
             confirm(actions.get(actions.size() - 1), now);
             revision++;
+            if (checkpoint != null) recoveryContradiction = true;
           }
         }
         boolean changedTurn = toPlay == null || toPlay != next;
@@ -311,6 +378,7 @@ public final class FoxGameState {
         revision++;
         active = false;
         disconnectedGame = false;
+        revokeRecovery("Fox.noCheckpoint");
         statusKey = "Fox.terminal";
       }
       case "FASCORE" -> {
@@ -323,7 +391,12 @@ public final class FoxGameState {
     }
   }
 
-  private void gap() { complete = false; revision++; statusKey = "Fox.incomplete"; }
+  private void gap() {
+    complete = false;
+    if (checkpoint != null) recoveryContradiction = true;
+    revision++;
+    statusKey = "Fox.incomplete";
+  }
   private static char opposite(char color) { return color == 'B' ? 'W' : 'B'; }
   private static char color(String value) {
     require(value.equals("B") || value.equals("W"));

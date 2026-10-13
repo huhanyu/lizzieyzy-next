@@ -17,6 +17,7 @@ public final class FoxEngineSession {
   public record Selection(SearchIdentity identity, String vertex, long completedNanos) {}
   private static final AtomicInteger COMMAND = new AtomicInteger(700000000);
   private final Leelaz engine;
+  private final Object readerIdentity;
   private final Object owner = new Object();
   private final BlockingQueue<String> lines = new LinkedBlockingQueue<>(4096);
   private final AtomicLong search = new AtomicLong();
@@ -35,13 +36,17 @@ public final class FoxEngineSession {
     }
   }
 
-  public FoxEngineSession(Leelaz engine, Consumer<Candidates> candidates, Consumer<String> failure) {
+  public FoxEngineSession(Leelaz engine, Object readerIdentity,
+      Consumer<Candidates> candidates, Consumer<String> failure) {
     this.engine = engine;
+    this.readerIdentity = readerIdentity;
     this.candidates = candidates;
     this.failure = failure;
   }
 
   public Leelaz.ExclusiveGtpLeaseAvailability acquire(Runnable ready) {
+    if (!engine.isCurrentEngineIncarnationToken(readerIdentity))
+      return Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY;
     return engine.beginForegroundAnalysisLease(owner,
         line -> {
           if (!lines.offer(line)) failure.accept("Fox.engineError");
@@ -152,7 +157,8 @@ public final class FoxEngineSession {
   private String request(String command, Consumer<String> info, long timeout, long generation) throws Exception {
     int id = COMMAND.getAndIncrement();
     synchronized (searchLock) {
-      if (closing || Lizzie.leelaz != engine || (generation >= 0 && generation != search.get())
+      if (closing || Lizzie.leelaz != engine || !engine.isCurrentEngineIncarnationToken(readerIdentity)
+          || (generation >= 0 && generation != search.get())
           || !engine.sendExclusiveGtpCommand(owner, id + " " + command)) {
         throw new IllegalStateException("Fox engine ownership unavailable");
       }

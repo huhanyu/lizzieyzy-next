@@ -249,8 +249,8 @@ public final class FoxLiveSessionAcceptanceIT {
         send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
         assertTrue(receive(peer).startsWith("AFPLAY,B,1^"));
         assertEquals(0, Lizzie.board.getHistory().getMoveNumber());
-        await(() -> hasText(fox, "Fox.confirmationFailed") && !target.hasExclusiveGtpWorkInProgress(),
-            15, "unconfirmed request visibly stops and restores");
+        await(() -> hasText(fox, "Fox.confirmationFailed") && target.hasExclusiveGtpLease(),
+            15, "unconfirmed request stops automation while retaining display owner");
         send(peer, "FASTATUS,1,B", "FATIMELEFT,58,30,3", "FAMOVE,1,B,0^0^0^N");
         peer.setSoTimeout(300);
         assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "failure never resends");
@@ -258,17 +258,20 @@ public final class FoxLiveSessionAcceptanceIT {
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-unconfirmed.png").toFile());
       }
-      await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "disconnect handback");
+      await(() -> hasText(fox, "Fox.disconnected"), 5, "disconnect invalidation");
       try (Socket reconnected = new Socket("127.0.0.1", port)) {
         send(reconnected, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B",
             "FATIMELEFT,60,30,3", "FAMOVE,0,B,1^16^3^B");
         await(() -> find(fox, JTextArea.class).getText().contains(
-            Lizzie.resourceBundle.getString("Fox.incomplete")), 5, "cold reconnect blocked");
-        assertFalse(target.hasExclusiveGtpLease());
-        assertSame(originalDisplay, Lizzie.board.getHistory().getCurrentHistoryNode(),
-            "incomplete observation retains pre-entry stable board");
+            Lizzie.resourceBundle.getString("Fox.recoveryUnconfirmed")), 5, "unconfirmed reconnect blocked");
+        assertTrue(target.hasExclusiveGtpLease());
+        assertEquals(0, Lizzie.board.getHistory().getMoveNumber(),
+            "incoming incomplete observation never replaces confirmed pre-submit root");
         reconnected.setSoTimeout(250);
         assertThrows(SocketTimeoutException.class, () -> reconnected.getInputStream().read(), "blocked has no send");
+        assertFalse(button(fox, "Fox.recoveryConfirm").isEnabled());
+        ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-reconnect-unconfirmed.png").toFile());
         send(reconnected, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B",
             "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
         reconnected.setSoTimeout(5000);
@@ -304,6 +307,8 @@ public final class FoxLiveSessionAcceptanceIT {
             "png", work.resolve("fox-history-stopped.png").toFile());
         Files.writeString(work.resolve("history-stop-gtp.txt"), restoredCommands);
       }
+      retainedReconnect(fox, port, target, work);
+      unconfirmedRetainedStop(fox, port, target, work);
       assertTrue(target.isLoaded());
       assertTrue(target.beginExclusiveGtpLifecycleTransition());
       target.endExclusiveGtpLifecycleTransition();
@@ -338,6 +343,145 @@ public final class FoxLiveSessionAcceptanceIT {
       if (engine != null) engine.sendCommand("quit");
       System.exit(1);
     }
+  }
+
+  private static void retainedReconnect(JDialog fox, int port, Leelaz target, Path work) throws Exception {
+    SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
+    await(() -> modal() != null, 5, "reconnect scenario rules confirmation");
+    answerModal(JOptionPane.OK_OPTION);
+    await(() -> modal() != null, 5, "existing unsaved history replacement prompt");
+    SwingUtilities.invokeAndWait(() -> button(modal(), "Fox.replace").doClick());
+    await(() -> button(fox, "Fox.stop").isEnabled(), 5, "new listener");
+    BoardHistoryNode[] historic = new BoardHistoryNode[1];
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      send(peer, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3",
+          "FAMOVE,1,B,0^0^0^N", "FAMOVE,0,B,1^16^3^B", "FAMOVE,1,B,2^3^15^W", "FASKIP,0,B");
+      await(() -> Lizzie.board.getHistory().getMoveNumber() == 3
+          && find(fox, JTextArea.class).getText().contains("%"), 25, "retained pass live candidate");
+      historic[0] = Lizzie.board.getHistory().getCurrentHistoryNode().previous().orElseThrow();
+      SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(historic[0]));
+    }
+    await(() -> hasText(fox, "Fox.disconnected") && target.hasExclusiveGtpLease(),
+        5, "retained disconnected owner");
+    assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
+          "FATIMELEFT,40,30,3", "FAMOVE,0,B,2^3^15^W");
+      await(() -> button(fox, "Fox.recoveryConfirm").isEnabled(), 5, "explicit recovery gate");
+      assertTrue(target.hasExclusiveGtpLease());
+      peer.setSoTimeout(250);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
+      String before = commands(work);
+      SwingUtilities.invokeLater(() -> button(fox, "Fox.recoveryConfirm").doClick());
+      await(() -> modal() != null, 5, "actual same-game assertion dialog");
+      capture(fox, work.resolve("fox-reconnect-confirm.png"));
+      answerModal(JOptionPane.YES_OPTION);
+      await(() -> commands(work).substring(before.length()).contains("kata-search_analyze_cancellable W"),
+          20, "replayed pass before new opponent search");
+      assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertEquals(3, Lizzie.board.getHistory().getMainEndWithPass().getData().moveNumber);
+      String replay = commands(work).substring(before.length());
+      assertTrue(replay.indexOf("play B pass") < replay.indexOf("kata-search_analyze_cancellable W"));
+      assertTrue(replay.contains("time_left B 40.0 0"), replay);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "opponent no send after recovery");
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
+      await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "new recovery candidates");
+      Files.writeString(work.resolve("reconnect-replay-gtp.txt"), gtp(work));
+      capture(fox, work.resolve("fox-reconnect-restored.png"));
+    }
+    await(() -> hasText(fox, "Fox.disconnected") && target.hasExclusiveGtpLease(), 5, "second disconnect");
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
+          "FATIMELEFT,35,30,3", "FAMOVE,0,B,2^3^15^W");
+      await(() -> button(fox, "Fox.recoveryConfirm").isEnabled(), 5, "second explicit recovery gate");
+      SwingUtilities.invokeLater(() -> button(fox, "Fox.recoveryConfirm").doClick());
+      await(() -> modal() != null, 5, "cancel recovery dialog");
+      answerModal(JOptionPane.CANCEL_OPTION);
+      await(() -> hasText(fox, "Fox.recoveryDenied"), 5, "cancel remains observation");
+      assertTrue(target.hasExclusiveGtpLease());
+      peer.setSoTimeout(250);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "cancel no resend");
+      capture(fox, work.resolve("fox-reconnect-cancelled.png"));
+      SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(historic[0]));
+      String beforeStop = commands(work);
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(), 35, "cancel safe Stop");
+      assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
+      String stopReplay = commands(work).substring(beforeStop.length());
+      assertTrue(stopReplay.contains("play B R16") && stopReplay.contains("play W D4"), stopReplay);
+      assertFalse(stopReplay.contains("play B pass"), "Stop restores displayed two moves, not live trailing pass");
+      Files.writeString(work.resolve("reconnect-cancel-stop-gtp.txt"), stopReplay);
+    }
+  }
+
+  private static void unconfirmedRetainedStop(JDialog fox, int port, Leelaz target, Path work) throws Exception {
+    SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
+    await(() -> modal() != null, 5, "unconfirmed scenario rules confirmation");
+    answerModal(JOptionPane.OK_OPTION);
+    await(() -> modal() != null, 5, "confirmed history replacement prompt");
+    SwingUtilities.invokeAndWait(() -> button(modal(), "Fox.replace").doClick());
+    await(() -> button(fox, "Fox.stop").isEnabled(), 5, "unconfirmed listener");
+    BoardHistoryNode[] firstMove = new BoardHistoryNode[1];
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      send(peer, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3",
+          "FAMOVE,1,B,0^0^0^N", "FAMOVE,0,B,1^16^3^B", "FAMOVE,1,B,2^3^15^W");
+      peer.setSoTimeout(15000);
+      assertEquals("AFSTATUS,B", receive(peer));
+      send(peer, "FASTATUS,1,B,1^16^3^B,2^3^15^W", "FATIMELEFT,58,30,3", "FAMOVE,1,B,2^3^15^W");
+      String pending = receive(peer);
+      if (pending.equals("AFSTATUS,B")) {
+        // The opening and post-white own turns may each have already written their refresh.
+        send(peer, "FASTATUS,1,B,1^16^3^B,2^3^15^W", "FATIMELEFT,58,30,3", "FAMOVE,1,B,2^3^15^W");
+        pending = receive(peer);
+      }
+      assertTrue(pending.startsWith("AFPLAY,B,3^") || pending.equals("AFSKIP,B"), pending);
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber());
+      firstMove[0] = Lizzie.board.getHistory().getCurrentHistoryNode().previous().orElseThrow();
+      // Disconnect with the physical request still unresolved; neither pending nor its failure is a MOVE.
+    }
+    await(() -> hasText(fox, "Fox.disconnected"), 5, "pending disconnect");
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
+          "FATIMELEFT,50,30,3", "FAMOVE,1,B,2^3^15^W");
+      await(() -> hasText(fox, "Fox.recoveryUnconfirmed"), 5, "retained pending refusal");
+      assertFalse(button(fox, "Fox.recoveryConfirm").isEnabled());
+      assertTrue(target.hasExclusiveGtpLease());
+      String beforeBrowse = commands(work);
+      SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(firstMove[0]));
+      assertEquals(beforeBrowse, commands(work), "blocked browsing remains local");
+      peer.setSoTimeout(250);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "unresolved request never resent");
+      capture(fox, work.resolve("fox-reconnect-pending-history.png"));
+      String beforeStop = commands(work);
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(), 35, "unconfirmed history safe Stop");
+      assertSame(firstMove[0], Lizzie.board.getHistory().getCurrentHistoryNode());
+      String restored = commands(work).substring(beforeStop.length());
+      assertTrue(restored.contains("play B R16"), restored);
+      assertFalse(restored.contains("play W D4"), "Stop restores displayed move one, not retained move two");
+      Files.writeString(work.resolve("reconnect-unconfirmed-stop-gtp.txt"), restored);
+    }
+  }
+
+  private static void answerModal(int answer) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      JDialog dialog = modal();
+      find(dialog, JOptionPane.class).setValue(answer);
+      dialog.dispose();
+    });
+  }
+
+  private static void capture(JDialog fox, Path path) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      Lizzie.frame.getRootPane().paintImmediately(0, 0, Lizzie.frame.getWidth(), Lizzie.frame.getHeight());
+      fox.getRootPane().paintImmediately(0, 0, fox.getWidth(), fox.getHeight());
+      if (modal() != null) modal().getRootPane().paintImmediately(0, 0, modal().getWidth(), modal().getHeight());
+    });
+    Robot robot = new Robot();
+    robot.waitForIdle();
+    robot.delay(100);
+    ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+        "png", path.toFile());
   }
 
   private static String commands(Path work) {
