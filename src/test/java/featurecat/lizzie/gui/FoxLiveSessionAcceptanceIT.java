@@ -181,6 +181,59 @@ public final class FoxLiveSessionAcceptanceIT {
         captureMain(work.resolve("fox-main-preview.png"));
         assertEquals(previewCommands, commands(work), "preview does not request another search");
         SwingUtilities.invokeAndWait(() -> Lizzie.frame.clearMouseOverCoordinate(false));
+        String floatCommands = commands(work);
+        String floatCandidate = Lizzie.frame.getBestMoves().get(0).coordinate;
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.onlyIndependMainBoard();
+          Lizzie.frame.independentMainBoard.setBounds(400, 180, 620, 620);
+          assertTrue(Lizzie.config.isFloatBoardMode());
+          assertTrue(Lizzie.frame.independentMainBoard.isVisible());
+          assertTrue(Lizzie.board.getData().bestMoves.isEmpty(), "Fox display never fills node cache");
+        });
+        new Robot().delay(500);
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.input.keyPressed(new java.awt.event.KeyEvent(Lizzie.frame,
+              java.awt.event.KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
+              java.awt.event.KeyEvent.VK_1, '1'));
+          Lizzie.frame.refresh();
+          Lizzie.frame.independentMainBoard.getRootPane().paintImmediately(0, 0,
+              Lizzie.frame.independentMainBoard.getWidth(), Lizzie.frame.independentMainBoard.getHeight());
+        });
+        ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-float-number-preview.png").toFile());
+        Files.writeString(work.resolve("float-number-preview.txt"), "candidate=" + floatCandidate
+            + "\nselected=" + java.util.Arrays.toString(Lizzie.frame.independentMainBoard.mouseOverCoordinate)
+            + "\nnodeCacheSize=" + Lizzie.board.getData().bestMoves.size()
+            + "\ncommandsUnchanged=" + floatCommands.equals(commands(work)) + "\n");
+        assertEquals(floatCommands, commands(work), "floating number preview does not restart search");
+        assertArrayEquals(featurecat.lizzie.rules.Board.convertNameToCoordinates(floatCandidate),
+            Lizzie.frame.independentMainBoard.mouseOverCoordinate, "floating number key selects live candidate");
+        assertTrue(Lizzie.frame.independentMainBoard.boardRenderer.branchOpt.isPresent(),
+            "floating number key presents live PV");
+        BoardHistoryNode floatLiveNode = Lizzie.board.getHistory().getCurrentHistoryNode();
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.setMouseOverCoords(0);
+          assertArrayEquals(LizzieFrame.outOfBoundCoordinate,
+              Lizzie.frame.independentMainBoard.mouseOverCoordinate, "same number toggles preview off");
+          Lizzie.board.navigateToNode(floatLiveNode.previous().orElseThrow());
+          Lizzie.frame.setMouseOverCoords(0);
+          assertTrue(Lizzie.frame.getBestMoves().isEmpty());
+          assertArrayEquals(LizzieFrame.outOfBoundCoordinate,
+              Lizzie.frame.independentMainBoard.mouseOverCoordinate, "history cannot select live PV");
+          Lizzie.frame.independentMainBoard.boardRenderer.selectNormalVariation();
+          assertFalse(Lizzie.frame.independentMainBoard.boardRenderer.bestMoveCoordinateName().isPresent());
+        });
+        SwingUtilities.invokeAndWait(() -> Lizzie.frame.independentMainBoard.getRootPane().paintImmediately(
+            0, 0, Lizzie.frame.independentMainBoard.getWidth(), Lizzie.frame.independentMainBoard.getHeight()));
+        ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+            "png", work.resolve("fox-float-history.png").toFile());
+        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
+        assertSame(floatLiveNode, Lizzie.board.getHistory().getCurrentHistoryNode());
+        assertEquals(floatCommands, commands(work), "floating navigation and return do not restart search");
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.toggleOnlyIndependMainBoard();
+          Lizzie.frame.clearMouseOverCoordinate(false);
+        });
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-confirmed.png").toFile());
         Files.writeString(work.resolve("timing.txt"), "turnStart=" + turnStart + "\nsubmitted=" + submitted
@@ -447,6 +500,20 @@ public final class FoxLiveSessionAcceptanceIT {
       target.sendCommand("137002 name");
       await(() -> gtp(work).contains("=137002 KataGo"), 5, "ordinary pause fence");
       assertFalse(target.isPondering());
+      SwingUtilities.invokeAndWait(() -> {
+        Lizzie.frame.onlyIndependMainBoard();
+        var ordinaryMoves = Lizzie.board.getData().bestMoves;
+        int index = java.util.stream.IntStream.range(0, Math.min(9, ordinaryMoves.size()))
+            .filter(i -> !ordinaryMoves.get(i).coordinate.equalsIgnoreCase("pass")).findFirst().orElseThrow();
+        Lizzie.frame.input.keyPressed(new java.awt.event.KeyEvent(Lizzie.frame,
+            java.awt.event.KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
+            java.awt.event.KeyEvent.VK_1 + index, (char) ('1' + index)));
+        assertArrayEquals(featurecat.lizzie.rules.Board.convertNameToCoordinates(ordinaryMoves.get(index).coordinate),
+            Lizzie.frame.independentMainBoard.mouseOverCoordinate, "ordinary paused numeric preview after Fox handback");
+        Lizzie.frame.setMouseOverCoords(index);
+        assertArrayEquals(LizzieFrame.outOfBoundCoordinate, Lizzie.frame.independentMainBoard.mouseOverCoordinate);
+        Lizzie.frame.toggleOnlyIndependMainBoard();
+      });
       Files.writeString(result, "PASS Swing TCP one KataGo same-search candidates final automatic send pending no-preadvance confirmed timely-sync opponent init blocked no-send terminal disconnect Stop restore\n"
           + "engine=" + args[0] + "\nmodel=" + args[1] + "\nprocess=" + ProcessHandle.current().pid() + "\n");
       target.sendCommand("quit");
