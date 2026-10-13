@@ -218,13 +218,18 @@ public final class FoxLiveSessionAcceptanceIT {
         String beforeReturn = commands(work);
         SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return to current live tail");
-        assertTrue(find(fox, JTextArea.class).getText().contains("%")
-            || find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.waitingCandidate")));
+        assertTrue(find(fox, JTextArea.class).getText().contains("%"), "current valid candidate immediately returns");
+        assertTrue(hasText(fox, "Fox.pending"));
         assertEquals(beforeReturn, commands(work));
-        robot.waitForIdle();
         ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-return-current.png").toFile());
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
+        if (browsingSubmission.startsWith("AFPLAY"))
+          send(peer, "FAMOVE,0,B," + browsingSubmission.substring("AFPLAY,B,".length()));
+        else send(peer, "FASKIP,0,B");
+        await(() -> Lizzie.board.getHistory().getMainEndWithPass().getData().moveNumber == 5,
+            5, "automatic choice confirmed while browsing");
+        assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
         Files.writeString(work.resolve("history-evidence.txt"), "navigationCommands=unchanged\nreturnCommands=unchanged\n"
             + "displayMove=2 liveMove=4\ncacheUnchanged=true\nautomaticWhileBrowsing=" + browsingSubmission + "\n");
         send(peer, "FARESULT,W+R", "FASTATUS,0");
