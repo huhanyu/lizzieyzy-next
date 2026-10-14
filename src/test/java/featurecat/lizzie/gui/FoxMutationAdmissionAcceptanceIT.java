@@ -100,7 +100,7 @@ public final class FoxMutationAdmissionAcceptanceIT {
         rejectedMutations(gib, "pending");
         send(peer, "FAMOVE,0,B," + submission.substring("AFPLAY,B,".length()), "FATIMELEFT,58,30,3");
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, "confirmed move");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), "real candidates");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), "real candidates");
         Thread.sleep(3500);
         String commands = commands(work);
         rejectedMutations(gib, "live");
