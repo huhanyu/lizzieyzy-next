@@ -895,12 +895,8 @@ public final class FoxLiveSession {
     boolean following = displayCursor == liveTail;
     liveHistory.setHead(liveTail);
     for (; appliedActions < state.actions().size(); appliedActions++) {
-      FoxGameState.Action action = state.actions().get(appliedActions);
-      BoardHistoryNode prior = liveHistory.getCurrentHistoryNode();
-      Stone color = action.color() == 'B' ? Stone.BLACK : Stone.WHITE;
-      if (action.isPass()) liveHistory.pass(color);
-      else liveHistory.place(action.placement().x(), action.placement().y(), color);
-      if (liveHistory.getCurrentHistoryNode() == prior) throw new IllegalStateException("Illegal Fox action");
+      appendConfirmed(liveHistory, state.actions().get(appliedActions),
+          selectedRules.bool(KataGoRules.SUICIDE));
     }
     liveTail = liveHistory.getCurrentHistoryNode();
     if (following) displayCursor = liveTail;
@@ -908,6 +904,17 @@ public final class FoxLiveSession {
     liveHistory.setHead(displayCursor);
     refreshDisplay();
     Lizzie.frame.refresh();
+  }
+
+  /** Confirmed Fox actions follow the session's Go rules, never the ordinary no-capture setting. */
+  static void appendConfirmed(BoardHistoryList history, FoxGameState.Action action,
+      boolean multiStoneSuicide) {
+    BoardHistoryNode prior = history.getCurrentHistoryNode();
+    Stone color = action.color() == 'B' ? Stone.BLACK : Stone.WHITE;
+    if (action.isPass()) history.pass(color);
+    else history.place(action.placement().x(), action.placement().y(), color,
+        false, false, false, false, multiStoneSuicide);
+    if (history.getCurrentHistoryNode() == prior) throw new IllegalStateException("Illegal Fox action");
   }
 
   private void invalidate() {
