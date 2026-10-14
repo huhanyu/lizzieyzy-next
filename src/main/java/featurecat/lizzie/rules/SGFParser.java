@@ -657,7 +657,6 @@ public class SGFParser {
             if (tagContent.equals("true")) {
               appendDummyPlaceholder(Lizzie.board.getHistory());
               currentNodeHasDummy = true;
-              currentNodeHasMove = true;
             }
           } else if (tag.equals("B") || tag.equals("W")) {
             if (currentNodeHasDummy) {
@@ -3954,6 +3953,8 @@ public class SGFParser {
   }
 
   // DD is a terminal placeholder, not a modifier on the next real B/W action.
+  // It does not complete currentNodeHasMove: same-node payload stays buffered for a real action,
+  // or is flushed to the dummy only when the SGF node ends without one.
   private static void appendDummyPlaceholder(BoardHistoryList history) {
     history.pass(history.isBlacksTurn() ? Stone.BLACK : Stone.WHITE, true, true);
   }
@@ -4080,7 +4081,6 @@ public class SGFParser {
             if ("true".equals(tagContent)) {
               appendDummyPlaceholder(history);
               currentNodeHasDummy = true;
-              currentNodeHasMove = true;
             }
           } else if (tag.equals("B") || tag.equals("W")) {
             if (currentNodeHasDummy) {
@@ -4449,7 +4449,6 @@ public class SGFParser {
               appendDummyPlaceholder(history);
               subTreeStepMap.put(subTreeDepth, subTreeStepMap.get(subTreeDepth) + 1);
               currentNodeHasDummy = true;
-              currentNodeHasMove = true;
             }
           } else if (tag.equals("B") || tag.equals("W")) {
             if (currentNodeHasDummy) {
@@ -4486,6 +4485,17 @@ public class SGFParser {
               BoardHistoryNode target =
                   getSetupPropertyTargetNode(history, currentNodeHasSetupSnapshot);
               target.getData().comment = tagContent;
+            }
+          } else if (isAnalysisTag(tag)) {
+            boolean rootSetupContext =
+                isRootSetupContext(history, moveStart, allowRootSetupOnCurrentNode);
+            if (shouldBufferLeadingSetupAnalysis(
+                currentNodeHasMove, currentNodeHasSetupSnapshot, rootSetupContext)) {
+              bufferLeadingSetupAnalysis(pendingSetupMetadata, tag, tagContent);
+            } else {
+              BoardHistoryNode target =
+                  getSetupPropertyTargetNode(history, currentNodeHasSetupSnapshot);
+              applyAnalysisTagOnDetachedHistory(target.getData(), tag, tagContent);
             }
           } else if (tag.equals("AB") || tag.equals("AW")) {
             int[] move = convertSgfPosToCoord(tagContent);

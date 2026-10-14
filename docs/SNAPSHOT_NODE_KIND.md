@@ -58,6 +58,8 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 
 SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出的 `(; ;DD[true])` 终端分支；标记不能跨节点或分支污染后续真实动作。兼容同节点 `DD[true]B/W[...]` 时，占位节点与真实动作保留为两个兄弟节点，真实动作的颜色、MOVE/PASS、手数与 payload 不变。文件、字符串、编辑态、detached 与分支解析采用相同语义，dummy 不参与初始行棋方取证。
 
+同节点 `DD[true]` 后仍有真实 `B/W` 时，注释、标记和受支持的 `LZ/LZOP/LZ2/LZOP2` 分析 payload 归属真实动作；payload 位于 `DD` 前、`DD` 与动作之间或动作之后，不改变归属。dummy 不是已完成的真实动作，不能使节点内 payload 提前落到占位节点。若节点结束前没有真实动作，payload 留在该独立 dummy；暂存不得跨 SGF 节点或分支边界。上述归属在连续两次保存重开后保持稳定。
+
 自动播放、统计、评分等真实 `PASS` 消费方只统计真实 `PASS`，忽略 `dummy PASS`。
 
 ## setup 契约
@@ -713,3 +715,5 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 验收必须替换旧的“`AB[aa];W[bb]` 无 `PL` 仍黑先并保存为 `PL[B]`”断言；保留有效的引擎让子资格拒绝断言，但将其与初始行棋方断言分开。实际用户样本与合成输入均须通过生产导入路径验证，不能仅验证新的内部判断函数。
 
 真实 CPU 验收仅在显式选择对应验收类或提供引擎参数时启用；普通 Maven 集成测试发现不要求本机预置引擎和模型。显式启用后仍严格校验完整参数、运行环境及真实引擎响应，缺失配置必须失败，不能跳过后报告验收通过。
+
+依赖三个本地原谱文件的 Swing 验收仅在显式选择 `originalInitialTurnsSurviveOpenNavigateSaveAndReopen` 方法或提供任一 `lizzie.initialTurn.original.0/1/2` 参数时启用。普通测试发现及仅选择 `SgfUiAcceptanceIT` 整类不要求私有原谱；显式启用后，三个文件必须全部可用且显示环境必须有效，否则失败，不以跳过替代实际验收。

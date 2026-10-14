@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
@@ -397,11 +398,18 @@ public final class SgfUiAcceptanceIT {
 
   @Test
   void originalInitialTurnsSurviveOpenNavigateSaveAndReopen() throws Exception {
-    DesktopProbeProcess.requireDisplay();
-    for (int index = 0; index < 3; index++) {
-      String input = System.getProperty("lizzie.initialTurn.original." + index);
-      assertTrue(input != null && Files.isRegularFile(Path.of(input)),
+    assumeTrue(originalInitialTurnExecutionRequested(), "original SGF acceptance is opt-in");
+    String[] inputs = new String[3];
+    for (int index = 0; index < inputs.length; index++) {
+      inputs[index] = System.getProperty("lizzie.initialTurn.original." + index);
+      assertTrue(inputs[index] != null && Files.isRegularFile(Path.of(inputs[index])),
           "Supply the exact local original with -Dlizzie.initialTurn.original." + index);
+    }
+    assertFalse(java.awt.GraphicsEnvironment.isHeadless(),
+        "Original SGF acceptance requires an operational display");
+    DesktopProbeProcess.requireDisplay();
+    for (int index = 0; index < inputs.length; index++) {
+      String input = inputs[index];
       Path result = DesktopProbeProcess.run(SgfUiAcceptanceIT.class,
           "initial-turn-original-" + index, List.of(),
           List.of("initial-turn", input, Integer.toString(index)), 120);
@@ -411,6 +419,18 @@ public final class SgfUiAcceptanceIT {
         assertTrue(Files.isRegularFile(result.getParent().resolve(image)), image);
       }
     }
+  }
+
+  private static boolean originalInitialTurnExecutionRequested() {
+    for (int index = 0; index < 3; index++) {
+      if (System.getProperty("lizzie.initialTurn.original." + index) != null) return true;
+    }
+    for (String selector : List.of("test", "it.test")) {
+      String value = System.getProperty(selector);
+      if (value != null
+          && value.contains("originalInitialTurnsSurviveOpenNavigateSaveAndReopen")) return true;
+    }
+    return false;
   }
 
   private static void runInitialTurn(Path input, int index, Path work, Path result)

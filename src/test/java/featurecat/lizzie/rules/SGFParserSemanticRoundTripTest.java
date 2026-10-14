@@ -350,6 +350,125 @@ class SGFParserSemanticRoundTripTest {
     }
   }
 
+  @ParameterizedTest
+  @CsvSource({"W[cc], LZ", "W[], LZ", "B[cc], LZOP", "B[], LZOP"})
+  void sameNodeDummyPayloadBelongsToRealActionRegardlessOfPropertyOrder(
+      String action, String analysisTag) throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      Lizzie.config.extraMode = featurecat.lizzie.ExtraMode.Double_Engine;
+      String payload = "C[note]LB[aa:A]" + analysisTag
+          + "[KataGo 45 12.3k 2.5 1.2 0 rootVisits=12345\n"
+          + "move D4 visits 321 winrate 5500 pv D4]" + analysisTag + "2"
+          + "[Second 55 23.5k -2.5 1.3 0 rootVisits=23456\n"
+          + "move E5 visits 432 winrate 4500 pv E5]";
+      for (String node : List.of("DD[true]" + payload + action,
+          payload + "DD[true]" + action, "DD[true]" + action + payload)) {
+        String sgf = "(;SZ[5];" + node + ")";
+        for (String entry : List.of("detached", "live", "edit", "branch", "file")) {
+          BoardHistoryList history;
+          if (entry.equals("detached")) {
+            history = SGFParser.parseSgf(sgf, true);
+          } else if (entry.equals("branch")) {
+            history = SGFParser.parseSgf("(;SZ[5])", true);
+            SGFParser.parseBranch(history, ";" + node);
+          } else {
+            if (entry.equals("live")) assertTrue(SGFParser.loadFromString(sgf, false));
+            else if (entry.equals("edit")) assertTrue(SGFParser.loadFromStringforedit(sgf));
+            else {
+              Path input = tempDirectory.resolve("dummy-payload.sgf");
+              Files.writeString(input, sgf);
+              assertTrue(SGFParser.load(input.toString(), false, false));
+              javax.swing.SwingUtilities.invokeAndWait(() -> {});
+            }
+            history = Lizzie.board.getHistory();
+          }
+          assertSameNodeDummyPayload(history, action, entry + ": " + node);
+          Lizzie.board.setHistory(history);
+          for (int round = 0; round < 2; round++) {
+            Path saved = tempDirectory.resolve("dummy-payload-saved.sgf");
+            Files.writeString(saved, SGFParser.saveToString(false));
+            assertTrue(SGFParser.load(saved.toString(), false, false));
+            javax.swing.SwingUtilities.invokeAndWait(() -> {});
+            assertSameNodeDummyPayload(Lizzie.board.getHistory(), action,
+                entry + " reopen " + round + ": " + node);
+          }
+        }
+      }
+    }
+  }
+
+  private static void assertSameNodeDummyPayload(
+      BoardHistoryList history, String action, String context) {
+    BoardHistoryNode root = history.getStart();
+    assertEquals(2, root.numberOfChildren(), context);
+    BoardHistoryNode dummy = root.getVariation(0).orElseThrow();
+    assertTrue(dummy.getData().dummy, context);
+    assertEquals(0, dummy.numberOfChildren(), context);
+    assertEquals("", dummy.getData().comment, context);
+    assertNull(dummy.getData().getProperty("LB"), context);
+    assertEquals(0, dummy.getData().getPlayouts(), context);
+    assertEquals(0, dummy.getData().getPlayouts2(), context);
+    assertTrue(dummy.getData().bestMoves.isEmpty(), context);
+    assertTrue(dummy.getData().bestMoves2.isEmpty(), context);
+    BoardData real = root.getVariation(1).orElseThrow().getData();
+    assertFalse(real.dummy, context);
+    assertEquals(action.endsWith("[]") ? BoardNodeKind.PASS : BoardNodeKind.MOVE,
+        real.getNodeKind(), context);
+    assertEquals(action.startsWith("B") ? Stone.BLACK : Stone.WHITE, real.lastMoveColor, context);
+    assertEquals(1, real.moveNumber, context);
+    assertEquals("note", real.comment, context);
+    assertEquals("aa:A", real.getProperty("LB"), context);
+    assertEquals(12345, real.getPlayouts(), context);
+    assertEquals(23456, real.getPlayouts2(), context);
+    assertEquals("KataGo", real.engineName, context);
+    assertEquals("Second", real.engineName2, context);
+    assertEquals(321, real.bestMoves.get(0).playouts, context);
+    assertEquals(List.of("D4"), real.bestMoves.get(0).variation, context);
+    assertEquals(432, real.bestMoves2.get(0).playouts, context);
+    assertEquals(List.of("E5"), real.bestMoves2.get(0).variation, context);
+  }
+
+  @Test
+  void dummyPayloadBufferStopsAtNodeAndVariationBoundaries() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      String branches = "(;DD[true]C[placeholder]LZ[KataGo 45 123])"
+          + "(;DD[true]C[real]LZ[KataGo 55 345]W[cc];B[aa]C[next])"
+          + "(;W[dd]C[side])";
+      String sgf = "(;SZ[5]" + branches + ")";
+      for (String entry : List.of("detached", "live", "edit", "branch")) {
+        BoardHistoryList history;
+        if (entry.equals("detached")) history = SGFParser.parseSgf(sgf, true);
+        else if (entry.equals("branch")) {
+          history = SGFParser.parseSgf("(;SZ[5])", true);
+          SGFParser.parseBranch(history, sgf.substring(sgf.indexOf("(;DD")));
+        } else {
+          if (entry.equals("live")) assertTrue(SGFParser.loadFromString(sgf, false));
+          else assertTrue(SGFParser.loadFromStringforedit(sgf));
+          history = Lizzie.board.getHistory();
+        }
+        BoardHistoryNode root = history.getStart();
+        assertEquals(4, root.numberOfChildren(), entry);
+        BoardData standaloneDummy = root.getVariation(0).orElseThrow().getData();
+        assertTrue(standaloneDummy.dummy);
+        assertEquals("placeholder", standaloneDummy.comment);
+        assertEquals(123, standaloneDummy.getPlayouts());
+        BoardData splitDummy = root.getVariation(1).orElseThrow().getData();
+        assertTrue(splitDummy.dummy);
+        assertEquals("", splitDummy.comment);
+        assertEquals(0, splitDummy.getPlayouts());
+        BoardHistoryNode real = root.getVariation(2).orElseThrow();
+        assertEquals("real", real.getData().comment);
+        assertEquals(345, real.getData().getPlayouts());
+        assertEquals("next", real.next().orElseThrow().getData().comment);
+        assertEquals(0, real.next().orElseThrow().getData().getPlayouts());
+        BoardData side = root.getVariation(3).orElseThrow().getData();
+        assertFalse(side.dummy);
+        assertEquals("side", side.comment);
+        assertEquals(0, side.getPlayouts());
+      }
+    }
+  }
+
   @Test
   void completedHandicapDefaultDoesNotRequireEngineRestoreEligibility() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
