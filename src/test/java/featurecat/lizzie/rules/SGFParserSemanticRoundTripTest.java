@@ -67,11 +67,12 @@ class SGFParserSemanticRoundTripTest {
     }
   }
 
-  @Test
-  void editUndoRedoPreservesIndependentInitialSetupAndResolvedTurn() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"", "PL[B]", "PL[W]"})
+  void editUndoRedoPreservesIndependentInitialSetupAndResolvedTurn(String player) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       assertTrue(SGFParser.loadFromStringforedit(
-          "(;SZ[5];AB[aa]AW[ee];W[cc];B[])"));
+          "(;SZ[5]" + player + ";AB[aa]AW[ee];W[cc];B[])"));
       Board board = Lizzie.board;
       board.nextMove(false);
       board.nextMove(false);

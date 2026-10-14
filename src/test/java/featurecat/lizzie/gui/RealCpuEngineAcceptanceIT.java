@@ -121,6 +121,9 @@ public final class RealCpuEngineAcceptanceIT {
       BoardHistoryNode target = Lizzie.board.getHistory().getCurrentHistoryNode();
       assertFalse(target.getData().blackToPlay);
       assertEquals(0, target.getData().moveNumber);
+      assertEquals(kind.equals("handicap"), featurecat.lizzie.rules.InitialHandicapSetup.isInitialHandicap(
+          target, Lizzie.board.getHistory().getGameInfo().getHandicap(), 19, 19));
+      record.put("handicapEligible", kind.equals("handicap"));
       BoardHistoryList.SessionRulesTarget rules = SGFParser.adoptCurrentHistoryExternalRules();
       EngineManager manager = Lizzie.engineManager;
       int index = manager.engineList.size();

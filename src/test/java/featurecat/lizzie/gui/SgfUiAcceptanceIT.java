@@ -375,6 +375,9 @@ public final class SgfUiAcceptanceIT {
       JFileChooser chooser = openSaveChooser(robot);
       edt(() -> { chooser.setSelectedFile(saved.toFile()); chooser.approveSelection(); return null; });
       await(() -> Files.isRegularFile(saved), Deadline.after(Duration.ofSeconds(15)), "edit save");
+      await(() -> visibleChooser() == null && edt(Lizzie.frame::isActive),
+          Deadline.after(Duration.ofSeconds(15)), "save dialog handback");
+      robot.waitForIdle();
       openSelectedFile(robot, saved);
       assertNodeSemanticsEqual(before.getStart(), board.getHistory().getStart());
       edt(() -> { board.moveToAnyPosition(board.getHistory().getStart().next().orElseThrow());
