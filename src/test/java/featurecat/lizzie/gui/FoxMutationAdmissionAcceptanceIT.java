@@ -74,6 +74,7 @@ public final class FoxMutationAdmissionAcceptanceIT {
       Thread.sleep(300);
       SwingUtilities.invokeAndWait(FoxLiveSession::showDialog);
       JDialog fox = foxDialog();
+      await(() -> button(fox, "Fox.start").isEnabled(), "confirmed current engine limits");
       int port;
       try (ServerSocket available = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
         port = available.getLocalPort();
