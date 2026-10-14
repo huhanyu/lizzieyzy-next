@@ -375,7 +375,11 @@ public final class SgfUiAcceptanceIT {
       JFileChooser chooser = openSaveChooser(robot);
       edt(() -> { chooser.setSelectedFile(saved.toFile()); chooser.approveSelection(); return null; });
       await(() -> Files.isRegularFile(saved), Deadline.after(Duration.ofSeconds(15)), "edit save");
-      await(() -> visibleChooser() == null && edt(Lizzie.frame::isActive),
+      await(() -> visibleChooser() == null,
+          Deadline.after(Duration.ofSeconds(15)), "save dialog closed");
+      edt(() -> { javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath();
+        Lizzie.frame.toFront(); Lizzie.frame.requestFocus(); return null; });
+      await(() -> edt(Lizzie.frame::isActive),
           Deadline.after(Duration.ofSeconds(15)), "save dialog handback");
       robot.waitForIdle();
       openSelectedFile(robot, saved);
