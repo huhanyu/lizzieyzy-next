@@ -60,6 +60,8 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 
 同节点 `DD[true]` 后仍有真实 `B/W` 时，注释、标记和受支持的 `LZ/LZOP/LZ2/LZOP2` 分析 payload 归属真实动作；payload 位于 `DD` 前、`DD` 与动作之间或动作之后，不改变归属。dummy 不是已完成的真实动作，不能使节点内 payload 提前落到占位节点。若节点结束前没有真实动作，payload 留在该独立 dummy；暂存不得跨 SGF 节点或分支边界。上述归属在连续两次保存重开后保持稳定。
 
+独立 dummy 的 `DD[true]` 与自身注释、标记、双引擎分析必须序列化在同一 SGF 节点；连续两次保存重开后，父节点与相邻兄弟不能接收该 payload。根 SGF 节点内先 `DD` 后真实动作时，同样按节点整体确定 payload 归属；即使 payload 出现在 `DD` 前也归真实兄弟。识别节点边界必须尊重属性值内的转义及结构字符。普通根节点、根 setup 与后续独立节点的 metadata 边界及显式 `PL` 权威保持不变。
+
 自动播放、统计、评分等真实 `PASS` 消费方只统计真实 `PASS`，忽略 `dummy PASS`。
 
 ## setup 契约

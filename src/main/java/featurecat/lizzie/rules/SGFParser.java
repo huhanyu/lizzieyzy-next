@@ -557,6 +557,7 @@ public class SGFParser {
     boolean inProp = false;
     int topLevelNodeCount = 0;
     boolean allowRootSetupOnCurrentNode = false;
+    boolean rootNodeHasDummy = false;
 
     String tag = "";
     StringBuilder tagBuilder = new StringBuilder();
@@ -685,8 +686,9 @@ public class SGFParser {
           } else if (tag.equals("C")) {
             // Support comment
             boolean rootSetupContext =
-                isRootSetupContext(
-                    Lizzie.board.getHistory(), moveStart, allowRootSetupOnCurrentNode);
+                !rootNodeHasDummy
+                    && isRootSetupContext(
+                        Lizzie.board.getHistory(), moveStart, allowRootSetupOnCurrentNode);
             if (rootSetupContext) {
               headComment = tagContent;
             } else if (shouldBufferLeadingSetupMetadata(
@@ -703,8 +705,9 @@ public class SGFParser {
               isExtraMode2 = true;
             }
             boolean rootSetupContext =
-                isRootSetupContext(
-                    Lizzie.board.getHistory(), moveStart, allowRootSetupOnCurrentNode);
+                !rootNodeHasDummy
+                    && isRootSetupContext(
+                        Lizzie.board.getHistory(), moveStart, allowRootSetupOnCurrentNode);
             if (shouldBufferLeadingSetupAnalysis(
                 currentNodeHasMove, currentNodeHasSetupSnapshot, rootSetupContext)) {
               bufferLeadingSetupAnalysis(pendingSetupMetadata, tag, tagContent);
@@ -865,6 +868,8 @@ public class SGFParser {
                 int[] move = convertSgfPosToCoord(tagContent);
                 applyRootSetupProperty(
                     Lizzie.board.getHistory(), tag, tagContent, move, Stone.EMPTY);
+              } else if (rootNodeHasDummy && isLeadingSetupMetadataTag(tag)) {
+                bufferLeadingSetupMetadata(pendingSetupMetadata, tag, tagContent);
               } else if (rootSetupContext) {
                 if ("N".equals(tag) && headComment.isEmpty()) headComment = tagContent;
                 else addProperty(gameProperties, tag, tagContent);
@@ -909,6 +914,8 @@ public class SGFParser {
             currentNodeHasDummy = false;
             topLevelNodeCount += 1;
             allowRootSetupOnCurrentNode = topLevelNodeCount == 1;
+            rootNodeHasDummy =
+                allowRootSetupOnCurrentNode && nodeStartsWithDummy(value, i + 1);
             addPassForMove = true;
             currentNodeHasSetupSnapshot = false;
             currentNodeHasMove = false;
@@ -1772,7 +1779,9 @@ public class SGFParser {
 
       builder.append(";");
 
-      if (!data.dummy) {
+      if (data.dummy) {
+        builder.append("DD[true]");
+      } else {
         String sgfMove = data.isPassNode() ? passPos() : asCoord(data.lastMove.get());
         builder.append(String.format("%s[%s]", stone, sgfMove));
       }
@@ -1786,10 +1795,6 @@ public class SGFParser {
 
       appendSerializedComment(builder, node, forUpload, true);
     }
-    if (node.numberOfChildren() < 1)
-      if (node.isEndDummay()) {
-        builder.append(";DD[true]");
-      }
     return builder;
   }
 
@@ -3438,6 +3443,41 @@ public class SGFParser {
     moveData.moveMNNumber = -1;
   }
 
+  /** Inspect only this node, respecting escaped property text, before assigning root payload. */
+  private static boolean nodeStartsWithDummy(String value, int start) {
+    StringBuilder tag = new StringBuilder();
+    StringBuilder content = new StringBuilder();
+    boolean inValue = false;
+    boolean escaping = false;
+    for (int i = start; i < value.length(); i++) {
+      char c = value.charAt(i);
+      if (inValue) {
+        if (escaping) {
+          content.append(c == 'n' ? '\n' : c);
+          escaping = false;
+        } else if (c == '\\') {
+          escaping = true;
+          if (!"C".contentEquals(tag)) content.append(c);
+        } else if (c == ']') {
+          if ("B".contentEquals(tag) || "W".contentEquals(tag)) return false;
+          if ("DD".contentEquals(tag) && "true".contentEquals(content)) return true;
+          inValue = false;
+          tag.setLength(0);
+        } else {
+          content.append(c);
+        }
+      } else if (c == ';' || c == '(' || c == ')') {
+        return false;
+      } else if (c == '[') {
+        inValue = true;
+        content.setLength(0);
+      } else if (c >= 'A' && c <= 'Z') {
+        tag.append(c);
+      }
+    }
+    return false;
+  }
+
   private static boolean isRootSetupContext(
       BoardHistoryList history, boolean moveStart, boolean allowRootSetupOnCurrentNode) {
     return allowRootSetupOnCurrentNode
@@ -3983,6 +4023,7 @@ public class SGFParser {
     boolean inProp = false;
     int topLevelNodeCount = 0;
     boolean allowRootSetupOnCurrentNode = false;
+    boolean rootNodeHasDummy = false;
     String tag = "";
     StringBuilder tagBuilder = new StringBuilder();
     StringBuilder tagContentBuilder = new StringBuilder();
@@ -4110,7 +4151,8 @@ public class SGFParser {
           } else if (tag.equals("C")) {
             // Support comment
             boolean rootSetupContext =
-                isRootSetupContext(history, moveStart, allowRootSetupOnCurrentNode);
+                !rootNodeHasDummy
+                    && isRootSetupContext(history, moveStart, allowRootSetupOnCurrentNode);
             if (rootSetupContext) {
               headComment = tagContent;
             } else if (shouldBufferLeadingSetupMetadata(
@@ -4123,7 +4165,8 @@ public class SGFParser {
             }
           } else if (isAnalysisTag(tag)) {
             boolean rootSetupContext =
-                isRootSetupContext(history, moveStart, allowRootSetupOnCurrentNode);
+                !rootNodeHasDummy
+                    && isRootSetupContext(history, moveStart, allowRootSetupOnCurrentNode);
             if (shouldBufferLeadingSetupAnalysis(
                 currentNodeHasMove, currentNodeHasSetupSnapshot, rootSetupContext)) {
               bufferLeadingSetupAnalysis(pendingSetupMetadata, tag, tagContent);
@@ -4236,6 +4279,8 @@ public class SGFParser {
               if ("AE".equals(tag) && rootSetupContext) {
                 int[] move = convertSgfPosToCoord(tagContent);
                 applyRootSetupProperty(history, tag, tagContent, move, Stone.EMPTY, false);
+              } else if (rootNodeHasDummy && isLeadingSetupMetadataTag(tag)) {
+                bufferLeadingSetupMetadata(pendingSetupMetadata, tag, tagContent);
               } else if (rootSetupContext) {
                 if ("N".equals(tag) && headComment.isEmpty()) headComment = tagContent;
                 else addProperty(gameProperties, tag, tagContent);
@@ -4274,6 +4319,8 @@ public class SGFParser {
             currentNodeHasDummy = false;
             topLevelNodeCount += 1;
             allowRootSetupOnCurrentNode = !isBranch && topLevelNodeCount == 1;
+            rootNodeHasDummy =
+                allowRootSetupOnCurrentNode && nodeStartsWithDummy(value, i + 1);
             addPassForMove = true;
             currentNodeHasSetupSnapshot = false;
             currentNodeHasMove = false;
