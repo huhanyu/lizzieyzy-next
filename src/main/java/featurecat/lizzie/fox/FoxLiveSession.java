@@ -48,6 +48,7 @@ public final class FoxLiveSession {
   private Object limitsReader;
   private boolean queryingLimits;
   private boolean limitsConfirmed;
+  private boolean queryingRules;
   private String initializedTime = "";
   private String initializedVisits = "";
   private final JButton start = new JButton(text("Fox.start"));
@@ -230,6 +231,7 @@ public final class FoxLiveSession {
     if (instance == null) instance = new FoxLiveSession();
     if (instance.connection == null && !instance.restoring) instance.displayCurrentRules();
     instance.dialog.setVisible(true);
+    instance.queryCurrentRules();
     instance.queryLimits();
   }
 
@@ -272,13 +274,47 @@ public final class FoxLiveSession {
     if (target.kind() != BoardHistoryList.SessionRulesKind.UNSPECIFIED)
       return target.parsedRules().filter(KataGoRules::hasRequiredFields).orElse(null);
     if (Lizzie.leelaz == null || !Lizzie.leelaz.engineRulesResult().isConfirmed()) return null;
-    return Lizzie.leelaz.engineRulesResult().observed();
+    KataGoRules observed = Lizzie.leelaz.engineRulesResult().observed();
+    return observed != null && observed.hasRequiredFields() ? observed : null;
   }
 
   private void displayCurrentRules() {
     KataGoRules current = currentRules();
     rules.setText(current == null ? text("Fox.rulesUnavailable") : current.fieldSummary());
     rules.setCaretPosition(0);
+  }
+
+  private void queryCurrentRules() {
+    if (connection != null || engine != null || restoring || queryingRules || currentRules() != null
+        || Lizzie.leelaz == null
+        || Lizzie.board.getHistory().captureSessionRules().kind()
+            != BoardHistoryList.SessionRulesKind.UNSPECIFIED) return;
+    Leelaz target = Lizzie.leelaz;
+    Object reader = target.engineIncarnationToken();
+    queryingRules = true;
+    rules.setText(text("SetKataRules.status.pending"));
+    showStatus("SetKataRules.status.pending");
+    refreshLimitControls();
+    worker.execute(() -> {
+      if (Lizzie.leelaz != target || !target.isCurrentEngineIncarnationToken(reader)
+          || target.isRulesMutationOccupied()) {
+        onEdt(() -> currentRulesQueried(target, reader));
+        return;
+      }
+      Leelaz.EngineRulesOperation operation = target.engineRulesOperation();
+      if (operation == null || operation.isDone()) operation = target.queryEngineRulesOperation();
+      operation.onComplete(result -> onEdt(() -> currentRulesQueried(target, reader)));
+    });
+  }
+
+  private void currentRulesQueried(Leelaz target, Object reader) {
+    queryingRules = false;
+    if (connection != null || engine != null || restoring) return;
+    displayCurrentRules();
+    if (Lizzie.leelaz != target || !target.isCurrentEngineIncarnationToken(reader)
+        || currentRules() == null) showStatus("Fox.rulesUnavailable");
+    else showStatus(queryingLimits || limitsConfirmed ? "Fox.waiting" : "Fox.limitsUnavailable");
+    refreshLimitControls();
   }
 
   private void queryLimits() {
@@ -316,7 +352,7 @@ public final class FoxLiveSession {
             == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE;
     maxTime.setEnabled(available);
     maxVisits.setEnabled(available);
-    start.setEnabled(available);
+    start.setEnabled(available && !queryingRules && currentRules() != null);
   }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
   public static boolean ownsEngine() { return instance != null && instance.engine != null; }

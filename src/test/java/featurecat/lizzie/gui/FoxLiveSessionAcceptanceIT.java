@@ -25,6 +25,15 @@ import org.junit.jupiter.api.Test;
 
 /** Opt-in real application + loopback peer + one existing KataGo; no engine fixture substitution. */
 public final class FoxLiveSessionAcceptanceIT {
+  @Test void actualDirectStartQueriesCurrentRulesWithoutRulesWindow() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
+    DesktopProbeProcess.requireDisplay();
+    Path result = DesktopProbeProcess.run(FoxLiveSessionAcceptanceIT.class, "fox-rules-preflight",
+        List.of("-Dfox.rules.preflight=true"),
+        List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")), 90);
+    assertTrue(Files.readString(result).contains("PASS"));
+  }
+
   @Test void actualPreparationSurvivesDisconnectAndFencesStoppedOwner() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
     DesktopProbeProcess.requireDisplay();
@@ -86,12 +95,34 @@ public final class FoxLiveSessionAcceptanceIT {
           + (Boolean.getBoolean("fox.pda.dynamic") ? "dynamicPlayoutDoublingAdvantageCapPerOppLead = 0.045\n" : "")
           + "logAllGTPCommunication = true\nlogSearchInfo = true\nlogDir = "
           + work.resolve("gtp-log") + "\n");
+      if (Boolean.getBoolean("fox.rules.preflight")) {
+        config.getJSONObject("leelaz").put("engine-settings-list", new JSONArray().put(new JSONObject()
+            .put("name", "Fox cold-start KataGo")
+            .put("command", quote(args[0]) + " gtp -model " + quote(args[1])
+                + " -config " + quote(engineConfig.toString()))
+            .put("preload", false).put("isDefault", true).put("width", 19).put("height", 19)
+            .put("komi", 6.5).put("useJavaSSH", false)));
+        config.getJSONObject("ui").put("autoload-empty", false).put("autoload-default", true)
+            .put("autoload-last", false).put("default-engine", 0);
+        Files.writeString(work.resolve("config.txt"), config.toString(2));
+      }
       System.setProperty("lizzie.work.dir", work.toString());
       Lizzie.main(new String[0]);
       await(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), 30, "main Swing window");
       SwingUtilities.invokeAndWait(() -> {
         for (Window window : Window.getWindows()) if (window instanceof Dialog) window.dispose();
       });
+      if (Boolean.getBoolean("fox.rules.preflight")) {
+        await(() -> Lizzie.leelaz != null && Lizzie.leelaz.isLoaded()
+            && !Lizzie.leelaz.hasExclusiveGtpWorkInProgress(), 60, "default KataGo ready");
+        engine = Lizzie.leelaz;
+        engine.notPondering();
+        engine.sendCommand("stop");
+        directRulesPreflight(engine, work);
+        Files.writeString(result, "PASS direct dialog queries current rules without opening rules window\n");
+        engine.sendCommand("quit");
+        System.exit(0);
+      }
       EngineData entry = new EngineData();
       entry.id = UUID.randomUUID().toString();
       entry.index = Lizzie.engineManager.engineList.size();
@@ -712,6 +743,52 @@ public final class FoxLiveSessionAcceptanceIT {
       System.exit(1);
     }
   }
+  private static void directRulesPreflight(Leelaz target, Path work) throws Exception {
+    String before = commands(work);
+    Files.writeString(work.resolve("rules-before-dialog.txt"), target.engineRulesResult().status().toString());
+    SwingUtilities.invokeAndWait(FoxLiveSession::showDialog);
+    JDialog fox = dialog();
+    await(() -> target.engineRulesResult().isConfirmed() && button(fox, "Fox.start").isEnabled(),
+        10, "direct dialog confirms current rules without separate rules window");
+    KataGoRules observed = target.engineRulesResult().observed();
+    assertTrue(KataGoRules.parse("chinese").orElseThrow().semanticallyEquals(observed));
+    SwingUtilities.invokeAndWait(() -> assertEquals(observed.fieldSummary(), readOnlyRules(fox).getText()));
+    assertFalse(commands(work).substring(before.length()).contains("kata-set-rules"),
+        "preflight observes engine rules without changing them");
+    capture(fox, work.resolve("fox-rules-preflight-ready.png"));
+    // A parsed, confirmed response can still omit fields required by a live session.
+    var rulesResult = Leelaz.class.getDeclaredField("engineRulesResult");
+    rulesResult.setAccessible(true);
+    rulesResult.set(target, target.engineRulesResult().confirmed(
+        KataGoRules.parse("{\"ko\":\"POSITIONAL\"}").orElseThrow()));
+    await(() -> !button(fox, "Fox.start").isEnabled(), 2,
+        "incomplete confirmed rules must disable direct Start");
+    SwingUtilities.invokeAndWait(() -> {
+      fox.setVisible(false);
+      FoxLiveSession.showDialog();
+    });
+    await(() -> target.engineRulesResult().observed().hasRequiredFields()
+        && button(fox, "Fox.start").isEnabled(), 10,
+        "reopening direct dialog retries incomplete rules and restores readiness");
+    int port;
+    try (ServerSocket available = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+      port = available.getLocalPort();
+    }
+    int selectedPort = port;
+    SwingUtilities.invokeAndWait(() -> find(fox, JSpinner.class).setValue(selectedPort));
+    startPreparationCase(fox);
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      sendSetupOpponentTurn(peer);
+      await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "cold direct start produces opponent-turn candidates");
+      capture(fox, work.resolve("fox-rules-preflight-active.png"));
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(),
+          15, "cold direct start confirmed handback");
+      assertFalse(target.isPondering());
+    }
+    Files.writeString(work.resolve("rules-preflight-gtp.txt"), gtp(work));
+  }
+
 
   private static String engineStderr(Leelaz target) {
     try {
