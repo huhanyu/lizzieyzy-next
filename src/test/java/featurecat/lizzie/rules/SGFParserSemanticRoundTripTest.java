@@ -48,6 +48,8 @@ class SGFParserSemanticRoundTripTest {
       assertFalse(initial.getData().blackToPlay, "browsing does not infer from the side branch");
       board.moveBranchUp();
       assertFalse(initial.getData().blackToPlay, "promotion does not reinterpret the initial state");
+      assertTreeSemanticsEqual(board.getHistory(),
+          SGFParser.parseSgf(SGFParser.saveToString(false), true));
       board.deleteMoveNoHint();
       assertFalse(initial.getData().blackToPlay, "deleting the first action preserves the turn");
       board.moveToAnyPosition(initial);
@@ -63,6 +65,33 @@ class SGFParserSemanticRoundTripTest {
         assertTreeSemanticsEqual(expected, reopened);
         board.setHistory(reopened);
         expected = reopened;
+      }
+    }
+  }
+
+  @Test
+  void deletingWhiteFirstActionReplaysBlackPassWithoutChangingInitialTurn() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      assertTrue(SGFParser.loadFromStringforedit("(;SZ[5];AB[aa]AW[ee];W[cc];B[])"));
+      Board board = Lizzie.board;
+      board.nextMove(false);
+      board.nextMove(false);
+      board.nextMove(false);
+      board.editMove(new int[] {2, 2}, false, true);
+      BoardHistoryNode setup = board.getHistory().getStart().next().orElseThrow();
+      assertTrue(setup.getData().isSnapshotNode());
+      assertFalse(setup.getData().blackToPlay);
+      assertEquals(0, setup.getData().moveNumber);
+      BoardData pass = setup.next().orElseThrow().getData();
+      assertTrue(pass.isPassNode());
+      assertEquals(Stone.BLACK, pass.lastMoveColor);
+      assertEquals(1, pass.moveNumber);
+      assertEquals(Stone.EMPTY, pass.stones[Board.getIndex(2, 2)]);
+      for (int round = 0; round < 2; round++) {
+        BoardHistoryList expected = board.getHistory();
+        BoardHistoryList reopened = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+        assertTreeSemanticsEqual(expected, reopened);
+        board.setHistory(reopened);
       }
     }
   }
