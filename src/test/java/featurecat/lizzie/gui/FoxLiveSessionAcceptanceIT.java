@@ -33,6 +33,15 @@ public final class FoxLiveSessionAcceptanceIT {
     assertTrue(Files.readString(result).contains("PASS"));
   }
 
+  @Test void actualToolbarRefusesDynamicPdaOverride() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
+    DesktopProbeProcess.requireDisplay();
+    Path result = DesktopProbeProcess.run(FoxLiveSessionAcceptanceIT.class, "fox-pda-dynamic",
+        List.of("-Dfox.pda.dynamic=true"),
+        List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")), 90);
+    assertTrue(Files.readString(result).contains("PASS"));
+  }
+
   public static void main(String[] args) throws Exception {
     Path work = Path.of(args[2]);
     Path result = Path.of(args[3]);
@@ -46,6 +55,8 @@ public final class FoxLiveSessionAcceptanceIT {
       Path engineConfig = work.resolve("fox-katago.cfg");
       Files.writeString(engineConfig, "rules = chinese\nkomi = 6.5\nnumSearchThreads = 2\n"
           + "maxVisits = 64\nmaxTime = 3.0\nponderingEnabled = false\n"
+          + "playoutDoublingAdvantage = 0.2\nogsChatToStderr = true\n"
+          + (Boolean.getBoolean("fox.pda.dynamic") ? "dynamicPlayoutDoublingAdvantageCapPerOppLead = 0.045\n" : "")
           + "logAllGTPCommunication = true\nlogSearchInfo = true\nlogDir = "
           + work.resolve("gtp-log") + "\n");
       System.setProperty("lizzie.work.dir", work.toString());
@@ -148,6 +159,34 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals("AFSTATUS,B", receive(peer));
         send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
         await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 25, "real current candidates");
+        assertEquals(0.2, target.pda, 1e-9, "initial PDA preserved through acquisition");
+        String beforePda = commands(work);
+        SwingUtilities.invokeAndWait(() -> {
+          if (!LizzieFrame.menu.chkPDA.isSelected()) LizzieFrame.menu.chkPDA.doClick();
+          LizzieFrame.menu.txtGfPDA.setText("0.4");
+          LizzieFrame.menu.txtGfPDA.setText("0.8");
+        });
+        if (Boolean.getBoolean("fox.pda.dynamic")) {
+          await(() -> hasText(fox, "Fox.pdaDynamic"), 5, "visible dynamic override refusal");
+          assertEquals(0.2, target.pda, 1e-9);
+          assertFalse(commands(work).substring(beforePda.length()).contains("kata-set-param playoutDoublingAdvantage"));
+          SwingUtilities.invokeAndWait(() -> assertEquals("0.2", LizzieFrame.menu.txtGfPDA.getText()));
+          String move = receive(peer);
+          send(peer, "FAMOVE,0,B," + move.substring("AFPLAY,B,".length()));
+          await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "refused update retains safe search");
+          capture(fox, work.resolve("fox-pda-dynamic-refused.png"));
+          SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+          await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(), 15, "dynamic handback");
+          assertFalse(target.isPondering());
+          assertEquals(0.2, target.pda, 1e-9);
+          Files.writeString(work.resolve("pda-dynamic.txt"), "refused=true\nconfirmed=0.2\npaused=true\n" + gtp(work));
+          Files.writeString(result, "PASS actual Swing toolbar dynamic override refusal; safe search and confirmed PDA retained\n");
+          target.sendCommand("quit");
+          System.exit(0);
+        }
+        await(() -> Math.abs(target.pda - 0.8) < 1e-9, 5, "latest real PDA confirmation");
+        await(() -> commands(work).substring(beforePda.length()).contains("kata-search_analyze_cancellable"), 5, "same-turn PDA re-search");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 10, "new PDA current candidates");
         await(() -> find(fox, JTextArea.class).getText().contains("< info move"), 5, "raw analysis stream");
         assertTrue(find(fox, JTextArea.class).getText().contains("> "));
         assertTrue(find(fox, JTextArea.class).getText().contains("< ="));
@@ -172,6 +211,11 @@ public final class FoxLiveSessionAcceptanceIT {
         String submission = receive(peer);
         long submitted = System.nanoTime();
         assertTrue(submission.startsWith("AFPLAY,B,1^"), submission);
+        String pdaSearch = commands(work).substring(beforePda.length());
+        assertTrue(pdaSearch.indexOf(" stop") < pdaSearch.indexOf("kata-set-param playoutDoublingAdvantage 0.8"), pdaSearch);
+        await(() -> engineStderr(target).contains("PDA -0.80") || engineStderr(target).contains("PDA 0.80"),
+            5, "actual search parameters rather than setter/readback");
+        Files.writeString(work.resolve("pda-static.txt"), "initial=0.2\nconfirmed=0.8\n" + pdaSearch + "\n" + engineStderr(target));
         String tuple = submission.substring("AFPLAY,B,".length());
         String[] fields = tuple.split("\\^");
         String vertex = "ABCDEFGHJKLMNOPQRSTUVWXYZ".charAt(Integer.parseInt(fields[1]))
@@ -184,7 +228,7 @@ public final class FoxLiveSessionAcceptanceIT {
             .filter(p -> p.info().command().orElse("").endsWith("katago")).count());
         String beforeConfirmation = gtp(work);
         assertTrue(beforeConfirmation.contains("play " + vertex), "same real search final choice");
-        assertEquals(1, beforeConfirmation.lines().filter(line -> line.contains("Controller:")
+        assertEquals(2, beforeConfirmation.lines().filter(line -> line.contains("Controller:")
             && line.contains("kata-search_analyze_cancellable")).count());
         assertFalse(beforeConfirmation.lines().anyMatch(line -> line.contains("Controller:")
             && line.endsWith("play B " + vertex)), "engine not advanced before confirmation");
@@ -548,6 +592,11 @@ public final class FoxLiveSessionAcceptanceIT {
       unconfirmedRetainedStop(fox, port, target, work);
       naturalPassReconnect(fox, port, target, work);
       directLimitCases(fox, port, target, work);
+      assertEquals(0.8, target.pda, 1e-9, "latest PDA survives paused handback and original limit restore");
+      SwingUtilities.invokeAndWait(() -> {
+        assertEquals("0.8", LizzieFrame.menu.txtGfPDA.getText());
+        assertEquals("0.8", Lizzie.config.txtKataEnginePDA);
+      });
       assertTrue(target.isLoaded());
       assertThreads(target, work);
       assertTrue(customRules.semanticallyEquals(Lizzie.board.getHistory().captureSessionRules().parsedRules().orElseThrow()));
@@ -609,6 +658,16 @@ public final class FoxLiveSessionAcceptanceIT {
       if (engine != null) engine.sendCommand("quit");
       System.exit(1);
     }
+  }
+
+  private static String engineStderr(Leelaz target) {
+    try {
+      var field = Leelaz.class.getDeclaredField("recentStderrLines");
+      field.setAccessible(true);
+      @SuppressWarnings("unchecked")
+      var lines = (java.util.ArrayDeque<String>) field.get(target);
+      synchronized (lines) { return String.join("\n", lines); }
+    } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
   }
 
   private static long number(String line, String key) {

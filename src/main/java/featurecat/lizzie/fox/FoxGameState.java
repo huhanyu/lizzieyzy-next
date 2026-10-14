@@ -19,7 +19,7 @@ public final class FoxGameState {
     public boolean isPass() { return placement == null; }
     public String vertex(int size) { return isPass() ? "pass" : placement.vertex(size); }
   }
-  public enum SubmissionOutcome { PENDING, CONFIRMED, FAILED }
+  public enum SubmissionOutcome { PENDING, CONFIRMED, FAILED, CANCELLED }
   public record Submission(long connection, long game, long revision, long search,
       Action action, String body, long preparedNanos, long deadlineNanos) {}
   public record SubmissionFact(Submission submission, SubmissionOutcome outcome,
@@ -177,6 +177,14 @@ public final class FoxGameState {
     return true;
   }
 
+  /** PDA supersession competes atomically with physical write-start, never with its outcome. */
+  public synchronized boolean cancelUnwrittenForPda(long now) {
+    if (pending == null) return true;
+    if (written) return false;
+    resolveSubmission(SubmissionOutcome.CANCELLED, "Fox.pdaSuperseded", now);
+    return true;
+  }
+
   public synchronized void stopAutomation(String reason, long now) {
     automationBlocked = true;
     automationStopReason = reason;
@@ -229,7 +237,7 @@ public final class FoxGameState {
   public synchronized void disconnected() {
     Snapshot retained = snapshot();
     boolean unresolved = submissions.stream().anyMatch(f -> f.submission().game() == game
-        && f.outcome() != SubmissionOutcome.CONFIRMED);
+        && f.outcome() != SubmissionOutcome.CONFIRMED && f.outcome() != SubmissionOutcome.CANCELLED);
     checkpoint = retained.searchable() && !unresolved ? retained : null;
     recoveryFailure = unresolved ? "Fox.recoveryUnconfirmed" : "Fox.noCheckpoint";
     confirmation = null;

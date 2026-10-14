@@ -687,16 +687,20 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 - 停止及终局通过既有恢复管线重建确认的棋盘；断线保留已采用历史时暂停实战并持有 owner，直到显式归还。取得 owner 后、改变运行状态前完整捕获 rules、maxTime 与 maxVisits；归还时三者必须分别收到匹配成功响应，规则还须经既有规则查询操作确认完整 readback 并发布当前观测，且当前 reader/引擎仍一致，才可宣告交还成功；失败显示未恢复，不以最终 `name` 响应掩盖前序拒绝。
 - Fox 归还只恢复操作资格：直接 Stop 与官方终局先行均在完整确认恢复后保持普通分析暂停，丢弃进入直连前的 ponder 意图，随后仅用户显式启动普通分析才继续。其他租约使用方的恢复思考政策保持原义。
 - 从取得 Fox owner 到成功归还，工具栏广度保持禁用，涵盖断线保留、历史重放和恢复；归还失败仍按普通引擎 admission 拒绝操作。成功归还按当前普通资格和广度选择状态恢复控件。原因只在直连对话框说明，不将普通分析广度映射成实战搜索参数。
+- 工具栏激进度意图交给 Fox owner；取得租约只查询当前 PDA，不重置。直连窗口分别显示期望值与已确认值。兼容配置下先撤销候选和旧搜索资格，取消并完整排空旧搜索，匹配 stop 成功 ACK 后设置并回读 PDA；快速输入合并到最新有效值，旧确认不能覆盖后继意图。重新搜索读取同一回合最新 snapshot，保留原起点、提交截止及唯一时钟刷新资格。
+- PDA 兼容性采用实际本机进程启动时捕获的配置与命令覆盖；显式 `dynamicPlayoutDoublingAdvantageCapPerOppLead`（包括零）会阻止静态优先级，拒绝热修改。无法可靠检查的远程、包装命令、include 或未知配置也拒绝并在窗口说明，保留确认值与安全搜索，不改动态策略。setter/readback 不代表实战使用值；实际搜索验证采用 KataGo 自身搜索参数诊断。
+- PDA 是用户参数意图，不属于临时 maxTime/maxVisits；成功确认的最新 PDA 在暂停交还后继续供工具栏和普通分析使用。stop、setter、回读或响应归属失败禁止继续搜索/提交，并保留既有未恢复屏障，不能用其他恢复 ACK 把可能未确认的 PDA 当作健康引擎状态。
 - 对话框独立配置每手最大秒数与每次搜索最大 visits，开启前可编辑，监听、占用和恢复期间锁定。未设置值通过当前前台 reader 的确认查询初始化，失败不伪造默认值；零沿用普通 KataGo 控件的无上限值（maxTime 1e20、maxVisits 1125899906842624）。显式值替代这两个接管参数，可高于原普通上限；线程、playouts 等未暴露参数不改写。visits 保持引擎每次搜索语义，不累计 CPU 计数。
 - 每个己方回合请求一次 `AFSTATUS` 刷新时钟。`FoxGameState` 保留权威回合起点和只收紧的 Fox 时钟截止；snapshot 的 `submitDeadlineNanos` 为 Fox 安全截止与起点加直连最大用时的更紧者。初始化、参数 ACK、顺序重放、排队、同回合重新搜索全部消费此预算；刷新、重复快照和搜索重启均不能重置。引擎搜索 maxTime 以剩余预算设置并留少量交付余量；最大用时为上限而非等待下限，visits 先到可立即提交。最终结果和物理 write-start 都按同一截止拒绝过期提交。保留己方已用主时间与已消耗读秒次数，对手思考时间不扣己方主时间；日式读秒次数不作为剩余落子数。Fox 时钟默认一秒安全余量，不主动规划额外读秒段。
 - `Snapshot.foxDeadlineNanos` 只表达 Fox 时钟安全截止，`time_left` 使用该剩余时间；直连上限由 maxTime 和更紧的提交截止表达，不把用户每手上限伪装为野狐剩余主时间。停止搜索、调参和重放后读取同一回合 snapshot，不创建第二个计时所有者。
 - 最终选择先登记 immutable pending，再在 loopback 输出锁取得后的 write-start 边界核对连接、棋局、局面修订、搜索、截止、未消费 pending 及同一 Leelaz owner/reader。该一次性 claim 与身份撤销串行化；已开始的物理写入不能撤回。socket 写成功不表示接受，任何情况下都不重发或用旧候选、随机动作、pass 兜底。
+- PDA 更新的 `cancelUnwrittenForPda` 与 `claimSubmission` 共用同步状态边界；仅在尚未消费物理 write-start 权限时将 pending 记为 CANCELLED，保留原身份、原因和结清时间。旧排队发送及迟到完成不能影响新搜索/提交。已经 claim（含 I/O 失败或结果不明）的 pending 不可取消、替换或重发；期望 PDA 等原提交按既有协议结清后才作用后续搜索。
 - pending 不推进 Board 或引擎；仅匹配的 `FAMOVE` / 新增单个 matching placement 的 `FASTATUS`，或预期回合转换的 `FASKIP` 确认后追加真实动作并立即排队同步引擎。PASS 不增加 placements 编号，后继 `AFPLAY` 取 placements.size + 1。
 - 确认等待五秒仍无匹配证据、拒绝、矛盾、停止、断线或终局撤销提交权。`SubmissionFact` 保留原 connection/game/revision/search、动作、准备/写入/截止/结清单调时间和 CONFIRMED/FAILED 原因；FAILED 不被后续查询、重连或迟到证据改写成可恢复请求。05 必须检查此历史，不能仅以当前 pending == null 推断可靠检查点。
 - 搜索同步/开始/结束、权威时钟与回合起点、已用时间/截止/有效搜索上限、最终选择、物理写入返回及确认/失败事实通过现有 `lizzie.engine` 持久通道记录，按 connection/game/revision/search 关联，并记录原 engine/reader。确认事件保留实际 write-start 与结清单调时间；socket 写出事件不替代确认。日志不含账号或原始 Fox 帧，不改变准入/预算。启用 `engine-gtp` Full Trace 时，Leelaz 唯一 reader/writer 对独占命令和消费的响应逐次记录，复用既有有界、脱敏及 scope 生命周期，不重复经过普通 parser；生产证据不依赖宿主 stdout 捕获。
 - `FASCORE` 或引擎 resign 停止自动提交并提示用户操作官方客户端；不发送分数、自动认输或替代 PASS。时钟无效、非正预算或截止前没有有效最终选择时同样停止并提示超时风险；一秒余量不是永不超时保证，官方短时限校准仍须完成。
 - Fox 取得所有权前要求 `kata-time_settings` 与 `kata-list_time_settings` 的 `none` 能力。归还时在同一 reader 上确认 `kata-time_settings none`，清除实战外部时钟后才开放普通命令；不重建或恢复另一盘对局的旧时钟。后续引擎自身时间模式不发送时间覆盖，因此不能让它继承 Fox 读秒。reset 拒绝/超时按同一归还失败屏障处理。KataGo v1.18.2 [GTP Extensions](https://github.com/lightvector/KataGo/blob/v1.18.2/docs/GTP_Extensions.md) 定义 `none` 为无外部 time control；此 disposition 不改变已捕获 rules/maxTime/maxVisits 的原值恢复。
-- 断线先撤销候选、搜索和提交身份，再取消搜索。仅完整动作历史且本局所有提交均已确认时保留内存检查点；FAILED/PENDING 的 `SubmissionFact` 不会因当前 pending 为空而洗成可靠历史。完整新局仍通过明确终局/空闲边界重新准入。
+- 断线先撤销候选、搜索和提交身份，再取消搜索。仅完整动作历史且本局所有实际提交均已确认时保留内存检查点；FAILED/PENDING 的 `SubmissionFact` 不会因当前 pending 为空而洗成可靠历史。PDA 专用 CANCELLED 仅证明原请求从未取得写入权限，不是失败恢复或重试；它不阻塞其他条件均满足的检查点。完整新局仍通过明确终局/空闲边界重新准入。
 - 重连须重新取得规则、设置子、全量 placements、AI 颜色、权威回合和新时钟；前五项与检查点精确匹配，且没有矛盾新动作，才显示同局确认。用户“同局且离线无操作”的 `RecoveryAssertion` 与协议证据分开保存；取消/否认只保留观察，不推断 game ID、PASS 或离线动作。
 - 确认绑定连接/棋局/修订及原引擎 reader；新动作、终局、连接或 reader 变化使旧确认失效，迟到弹窗回调不修改后继状态。恢复通过原 owner 逐条确认完整 MOVE/PASS，包括全量列表省略的尾 PASS，之后才启动新搜索。复用已有时钟刷新、截止和一次性发送门禁，不沿用旧候选或预算，不重发旧请求。
 - 已采用的可靠历史在断线、恢复拒绝或未确认提交阻塞期间仍可本地浏览，因此保留同一个不可自动中断的 Fox owner（不搜索、不提交），直到恢复、终局或 Stop。检查点不可恢复不等于旧已确认动作失去证据；UI 标记为保留历史观察，不宣称它是当前远端实战局面。

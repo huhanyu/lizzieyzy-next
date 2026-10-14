@@ -5953,6 +5953,7 @@ public class Menu extends JMenuBar {
           @Override
           public void keyReleased(KeyEvent e) {
             String text = txtPDA.getText().trim();
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(text)) return;
             if (text.isEmpty() || text.equals("-") || text.equals(".")) return;
             try {
               double value = Double.parseDouble(text);
@@ -6316,6 +6317,11 @@ public class Menu extends JMenuBar {
     chkPDA.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(
+                chkPDA.isSelected() ? txtGfPDA.getText() : "0")) {
+              txtGfPDA.setEnabled(chkPDA.isSelected());
+              return;
+            }
             // Lizzie.board.clearbestmovesafter(Lizzie.board.getHistory().getStart());
             if (chkPDA.isSelected()) {
               txtGfPDA.setEnabled(true);
@@ -6363,6 +6369,7 @@ public class Menu extends JMenuBar {
         new DocumentListener() {
           public void insertUpdate(DocumentEvent e) {
             if (ShouldIgnoreDtChange) return;
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
             double pda = 0;
             boolean error = false;
             try {
@@ -6388,6 +6395,7 @@ public class Menu extends JMenuBar {
 
           public void removeUpdate(DocumentEvent e) {
             if (ShouldIgnoreDtChange) return;
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
             double pda = 0;
             boolean error = false;
             try {
@@ -6413,6 +6421,7 @@ public class Menu extends JMenuBar {
 
           public void changedUpdate(DocumentEvent e) {
             if (ShouldIgnoreDtChange) return;
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
             double pda = 0;
             boolean error = false;
             try {

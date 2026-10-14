@@ -428,6 +428,17 @@ public class Leelaz {
   public double wrn = 0;
   private double pdaBeforeGame = 0;
   public double pdaCap = 0;
+  private volatile String foxPdaCompatibility = "Fox.pdaUnknown";
+
+  public String foxPdaUnavailableReason() {
+    return isKataGoPda || isDymPda ? "Fox.pdaDynamic"
+        : isKatagoCustom ? "Fox.pdaUnknown" : foxPdaCompatibility;
+  }
+
+  public void confirmFoxPda(double value) {
+    pda = value;
+    pdaBeforeGame = value;
+  }
   public boolean startAutoAna = false;
   // for Multiple Engine
   public String oriEngineCommand = "";
@@ -1318,6 +1329,7 @@ public class Leelaz {
     startupPrimaryEngineGeneration =
         deferredEngineGameRecovery ? -1L : Lizzie.capturePrimaryEngineGeneration(this);
     canRestoreDymPda = false;
+    foxPdaCompatibility = "Fox.pdaUnknown";
     supportMovesOwnership = false;
     supportRootInfo = false;
     CommandLaunchHelper.LaunchSpec launchSpec =
@@ -1513,6 +1525,8 @@ public class Leelaz {
       modelLaunchCommands = List.copyOf(launchCommands);
       CommandLaunchHelper.configureProcessBuilder(processBuilder, launchSpec);
       KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, engineExecutable);
+      foxPdaCompatibility = FoxPdaCompatibility.inspect(launchCommands,
+          processBuilder.directory() == null ? Path.of("").toAbsolutePath() : processBuilder.directory().toPath());
       processBuilder.redirectErrorStream(false);
       if (startupDiagnosticAttempt != null) startupDiagnosticAttempt.capture(processBuilder);
       try {
@@ -15643,6 +15657,15 @@ public class Leelaz {
       } else {
         exactSnapshotRestoreAdmissionContext.set(previous);
       }
+    }
+  }
+
+  void markFoxPdaUnconfirmed(Object owner) {
+    synchronized (engineArbitrationLock()) {
+      ExclusiveGtpSession session = exclusiveGtpSession;
+      if (session == null || session.owner != owner || session.readerBinding != readerStreamBinding) return;
+      session.restoreFailed = true;
+      recordForegroundAnalysisLeaseFailure(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED);
     }
   }
 

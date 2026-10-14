@@ -77,6 +77,82 @@ public final class FoxLiveSession {
   private Object retainedReader;
   private boolean retainedHistory;
   private boolean recoveryAdmission;
+  private final JLabel pdaStatus = new JLabel();
+  private boolean pdaUpdating;
+
+  /** True means Fox consumed this toolbar intent, including refusal and invalid drafts. */
+  public static boolean submitPda(String draft) {
+    FoxLiveSession session = instance;
+    if (session == null || session.engine == null) return false;
+    session.changePda(draft);
+    return true;
+  }
+
+  private void changePda(String draft) {
+    if (restoring || !engineReady) {
+      pdaStatus.setText(text("Fox.pdaNotReady"));
+      return;
+    }
+    double value;
+    try { value = Double.parseDouble(draft); }
+    catch (NumberFormatException invalid) { return; }
+    if (!Double.isFinite(value) || value < -3 || value > 3) return;
+    String reason = engine.pdaUnavailableReason();
+    if (!reason.isEmpty()) {
+      pdaStatus.setText(text(reason));
+      FoxEngineSession owner = engine;
+      onEdt(() -> { if (engine == owner) publishConfirmedPda(owner); });
+      return;
+    }
+    engine.desirePda(value);
+    showPdaIntent();
+    if (Double.compare(value, engine.confirmedPda()) == 0 && !pdaUpdating) return;
+    if (!game.cancelUnwrittenForPda(System.nanoTime())) return;
+    invalidate();
+    schedulePdaUpdate();
+  }
+
+  private void showPdaIntent() {
+    pdaStatus.setText(java.text.MessageFormat.format(text("Fox.pdaState"),
+        Double.toString(engine.desiredPda()), Double.toString(engine.confirmedPda())));
+  }
+
+  private void publishConfirmedPda(FoxEngineSession owner) {
+    String value = Double.toString(owner.confirmedPda());
+    Lizzie.config.txtKataEnginePDA = value;
+    Lizzie.config.chkKataEnginePDA = owner.confirmedPda() != 0;
+    Lizzie.config.uiConfig.put("txt-kata-engine-pda", value);
+    Lizzie.config.uiConfig.put("chk-kata-engine-pda", Lizzie.config.chkKataEnginePDA);
+    LizzieFrame.menu.setUseGfPda(Lizzie.config.chkKataEnginePDA, value);
+  }
+
+  private void schedulePdaUpdate() {
+    if (pdaUpdating || restoring || !engineReady || game.snapshot().pending() != null) return;
+    pdaUpdating = true;
+    FoxEngineSession owner = engine;
+    worker.execute(() -> {
+      try {
+        owner.applyDesiredPda();
+        onEdt(() -> {
+          if (engine != owner) return;
+          pdaUpdating = false;
+          publishConfirmedPda(owner);
+          showPdaIntent();
+          if (Double.compare(owner.desiredPda(), owner.confirmedPda()) != 0) schedulePdaUpdate();
+          else update(game.snapshot());
+        });
+      } catch (Exception failure) {
+        FoxObservation.failure("pda", failure);
+        onEdt(() -> {
+          if (engine != owner) return;
+          pdaUpdating = false;
+          publishConfirmedPda(owner);
+          pdaStatus.setText(text("Fox.pdaFailed"));
+          fail("Fox.pdaFailed");
+        });
+      }
+    });
+  }
 
   private boolean recoveryEngineCurrent() {
     return retainedEngine != null && Lizzie.leelaz == retainedEngine
@@ -145,8 +221,10 @@ public final class FoxLiveSession {
     JScrollPane communication = new JScrollPane(output);
     communication.setBorder(BorderFactory.createTitledBorder(text("Fox.communication")));
     content.add(communication, BorderLayout.CENTER);
-    JPanel statePanel = new JPanel(new GridLayout(6, 1));
+    JPanel statePanel = new JPanel(new GridLayout(7, 1));
     statePanel.add(new JLabel(text("Fox.breadthUnavailable")));
+    pdaStatus.setName("fox-pda-status");
+    statePanel.add(pdaStatus);
     statePanel.add(status);
     statePanel.add(clockStatus);
     statePanel.add(browsingStatus);
@@ -465,6 +543,7 @@ public final class FoxLiveSession {
           onEdt(() -> {
             if (engine == owner && game.snapshot().searchable()) {
               engineReady = true;
+              showPdaIntent();
               update(game.snapshot());
             }
           });
@@ -495,6 +574,11 @@ public final class FoxLiveSession {
       game.reject(); release("Fox.incomplete", false); return;
     }
     if (state.pending() != null) return;
+    if (pdaUpdating) return;
+    if (engineReady && Double.compare(engine.desiredPda(), engine.confirmedPda()) != 0) {
+      schedulePdaUpdate();
+      return;
+    }
     if (state.ownTurn() && !state.clockRefreshed()) {
       if (game.beginClockRefresh(System.nanoTime())) {
         showStatus("Fox.refreshingClock");
@@ -679,6 +763,8 @@ public final class FoxLiveSession {
   private void restored(FoxEngineSession owner, String key, boolean success) {
     drainTranscript();
     if (engine != owner) return;
+    if (engineReady) publishConfirmedPda(owner);
+    pdaUpdating = false;
     engine = null;
     restoring = false;
     ownsBoard = connection != null && (game.snapshot().active() || retainedHistory);
