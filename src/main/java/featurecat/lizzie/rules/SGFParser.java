@@ -984,6 +984,7 @@ public class SGFParser {
     gameInfo.setPlayerWhite(whitePlayer);
     gameInfo.setResult(result);
     gameInfo.setDate(gameProperties.get("DT"));
+    gameInfo.setHandicap(parseHandicapProperty(gameProperties.get("HA")));
     // Rewind to game start
     while (Lizzie.board.previousMove(false))
       ;
@@ -3634,31 +3635,96 @@ public class SGFParser {
         history.getGameInfo() == null ? 0 : history.getGameInfo().getHandicap();
     int[] boardSize = resolveHistoryBoardSize(history);
     stabilizeEligibleSetupSubtree(
-        history.getStart(), declaredHandicap, boardSize[0], boardSize[1]);
+        history.getStart(), null, declaredHandicap, boardSize[0], boardSize[1]);
   }
 
   private static void stabilizeEligibleSetupSubtree(
-      BoardHistoryNode node, int declaredHandicap, int width, int height) {
+      BoardHistoryNode node, Boolean inheritedPlayer, int declaredHandicap, int width, int height) {
     if (node == null) {
       return;
     }
     BoardData data = node.getData();
-    if (data == null || data.isHistoryActionNode() || data.dummy) {
+    if (data == null || (data.isHistoryActionNode() && !data.dummy)) {
       return;
     }
 
-    String explicitPl = data.getProperty("PL");
-    if (!Utils.isBlank(explicitPl)) {
-      applyCurrentPlayerProperty(data, explicitPl);
-    } else if (InitialHandicapSetup.isInitialHandicap(node, declaredHandicap, width, height)) {
-      data.blackToPlay = false;
-      return;
-    } else if (node.previous().isEmpty() && hasRootSetupStoneProperties(data)) {
-      data.blackToPlay = true;
+    Boolean explicitPlayer = validPlayer(data.getProperty("PL"));
+    Boolean effectivePlayer = explicitPlayer == null ? inheritedPlayer : explicitPlayer;
+    if (data.isSnapshotNode()) {
+      Boolean firstPlayer = firstInitialActionPlayer(node);
+      data.blackToPlay = effectivePlayer != null
+          ? effectivePlayer
+          : firstPlayer != null
+              ? firstPlayer
+              : !hasCompletedInitialHandicap(node, declaredHandicap, width, height);
     }
 
     for (BoardHistoryNode child : node.getVariations()) {
-      stabilizeEligibleSetupSubtree(child, declaredHandicap, width, height);
+      stabilizeEligibleSetupSubtree(child, effectivePlayer, declaredHandicap, width, height);
+    }
+  }
+
+  // Turn defaults describe the completed position, not set_free_handicap restore eligibility.
+  private static boolean hasCompletedInitialHandicap(
+      BoardHistoryNode node, int declaredHandicap, int width, int height) {
+    int handicap = declaredHandicap;
+    for (BoardHistoryNode ancestor = node; ancestor != null;
+        ancestor = ancestor.previous().orElse(null)) {
+      BoardData data = ancestor.getData();
+      if ((data.isHistoryActionNode() && !data.dummy)
+          || data.getProperties().containsKey("AW") || data.getProperties().containsKey("AE")) {
+        return false;
+      }
+      String declaration = data.getProperty("HA");
+      if (declaration != null) {
+        int value = parseHandicapProperty(declaration);
+        if (value < 2 || (handicap != 0 && handicap != value)) return false;
+        handicap = value;
+      }
+    }
+    if (handicap < 2 || handicap >= width * height) return false;
+    int blackStones = 0;
+    for (Stone stone : node.getData().stones) {
+      if (stone == Stone.BLACK) blackStones++;
+      else if (stone != Stone.EMPTY) return false;
+    }
+    return blackStones == handicap;
+  }
+
+  private static Boolean validPlayer(String value) {
+    if ("B".equalsIgnoreCase(value)) return true;
+    if ("W".equalsIgnoreCase(value)) return false;
+    return null;
+  }
+
+  private static Boolean firstInitialActionPlayer(BoardHistoryNode node) {
+    BoardHistoryNode next = node.next().orElse(null);
+    while (next != null) {
+      BoardData data = next.getData();
+      if (hasRootSetupStoneProperties(data) || validPlayer(data.getProperty("PL")) != null) {
+        return null;
+      }
+      if (data.isHistoryActionNode() && !data.dummy) {
+        return data.lastMoveColor.isBlack();
+      }
+      next = next.next().orElse(null);
+    }
+    return null;
+  }
+
+  private static void resolveImportedInitialBranches(
+      BoardHistoryList history, BoardHistoryNode parent, int existingChildren) {
+    Boolean inheritedPlayer = null;
+    for (BoardHistoryNode ancestor = parent; ancestor != null;
+        ancestor = ancestor.previous().orElse(null)) {
+      BoardData data = ancestor.getData();
+      if (data.isHistoryActionNode() && !data.dummy) return;
+      if (inheritedPlayer == null) inheritedPlayer = validPlayer(data.getProperty("PL"));
+    }
+    int[] size = resolveHistoryBoardSize(history);
+    for (int i = existingChildren; i < parent.numberOfChildren(); i++) {
+      stabilizeEligibleSetupSubtree(parent.getVariations().get(i), inheritedPlayer,
+          history.getGameInfo().getHandicap(), size[0], size[1]);
     }
   }
 
@@ -3921,6 +3987,8 @@ public class SGFParser {
   private static BoardHistoryList parseValue(
       String value, BoardHistoryList history, boolean isBranch, boolean firstTime) {
 
+    BoardHistoryNode importParent = history.getCurrentHistoryNode();
+    int existingChildren = importParent.numberOfChildren();
     int subTreeDepth = 0;
     // Save the variation step count
     Map<Integer, BoardHistoryNode> subTreeStepMap = new HashMap<Integer, BoardHistoryNode>();
@@ -3957,6 +4025,7 @@ public class SGFParser {
     String blackPlayer = "", whitePlayer = "";
     Double komi = null;
     boolean parsedKomiTag = false;
+    boolean pendingDummy = false;
     // Support unicode characters (UTF-8)
     for (int i = 0; i < value.length(); i++) {
       char c = value.charAt(i);
@@ -4031,7 +4100,9 @@ public class SGFParser {
           tagBuilder = new StringBuilder();
           String tagContent = tagContentBuilder.toString();
           // We got tag, we can parse this tag now.
-          if (tag.equals("B") || tag.equals("W")) {
+          if (tag.equals("DD")) {
+            pendingDummy = "true".equals(tagContent);
+          } else if (tag.equals("B") || tag.equals("W")) {
             moveStart = true;
             addPassForMove = !currentNodeHasSetupSnapshot;
             int[] move = convertSgfPosToCoord(tagContent);
@@ -4046,6 +4117,8 @@ public class SGFParser {
             } else {
               history.place(move[0], move[1], color, newBranch);
             }
+            history.getData().dummy = pendingDummy;
+            pendingDummy = false;
             currentNodeHasMove = true;
             if (newBranch) {
               processPendingPros(history, pendingProps);
@@ -4242,6 +4315,7 @@ public class SGFParser {
     flushPendingSetupMetadataToCurrentNode(history, pendingSetupMetadata);
 
     if (isBranch) {
+      resolveImportedInitialBranches(history, importParent, existingChildren);
       history.toBranchTop();
     } else {
       // Rewind to game start
@@ -4280,6 +4354,8 @@ public class SGFParser {
   }
 
   public static int parseBranch(BoardHistoryList history, String value) {
+    BoardHistoryNode importParent = history.getCurrentHistoryNode();
+    int existingChildren = importParent.numberOfChildren();
     int subTreeDepth = 0;
     // Save the variation step count
     Map<Integer, Integer> subTreeStepMap = new HashMap<Integer, Integer>();
@@ -4297,6 +4373,7 @@ public class SGFParser {
         addPassForMove = true,
         currentNodeHasSetupSnapshot = false;
     boolean inProp = false;
+    boolean pendingDummy = false;
     boolean allowRootSetupOnCurrentNode = false;
     String tag = "";
     StringBuilder tagBuilder = new StringBuilder();
@@ -4380,7 +4457,9 @@ public class SGFParser {
           tagBuilder = new StringBuilder();
           String tagContent = tagContentBuilder.toString();
           // We got tag, we can parse this tag now.
-          if (tag.equals("B") || tag.equals("W")) {
+          if (tag.equals("DD")) {
+            pendingDummy = "true".equals(tagContent);
+          } else if (tag.equals("B") || tag.equals("W")) {
             moveStart = true;
             addPassForMove = !currentNodeHasSetupSnapshot;
             int[] move = convertSgfPosToCoord(tagContent);
@@ -4393,6 +4472,8 @@ public class SGFParser {
             } else {
               history.place(move[0], move[1], color, newBranch);
             }
+            history.getData().dummy = pendingDummy;
+            pendingDummy = false;
             currentNodeHasMove = true;
             if (newBranch) {
               processPendingPros(history, pendingProps);
@@ -4564,6 +4645,7 @@ public class SGFParser {
       }
     }
     flushPendingSetupMetadataToCurrentNode(history, pendingSetupMetadata);
+    resolveImportedInitialBranches(history, importParent, existingChildren);
     history.toBranchTop();
     return history.getCurrentHistoryNode().numberOfChildren() - 1;
   }

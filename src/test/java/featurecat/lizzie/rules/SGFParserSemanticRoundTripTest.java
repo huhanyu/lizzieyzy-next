@@ -31,6 +31,142 @@ class SGFParserSemanticRoundTripTest {
   @TempDir Path tempDirectory;
 
   @ParameterizedTest
+  @CsvSource(delimiter = '|', value = {
+      "(;SZ[5];W[cc])|false", "(;SZ[5];B[cc])|true",
+      "(;SZ[5];W[])|false", "(;SZ[5];B[])|true",
+      "(;SZ[5]AB[aa][ee];W[cc])|false",
+      "(;SZ[5]AB[aa]AW[ee];W[cc])|false",
+      "(;SZ[5]PL[B]AB[aa];W[cc])|true",
+      "(;SZ[5]HA[2]AB[aa][ee];B[cc])|true",
+      "(;SZ[5]HA[3]AB[aa][ee];W[cc])|false",
+      "(;SZ[5]HA[2]AB[aa][ee])|false",
+      "(;SZ[5]HA[3]AB[aa][ee])|true", "(;SZ[5]HA[2])|true",
+      "(;SZ[5]AB[aa][ee])|true",
+      "(;SZ[5](;W[cc])(;B[bb]))|false",
+      "(;SZ[5](;B[cc])(;W[bb]))|true",
+      "(;SZ[5];C[note]TR[aa];W[cc])|false",
+      "(;SZ[5];AB[aa];W[cc])|true",
+      "(;SZ[5]AB[aa];AE[aa];W[cc])|true",
+      "(;SZ[5];PL[W];W[cc])|true"
+  })
+  void initialTurnUsesLocalFirstActionAfterExplicitPlayer(String sgf, boolean black)
+      throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      BoardHistoryList parsed = SGFParser.parseSgf(sgf, true);
+      assertEquals(black, parsed.getStart().getData().blackToPlay, sgf);
+      Lizzie.board.setHistory(parsed);
+      BoardHistoryList first = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+      assertTreeSemanticsEqual(parsed, first);
+      assertEquals(black ? "B" : "W", first.getStart().getData().getProperty("PL"));
+      Lizzie.board.setHistory(first);
+      assertTreeSemanticsEqual(first, SGFParser.parseSgf(SGFParser.saveToString(false), true));
+    }
+  }
+
+  @Test
+  void explicitPlayerPersistsAcrossSetupUntilReplaced() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      BoardHistoryList history = SGFParser.parseSgf(
+          "(;SZ[5]PL[B];AB[aa][ee];PL[W];W[cc])", true);
+      BoardHistoryNode root = history.getStart();
+      BoardHistoryNode setup = root.next().orElseThrow();
+      BoardHistoryNode player = setup.next().orElseThrow();
+      assertTrue(root.getData().blackToPlay);
+      assertTrue(setup.getData().blackToPlay);
+      assertFalse(player.getData().blackToPlay);
+      assertEquals(0, setup.getData().moveNumber);
+      assertEquals(Stone.WHITE, player.next().orElseThrow().getData().lastMoveColor);
+    }
+  }
+
+  @Test
+  void initialSetupEntrypointsAgreeAndDetachedDoesNotTouchLiveHistory() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      String sgf = "(;SZ[5]HA[3];C[setup]AB[aa]AW[ee];W[];B[cc])";
+      BoardHistoryList live = Lizzie.board.getHistory();
+      BoardHistoryList expected = SGFParser.parseSgf(sgf, true);
+      assertSame(live, Lizzie.board.getHistory());
+      assertTrue(expected.getStart().getData().blackToPlay);
+      assertFalse(expected.getStart().next().orElseThrow().getData().blackToPlay);
+      assertTrue(SGFParser.loadFromString(sgf, false));
+      assertTreeSemanticsEqual(expected, Lizzie.board.getHistory());
+      assertTrue(SGFParser.loadFromStringforedit(sgf));
+      assertTreeSemanticsEqual(expected, Lizzie.board.getHistory());
+      Path file = tempDirectory.resolve("initial-turn.sgf");
+      Files.writeString(file, sgf);
+      assertTrue(SGFParser.load(file.toString(), false, false));
+      javax.swing.SwingUtilities.invokeAndWait(() -> {});
+      assertTreeSemanticsEqual(expected, Lizzie.board.getHistory());
+    }
+  }
+
+  @Test
+  void importedInitialBranchesResolveLocallyWithoutRejudgingExistingPosition() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[5];B[bb])", true);
+      SGFParser.parseBranch(history, ";AB[aa];W[cc]");
+      BoardHistoryNode setup = history.getStart().getVariation(1).orElseThrow();
+      assertTrue(history.getStart().getData().blackToPlay);
+      assertFalse(setup.getData().blackToPlay);
+      assertEquals(Stone.WHITE, setup.next().orElseThrow().getData().lastMoveColor);
+      BoardHistoryList inherited = SGFParser.parseSgf("(;SZ[5]PL[B])", true);
+      SGFParser.parseBranch(inherited, ";AB[aa];W[cc]");
+      assertTrue(inherited.getStart().next().orElseThrow().getData().blackToPlay);
+      BoardHistoryList midgame = SGFParser.parseSgf("(;SZ[5];B[bb];W[dd])", true);
+      midgame.next();
+      midgame.next();
+      SGFParser.parseBranch(midgame, ";AB[aa];W[cc]");
+      BoardHistoryNode midSetup = midgame.getStart().next().orElseThrow()
+          .next().orElseThrow().next().orElseThrow();
+      assertTrue(midSetup.getData().blackToPlay);
+    }
+  }
+
+  @Test
+  void setupBoundariesResolveIndependentlyInEveryInitialVariation() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      BoardHistoryList history = SGFParser.parseSgf(
+          "(;SZ[5](;AB[aa];C[transparent];W[cc])(;AW[ee];B[bb]))", true);
+      BoardHistoryNode root = history.getStart();
+      assertTrue(root.getData().blackToPlay);
+      assertFalse(root.getVariation(0).orElseThrow().getData().blackToPlay);
+      assertTrue(root.getVariation(1).orElseThrow().getData().blackToPlay);
+      BoardHistoryList removed = SGFParser.parseSgf(
+          "(;SZ[5]AB[aa];AE[aa];W[cc])", true);
+      assertTrue(removed.getStart().getData().blackToPlay);
+      assertFalse(removed.getStart().next().orElseThrow().getData().blackToPlay);
+    }
+  }
+
+  @Test
+  void dummyPassCannotSupplyInitialTurnEvidence() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      String sgf = "(;SZ[5];DD[true]W[])";
+      BoardHistoryList detached = SGFParser.parseSgf(sgf, true);
+      assertTrue(detached.getStart().getData().blackToPlay);
+      assertTrue(detached.getStart().getVariation(0).orElseThrow().getData().dummy);
+      assertTrue(SGFParser.loadFromString(sgf, false));
+      assertTrue(Lizzie.board.getHistory().getStart().getData().blackToPlay);
+      assertTrue(Lizzie.board.getHistory().getStart().getVariation(0).orElseThrow().getData().dummy);
+    }
+  }
+
+  @Test
+  void completedHandicapDefaultDoesNotRequireEngineRestoreEligibility() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      BoardHistoryList staged = SGFParser.parseSgf("(;SZ[5]HA[2];AB[aa];AB[ee])", true);
+      BoardHistoryNode partial = staged.getStart().next().orElseThrow();
+      BoardHistoryNode complete = partial.next().orElseThrow();
+      assertTrue(partial.getData().blackToPlay);
+      assertFalse(complete.getData().blackToPlay);
+      assertFalse(InitialHandicapSetup.isInitialHandicap(complete, 2, SIZE, SIZE));
+      BoardHistoryList invalidPl = SGFParser.parseSgf(
+          "(;SZ[5]HA[2]PL[invalid]AB[aa][ee])", true);
+      assertFalse(invalidPl.getStart().getData().blackToPlay);
+    }
+  }
+
+  @ParameterizedTest
   @CsvSource({"file, true", "file, false", "string, true", "string, false"})
   void handicapImportPreservesSavedAnalysisUntilNewStreamExceedsItsVisits(
       String entrypoint, boolean readKomi) throws Exception {
@@ -685,9 +821,9 @@ class SGFParserSemanticRoundTripTest {
       assertFalse(
           InitialHandicapSetup.isInitialHandicap(conflictNode, 5, 19, 19),
           "count conflict (2 stones vs HA=5) must not be recognized as initial handicap");
-      assertTrue(
+      assertFalse(
           conflictNode.getData().blackToPlay,
-          "unrecognized setup node must not be normalized to White");
+          "first White move determines turn independently of handicap eligibility");
 
       // 2. Setup with AW (preset white stone)
       String withAw = "(;SZ[19]HA[2]KM[0.5];AB[pd][dp]AW[dd];W[fq])";
@@ -697,9 +833,9 @@ class SGFParserSemanticRoundTripTest {
       assertFalse(
           InitialHandicapSetup.isInitialHandicap(awNode, 2, 19, 19),
           "setup with AW must not be recognized as initial handicap");
-      assertTrue(
+      assertFalse(
           awNode.getData().blackToPlay,
-          "unrecognized setup with AW must not be normalized to White");
+          "mixed setup can be White to play without handicap eligibility");
 
       // 3. Setup with AE
       String withAe = "(;SZ[19]HA[2]KM[0.5];AB[pd][dp]AE[dd];W[fq])";
@@ -729,7 +865,7 @@ class SGFParserSemanticRoundTripTest {
       assertFalse(
           InitialHandicapSetup.isInitialHandicap(emptyRoot, 7, 19, 19),
           "empty root must not be recognized as initial handicap");
-      assertTrue(emptyRoot.getData().blackToPlay, "empty root must remain Black to play");
+      assertFalse(emptyRoot.getData().blackToPlay, "first White move determines empty-root turn");
     }
   }
 

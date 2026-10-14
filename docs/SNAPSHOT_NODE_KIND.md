@@ -83,7 +83,23 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
   `EngineFollowController` 排队并使用既有 exact snapshot restore 同步最终 root setup；
   setup stones 不能进入普通引擎手顺重放。
 - SGF 中“首手前但非 root 的独立 setup 节点”必须保留为独立 `SNAPSHOT` 子节点，`moveNumber` 保持 `0`，不能并入 root setup。
-- 根节点 setup / handicap 的 `side-to-play` 只由显式 `PL` 或固定默认规则决定。
+- SGF 初始行棋方统一规则（2026-10-14 已确认设计；01 实现导入与未编辑往返，02 的编辑稳定性与真实引擎验收待完成）：
+  - 范围是 SGF 中首个真实 `MOVE/PASS` 之前的初始局面，包括根节点与独立初始 setup `SNAPSHOT`；不扩展 ReadBoard 轮次推断或中盘 setup 规则。
+  - 在导入阶段按以下优先级确定各初始局面的 `blackToPlay / side-to-play`：
+    1. 当前局面有效的显式 `PL[B] / PL[W]`，包括开局过程中仍有效的上游指定。
+    2. 当前局面主线上的首个真实 `MOVE/PASS` 的颜色。
+    3. 已证明的初始让子局面默认白先：有效 `HA >= 2` 与实际已完成的黑方设置子数量一致，没有白方设置子或其他冲突；不能仅凭 `HA` 或仅数棋子。
+    4. 其余情况默认黑先。
+  - 主线按 SGF 的第一分支确定；从当前局面沿主线取证，旁支不投票、不覆盖主线，也不随浏览选择改变判断。真实 PASS 与真实落子具有相同行棋证据效力，dummy PASS 不作为首手证据。
+  - 首手证据可以穿过纯注释、标记节点，但不能跨越新的摆子、删子或显式 `PL` 节点向前反推。独立初始局面分别判断，不能把后续摆子局面的轮次提前应用到尚未摆子的空根节点。
+  - 显式 `PL` 沿同一路径、尚未发生真实动作的开局过程向后延续；单纯摆子不消耗轮次，后续新的 `PL` 替代此前指定。默认值或推断值不能冒充上游显式指定，阻止后续局面独立判断。
+  - 显式 `PL` 与后续首手冲突时保留指定，回放仍执行谱内原始 `B/W`；缺少有效 `PL` 时，主线首手证据优先于让子默认，即使 `HA` 与盘面不匹配也不能阻挡这项补全。不能改写落子颜色、让子声明或手数，不能补造 PASS。
+  - 文件、字符串、编辑态和 detached 解析入口采用同一套规则；轮次在解析阶段统一确定，不依赖添加子节点时顺带改写父节点轮次的副作用。导入中的初始分支局面遵守同一规则；在已有真实动作之后导入的分支不属于本规则范围。
+  - 导入完成后，浏览分支、提升主线、删除首手均不自动重判已确定的初始行棋方；用户通过现有执子方切换操作明确修改。重新导入外部棋谱才重新执行导入规则，内部编辑态重建必须保留当前已确定的轮次。
+  - 保存时为对应初始局面显式写出已确定的 `PL`，包括推断值、默认值和用户修改值；保存重开及重复保存保持盘面、轮次、真实手顺与独立 setup 边界稳定。
+  - 历史导航、显示与引擎恢复只消费已确定的轮次，不另行推断。初始行棋方解析与引擎让子恢复资格分别判断；不满足 `set_free_handicap` 条件不代表不能白先，本次不放宽该命令的资格、能力或恢复确认条件。
+  - 不按文件来源、文件名、某个固定让子数量或固定落点增加例外；上述 `HA >= 2` 是 SGF 让子声明的通用定义，不是针对样本的数量特判。
+  - 语义依据：SGF FF[4] 的 [PL](https://www.red-bean.com/sgf/properties.html#PL)、[HA](https://www.red-bean.com/sgf/go.html#HA) 定义及用户指南的[第一分支为主线](https://www.red-bean.com/sgf/user_guide/index.html#style)。缺少 `PL` 时按主线补全及导入后保持轮次，是本项目已确认的产品规则，不宣称是规范要求的唯一策略。
 - 根节点 `AB/AW` 属性顺序不参与 `side-to-play` 判定。
 - 中盘 `setup SNAPSHOT` 上的显式 `PL` 直接决定该 `SNAPSHOT` 的 `blackToPlay / side-to-play`。
 - 这个 `PL` 语义随 `SNAPSHOT` 锚点保存，在后续导航、`restoreMoveNumber(...)`、所有 `loadEngine=true` 恢复中持续生效。
@@ -152,7 +168,7 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 - direct local engine 即使没有可信 cwd，仍可使用安全共享绝对路径；已知 SSH、WSL、Wine、container 或其他隔离文件系统 transport 不得使用 host `loadsgf`。仅当 frozen history 证明初始让子（HA 与实际黑子一致、无此前真实动作及冲突 setup/PL）且当前 admitted reader 完成 `set_free_handicap` 能力发现时，允许通过实际坐标的 in-band handicap 命令恢复，再重放真实 tail。空黑先根节点只清空，不提前应用后续让子。其他隔离 transport 的任意快照继续 fail-closed；Remote Compute 的任意快照保留既有 in-band 路径。
 - 双引擎 cwd 相同且安全绝对路径可用时共享同一物理文件；cwd 不同时可各自持有独立文件。所有本轮物理文件的删除边界覆盖全部 target 的 ACK/error/timeout/late-response retirement 以及真实 tail replay，首个 ACK 不能提前删除任一文件。
 - 安全路径选择只改变物理文件地址与 GTP 参数；SGF 语义仍由 frozen plan 唯一生成，必须保留 `SZ`、可用 `KM`、`PL`、`AB/AW` 与 rectangular / extended-coordinate 行为。
-- Board primary owner 在冻结目标时同时冻结锚点、让子来源与真实 tail；执行时才绑定 admission，不重新读取可变历史。独立初始让子 setup 无显式 PL 时默认白先，保持独立 SNAPSHOT、moveNumber=0；显式 PL 优先，空根节点不改为白先。所有 target 的 capability/路径 preflight 必须先于任何棋盘 mutation。
+- Board primary owner 在冻结目标时同时冻结锚点、初始行棋方、让子来源与真实 tail；执行时才绑定 admission，不重新读取可变历史。SGF 初始行棋方在导入时按本节统一规则确定，恢复只消费冻结结果。独立初始 setup 保持独立 `SNAPSHOT`、`moveNumber=0`，不得把后续摆子及其轮次提前应用到空根节点。所有 target 的 capability/路径 preflight 必须先于任何棋盘 mutation。
 - `exact snapshot restore` 的 `loadsgf` 生命周期按固定顺序执行：
   1. `loadsgf` 临时 SGF 准备完成后，命令先入队再发出。
   2. 命令发出前，当前次 `loadsgf` 的 pending response handler 与 dispatch 归属绑定完成，并持续到退休或完成。
@@ -626,7 +642,7 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
 4. 棋盘同步工具不会生成伪 `PASS`。
 5. 所有依赖真实手顺的功能都把 `SNAPSHOT` 当作局面锚点处理。
 6. 所有 `loadEngine=true` 的恢复入口都通过最近 `SNAPSHOT` 恢复静态局面，并得到与 `SNAPSHOT` 一致的引擎盘面。
-7. 根节点 setup / handicap 的 `side-to-play` 由显式 `PL` 或固定默认规则稳定决定。
+7. SGF 初始行棋方遵守 setup 契约中的统一解析优先级、主线取证范围与导入后稳定性要求；新增验收场景见下节。
 8. `contribute` 的 `initMoveList` / `moveList` 衔接只消费下一真实动作。
 9. 胜率图命中按实际绘制点定位，同手数重叠节点也能命中图上可见节点。
 10. 中盘静态 `SNAPSHOT` 导出 SGF 后再 round-trip，盘面、`side-to-play`、历史边界保持一致。
@@ -672,3 +688,23 @@ save-load movelist 只保存和恢复真实 `MOVE/PASS` 序列。
     独占的 analysis payload 不能在转换后遗留 board flag 或伪造 root `DZ`。
 47. 设置模式期间不发送普通引擎落子；退出时通过既有 exact snapshot restore 异步同步最终
     root setup，且 setup stones 不进入 movelist、save-load movelist 或普通引擎重放。
+
+### SGF 初始行棋方修复验收
+
+以下是 2026-10-14 已确认的验收要求。实现基线为 `3bb428bb6fa4cf03495be708fbaa6a9b628ccbec`；01 覆盖导入、初始分支及未编辑往返，聚焦回归见 `SGFParserSemanticRoundTripTest`、`BoardNodeKindHistoryPipelineTest`，原谱实际窗口入口为 `SgfUiAcceptanceIT.originalInitialTurnsSurviveOpenNavigateSaveAndReopen`。运行结果记录在对应本地票据；导入后编辑冻结、显式切换和真实引擎最终验收由 02 负责，未在 01 中声明通过。
+
+| 场景 | 必须观察到的结果 |
+| --- | --- |
+| 用户提供的两份无 `HA/PL`、根设置子不同但白方首手明确的原谱 | 两份首手前局面均为白先；第一份保留两颗黑子，第二份保留黑白各两颗设置子；原始首手、后续手顺及分析 payload 按既有导入契约保留。原谱只用于本地验收，不纳入仓库。 |
+| 用户提供的野狐对照谱：根元信息 → 独立让子 setup → 白方首手 | 空根节点黑先，摆子节点白先；保留独立 `SNAPSHOT`，摆子不消耗手数。 |
+| 无 `PL` 的初始局面，主线首手分别为 `B[...]`、`W[...]`、`B[]`、`W[]` | 初始行棋方与该真实动作颜色一致；空根节点直接接白方首手时也应白先。dummy PASS 不提供首手证据。 |
+| `(;HA[2]AB[dp][pd];B[dd])`；以及 `HA` 与实际设置子不匹配但后续有明确首手 | 采用主线首手颜色，不被让子默认或引擎让子资格拒绝覆盖；保留原 `HA`。 |
+| 同一初始局面主线白先、旁支黑先；再互换两种颜色构造另一份输入 | 每份输入采用自己的第一分支首手颜色；浏览旁支不改变已确定的初始行棋方。 |
+| `(;PL[B];AB[dp][pd];W[dd])`，以及开局过程中后续新的 `PL[W]` | 前者摆子后仍黑先，原始白棋首手照常回放；后者从新指定处采用白先，不向前改写此前局面。 |
+| 主线首手之前加入纯注释、标记；或另插摆子、删子、显式 `PL` 节点 | 前者不阻断首手取证；后者阻断向更早局面的反推，各初始局面独立判断。 |
+| 没有 `PL`、没有后续手顺：完整且匹配的初始让子、普通摆子、`HA` 数量不匹配、仅有 `HA` 的空盘 | 只有已证明的初始让子局面默认白先，其余默认黑先；不新增选择执子方的导入弹窗。 |
+| 等价输入交换 `AB/AW/PL` 属性顺序；分别经文件、字符串、编辑态与 detached 入口导入 | 盘面与行棋方一致，setup 边界一致；detached 入口继续保持既有解析隔离。 |
+| 导入后浏览分支、提升主线、删除首手；随后显式切换执子方 | 前三者保持已确定的初始行棋方，显式切换才改变它；内部编辑态重建不重新猜测。 |
+| 导入 → 导航 → 引擎恢复 → 保存重开 → 再次保存 | 对应初始局面、引擎盘面与行棋方一致，输出 `PL` 保留已确定轮次；手数、真实 PASS、独立 setup 边界及重复保存稳定性不退化。 |
+
+验收必须替换旧的“`AB[aa];W[bb]` 无 `PL` 仍黑先并保存为 `PL[B]`”断言；保留有效的引擎让子资格拒绝断言，但将其与初始行棋方断言分开。实际用户样本与合成输入均须通过生产导入路径验证，不能仅验证新的内部判断函数。

@@ -3391,26 +3391,26 @@ class BoardNodeKindHistoryPipelineTest {
   }
 
   @Test
-  void rootSetupWithoutPlKeepsDefaultBlackToPlayAcrossRoundTrip() throws Exception {
+  void rootSetupWithoutPlKeepsInferredWhiteToPlayAcrossRoundTrip() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
       BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]AB[aa];W[bb])", false);
       history.getGameInfo().setDate("2020-01-02");
       Lizzie.board.setHistory(history);
 
-      assertTrue(
+      assertFalse(
           history.getStart().getData().blackToPlay,
-          "root setup without PL should keep the fixed default side to play.");
+          "root setup should use the first real White action.");
 
       String exported = SGFParser.saveToString(false);
       BoardData roundTripRoot = SGFParser.parseSgf(exported, false).getStart().getData();
 
       assertTrue(
-          exported.contains("PL[B]"), "root export should materialize default black-to-play.");
+          exported.contains("PL[W]"), "root export should materialize inferred white-to-play.");
       assertEquals(
-          "B", roundTripRoot.getProperty("PL"), "round-trip root should keep materialized PL.");
-      assertTrue(
-          roundTripRoot.blackToPlay, "round-trip root should keep the fixed default side to play.");
+          "W", roundTripRoot.getProperty("PL"), "round-trip root should keep materialized PL.");
+      assertFalse(
+          roundTripRoot.blackToPlay, "round-trip root should keep the resolved side to play.");
       assertEquals(Stone.BLACK, roundTripRoot.stones[Board.getIndex(0, 0)]);
     } finally {
       env.close();

@@ -316,6 +316,116 @@ public final class SgfUiAcceptanceIT {
     assertNotEquals(firstResult.getParent(), secondResult.getParent());
   }
 
+  @Test
+  void originalInitialTurnsSurviveOpenNavigateSaveAndReopen() throws Exception {
+    DesktopProbeProcess.requireDisplay();
+    for (int index = 0; index < 3; index++) {
+      String input = System.getProperty("lizzie.initialTurn.original." + index);
+      assertTrue(input != null && Files.isRegularFile(Path.of(input)),
+          "Supply the exact local original with -Dlizzie.initialTurn.original." + index);
+      Path result = DesktopProbeProcess.run(SgfUiAcceptanceIT.class,
+          "initial-turn-original-" + index, List.of(),
+          List.of("initial-turn", input, Integer.toString(index)), 120);
+      String evidence = Files.readString(result);
+      assertTrue(evidence.contains("result=PASS"), evidence);
+      for (String image : List.of("root.png", "setup.png", "first-action.png", "reopened.png")) {
+        assertTrue(Files.isRegularFile(result.getParent().resolve(image)), image);
+      }
+    }
+  }
+
+  private static void runInitialTurn(Path input, int index, Path work, Path result)
+      throws Exception {
+    Files.createDirectories(work);
+    initializeProfile(work, input.getParent());
+    System.setProperty("lizzie.work.dir", work.toString());
+    String sourceHash = sha256(input);
+    Robot robot = robot();
+    startApplication(result);
+    openSelectedFile(robot, input);
+    await(() -> Board.boardWidth == 19 && Lizzie.board.getHistory().getStart().hasVariations(),
+        Deadline.after(Duration.ofSeconds(15)), "original history adoption");
+    BoardHistoryList history = Lizzie.board.getHistory();
+    String encoding = featurecat.lizzie.util.EncodingDetector.detect(input.toString());
+    BoardHistoryList detached = SGFParser.parseSgf(Files.readString(input,
+        java.nio.charset.Charset.forName(encoding.equals("WINDOWS-1252") ? "GB18030" : encoding)), true);
+    assertTrue(history == Lizzie.board.getHistory(), "detached parsing must not adopt history");
+    assertNodeSemanticsEqual(detached.getStart(), history.getStart());
+    edt(() -> { while (Lizzie.board.previousMove(false)) {} return null; });
+    BoardHistoryNode root = history.getStart();
+    assertEquals(index == 2, root.getData().blackToPlay);
+    assertEquals(index == 2 ? 0L : 2L,
+        Arrays.stream(root.getData().stones).filter(s -> s == Stone.BLACK).count());
+    assertEquals(index == 1 ? 2L : 0L,
+        Arrays.stream(root.getData().stones).filter(s -> s == Stone.WHITE).count());
+    captureInitialTurn(robot, result, "root");
+    if (index == 2) edt(() -> { assertTrue(Lizzie.board.nextMove(false)); return null; });
+    BoardHistoryNode setup = history.getCurrentHistoryNode();
+    assertEquals(BoardNodeKind.SNAPSHOT, setup.getData().getNodeKind());
+    assertFalse(setup.getData().blackToPlay);
+    assertEquals(0, setup.getData().moveNumber);
+    requireStone(setup.getData(), "dp", Stone.BLACK);
+    requireStone(setup.getData(), "pd", Stone.BLACK);
+    if (index == 1) {
+      requireStone(setup.getData(), "dd", Stone.WHITE);
+      requireStone(setup.getData(), "pp", Stone.WHITE);
+    }
+    captureInitialTurn(robot, result, "setup");
+    edt(() -> { assertTrue(Lizzie.board.nextMove(false)); return null; });
+    assertMove(history.getCurrentHistoryNode(), Stone.WHITE,
+        new String[] {"qf", "nc", "cd"}[index]);
+    assertEquals(1, history.getData().moveNumber);
+    captureInitialTurn(robot, result, "first-action");
+    edt(() -> { assertTrue(Lizzie.board.previousMove(false)); return null; });
+    assertTrue(setup == history.getCurrentHistoryNode());
+    assertFalse(history.getData().blackToPlay);
+    if (index == 2) {
+      edt(() -> { assertTrue(Lizzie.board.previousMove(false)); return null; });
+      assertTrue(root == history.getCurrentHistoryNode());
+      assertTrue(history.getData().blackToPlay);
+      edt(() -> { assertTrue(Lizzie.board.nextMove(false)); return null; });
+      assertTrue(setup == history.getCurrentHistoryNode());
+    }
+    Path saved = result.getParent().resolve("unedited.sgf");
+    JFileChooser save = openSaveChooser(robot);
+    edt(() -> { save.setSelectedFile(saved.toFile()); save.approveSelection(); return null; });
+    await(() -> Files.isRegularFile(saved), Deadline.after(Duration.ofSeconds(15)), "saved original");
+    openSelectedFile(robot, saved);
+    await(() -> Lizzie.board.getHistory() != history,
+        Deadline.after(Duration.ofSeconds(15)), "saved history adoption");
+    assertNodeSemanticsEqual(history.getStart(), Lizzie.board.getHistory().getStart());
+    edt(() -> { while (Lizzie.board.previousMove(false)) {} return null; });
+    assertEquals(index == 2, Lizzie.board.getData().blackToPlay);
+    captureInitialTurn(robot, result, "reopened");
+    assertEquals(sourceHash, sha256(input), "original must remain unchanged");
+    Files.writeString(result, "result=PASS\ninput=" + input + "\nsource.sha256=" + sourceHash
+        + "\npid=" + ProcessHandle.current().pid() + "\ndisplay=" + System.getenv("DISPLAY")
+        + "\nfile-detached.tree=true\nroot.black=" + root.getData().blackToPlay
+        + "\nsetup.black=false\nsetup.moveNumber=0\nfirst.color=W\nunedited.roundtrip=true\n");
+    clickMenuAction(robot, "menu.exit", Duration.ofSeconds(10));
+  }
+
+  private static void openSelectedFile(Robot robot, Path file) throws Exception {
+    BoardHistoryList previous = Lizzie.board.getHistory();
+    clickMenuAction(robot, "files.open", Duration.ofSeconds(15));
+    await(() -> visibleChooser() != null, Deadline.after(Duration.ofSeconds(15)), "open chooser");
+    JFileChooser chooser = visibleChooser();
+    edt(() -> { chooser.setSelectedFile(file.toFile()); chooser.approveSelection(); return null; });
+    await(() -> Lizzie.board.getHistory() != previous,
+        Deadline.after(Duration.ofSeconds(15)), "file imported through chooser");
+    edt(() -> null);
+  }
+
+  private static void captureInitialTurn(Robot robot, Path result, String phase) throws Exception {
+    edt(() -> { Lizzie.frame.refresh(); return null; });
+    robot.waitForIdle();
+    Thread.sleep(200);
+    javax.imageio.ImageIO.write(robot.createScreenCapture(
+        edt(() -> Lizzie.frame.getBounds())), "png", result.getParent().resolve(phase + ".png").toFile());
+    DesktopProbeProcess.phase(result, phase + " turn=" + Lizzie.board.getData().blackToPlay
+        + " moveNumber=" + Lizzie.board.getData().moveNumber);
+  }
+
   private static void assertSessionOneEvidence(Map<String, String> records) {
     for (String key :
         Set.of(
@@ -363,6 +473,9 @@ public final class SgfUiAcceptanceIT {
     Path result =
         args.length == 0 ? null : Path.of(args[args.length - 1]).toAbsolutePath().normalize();
     try {
+      if (args.length == 5 && "initial-turn".equals(args[0])) {
+        runInitialTurn(Path.of(args[1]), Integer.parseInt(args[2]), Path.of(args[3]), result);
+      } else
       if (args.length == 4 && "session-1".equals(args[0])) {
         runSessionOne(
             Path.of(args[1]).toAbsolutePath().normalize(),
