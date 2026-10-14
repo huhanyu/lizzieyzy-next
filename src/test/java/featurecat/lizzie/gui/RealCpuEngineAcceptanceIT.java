@@ -152,11 +152,9 @@ public final class RealCpuEngineAcceptanceIT {
         assertEquals(Set.of("D4", "Q16"), responseCoordinates(black));
         assertEquals(kind.equals("mixed") ? Set.of("D16", "Q4") : Set.of(), responseCoordinates(white));
         Path trace = LoggingRuntime.current().orElseThrow().logsDirectory().resolve("engine-trace.log");
-        LoggingRuntime.current().orElseThrow().awaitIdle(10, TimeUnit.SECONDS);
         long offset = Files.size(trace);
         real.sendCommand("showboard");
-        await(() -> { LoggingRuntime.current().orElseThrow().awaitIdle(10, TimeUnit.SECONDS);
-          return Files.readString(trace).substring((int) offset).contains("Next player"); },
+        await(() -> Files.readString(trace).substring((int) offset).contains("Next player"),
             Deadline.after(POSITION_BUDGET), "engine side-to-play response");
         String boardResponse = Files.readString(trace).substring((int) offset);
         assertTrue(boardResponse.matches("(?s).*Next player[^\\n]*[Ww](?:hite)?.*"), boardResponse);
