@@ -224,16 +224,83 @@ class SGFParserSemanticRoundTripTest {
     }
   }
 
-  @Test
-  void dummyPassCannotSupplyInitialTurnEvidence() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"", ";AB[aa]AW[ee]"})
+  void serializedDummySiblingPreservesRealMoveAndPassAcrossParsers(String setup) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      String sgf = "(;SZ[5];DD[true]W[])";
+      Board board = Lizzie.board;
+      assertTrue(SGFParser.loadFromStringforedit("(;SZ[5]" + setup + ")"));
+      if (!setup.isEmpty()) board.nextMove(false);
+      board.pass(Stone.BLACK, false, true);
+      board.previousMove(false);
+      board.getHistory().place(2, 2, Stone.WHITE, true);
+      board.getHistory().getData().comment = "real white move";
+      board.getHistory().getData().engineName = "KataGo";
+      board.getHistory().getData().setPlayouts(123);
+      board.getHistory().getData().analysisHeaderSlots = 3;
+      board.getHistory().pass(Stone.BLACK);
+      BoardHistoryList expected = board.getHistory();
+      String saved = SGFParser.saveToString(false);
+      assertTrue(saved.contains("(;;DD[true])(;W[cc]"), saved);
+
+      for (int round = 0; round < 2; round++) {
+        BoardHistoryList detached = SGFParser.parseSgf(saved, true);
+        assertSame(expected, board.getHistory(), "detached import leaves the live tree alone");
+        assertTreeSemanticsEqual(expected, detached);
+        assertDummySiblingAnalysis(detached, !setup.isEmpty());
+        assertTrue(detached.getStart().getData().blackToPlay);
+        assertTrue(SGFParser.loadFromString(saved, false));
+        assertTreeSemanticsEqual(expected, board.getHistory());
+        assertDummySiblingAnalysis(board.getHistory(), !setup.isEmpty());
+        assertTrue(SGFParser.loadFromStringforedit(saved));
+        assertTreeSemanticsEqual(expected, board.getHistory());
+        assertDummySiblingAnalysis(board.getHistory(), !setup.isEmpty());
+        expected = board.getHistory();
+        saved = SGFParser.saveToString(false);
+      }
+
+      BoardHistoryList branch = SGFParser.parseSgf("(;SZ[5]" + setup + ")", true);
+      if (!setup.isEmpty()) branch.next();
+      SGFParser.parseBranch(branch, saved.substring(saved.indexOf("(;;DD[true])")));
+      assertTreeSemanticsEqual(expected, branch);
+    }
+  }
+
+  private static void assertDummySiblingAnalysis(BoardHistoryList history, boolean independentSetup) {
+    BoardHistoryNode parent = history.getStart();
+    if (independentSetup) parent = parent.getVariation(0).orElseThrow();
+    BoardData white = parent.getVariation(1).orElseThrow().getData();
+    assertEquals("KataGo", white.engineName);
+    assertEquals(123, white.getPlayouts());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"W[]", "W[cc]", "B[]", "B[cc]"})
+  void dummyPassCannotSupplyInitialTurnEvidence(String action) throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      String sgf = "(;SZ[5];DD[true]" + action + ")";
       BoardHistoryList detached = SGFParser.parseSgf(sgf, true);
       assertTrue(detached.getStart().getData().blackToPlay);
       assertTrue(detached.getStart().getVariation(0).orElseThrow().getData().dummy);
+      assertEquals(2, detached.getStart().numberOfChildren());
+      BoardData real = detached.getStart().getVariation(1).orElseThrow().getData();
+      assertFalse(real.dummy);
+      assertEquals(action.startsWith("B") ? Stone.BLACK : Stone.WHITE, real.lastMoveColor);
+      assertEquals(action.endsWith("[]") ? BoardNodeKind.PASS : BoardNodeKind.MOVE,
+          real.getNodeKind());
+      assertEquals(1, real.moveNumber);
       assertTrue(SGFParser.loadFromString(sgf, false));
-      assertTrue(Lizzie.board.getHistory().getStart().getData().blackToPlay);
-      assertTrue(Lizzie.board.getHistory().getStart().getVariation(0).orElseThrow().getData().dummy);
+      assertTreeSemanticsEqual(detached, Lizzie.board.getHistory());
+      assertTrue(SGFParser.loadFromStringforedit(sgf));
+      assertTreeSemanticsEqual(detached, Lizzie.board.getHistory());
+      BoardHistoryList branch = SGFParser.parseSgf("(;SZ[5])", true);
+      SGFParser.parseBranch(branch, ";DD[true]" + action);
+      assertTreeSemanticsEqual(detached, branch);
+      for (int round = 0; round < 2; round++) {
+        BoardHistoryList reopened = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+        assertTreeSemanticsEqual(detached, reopened);
+        Lizzie.board.setHistory(reopened);
+      }
     }
   }
 

@@ -56,6 +56,8 @@ ReadBoard 协议里的 `pass` 行在自动落子/交换顺序链路中表示用�
 
 真实 `PASS` 节点和 `dummy PASS` 节点是不同语义实体，任何链路都必须保留这层区分，不能把 `dummy PASS` 升格、折叠或复用成真实 `PASS`。
 
+SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出的 `(; ;DD[true])` 终端分支；标记不能跨节点或分支污染后续真实动作。兼容同节点 `DD[true]B/W[...]` 时，占位节点与真实动作保留为两个兄弟节点，真实动作的颜色、MOVE/PASS、手数与 payload 不变。文件、字符串、编辑态、detached 与分支解析采用相同语义，dummy 不参与初始行棋方取证。
+
 自动播放、统计、评分等真实 `PASS` 消费方只统计真实 `PASS`，忽略 `dummy PASS`。
 
 ## setup 契约
