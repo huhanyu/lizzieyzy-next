@@ -751,6 +751,9 @@ public final class FoxLiveSession {
     showStatus(game.hasCheckpoint() && game.snapshot().initialized() && game.snapshot().active()
         ? game.recoveryStatus() : key);
     refreshDisplay();
+    if (success && LizzieFrame.menu != null && Lizzie.leelaz != null) {
+      LizzieFrame.menu.toggleEngineMenuStatus(Lizzie.leelaz.isPondering(), Lizzie.leelaz.isThinking);
+    }
     Lizzie.frame.refresh();
     refreshLimitControls();
     if (connection != null && success && game.snapshot().searchable() && blockedGame != game.snapshot().game()) {

@@ -786,11 +786,24 @@ public final class FoxLiveSessionAcceptanceIT {
     assertEquals(quietTrace, Files.readString(tracePath), "single-reader raw GTP remains quiet");
     captureMain(work.resolve("fox-" + scenario + "-paused.png"));
     BoardHistoryNode retained = Lizzie.board.getHistory().getCurrentHistoryNode();
-    SwingUtilities.invokeAndWait(() -> Lizzie.frame.togglePonderMannul());
+    SwingUtilities.invokeAndWait(() -> {
+      assertTrue(LizzieFrame.toolbar.analyse.isEnabled());
+      assertEquals(Lizzie.resourceBundle.getString("BottomToolbar.analyse"),
+          LizzieFrame.toolbar.analyse.getText(), scenario + " paused action label");
+      assertSame(Menu.Playing2, LizzieFrame.toolbar.analyse.getIcon(),
+          scenario + " paused action icon");
+      LizzieFrame.toolbar.analyse.doClick();
+    });
     await(() -> commands(work).substring(quietCommands.length()).contains("kata-analyze")
         && rawTrace(tracePath).substring(quietTrace.length()).contains("info move")
         && Lizzie.board.getData().getPlayouts() > 0, 15, scenario + " explicit ordinary output");
     assertSame(retained, Lizzie.board.getHistory().getCurrentHistoryNode());
+    SwingUtilities.invokeAndWait(() -> {
+      assertEquals(Lizzie.resourceBundle.getString("BottomToolbar.pauseAnalyse"),
+          LizzieFrame.toolbar.analyse.getText(), scenario + " running action label");
+      assertSame(Menu.ready2, LizzieFrame.toolbar.analyse.getIcon(),
+          scenario + " running action icon");
+    });
     captureMain(work.resolve("fox-" + scenario + "-explicit-analysis.png"));
     Files.writeString(work.resolve(scenario + "-paused-handback.txt"),
         "pausedCommandsAndOutput=true\nbreadthReleased=true\nretainedMove="
