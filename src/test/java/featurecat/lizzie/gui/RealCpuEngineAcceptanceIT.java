@@ -76,6 +76,7 @@ public final class RealCpuEngineAcceptanceIT {
 
   @Test
   void restoresInitialWhiteSetupsAndAnalyzesAfterNavigation() throws Exception {
+    assumeTrue(explicitExecutionRequested(), "real CPU acceptance is opt-in");
     Inputs inputs = Inputs.load();
     System.setProperty("lizzie.desktop.required", "true");
     DesktopProbeProcess.requireDisplay();
