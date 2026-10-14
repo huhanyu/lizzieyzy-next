@@ -25,6 +25,15 @@ import org.junit.jupiter.api.Test;
 
 /** Opt-in real application + loopback peer + one existing KataGo; no engine fixture substitution. */
 public final class FoxLiveSessionAcceptanceIT {
+  @Test void actualPreparationSurvivesDisconnectAndFencesStoppedOwner() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
+    DesktopProbeProcess.requireDisplay();
+    Path result = DesktopProbeProcess.run(FoxLiveSessionAcceptanceIT.class, "fox-prepare-recovery",
+        List.of("-Dfox.prepare.recovery=true"),
+        List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")), 120);
+    assertTrue(Files.readString(result).contains("PASS"));
+  }
+
   @Test void actualApplicationFollowsConfirmedFoxActionsAndRestores() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
     DesktopProbeProcess.requireDisplay();
@@ -82,7 +91,7 @@ public final class FoxLiveSessionAcceptanceIT {
       entry.width = entry.height = 19;
       entry.komi = 6.5f;
       Utils.saveEngineSettings(new ArrayList<>(List.of(entry)));
-      engine = new NamedEngine(entry);
+      engine = Boolean.getBoolean("fox.prepare.recovery") ? new PreparationGateEngine(entry) : new NamedEngine(entry);
       Lizzie.engineManager.engineList.add(engine);
       assertTrue(Lizzie.engineManager.switchEngineIfAvailable(entry.index, true));
       Leelaz target = engine;
@@ -100,6 +109,12 @@ public final class FoxLiveSessionAcceptanceIT {
       }
       SwingUtilities.invokeAndWait(() -> Lizzie.board.getHistory().publishManualRules(customRules));
       assertThreads(target, work);
+      if (Boolean.getBoolean("fox.prepare.recovery")) {
+        preparationRecovery((PreparationGateEngine) target, work);
+        Files.writeString(result, "PASS preparation recovery, own-turn submission and stopped-owner fencing\n");
+        target.sendCommand("quit");
+        System.exit(0);
+      }
       if (Boolean.getBoolean("fox.ko.smoke")) {
         realKoReplay(target, work);
         Files.writeString(result, "PASS real recovered ko legality\n");
@@ -1048,6 +1063,129 @@ public final class FoxLiveSessionAcceptanceIT {
     }
   }
 
+  private static void preparationRecovery(PreparationGateEngine target, Path work) throws Exception {
+    SwingUtilities.invokeAndWait(FoxLiveSession::showDialog);
+    JDialog fox = dialog();
+    await(() -> button(fox, "Fox.start").isEnabled(), 10, "confirmed current limits");
+    int port;
+    try (ServerSocket available = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+      port = available.getLocalPort();
+    }
+    int selectedPort = port;
+    SwingUtilities.invokeAndWait(() -> find(fox, JSpinner.class).setValue(selectedPort));
+    startPreparationCase(fox);
+    Object reader = target.engineIncarnationToken();
+    target.armPreparation();
+    Object retainedOwner;
+    String disconnectedCommands;
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      sendSetupOpponentTurn(peer);
+      assertTrue(target.held.await(5, TimeUnit.SECONDS), "real matching final preparation ACK held");
+      retainedOwner = target.lastOwner;
+      assertTrue(FoxLiveSession.ownsEngine());
+      assertEquals(0, Lizzie.board.getHistory().getMoveNumber(), "setup is not an action");
+      disconnectedCommands = commands(work);
+    }
+    await(() -> hasText(fox, "Fox.disconnected"), 5, "disconnect consumed before preparation success");
+    target.releasePreparation();
+    drainPreparationWorker();
+    assertTrue(FoxLiveSession.ownsEngine(), "disconnect retains owner");
+    assertSame(retainedOwner, target.lastOwner);
+    assertSame(reader, target.engineIncarnationToken());
+    assertEquals(disconnectedCommands, commands(work), "successful preparation cannot search while disconnected");
+    assertTrue(Lizzie.frame.getBestMoves().isEmpty());
+    Files.writeString(work.resolve("preparation-disconnected.txt"),
+        "matchingAck=" + target.heldResponse + "\nworkerAndEdtDrained=true\nsameOwner=true\nnewCommands=0\ncandidates=0\n");
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      sendSetupOpponentTurn(peer);
+      await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "fresh opponent candidates after preparation recovery");
+      assertSame(retainedOwner, target.lastOwner, "recovery reuses prepared owner");
+      assertSame(reader, target.engineIncarnationToken());
+      String replay = commands(work).substring(disconnectedCommands.length());
+      assertTrue(replay.contains("set_free_handicap D16 Q4"), replay);
+      assertTrue(replay.contains("kata-search_analyze_cancellable W"), replay);
+      peer.setSoTimeout(300);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "opponent candidates never submit");
+      Files.writeString(work.resolve("preparation-recovered-gtp.txt"), gtp(work));
+      capture(fox, work.resolve("preparation-recovered.png"));
+      send(peer, "FAMOVE,1,B,1^3^15^W");
+      peer.setSoTimeout(15000);
+      assertEquals("AFSTATUS,B", receive(peer), "new own turn requires authoritative clock refresh");
+      send(peer, "FASTATUS,1,B,1^3^15^W", "FATIMELEFT,59,30,3", "FAMOVE,1,B,1^3^15^W");
+      String move = receive(peer);
+      assertTrue(move.startsWith("AFPLAY,B,2^") || move.equals("AFSKIP,B"), move);
+      if (move.equals("AFSKIP,B")) send(peer, "FASKIP,0,B");
+      else send(peer, "FAMOVE,0,B," + move.substring("AFPLAY,B,".length()));
+      await(() -> Lizzie.board.getHistory().getMoveNumber() == 2, 5, "one confirmed own-turn action");
+      peer.setSoTimeout(300);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "single submission only");
+      Files.writeString(work.resolve("preparation-own-turn.txt"), "confirmed=" + move + "\nactions=2\n" + gtp(work));
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(), 15, "recovered owner handback");
+    }
+
+    startPreparationCase(fox);
+    target.armPreparation();
+    Object stoppedOwner;
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      sendSetupOpponentTurn(peer);
+      assertTrue(target.held.await(5, TimeUnit.SECONDS), "second owner final ACK held");
+      stoppedOwner = target.lastOwner;
+      assertNotSame(retainedOwner, stoppedOwner);
+      String beforeStop = commands(work);
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      target.releasePreparation();
+      drainPreparationWorker();
+      await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(), 15, "late prepare success cannot resurrect stopped owner");
+      assertFalse(target.isPondering());
+      String stopped = commands(work).substring(beforeStop.length());
+      assertFalse(stopped.contains("kata-search_analyze_cancellable"), stopped);
+      assertFalse(stopped.contains("kata-analyze"), stopped);
+      peer.setSoTimeout(1000);
+      assertEquals(-1, peer.getInputStream().read(), "stopped peer receives no submission");
+      Files.writeString(work.resolve("preparation-stopped-gtp.txt"), stopped);
+    }
+
+    startPreparationCase(fox);
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      sendSetupOpponentTurn(peer);
+      await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "replacement owner prepares and searches normally");
+      assertNotSame(stoppedOwner, target.lastOwner);
+      assertSame(reader, target.engineIncarnationToken());
+      peer.setSoTimeout(300);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
+      capture(fox, work.resolve("preparation-replacement.png"));
+      SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+      await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(), 15, "replacement owner handback");
+    }
+  }
+
+  private static void sendSetupOpponentTurn(Socket peer) throws Exception {
+    send(peer, "FARULE,19,60,30,3,650,0^3^3^B,0^15^15^B", "FASTATUS,1,B",
+        "FATIMELEFT,60,30,3", "FAMOVE,0,B,0^0^0^N");
+  }
+
+  private static void startPreparationCase(JDialog fox) throws Exception {
+    await(() -> button(fox, "Fox.start").isEnabled(), 10, "preparation case start enabled");
+    SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
+    await(() -> modal() != null, 5, "preparation case rules confirmation");
+    answerModal(JOptionPane.OK_OPTION);
+    await(() -> button(fox, "Fox.stop").isEnabled() || modal() != null, 5, "listener or history replacement prompt");
+    if (modal() != null) SwingUtilities.invokeAndWait(() -> button(modal(), "Fox.replace").doClick());
+    await(() -> button(fox, "Fox.stop").isEnabled(), 5, "preparation case listener");
+  }
+
+  /** Queue markers establish callback consumption rather than relying on a sleep after ACK delivery. */
+  private static void drainPreparationWorker() throws Exception {
+    var instance = FoxLiveSession.class.getDeclaredField("instance");
+    instance.setAccessible(true);
+    var worker = FoxLiveSession.class.getDeclaredField("worker");
+    worker.setAccessible(true);
+    ((java.util.concurrent.ExecutorService) worker.get(instance.get(null)))
+        .submit(() -> {}).get(4, TimeUnit.SECONDS);
+    SwingUtilities.invokeAndWait(() -> {});
+  }
+
   private static void answerModal(int answer) throws Exception {
     SwingUtilities.invokeAndWait(() -> {
       JDialog dialog = modal();
@@ -1196,11 +1334,60 @@ public final class FoxLiveSessionAcceptanceIT {
     while (System.nanoTime() < end) { if (condition.getAsBoolean()) return; Thread.sleep(50); }
     throw new AssertionError(detail);
   }
-  private static final class NamedEngine extends Leelaz {
+  private static class NamedEngine extends Leelaz {
     NamedEngine(EngineData entry) throws Exception {
       super(entry.commands); savedEntryId = entry.id; width = height = oriWidth = oriHeight = 19;
       komi = orikomi = 6.5f;
     }
     @Override public String getEngineName(int index) { return "Fox real KataGo acceptance"; }
+  }
+
+  /** Gates the real same-reader response at the existing exclusive-consumer boundary. */
+  private static final class PreparationGateEngine extends NamedEngine {
+    volatile java.util.concurrent.CountDownLatch held;
+    private volatile java.util.concurrent.CountDownLatch release;
+    private volatile boolean armed;
+    private volatile String responsePrefix;
+    volatile String heldResponse;
+    volatile Object lastOwner;
+
+    PreparationGateEngine(EngineData entry) throws Exception { super(entry); }
+
+    void armPreparation() {
+      held = new java.util.concurrent.CountDownLatch(1);
+      release = new java.util.concurrent.CountDownLatch(1);
+      responsePrefix = null;
+      armed = true;
+    }
+
+    void releasePreparation() { release.countDown(); }
+
+    @Override public boolean sendExclusiveGtpCommand(Object owner, String command) {
+      if (armed && command.endsWith(" kata-get-param playoutDoublingAdvantage")) {
+        responsePrefix = "=" + command.substring(0, command.indexOf(' ')) + " ";
+        armed = false;
+      }
+      return super.sendExclusiveGtpCommand(owner, command);
+    }
+
+    @Override public ExclusiveGtpLeaseAvailability beginForegroundAnalysisLease(
+        Object owner, java.util.function.Consumer<String> lines, Runnable ready, Runnable closed) {
+      lastOwner = owner;
+      return super.beginForegroundAnalysisLease(owner, line -> {
+        String prefix = responsePrefix;
+        if (prefix != null && line.startsWith(prefix)) {
+          responsePrefix = null;
+          heldResponse = line;
+          held.countDown();
+          try {
+            if (!release.await(4, TimeUnit.SECONDS)) throw new AssertionError("preparation ACK gate timeout");
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+          }
+        }
+        lines.accept(line);
+      }, ready, closed);
+    }
   }
 }

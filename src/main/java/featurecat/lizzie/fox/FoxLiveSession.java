@@ -517,7 +517,7 @@ public final class FoxLiveSession {
         try {
           owner.prepare(selectedRules.toGtpArgument(), selectedLimits);
           onEdt(() -> {
-            if (engine == owner && game.snapshot().searchable()) {
+            if (engine == owner) {
               engineReady = true;
               showPdaIntent();
               update(game.snapshot());
