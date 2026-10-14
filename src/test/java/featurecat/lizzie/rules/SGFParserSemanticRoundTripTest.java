@@ -117,6 +117,52 @@ class SGFParserSemanticRoundTripTest {
   }
 
   @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void dummyFirstBranchRetainsSelectedNodeAcrossDeleteUndoRedo(boolean deletePass)
+      throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      Board board = Lizzie.board;
+      assertTrue(SGFParser.loadFromStringforedit("(;SZ[5];AB[aa]AW[ee]PL[W])"));
+      board.nextMove(false);
+      board.pass(Stone.BLACK, false, true);
+      board.previousMove(false);
+      board.getHistory().place(2, 2, Stone.WHITE, true);
+      BoardHistoryNode white = board.getHistory().getCurrentHistoryNode();
+      white.getData().comment = "real white move";
+      white.getData().engineName = "KataGo";
+      white.getData().setPlayouts(123);
+      white.getData().analysisHeaderSlots = 3;
+      board.getHistory().pass(Stone.BLACK);
+      BoardHistoryNode pass = board.getHistory().getCurrentHistoryNode();
+      assertFalse(pass.getData().dummy);
+      assertEquals(BoardNodeKind.PASS, pass.getData().getNodeKind());
+      assertEquals(2, pass.getData().moveNumber);
+      board.moveToAnyPosition(deletePass ? pass : white);
+      BoardHistoryList before = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+
+      board.deleteMoveNoHint();
+      BoardHistoryList after = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+      board.cleanedit();
+      assertTreeSemanticsEqual(before, board.getHistory());
+      assertDummySiblingAnalysis(board.getHistory(), true);
+      BoardHistoryNode setup = board.getHistory().getStart().getVariation(0).orElseThrow();
+      assertFalse(setup.getData().blackToPlay);
+      assertTrue(setup.getVariation(0).orElseThrow().getData().dummy);
+      BoardHistoryNode restoredWhite = setup.getVariation(1).orElseThrow();
+      assertSame(deletePass ? restoredWhite.getVariation(0).orElseThrow() : restoredWhite,
+          board.getHistory().getCurrentHistoryNode());
+
+      board.reedit();
+      assertTreeSemanticsEqual(after, board.getHistory());
+      setup = board.getHistory().getStart().getVariation(0).orElseThrow();
+      assertFalse(setup.getData().blackToPlay);
+      assertSame(deletePass ? setup.getVariation(1).orElseThrow() : setup,
+          board.getHistory().getCurrentHistoryNode());
+      if (deletePass) assertDummySiblingAnalysis(board.getHistory(), true);
+    }
+  }
+
+  @ParameterizedTest
   @CsvSource(delimiter = '|', value = {
       "(;SZ[5];W[cc])|false", "(;SZ[5];B[cc])|true",
       "(;SZ[5];W[])|false", "(;SZ[5];B[])|true",

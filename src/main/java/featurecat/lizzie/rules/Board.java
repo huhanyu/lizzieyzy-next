@@ -1659,7 +1659,7 @@ public class Board {
     BoardHistoryNode node = history.getCurrentHistoryNode();
     while (node.previous().isPresent()) {
       BoardHistoryNode parent = node.previous().get();
-      path.add(parent.findIndexOfNode(node));
+      path.add(parent.indexOfNode(node));
       node = parent;
     }
     return List.copyOf(path);
