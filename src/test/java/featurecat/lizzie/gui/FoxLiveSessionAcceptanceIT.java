@@ -203,8 +203,9 @@ public final class FoxLiveSessionAcceptanceIT {
           assertThrows(java.text.ParseException.class, () -> editor.getFormatter().stringToValue(invalid));
         assertEquals(7000, editor.getValue());
         assertNull(find(fox, JComboBox.class), "no independent rules selector");
-        assertFalse(find(fox, JTextArea.class).isEditable(), "communication has no command input");
-        assertTrue(readOnlyRules(fox).getText().contains("tax=ALL"));
+        assertFalse(textArea(fox, "fox-transcript").isEditable(), "communication has no command input");
+        assertEquals(featurecat.lizzie.fox.FoxRulesText.describe(customRules, Lizzie.resourceBundle),
+            textArea(fox, "fox-rules").getText());
       });
       int port;
       try (ServerSocket available = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
@@ -272,16 +273,16 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> Math.abs(target.pda - 0.8) < 1e-9, 5, "latest real PDA confirmation");
         await(() -> commands(work).substring(beforePda.length()).contains("kata-search_analyze_cancellable"), 5, "same-turn PDA re-search");
         await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 10, "new PDA current candidates");
-        await(() -> find(fox, JTextArea.class).getText().contains("< info move"), 5, "raw analysis stream");
-        assertTrue(find(fox, JTextArea.class).getText().contains("> "));
-        assertTrue(find(fox, JTextArea.class).getText().contains("< ="));
-        assertTrue(find(fox, JTextArea.class).getText().contains(customRules.toGtpArgument()));
+        await(() -> textArea(fox, "fox-transcript").getText().contains("< info move"), 5, "raw analysis stream");
+        assertTrue(textArea(fox, "fox-transcript").getText().contains("> "));
+        assertTrue(textArea(fox, "fox-transcript").getText().contains("< ="));
+        assertTrue(textArea(fox, "fox-transcript").getText().contains(customRules.toGtpArgument()));
         assertFalse(find(fox, JSpinner.class).isEnabled());
         assertFalse(limitField(fox, "fox-max-time").isEnabled());
         assertFalse(limitField(fox, "fox-max-visits").isEnabled());
         assertBreadth(false);
         assertTrue(hasText(fox, "Fox.breadthUnavailable"));
-        String candidates = find(fox, JTextArea.class).getText();
+        String candidates = textArea(fox, "fox-transcript").getText();
         SwingUtilities.invokeAndWait(() -> {
           assertFalse(Lizzie.frame.getBestMoves().isEmpty(), "current Fox candidates reach ordinary table");
           assertTrue(Lizzie.frame.listTable.getRowCount() > 0, "actual candidate table has live rows");
@@ -334,7 +335,7 @@ public final class FoxLiveSessionAcceptanceIT {
             "rules cannot change while Fox owns engine");
         SwingUtilities.invokeAndWait(fox::toFront);
         capture(fox, work.resolve("fox-current-rules-stream.png"));
-        Files.writeString(work.resolve("current-rules-stream.txt"), find(fox, JTextArea.class).getText());
+        Files.writeString(work.resolve("current-rules-stream.txt"), textArea(fox, "fox-transcript").getText());
         await(() -> log(work.resolve("logs/app.log")).contains("outcome=CONFIRMED"),
             5, "production on-disk submission confirmation");
         String durable = log(work.resolve("logs/app.log"));
@@ -752,7 +753,8 @@ public final class FoxLiveSessionAcceptanceIT {
         10, "direct dialog confirms current rules without separate rules window");
     KataGoRules observed = target.engineRulesResult().observed();
     assertTrue(KataGoRules.parse("chinese").orElseThrow().semanticallyEquals(observed));
-    SwingUtilities.invokeAndWait(() -> assertEquals(observed.fieldSummary(), readOnlyRules(fox).getText()));
+    SwingUtilities.invokeAndWait(() -> assertEquals(
+        Lizzie.resourceBundle.getString("Fox.rulesPreset.chinese"), textArea(fox, "fox-rules").getText()));
     assertFalse(commands(work).substring(before.length()).contains("kata-set-rules"),
         "preflight observes engine rules without changing them");
     capture(fox, work.resolve("fox-rules-preflight-ready.png"));
@@ -1413,11 +1415,11 @@ public final class FoxLiveSessionAcceptanceIT {
         5, "effective engine threads remain two");
   }
 
-  private static JTextField readOnlyRules(Container parent) {
+  private static JTextArea textArea(Container parent, String name) {
     for (Component child : parent.getComponents()) {
-      if (child instanceof JTextField field && !field.isEditable()) return field;
+      if (child instanceof JTextArea area && name.equals(area.getName())) return area;
       if (child instanceof Container container) {
-        JTextField found = readOnlyRules(container);
+        JTextArea found = textArea(container, name);
         if (found != null) return found;
       }
     }

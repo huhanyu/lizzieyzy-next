@@ -50,9 +50,10 @@ public final class FoxLiveSession {
   private long refreshDeadlineNanos;
   private final JDialog dialog;
   private final JLabel status = new JLabel();
+  private String statusKey = "";
   private final JTextArea output = new JTextArea(14, 56);
   private final JSpinner port = new JSpinner(new SpinnerNumberModel(7000, 1, 65535, 1));
-  private final JTextField rules = new JTextField();
+  private final JTextArea rules = new WrappedValue();
   private final JTextField maxTime = new JTextField(8);
   private final JTextField maxVisits = new JTextField(12);
   private FoxEngineSession.Limits selectedLimits;
@@ -200,13 +201,7 @@ public final class FoxLiveSession {
     portEditor.getTextField().setFormatterFactory(new javax.swing.text.DefaultFormatterFactory(portFormat));
     portEditor.getTextField().setColumns(5);
     port.setEditor(portEditor);
-    // Read-only value, not an input: no field chrome and no focus/caret. Sized for the standard
-    // summary; the tooltip carries any longer extension fields.
-    rules.setEditable(false);
-    rules.setFocusable(false);
-    rules.setOpaque(false);
-    rules.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
-    rules.setColumns(68);
+    rules.setName("fox-rules");
     maxTime.setName("fox-max-time");
     maxVisits.setName("fox-max-visits");
     pdaStatus.setName("fox-pda-status");
@@ -265,6 +260,7 @@ public final class FoxLiveSession {
     setup.add(actions);
 
     output.setEditable(false);
+    output.setName("fox-transcript");
     output.setLineWrap(false);
     output.setFont(new Font(Font.MONOSPACED, Font.PLAIN, output.getFont().getSize()));
     output.setMargin(new Insets(6, 8, 6, 8));
@@ -346,6 +342,43 @@ public final class FoxLiveSession {
     }
   }
 
+  /** Read-only wrapped value: claims the dialog's text width and grows in height with its text. */
+  private static final class WrappedValue extends JTextArea {
+    private static final int WRAP_WIDTH = 720;
+    private int laidOutWidth = -1;
+
+    WrappedValue() {
+      setEditable(false);
+      setFocusable(false);
+      setOpaque(false);
+      setLineWrap(true);
+      setWrapStyleWord(true);
+      setHighlighter(null);
+      setFont(UIManager.getFont("Label.font"));
+      setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+    }
+
+    @Override public Dimension getPreferredSize() {
+      int width = getWidth() > 0 ? getWidth() : WRAP_WIDTH;
+      Insets insets = getInsets();
+      // Swing's wrapped view, minus the caret margin BasicTextUI reserves even when read-only.
+      javax.swing.text.View view = getUI().getRootView(this);
+      view.setSize(Math.max(1, width - insets.left - insets.right - 1), Integer.MAX_VALUE);
+      int height = (int) Math.ceil(view.getPreferredSpan(javax.swing.text.View.Y_AXIS));
+      return new Dimension(WRAP_WIDTH, insets.top + insets.bottom
+          + Math.max(getFontMetrics(getFont()).getHeight(), height));
+    }
+
+    @Override public void setBounds(int x, int y, int width, int height) {
+      super.setBounds(x, y, width, height);
+      // Height depends on the width just assigned; lay out once more after a width change.
+      if (width > 0 && width != laidOutWidth) {
+        laidOutWidth = width;
+        SwingUtilities.invokeLater(this::revalidate);
+      }
+    }
+  }
+
   private record StatusDot(Color color) implements Icon {
     @Override public void paintIcon(Component c, Graphics g, int x, int y) {
       Graphics2D g2 = (Graphics2D) g.create();
@@ -415,13 +448,7 @@ public final class FoxLiveSession {
 
   private void displayCurrentRules() {
     KataGoRules current = currentRules();
-    showRules(current == null ? text("Fox.rulesUnavailable") : current.fieldSummary());
-  }
-
-  private void showRules(String value) {
-    rules.setText(value);
-    rules.setCaretPosition(0);
-    rules.setToolTipText(value);
+    rules.setText(current == null ? text("Fox.rulesUnavailable") : FoxRulesText.describe(current, Lizzie.resourceBundle));
   }
 
   private void queryCurrentRules() {
@@ -432,7 +459,7 @@ public final class FoxLiveSession {
     Leelaz target = Lizzie.leelaz;
     Object reader = target.engineIncarnationToken();
     queryingRules = true;
-    showRules(text("SetKataRules.status.pending"));
+    rules.setText(text("SetKataRules.status.pending"));
     showStatus("SetKataRules.status.pending");
     refreshLimitControls();
     worker.execute(() -> {
@@ -479,6 +506,8 @@ public final class FoxLiveSession {
         initializedVisits = limits.maxVisits() == 1125899906842624L ? "0" : Long.toString(limits.maxVisits());
         if (replaceTime) maxTime.setText(initializedTime);
         if (replaceVisits) maxVisits.setText(initializedVisits);
+        // A failed earlier query or premature Start left this notice; confirmation supersedes it.
+        if (statusKey.equals("Fox.limitsUnavailable")) showStatus("Fox.waiting");
       }
       refreshLimitControls();
     }));
@@ -529,6 +558,7 @@ public final class FoxLiveSession {
 
   private static String text(String key) { return Lizzie.resourceBundle.getString(key); }
   private void showStatus(String key) {
+    statusKey = key;
     status.setText(text(key));
     status.setIcon(new StatusDot(ATTENTION_STATUS.contains(key) ? AppleStyleSupport.workspaceError()
         : connection != null ? AppleStyleSupport.workspaceSuccess() : AppleStyleSupport.workspaceMuted()));
@@ -572,7 +602,7 @@ public final class FoxLiveSession {
     if (selectedRules == null || !selectedRules.hasRequiredFields()) {
       showStatus("Fox.rulesUnavailable"); return;
     }
-    showRules(selectedRules.fieldSummary());
+    rules.setText(FoxRulesText.describe(selectedRules, Lizzie.resourceBundle));
     output.setText("");
     game.setDirectMaxTime(selectedLimits.maxTime());
     originalBoard = Lizzie.board.captureClearState();
