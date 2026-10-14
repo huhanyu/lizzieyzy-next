@@ -343,7 +343,7 @@ public final class SgfUiAcceptanceIT {
     Robot robot = robot();
     startApplication(result);
     openSelectedFile(robot, input);
-    await(() -> Board.boardWidth == 19 && Lizzie.board.getHistory().getStart().hasVariations(),
+    await(() -> Board.boardWidth == 19 && Lizzie.board.getHistory().getStart().numberOfChildren() > 0,
         Deadline.after(Duration.ofSeconds(15)), "original history adoption");
     BoardHistoryList history = Lizzie.board.getHistory();
     String encoding = featurecat.lizzie.util.EncodingDetector.detect(input.toString());
