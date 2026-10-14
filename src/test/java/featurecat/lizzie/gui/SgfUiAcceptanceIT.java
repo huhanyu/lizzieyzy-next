@@ -1633,6 +1633,9 @@ public final class SgfUiAcceptanceIT {
       String expectedValue = left.getProperty(key);
       String actualValue = right.getProperty(key);
       if (expectedValue != null) {
+        if (key.equals("PL") && left.isSnapshotNode()) {
+          expectedValue = left.blackToPlay ? "B" : "W";
+        }
         boolean equal = expectedValue.equals(actualValue);
         if ((key.equals("AB") || key.equals("AW")) && actualValue != null) {
           equal = Arrays.stream(expectedValue.split(",")).sorted().toList()
