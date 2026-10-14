@@ -75,6 +75,135 @@ public final class RealCpuEngineAcceptanceIT {
   private static final long PROBE_BUDGET_SECONDS = 450;
 
   @Test
+  void restoresInitialWhiteSetupsAndAnalyzesAfterNavigation() throws Exception {
+    Inputs inputs = Inputs.load();
+    System.setProperty("lizzie.desktop.required", "true");
+    DesktopProbeProcess.requireDisplay();
+    SourceIdentity source = sourceIdentity();
+    for (String kind : List.of("black", "mixed", "handicap")) {
+      Path result = DesktopProbeProcess.run(RealCpuEngineAcceptanceIT.class,
+          "initial-white-" + kind, List.of(), List.of("initial-white", kind,
+              inputs.engine.toString(), inputs.model.toString(), inputs.config.toString(),
+              inputs.manifestPath.toString(), source.commit, Boolean.toString(source.dirty)), 450);
+      JSONObject record = new JSONObject(Files.readString(result));
+      assertEquals("PASS", record.getString("status"));
+      assertEquals(2, record.getJSONArray("positions").length());
+      assertFalse(record.getJSONObject("source").getBoolean("dirty"));
+    }
+  }
+
+  private static void runInitialWhite(String[] args) throws Exception {
+    String kind = args[1];
+    Inputs inputs = Inputs.load(Path.of(args[2]), Path.of(args[3]), Path.of(args[4]), Path.of(args[5]));
+    Path work = Path.of(args[8]);
+    Path result = Path.of(args[9]);
+    ProbeState state = new ProbeState();
+    JSONObject record = new JSONObject().put("status", "FAIL")
+        .put("source", new JSONObject().put("commit", args[6]).put("dirty", Boolean.parseBoolean(args[7])))
+        .put("assets", assetEvidence(inputs)).put("kind", kind);
+    try {
+      writeIsolatedConfig(work);
+      System.setProperty("lizzie.work.dir", work.toString());
+      Lizzie.main(new String[0]);
+      await(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), Deadline.after(STARTUP_BUDGET), "window");
+      dismissDialogs();
+      LoggingRuntime.current().orElseThrow().startFullTrace(Set.of(TraceScope.ENGINE_GTP));
+      String sgf = "(;SZ[19]RU[Chinese]KM[7.5]"
+          + (kind.equals("handicap") ? "HA[2];" : "")
+          + "AB[dp][pd]" + (kind.equals("mixed") ? "AW[dd][pp]" : "") + ";W[cc];B[])";
+      Path fixture = work.resolve("initial.sgf");
+      Files.writeString(fixture, sgf);
+      SwingUtilities.invokeAndWait(() -> {
+        assertTrue(SGFParser.loadFromString(sgf, false));
+        BoardHistoryNode root = Lizzie.board.getHistory().getStart();
+        Lizzie.board.moveToAnyPosition(kind.equals("handicap") ? root.next().orElseThrow() : root);
+      });
+      BoardHistoryNode target = Lizzie.board.getHistory().getCurrentHistoryNode();
+      assertFalse(target.getData().blackToPlay);
+      assertEquals(0, target.getData().moveNumber);
+      BoardHistoryList.SessionRulesTarget rules = SGFParser.adoptCurrentHistoryExternalRules();
+      EngineManager manager = Lizzie.engineManager;
+      int index = manager.engineList.size();
+      EngineData entry = catalogEntry(index, UUID.randomUUID().toString(), command(inputs.engine, inputs.model, inputs.config));
+      Utils.saveEngineSettings(new ArrayList<>(List.of(entry)));
+      CatalogNamedLeelaz real = new CatalogNamedLeelaz(entry);
+      state.engine = real;
+      manager.engineList.add(real);
+      assertTrue(manager.switchEngineIfAvailable(index, true));
+      state.peer = awaitOwnedPeer(real, inputs, Deadline.after(STARTUP_BUDGET));
+      state.readers = awaitReaderThreads(Deadline.after(STARTUP_BUDGET));
+      await(() -> real.isLoaded() && manager.isEngineSwitchActive(index, true)
+          && confirmedChineseRules(real, rules), Deadline.after(STARTUP_BUDGET), "confirmed production restore");
+      JSONArray positions = new JSONArray();
+      for (int round = 0; round < 2; round++) {
+        if (round > 0) {
+          SwingUtilities.invokeAndWait(() -> { Lizzie.board.nextMove(false); Lizzie.board.previousMove(false); });
+          assertTrue(Lizzie.board.getHistory().getCurrentHistoryNode() == target);
+          Lizzie.board.clearbestmoves();
+          real.ponder();
+        }
+        await(() -> positiveLegalCandidate(target).isPresent() && real.isPondering(),
+            Deadline.after(ANALYSIS_BUDGET), "real White analysis");
+        MoveData candidate = positiveLegalCandidate(target).orElseThrow();
+        real.togglePonder();
+        awaitAnalysisQuiescence(real, target, Deadline.after(STOP_BUDGET));
+        String black = queryInitialPosition(real, "list_stones black");
+        String white = queryInitialPosition(real, "list_stones white");
+        assertEquals(Set.of("D4", "Q16"), responseCoordinates(black));
+        assertEquals(kind.equals("mixed") ? Set.of("D16", "Q4") : Set.of(), responseCoordinates(white));
+        Path trace = LoggingRuntime.current().orElseThrow().logsDirectory().resolve("engine-trace.log");
+        LoggingRuntime.current().orElseThrow().awaitIdle(10, TimeUnit.SECONDS);
+        long offset = Files.size(trace);
+        real.sendCommand("showboard");
+        await(() -> { LoggingRuntime.current().orElseThrow().awaitIdle(10, TimeUnit.SECONDS);
+          return Files.readString(trace).substring((int) offset).contains("Next player"); },
+            Deadline.after(POSITION_BUDGET), "engine side-to-play response");
+        String boardResponse = Files.readString(trace).substring((int) offset);
+        assertTrue(boardResponse.matches("(?s).*Next player[^\\n]*[Ww](?:hite)?.*"), boardResponse);
+        Files.writeString(result.resolveSibling("position-" + round + ".txt"),
+            "black=" + black + "\nwhite=" + white + "\n" + boardResponse);
+        java.awt.Robot robot = new java.awt.Robot();
+        robot.waitForIdle();
+        javax.imageio.ImageIO.write(robot.createScreenCapture(Lizzie.frame.getBounds()), "png",
+            result.resolveSibling("position-" + round + ".png").toFile());
+        positions.put(new JSONObject().put("round", round).put("confirmed", true)
+            .put("black", black).put("white", white).put("turn", "W")
+            .put("visits", candidate.playouts).put("move", candidate.coordinate));
+      }
+      record.put("positions", positions).put("pid", state.peer.pid());
+      real.normalQuit();
+      await(() -> !state.peer.isAlive() && state.readers.terminated(), Deadline.after(QUIT_BUDGET), "owned cleanup");
+      record.put("status", "PASS").put("cleanup", true);
+    } catch (Throwable failure) {
+      record.put("failure", failure.toString());
+      throw failure;
+    } finally {
+      if (state.peer != null && state.peer.isAlive()) cleanupAfterFailure(state, null);
+      writeResult(result, record);
+    }
+  }
+
+  private static Set<String> responseCoordinates(String response) {
+    String payload = response.replaceFirst("^[=?]\\d*\\s*", "").trim();
+    return payload.isEmpty() ? Set.of() : Set.of(payload.split("\\s+"));
+  }
+
+  private static String queryInitialPosition(Leelaz engine, String command) throws Exception {
+    java.util.concurrent.CompletableFuture<String> response = new java.util.concurrent.CompletableFuture<>();
+    java.lang.reflect.Method send = Leelaz.class.getDeclaredMethod("sendCommandNoLeelaz2", String.class, Runnable.class);
+    send.setAccessible(true);
+    Field line = Leelaz.class.getDeclaredField("currentCommandResponseLine");
+    line.setAccessible(true);
+    send.invoke(engine, command, (Runnable) () -> {
+      try { response.complete((String) line.get(engine)); }
+      catch (IllegalAccessException failure) { response.completeExceptionally(failure); }
+    });
+    String value = response.get(30, TimeUnit.SECONDS);
+    assertTrue(value.startsWith("="), value);
+    return value;
+  }
+
+  @Test
   void analyzesPinnedCpuEngineThroughProductionOwnership() throws Exception {
     assumeTrue(explicitExecutionRequested(), "real CPU acceptance is opt-in");
     Inputs inputs = Inputs.load();
@@ -107,6 +236,12 @@ public final class RealCpuEngineAcceptanceIT {
 
   /** Child-process entry point. It exits only after the owned engine has settled. */
   public static void main(String[] args) throws Exception {
+    if (args.length == 10 && "initial-white".equals(args[0])) {
+      int code = 1;
+      try { runInitialWhite(args); code = 0; }
+      finally { System.exit(code); }
+      return;
+    }
     if (args.length != 11 || !"probe".equals(args[0])) {
       throw new IllegalArgumentException(
           "expected probe, fixture, engine, model, config, manifest, engine ID, source commit, dirty, work, result");

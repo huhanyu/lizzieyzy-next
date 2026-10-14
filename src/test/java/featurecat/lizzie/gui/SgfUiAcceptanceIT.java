@@ -317,6 +317,78 @@ public final class SgfUiAcceptanceIT {
   }
 
   @Test
+  void initialTurnEditsSurviveProductionRebuildAndReopen() throws Exception {
+    DesktopProbeProcess.requireDisplay();
+    Path result = DesktopProbeProcess.run(SgfUiAcceptanceIT.class,
+        "initial-turn-edits", List.of(), List.of("initial-turn-edits"), 120);
+    assertTrue(Files.readString(result).contains("result=PASS"));
+  }
+
+  private static void runInitialTurnEdits(Path work, Path result) throws Exception {
+    Files.createDirectories(work);
+    Path input = work.resolve("edits.sgf");
+    Files.writeString(input,
+        "(;SZ[19]PL[B];AB[dp][pd]AW[dd][pp]PL[W](;W[cc];B[])(;B[qq];W[]))");
+    initializeProfile(work, work);
+    System.setProperty("lizzie.work.dir", work.toString());
+    Robot robot = robot();
+    startApplication(result);
+    openSelectedFile(robot, input);
+    Board board = Lizzie.board;
+    BoardHistoryNode root = board.getHistory().getStart();
+    BoardHistoryNode setup = root.next().orElseThrow();
+    edt(() -> { board.moveToAnyPosition(setup); return null; });
+    assertFalse(board.getData().blackToPlay);
+    assertEquals(0, board.getData().moveNumber);
+    captureInitialTurn(robot, result, "imported-setup");
+    edt(() -> { board.previousMove(false); return null; });
+    assertTrue(board.getHistory().getCurrentHistoryNode() == root);
+    assertTrue(board.getData().blackToPlay);
+    assertTrue(Arrays.stream(board.getData().stones).allMatch(Stone::isEmpty));
+    captureInitialTurn(robot, result, "independent-root");
+    edt(() -> { board.nextMove(false); board.nextVariation(1); return null; });
+    assertFalse(setup.getData().blackToPlay);
+    captureInitialTurn(robot, result, "browse-side-branch");
+    edt(() -> { board.moveBranchUp(); return null; });
+    assertFalse(setup.getData().blackToPlay);
+    assertEquals(Stone.BLACK, setup.next().orElseThrow().getData().lastMoveColor);
+    captureInitialTurn(robot, result, "promoted");
+    edt(() -> { board.deleteMoveNoHint(); return null; });
+    assertFalse(setup.getData().blackToPlay);
+    captureInitialTurn(robot, result, "deleted-first");
+    edt(() -> { board.moveToAnyPosition(setup); board.nextMove(false);
+      board.nextMove(false); board.saveListForEdit(); board.cleanedit(); return null; });
+    assertEquals(BoardNodeKind.PASS, board.getData().getNodeKind());
+    assertFalse(board.getHistory().getStart().next().orElseThrow().getData().blackToPlay);
+    captureInitialTurn(robot, result, "rebuilt");
+    edt(() -> { board.reedit(); board.moveToAnyPosition(
+        board.getHistory().getStart().next().orElseThrow()); return null; });
+    assertTrue(Lizzie.leelaz != null && Lizzie.leelaz.canAddPlayer,
+        "direct turn capability is required; PASS fallback is not acceptance");
+    edt(() -> { board.changeNextTurn(); return null; });
+    assertTrue(board.getData().blackToPlay);
+    assertEquals(0, board.getData().moveNumber);
+    captureInitialTurn(robot, result, "changed-turn");
+    for (int round = 0; round < 2; round++) {
+      BoardHistoryList before = board.getHistory();
+      Path saved = work.resolve("saved-" + round + ".sgf");
+      JFileChooser chooser = openSaveChooser(robot);
+      edt(() -> { chooser.setSelectedFile(saved.toFile()); chooser.approveSelection(); return null; });
+      await(() -> Files.isRegularFile(saved), Deadline.after(Duration.ofSeconds(15)), "edit save");
+      openSelectedFile(robot, saved);
+      assertNodeSemanticsEqual(before.getStart(), board.getHistory().getStart());
+      edt(() -> { board.moveToAnyPosition(board.getHistory().getStart().next().orElseThrow());
+        return null; });
+      assertTrue(board.getData().blackToPlay);
+      captureInitialTurn(robot, result, "reopened-" + round);
+    }
+    Files.writeString(result, "result=PASS\nbranches.browse=true\nbranches.promote=true\n"
+        + "delete.first=true\nrebuild.undo-redo=true\nturn.direct=true\nroundtrips=2\n"
+        + "independent.root=true\npid=" + ProcessHandle.current().pid() + "\n");
+    clickMenuAction(robot, "menu.exit", Duration.ofSeconds(10));
+  }
+
+  @Test
   void originalInitialTurnsSurviveOpenNavigateSaveAndReopen() throws Exception {
     DesktopProbeProcess.requireDisplay();
     for (int index = 0; index < 3; index++) {
@@ -473,6 +545,9 @@ public final class SgfUiAcceptanceIT {
     Path result =
         args.length == 0 ? null : Path.of(args[args.length - 1]).toAbsolutePath().normalize();
     try {
+      if (args.length == 3 && "initial-turn-edits".equals(args[0])) {
+        runInitialTurnEdits(Path.of(args[1]), result);
+      } else
       if (args.length == 5 && "initial-turn".equals(args[0])) {
         runInitialTurn(Path.of(args[1]), Integer.parseInt(args[2]), Path.of(args[3]), result);
       } else

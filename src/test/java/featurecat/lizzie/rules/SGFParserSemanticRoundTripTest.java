@@ -31,6 +31,62 @@ class SGFParserSemanticRoundTripTest {
   @TempDir Path tempDirectory;
 
   @ParameterizedTest
+  @ValueSource(strings = {
+      "(;SZ[5]AB[aa]AW[ee](;W[cc];B[])(;B[bb];W[]))",
+      "(;SZ[5]PL[W];AB[aa]AW[ee](;W[cc];B[])(;B[bb];W[]))"
+  })
+  void branchEditsAndDirectTurnChangePersistCurrentInitialState(String sgf) throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      assertTrue(SGFParser.loadFromStringforedit(sgf));
+      Board board = Lizzie.board;
+      BoardHistoryNode initial = board.getHistory().getStart();
+      if (initial.next().orElseThrow().getData().isSnapshotNode()) {
+        initial = initial.next().orElseThrow();
+      }
+      assertFalse(initial.getData().blackToPlay);
+      board.moveToAnyPosition(initial.getVariation(1).orElseThrow());
+      assertFalse(initial.getData().blackToPlay, "browsing does not infer from the side branch");
+      board.moveBranchUp();
+      assertFalse(initial.getData().blackToPlay, "promotion does not reinterpret the initial state");
+      board.deleteMoveNoHint();
+      assertFalse(initial.getData().blackToPlay, "deleting the first action preserves the turn");
+      board.moveToAnyPosition(initial);
+      Lizzie.leelaz.canAddPlayer = true;
+      int children = initial.numberOfChildren();
+      board.changeNextTurn();
+      assertTrue(initial.getData().blackToPlay);
+      assertEquals(children, initial.numberOfChildren());
+      assertEquals(0, initial.getData().moveNumber);
+      BoardHistoryList expected = board.getHistory();
+      for (int round = 0; round < 2; round++) {
+        BoardHistoryList reopened = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+        assertTreeSemanticsEqual(expected, reopened);
+        board.setHistory(reopened);
+        expected = reopened;
+      }
+    }
+  }
+
+  @Test
+  void editUndoRedoPreservesIndependentInitialSetupAndResolvedTurn() throws Exception {
+    try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
+      assertTrue(SGFParser.loadFromStringforedit(
+          "(;SZ[5];AB[aa]AW[ee];W[cc];B[])"));
+      Board board = Lizzie.board;
+      board.nextMove(false);
+      board.nextMove(false);
+      board.nextMove(false);
+      BoardHistoryList expected = SGFParser.parseSgf(SGFParser.saveToString(false), true);
+      board.saveListForEdit();
+      board.cleanedit();
+      assertTreeSemanticsEqual(expected, board.getHistory());
+      assertEquals(BoardNodeKind.PASS, board.getData().getNodeKind());
+      board.reedit();
+      assertTreeSemanticsEqual(expected, board.getHistory());
+    }
+  }
+
+  @ParameterizedTest
   @CsvSource(delimiter = '|', value = {
       "(;SZ[5];W[cc])|false", "(;SZ[5];B[cc])|true",
       "(;SZ[5];W[])|false", "(;SZ[5];B[])|true",
