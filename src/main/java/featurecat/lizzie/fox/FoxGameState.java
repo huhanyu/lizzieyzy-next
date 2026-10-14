@@ -77,45 +77,47 @@ public final class FoxGameState {
   private Snapshot checkpoint;
   private String recoveryFailure = "Fox.noCheckpoint";
   private boolean recoveryContradiction;
-  private RecoveryConfirmation confirmation;
-  public record RecoveryConfirmation(long connection, long game, long revision) {}
-  public record RecoveryAssertion(RecoveryConfirmation confirmation, boolean sameGameNoOfflineActions) {}
-  private RecoveryAssertion recoveryAssertion;
-  public synchronized RecoveryAssertion recoveryAssertion() { return recoveryAssertion; }
 
   public synchronized boolean hasCheckpoint() { return checkpoint != null; }
 
   public synchronized String recoveryStatus() {
     if (!snapshot().initialized() || !active) return "Fox.syncing";
     if (checkpoint == null) return recoveryFailure;
-    if (recoveryContradiction || !rules.equals(checkpoint.rules())
-        || ai != checkpoint.ai() || !toPlay.equals(checkpoint.toPlay())
-        || !placements.equals(checkpoint.placements())) return "Fox.recoveryMismatch";
-    return "Fox.recoveryConfirm";
+    if (recoveryContradiction || !rules.equals(checkpoint.rules()) || ai != checkpoint.ai())
+      return "Fox.recoveryMismatch";
+    if (placements.equals(checkpoint.placements()))
+      return toPlay.equals(checkpoint.toPlay()) ? "Fox.restoring" : "Fox.recoveryMismatch";
+    int oldSize = checkpoint.placements().size();
+    if (placements.size() != oldSize + 1
+        || !placements.subList(0, oldSize).equals(checkpoint.placements())
+        || checkpoint.actions().isEmpty() || checkpoint.toPlay() == ai
+        || checkpoint.actions().get(checkpoint.actions().size() - 1).color() != ai
+        || placements.get(oldSize).color() != opposite(ai) || toPlay != ai)
+      return "Fox.recoveryMismatch";
+    return "Fox.restoring";
   }
 
-  public synchronized RecoveryConfirmation requestRecoveryConfirmation() {
-    if (!recoveryStatus().equals("Fox.recoveryConfirm")) return null;
-    confirmation = new RecoveryConfirmation(connection, game, revision);
-    return confirmation;
-  }
-
-  /** User assertion is separate from the pass-less protocol match; never an inferred game ID. */
-  public synchronized boolean confirmRecovery(RecoveryConfirmation expected, boolean sameGame) {
-    if (expected == null || expected != confirmation || expected.connection() != connection
-        || expected.game() != game || expected.revision() != revision
-        || !recoveryStatus().equals("Fox.recoveryConfirm")) return false;
-    confirmation = null;
-    recoveryAssertion = new RecoveryAssertion(expected, sameGame);
-    if (!sameGame) {
-      checkpoint = null;
-      recoveryFailure = "Fox.recoveryDenied";
+  /** Recover proven actions, not a game identity, from a fresh complete initialization. */
+  public synchronized boolean recoverHistory(long now) {
+    if (automationBlocked || !recoveryStatus().equals("Fox.restoring")) return false;
+    Snapshot retained = checkpoint;
+    boolean extended = placements.size() > retained.placements().size();
+    if (!extended && toPlay == ai) {
+      turnStartedNanos = retained.turnStartedNanos();
+      submitDeadlineNanos = Math.min(submitDeadlineNanos, retained.foxDeadlineNanos());
+    }
+    if (clockNanos(clock) <= 1_000_000_000L
+        || (toPlay == ai && now >= effectiveDeadlineNanos())) {
+      revokeRecovery("Fox.clockRisk");
       return false;
     }
     actions.clear();
-    actions.addAll(checkpoint.actions());
+    actions.addAll(retained.actions());
+    if (extended) {
+      Placement added = placements.get(placements.size() - 1);
+      actions.add(new Action(added, added.color(), added.number()));
+    }
     complete = true;
-    automationBlocked = false;
     disconnectedGame = false;
     revision++;
     statusKey = toPlay == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
@@ -125,7 +127,7 @@ public final class FoxGameState {
 
   public synchronized void revokeRecovery(String reason) {
     checkpoint = null;
-    confirmation = null;
+    recoveryContradiction = true;
     recoveryFailure = reason;
   }
 
@@ -238,10 +240,16 @@ public final class FoxGameState {
     Snapshot retained = snapshot();
     boolean unresolved = submissions.stream().anyMatch(f -> f.submission().game() == game
         && f.outcome() != SubmissionOutcome.CONFIRMED && f.outcome() != SubmissionOutcome.CANCELLED);
-    checkpoint = retained.searchable() && !unresolved ? retained : null;
-    recoveryFailure = unresolved ? "Fox.recoveryUnconfirmed" : "Fox.noCheckpoint";
-    confirmation = null;
-    recoveryContradiction = false;
+    if (retained.searchable() && !unresolved) {
+      checkpoint = retained;
+      recoveryFailure = "Fox.noCheckpoint";
+      recoveryContradiction = false;
+    } else if (unresolved) {
+      checkpoint = null;
+      recoveryFailure = "Fox.recoveryUnconfirmed";
+    } else if (retained.automationBlocked()) {
+      revokeRecovery(retained.statusKey());
+    }
     stopAutomation("Fox.disconnected", System.nanoTime());
     disconnectedGame |= active;
     revision++;
@@ -251,8 +259,6 @@ public final class FoxGameState {
 
   private void reset() {
     stopAutomation("Fox.stopped", System.nanoTime());
-    confirmation = null;
-    recoveryAssertion = null;
     automationBlocked = false;
     refreshRequested = clockRefreshed = false;
     revision++;
@@ -365,15 +371,20 @@ public final class FoxGameState {
         require(color(f[2]) == ai);
         char next = f[1].equals("1") ? ai : opposite(ai);
         if (pass) {
-          char passer = opposite(next);
-          Action action = new Action(null, passer, placements.size());
-          if (toPlay != null && toPlay == next && !actions.isEmpty()
-              && actions.get(actions.size() - 1).equals(action)) return;
-          require(toPlay != null && toPlay != next);
-          actions.add(action);
-          confirm(action, now);
-          revision++;
-          if (checkpoint != null) recoveryContradiction = true;
+          if (toPlay != null) {
+            char passer = opposite(next);
+            Action action = new Action(null, passer, placements.size());
+            if (toPlay == next && !actions.isEmpty()
+                && actions.get(actions.size() - 1).equals(action)) return;
+            require(toPlay != next);
+            actions.add(action);
+            confirm(action, now);
+            revision++;
+            if (checkpoint != null) recoveryContradiction = true;
+          } else if (complete) {
+            // An initialization flag supplies the turn, not evidence of an unseen PASS.
+            gap();
+          }
         } else {
           Placement move = placement(f[3], rules.size, false);
           if (move == null) {

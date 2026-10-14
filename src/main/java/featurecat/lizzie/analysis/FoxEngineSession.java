@@ -233,8 +233,7 @@ public final class FoxEngineSession {
       if (search.get() != generation || closing || result.equals("cancelled")) return null;
       String vertex = result.startsWith("play ") ? result.substring(5).trim() : result;
       if (vertex.equals("cancelled")) return null;
-      if (vertex.equalsIgnoreCase("resign")) { failure.accept("Fox.officialAction"); return null; }
-      if (!vertex.matches("(?i:pass)|[A-HJ-Z][0-9]{1,2}")) {
+      if (!vertex.matches("(?i:pass|resign)|[A-HJ-Z][0-9]{1,2}")) {
         throw new IllegalStateException("Fox search returned no valid final choice: " + result);
       }
       long completed = nanoTime.getAsLong();

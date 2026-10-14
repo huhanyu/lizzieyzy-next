@@ -72,7 +72,6 @@ public final class FoxLiveSession {
   private List<MoveData> liveMoves = List.of();
   private FoxGameState.SubmissionFact loggedSubmission;
   private KataGoRules selectedRules;
-  private final JButton recover = new JButton(text("Fox.recoveryConfirm"));
   private Leelaz retainedEngine;
   private Object retainedReader;
   private boolean retainedHistory;
@@ -159,28 +158,6 @@ public final class FoxLiveSession {
         && retainedEngine.isCurrentEngineIncarnationToken(retainedReader);
   }
 
-  private void confirmReconnect() {
-    if (restoring || !recoveryEngineCurrent()) return;
-    FoxGameState.RecoveryConfirmation token = game.requestRecoveryConfirmation();
-    if (token == null) return;
-    long generation = workGeneration;
-    int answer = JOptionPane.showConfirmDialog(dialog, text("Fox.recoveryAssertion"),
-        text("Fox.title"), JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-    if (generation != workGeneration) return;
-    if (!recoveryEngineCurrent()) game.revokeRecovery("Fox.recoveryEngineChanged");
-    if (game.confirmRecovery(token, answer == JOptionPane.YES_OPTION)) {
-      adoptedGame = game.snapshot().game();
-      recoveryAdmission = true;
-      invalidate();
-      recover.setEnabled(false);
-      showStatus("Fox.restoring");
-      if (engine == null) acquire(game.snapshot());
-      update(game.snapshot());
-    } else {
-      recover.setEnabled(false);
-      showStatus(game.recoveryStatus());
-    }
-  }
 
   private FoxLiveSession() {
     dialog = new JDialog(Lizzie.frame, text("Fox.title"), false);
@@ -221,7 +198,7 @@ public final class FoxLiveSession {
     JScrollPane communication = new JScrollPane(output);
     communication.setBorder(BorderFactory.createTitledBorder(text("Fox.communication")));
     content.add(communication, BorderLayout.CENTER);
-    JPanel statePanel = new JPanel(new GridLayout(7, 1));
+    JPanel statePanel = new JPanel(new GridLayout(6, 1));
     statePanel.add(new JLabel(text("Fox.breadthUnavailable")));
     pdaStatus.setName("fox-pda-status");
     statePanel.add(pdaStatus);
@@ -229,9 +206,6 @@ public final class FoxLiveSession {
     statePanel.add(clockStatus);
     statePanel.add(browsingStatus);
     statePanel.add(returnLive);
-    statePanel.add(recover);
-    recover.setEnabled(false);
-    recover.addActionListener(e -> confirmReconnect());
     content.add(statePanel, BorderLayout.SOUTH);
     dialog.setContentPane(content);
     dialog.pack();
@@ -434,7 +408,6 @@ public final class FoxLiveSession {
           game.connected();
           output.setText("");
           if (engine != null) engine.beginTranscript(game.snapshot().connection());
-          recover.setEnabled(false);
           clockStatus.setText(" ");
           showStatus("Fox.syncing");
         }); }
@@ -444,7 +417,6 @@ public final class FoxLiveSession {
           game.disconnected();
           clockStatus.setText(" ");
           retainedHistory = liveHistory != null;
-          recover.setEnabled(false);
           observe("Fox.disconnected");
         }); }
         public void problem(String key) { onEdt(() -> showStatus(key)); }
@@ -480,22 +452,26 @@ public final class FoxLiveSession {
     }
     if (!state.initialized()) return;
     if (state.automationBlocked()) {
-      recover.setEnabled(false);
       observe(state.statusKey());
       return;
     }
     if (!state.complete()) {
       if (game.hasCheckpoint() && !recoveryEngineCurrent())
         game.revokeRecovery("Fox.recoveryEngineChanged");
-      String reason = game.recoveryStatus();
-      if (!retainedHistory) release(reason, false);
-      showStatus(reason);
-      recover.setEnabled(!restoring && reason.equals("Fox.recoveryConfirm"));
-      refreshDisplay();
-      return;
+      if (!restoring && game.recoverHistory(System.nanoTime())) {
+        state = game.snapshot();
+        adoptedGame = state.game();
+        recoveryAdmission = true;
+        invalidate();
+      } else {
+        String reason = game.recoveryStatus();
+        if (!retainedHistory) release(reason, false);
+        showStatus(reason);
+        refreshDisplay();
+        return;
+      }
     }
     if (restoring || blockedGame == state.game()) return;
-    recover.setEnabled(false);
     if (adoptedGame != state.game()) recoveryAdmission = false;
     if (engine == null) acquire(state);
     update(state);
@@ -571,7 +547,7 @@ public final class FoxLiveSession {
     if (!state.searchable() || engine == null || restoring) return;
     try { owned(() -> apply(state)); }
     catch (RuntimeException failure) {
-      game.reject(); release("Fox.incomplete", false); return;
+      game.reject(); observe("Fox.incomplete"); return;
     }
     if (state.pending() != null) return;
     if (pdaUpdating) return;
@@ -611,7 +587,7 @@ public final class FoxLiveSession {
         FoxObservation.failure("search", failure);
         onEdt(() -> {
           if (engine == owner && generation == workGeneration) {
-            fail(state.ownTurn() ? "Fox.clockRisk" : "Fox.engineError");
+            fail("Fox.engineError");
           }
         });
       }
@@ -620,7 +596,11 @@ public final class FoxLiveSession {
 
   private void finishSearch(FoxEngineSession owner, FoxGameState.Snapshot searched,
       long generation, FoxEngineSession.Selection selection) {
-    if (engine != owner || generation != workGeneration || restoring || !searched.ownTurn()) return;
+    if (engine != owner || generation != workGeneration || restoring) return;
+    if (selection != null && selection.vertex().equalsIgnoreCase("resign")) {
+      fail("Fox.officialAction"); return;
+    }
+    if (!searched.ownTurn()) return;
     if (selection == null) { fail("Fox.clockRisk"); return; }
     FoxGameState.Submission pending;
     try { pending = game.prepareSubmission(searched, selection.identity().search(), selection.vertex(), System.nanoTime()); }
@@ -669,7 +649,6 @@ public final class FoxLiveSession {
     FoxGameState.Snapshot state = game.snapshot();
     if (game.hasCheckpoint() && !recoveryEngineCurrent()) {
       game.revokeRecovery("Fox.recoveryEngineChanged");
-      recover.setEnabled(false);
       showStatus("Fox.recoveryEngineChanged");
     }
     if (connection == null || !state.initialized() || !state.active()) return;
@@ -771,7 +750,6 @@ public final class FoxLiveSession {
     if (!success) game.revokeRecovery("Fox.unrestored");
     showStatus(game.hasCheckpoint() && game.snapshot().initialized() && game.snapshot().active()
         ? game.recoveryStatus() : key);
-    recover.setEnabled(success && game.recoveryStatus().equals("Fox.recoveryConfirm"));
     refreshDisplay();
     Lizzie.frame.refresh();
     refreshLimitControls();
@@ -788,7 +766,6 @@ public final class FoxLiveSession {
     release("Fox.stopped", game.snapshot().complete() || retainedHistory);
     retainedHistory = false;
     game.revokeRecovery("Fox.noCheckpoint");
-    recover.setEnabled(false);
     if (engine == null) ownsBoard = false;
     stop.setEnabled(false);
     port.setEnabled(true);

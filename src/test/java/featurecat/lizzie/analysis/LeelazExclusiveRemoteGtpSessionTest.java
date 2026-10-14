@@ -1372,7 +1372,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
   @Test
   void foxCancelledAndLateRealChoicesCannotAcquireSubmissionPermission() throws Exception {
-    for (String terminal : List.of("cancelled", "cancel-race", "late-choice")) {
+    for (String terminal : List.of("cancelled", "cancel-race", "late-choice", "resign", "stale-resign")) {
       Leelaz engine = reusableKatagoEngine(false, false);
       ByteArrayOutputStream output = installOutput(engine);
       try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
@@ -1428,8 +1428,9 @@ class LeelazExclusiveRemoteGtpSessionTest {
           for (int i = 0; i < 1500; i++)
             dispatch(engine, "info move D4 visits " + (20 + i) + " winrate 0.55 scoreMean 1 pv D4 Q16");
         }
-        if (terminal.equals("cancel-race")) adapter.invalidate();
-        dispatch(engine, terminal.equals("cancelled") ? "play cancelled" : "play D4");
+        if (terminal.equals("cancel-race") || terminal.equals("stale-resign")) adapter.invalidate();
+        dispatch(engine, terminal.equals("cancelled") ? "play cancelled"
+            : terminal.endsWith("resign") ? "play resign" : "play D4");
         dispatch(engine, "");
         FoxEngineSession.Selection selection = search.get(2, TimeUnit.SECONDS);
         if (terminal.equals("late-choice")) {
@@ -1441,6 +1442,12 @@ class LeelazExclusiveRemoteGtpSessionTest {
           assertFalse(stream.contains("list_commands"), "old display entries evicted");
           assertTrue(stream.contains("< info move D4 visits 1519"));
           assertTrue(stream.contains("< play D4"), "final response retains protocol ownership");
+          adapter.invalidate();
+          assertFalse(adapter.claimSubmission(selection, () -> true));
+        } else if (terminal.equals("resign")) {
+          assertNotNull(selection);
+          assertEquals("resign", selection.vertex());
+          assertEquals(candidates.get().identity(), selection.identity());
           adapter.invalidate();
           assertFalse(adapter.claimSubmission(selection, () -> true));
         } else assertNull(selection);
@@ -1573,6 +1580,81 @@ class LeelazExclusiveRemoteGtpSessionTest {
           }
           assertEquals(deadline, state.snapshot().submitDeadlineNanos());
           assertEquals(0, state.snapshot().turnStartedNanos());
+        }
+      }
+    }
+  }
+
+  @Test void foxRecoveredPassReplayRequiresEveryMatchingAckBeforeFreshSearch() throws Exception {
+    for (String scenario : List.of("success", "rejected", "timeout", "invalidated")) {
+      Leelaz engine = reusableKatagoEngine(false, false);
+      ByteArrayOutputStream output = installOutput(engine);
+      try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+        FoxEngineSession adapter = new FoxEngineSession(engine, engine.engineIncarnationToken(),
+            value -> {}, reason -> fail(reason));
+        adapter.useClockForTest(() -> 2_000_000_000L);
+        assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, adapter.acquire(() -> {}));
+        dispatch(engine, "=800000000"); dispatch(engine, "");
+        AtomicInteger consumed = new AtomicInteger(1);
+        var preparation = new java.util.concurrent.FutureTask<Void>(() -> {
+          adapter.prepare("chinese", new FoxEngineSession.Limits(10, 64)); return null;
+        });
+        startFoxTestTask(preparation);
+        for (int i = 0; i < 9; i++) {
+          String command = nextFoxCommand(output, consumed);
+          String payload = command.endsWith(" list_commands")
+              ? "kata-search_analyze_cancellable kata-get-rules kata-set-rules kata-get-param kata-set-param kgs-time_settings kata-time_settings kata-list_time_settings set_free_handicap time_left stop"
+              : command.endsWith(" kata-list_time_settings") ? "none byoyomi"
+              : command.endsWith(" kata-get-rules") ? "chinese"
+              : command.endsWith(" kata-get-param maxTime") ? "3"
+              : command.endsWith(" kata-get-param maxVisits") ? "64"
+              : command.endsWith(" kata-get-param playoutDoublingAdvantage") ? "0" : "";
+          dispatch(engine, "=" + command.split(" ", 2)[0] + " " + payload); dispatch(engine, "");
+        }
+        preparation.get(2, TimeUnit.SECONDS);
+        var game = new featurecat.lizzie.fox.FoxGameState();
+        game.connected();
+        for (String message : List.of("FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3",
+            "FAMOVE,1,B,0^0^0^N", "FAMOVE,0,B,1^16^3^B", "FAMOVE,1,B,2^3^15^W", "FASKIP,0,B"))
+          game.receive(message, 0);
+        game.disconnected(); game.connected();
+        for (String message : List.of("FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W,3^15^15^W",
+            "FATIMELEFT,50,30,3", "FAMOVE,1,B,3^15^15^W")) game.receive(message, 1_000_000_000L);
+        assertTrue(game.recoverHistory(1_000_000_000L));
+        assertTrue(game.beginClockRefresh(1_000_000_000L));
+        game.receive("FATIMELEFT,49,30,3", 1_000_000_000L);
+        var search = new java.util.concurrent.FutureTask<FoxEngineSession.Selection>(() -> adapter.analyze(game.snapshot()));
+        startFoxTestTask(search);
+        for (String expected : List.of("boardsize 19", "clear_board", "komi 6.5", "play B R16", "play W D4", "play B pass")) {
+          String command = nextFoxCommand(output, consumed);
+          assertTrue(command.endsWith(" " + expected), command);
+          String held = output.toString(StandardCharsets.UTF_8);
+          dispatch(engine, "=999999999"); dispatch(engine, "");
+          assertThrows(java.util.concurrent.TimeoutException.class, () -> search.get(30, TimeUnit.MILLISECONDS));
+          assertEquals(held, output.toString(StandardCharsets.UTF_8), "unmatched response cannot advance replay");
+          if (expected.equals("play B pass")) {
+            if (scenario.equals("timeout")) break;
+            if (scenario.equals("invalidated")) adapter.invalidate();
+          }
+          dispatch(engine, (expected.equals("play B pass") && scenario.equals("rejected") ? "?" : "=")
+              + command.split(" ", 2)[0]); dispatch(engine, "");
+        }
+        if (scenario.equals("success")) {
+          assertTrue(nextFoxCommand(output, consumed).endsWith(" play W Q4"));
+          String command = output.toString(StandardCharsets.UTF_8).lines().toList().get(consumed.get() - 1);
+          dispatch(engine, "=" + command.split(" ", 2)[0]); dispatch(engine, "");
+          do {
+            command = nextFoxCommand(output, consumed);
+            dispatch(engine, "=" + command.split(" ", 2)[0]);
+            if (command.contains("kata-search_analyze_cancellable")) dispatch(engine, "play D16");
+            dispatch(engine, "");
+          } while (!command.contains("kata-search_analyze_cancellable"));
+          assertNotNull(search.get(2, TimeUnit.SECONDS));
+        } else {
+          if (scenario.equals("invalidated")) assertNull(search.get(2, TimeUnit.SECONDS));
+          else assertThrows(java.util.concurrent.ExecutionException.class, () -> search.get(7, TimeUnit.SECONDS));
+          assertFalse(output.toString(StandardCharsets.UTF_8).contains("play W Q4"));
+          assertFalse(output.toString(StandardCharsets.UTF_8).contains("kata-search_analyze_cancellable B 10"));
         }
       }
     }
@@ -1749,17 +1831,17 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
-  void foxRecoveryAssertionCannotAcquireReplacementReader() throws Exception {
+  void foxRecoveryCannotAcquireReplacementReader() throws Exception {
     Leelaz engine = reusableKatagoEngine(false, false);
     installOutput(engine);
-    Object assertedReader = engine.engineIncarnationToken();
+    Object retainedReader = engine.engineIncarnationToken();
     try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
       ByteArrayOutputStream replacement = new ByteArrayOutputStream();
       engine.installFreshCommandOutputForTest(replacement);
-      FoxEngineSession adapter = new FoxEngineSession(engine, assertedReader,
-          candidates -> fail("old assertion published candidates"), reason -> {});
+      FoxEngineSession adapter = new FoxEngineSession(engine, retainedReader,
+          candidates -> fail("old reader published candidates"), reason -> {});
       assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY,
-          adapter.acquire(() -> fail("old assertion acquired replacement")));
+          adapter.acquire(() -> fail("old reader acquired replacement")));
       assertThrows(IllegalStateException.class, () -> adapter.prepare("chinese", null));
       assertEquals("", replacement.toString(StandardCharsets.UTF_8));
       assertFalse(engine.hasExclusiveGtpLease());

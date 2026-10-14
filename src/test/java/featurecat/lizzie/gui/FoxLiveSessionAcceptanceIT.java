@@ -42,6 +42,15 @@ public final class FoxLiveSessionAcceptanceIT {
     assertTrue(Files.readString(result).contains("PASS"));
   }
 
+  @Test void actualRecoveredKoPreservesEngineLegality() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
+    DesktopProbeProcess.requireDisplay();
+    Path result = DesktopProbeProcess.run(FoxLiveSessionAcceptanceIT.class, "fox-ko",
+        List.of("-Dfox.ko.smoke=true"),
+        List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")), 90);
+    assertTrue(Files.readString(result).contains("PASS"));
+  }
+
   public static void main(String[] args) throws Exception {
     Path work = Path.of(args[2]);
     Path result = Path.of(args[3]);
@@ -91,6 +100,12 @@ public final class FoxLiveSessionAcceptanceIT {
       }
       SwingUtilities.invokeAndWait(() -> Lizzie.board.getHistory().publishManualRules(customRules));
       assertThreads(target, work);
+      if (Boolean.getBoolean("fox.ko.smoke")) {
+        realKoReplay(target, work);
+        Files.writeString(result, "PASS real recovered ko legality\n");
+        target.sendCommand("quit");
+        System.exit(0);
+      }
       BoardHistoryNode originalDisplay = Lizzie.board.getHistory().getCurrentHistoryNode();
       SwingUtilities.invokeAndWait(() -> {
         JMenuBar bar = LizzieFrame.menu;
@@ -530,7 +545,6 @@ public final class FoxLiveSessionAcceptanceIT {
             "incoming incomplete observation never replaces confirmed pre-submit root");
         reconnected.setSoTimeout(250);
         assertThrows(SocketTimeoutException.class, () -> reconnected.getInputStream().read(), "blocked has no send");
-        assertFalse(button(fox, "Fox.recoveryConfirm").isEnabled());
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-reconnect-unconfirmed.png").toFile());
         send(reconnected, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B",
@@ -796,6 +810,56 @@ public final class FoxLiveSessionAcceptanceIT {
     }
   }
 
+  private static void realKoReplay(Leelaz target, Path work) throws Exception {
+    var ready = new java.util.concurrent.CompletableFuture<Void>();
+    var adapter = new featurecat.lizzie.analysis.FoxEngineSession(target, target.engineIncarnationToken(),
+        value -> {}, reason -> ready.completeExceptionally(new AssertionError(reason)));
+    assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
+        adapter.acquire(() -> ready.complete(null)));
+    ready.get(10, TimeUnit.SECONDS);
+    adapter.prepare("chinese", new featurecat.lizzie.analysis.FoxEngineSession.Limits(3, 64));
+    var state = new featurecat.lizzie.fox.FoxGameState();
+    state.connected();
+    long now = System.nanoTime();
+    for (String message : List.of("FARULE,5,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3",
+        "FAMOVE,1,B,0^0^0^N", "FAMOVE,0,B,1^1^2^B", "FAMOVE,1,B,2^2^2^W",
+        "FAMOVE,0,B,3^2^3^B", "FAMOVE,1,B,4^1^1^W", "FAMOVE,0,B,5^3^2^B",
+        "FAMOVE,1,B,6^3^1^W", "FAMOVE,0,B,7^0^4^B", "FAMOVE,1,B,8^2^0^W",
+        "FAMOVE,0,B,9^2^1^B")) state.receive(message, now);
+    assertEquals(9, state.snapshot().actions().size());
+    state.disconnected(); state.connected();
+    for (String message : List.of("FARULE,5,60,30,3,650",
+        "FASTATUS,1,B,1^1^2^B,2^2^2^W,3^2^3^B,4^1^1^W,5^3^2^B,6^3^1^W,7^0^4^B,8^2^0^W,9^2^1^B",
+        "FATIMELEFT,50,30,3", "FAMOVE,0,B,9^2^1^B")) state.receive(message, System.nanoTime());
+    assertTrue(state.recoverHistory(System.nanoTime()));
+    int start = gtp(work).length();
+    var selection = adapter.analyze(state.snapshot());
+    assertNotNull(selection, "real KataGo accepts the reachable nine-action ko history");
+    assertNotEquals("C3", selection.vertex(), "immediate ko recapture is not a legal search choice");
+    // GTP play deliberately accepts ko overrides; the engine's policy mask is the legality oracle.
+    adapter.drainTranscript();
+    assertTrue(target.sendExclusiveGtpCommand(adapter, "910000001 kata-raw-nn 0"));
+    StringBuilder raw = new StringBuilder();
+    await(() -> {
+      raw.append(adapter.drainTranscript());
+      return raw.toString().contains("=910000001") && raw.toString().endsWith("[0] < \n");
+    }, 10, "real ko policy response through the single Leelaz reader");
+    List<String> response = raw.toString().lines().filter(line -> line.startsWith("[0] < "))
+        .map(line -> line.substring(6).trim()).toList();
+    int policy = response.indexOf("policy");
+    assertTrue(policy >= 0, raw.toString());
+    assertEquals("NAN", response.get(policy + 3).split("\\s+")[2], "C3 is ko-forbidden after full replay");
+    assertNotEquals("NAN", response.get(policy + 1).split("\\s+")[0], "A5 remains a legal ordinary move");
+    Files.writeString(work.resolve("reachable-ko-replay.txt"),
+        "nine-action recovery accepted; empty C3 masked illegal, A5 legal by real engine\n"
+            + raw + "\n" + gtp(work).substring(start));
+    var released = new java.util.concurrent.CompletableFuture<Void>();
+    adapter.release(() -> released.complete(null),
+        () -> released.completeExceptionally(new AssertionError("ko probe handback failed")));
+    released.get(15, TimeUnit.SECONDS);
+    assertFalse(target.isPondering());
+  }
+
   /** A legal two-eye setup leaves White no legal stone placement; the real engine chooses PASS. */
   private static void naturalPassReconnect(JDialog fox, int port, Leelaz target, Path work) throws Exception {
     SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
@@ -836,22 +900,25 @@ public final class FoxLiveSessionAcceptanceIT {
     }
     await(() -> hasText(fox, "Fox.disconnected"), 5, "natural pass disconnect");
     try (Socket peer = new Socket("127.0.0.1", port)) {
-      peer.setSoTimeout(300);
-      send(peer, rules.toString(), "FASTATUS,1,W", "FATIMELEFT,40,30,3", "FAMOVE,0,W,0^0^0^N");
-      await(() -> button(fox, "Fox.recoveryConfirm").isEnabled(), 5, "natural tail PASS recovery assertion");
+      peer.setSoTimeout(20000);
       String recovery = commands(work);
-      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
-      assertEquals(recovery, commands(work), "no search before assertion");
-      SwingUtilities.invokeLater(() -> button(fox, "Fox.recoveryConfirm").doClick());
-      await(() -> modal() != null, 5, "natural pass same-game dialog");
-      answerModal(JOptionPane.YES_OPTION);
-      await(() -> commands(work).substring(recovery.length()).contains("kata-search_analyze_cancellable B"),
-          20, "new opponent search after retained PASS recovery");
+      send(peer, rules.toString(), "FASTATUS,1,W,1^1^1^B", "FATIMELEFT,40,30,3", "FAMOVE,1,W,1^1^1^B");
+      assertEquals("AFSTATUS,W", receive(peer));
+      send(peer, "FASTATUS,1,W,1^1^1^B", "FATIMELEFT,39,30,3", "FAMOVE,1,W,1^1^1^B");
+      String continuation = receive(peer);
+      assertEquals("AFPLAY,W,2^3^3^W", continuation,
+          "after Black fills one eye the real engine captures the now one-liberty group");
       String replay = commands(work).substring(recovery.length());
       assertTrue(replay.indexOf("play W pass") >= 0);
-      assertTrue(replay.indexOf("play W pass") < replay.indexOf("kata-search_analyze_cancellable B"));
-      assertSame(pass[0], Lizzie.board.getHistory().getCurrentHistoryNode());
-      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "recovery never resends PASS");
+      assertTrue(replay.indexOf("play W pass") < replay.indexOf("play B B4"));
+      assertTrue(replay.indexOf("play B B4") < replay.indexOf("kata-search_analyze_cancellable W"));
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber());
+      assertSame(pass[0], Lizzie.board.getHistory().getCurrentHistoryNode().previous().orElseThrow());
+      assertFalse(Lizzie.board.getData().blackToPlay);
+      send(peer, "FAMOVE,0,W," + continuation.substring("AFPLAY,W,".length()));
+      await(() -> Lizzie.board.getHistory().getMoveNumber() == 3, 5, "fresh capture confirmed once");
+      peer.setSoTimeout(300);
+      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "no duplicate recovered submission");
       Files.writeString(work.resolve("natural-pass-recovery-gtp.txt"), replay);
       capture(fox, work.resolve("fox-natural-pass-recovered.png"));
       SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
@@ -881,17 +948,12 @@ public final class FoxLiveSessionAcceptanceIT {
     assertBreadth(false);
     assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
     try (Socket peer = new Socket("127.0.0.1", port)) {
+      String before = commands(work);
       send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
           "FATIMELEFT,40,30,3", "FAMOVE,0,B,2^3^15^W");
-      await(() -> button(fox, "Fox.recoveryConfirm").isEnabled(), 5, "explicit recovery gate");
       assertTrue(target.hasExclusiveGtpLease());
       peer.setSoTimeout(250);
       assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
-      String before = commands(work);
-      SwingUtilities.invokeLater(() -> button(fox, "Fox.recoveryConfirm").doClick());
-      await(() -> modal() != null, 5, "actual same-game assertion dialog");
-      capture(fox, work.resolve("fox-reconnect-confirm.png"));
-      answerModal(JOptionPane.YES_OPTION);
       assertBreadth(false);
       await(() -> commands(work).substring(before.length()).contains("kata-search_analyze_cancellable W"),
           20, "replayed pass before new opponent search");
@@ -908,26 +970,33 @@ public final class FoxLiveSessionAcceptanceIT {
     }
     await(() -> hasText(fox, "Fox.disconnected") && target.hasExclusiveGtpLease(), 5, "second disconnect");
     try (Socket peer = new Socket("127.0.0.1", port)) {
-      send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
-          "FATIMELEFT,35,30,3", "FAMOVE,0,B,2^3^15^W");
-      await(() -> button(fox, "Fox.recoveryConfirm").isEnabled(), 5, "second explicit recovery gate");
-      SwingUtilities.invokeLater(() -> button(fox, "Fox.recoveryConfirm").doClick());
-      await(() -> modal() != null, 5, "cancel recovery dialog");
-      answerModal(JOptionPane.CANCEL_OPTION);
-      await(() -> hasText(fox, "Fox.recoveryDenied"), 5, "cancel remains observation");
-      assertTrue(target.hasExclusiveGtpLease());
-      peer.setSoTimeout(250);
-      assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "cancel no resend");
-      capture(fox, work.resolve("fox-reconnect-cancelled.png"));
+      peer.setSoTimeout(20000);
+      String before = commands(work);
+      send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W,3^15^15^W",
+          "FATIMELEFT,35,30,3", "FAMOVE,1,B,3^15^15^W");
+      assertEquals("AFSTATUS,B", receive(peer));
+      send(peer, "FASTATUS,1,B,1^16^3^B,2^3^15^W,3^15^15^W", "FATIMELEFT,34,30,3",
+          "FAMOVE,1,B,3^15^15^W");
+      String move = receive(peer);
+      assertTrue(move.startsWith("AFPLAY,B,4^"), move);
+      assertEquals(4, Lizzie.board.getHistory().getMainEndWithPass().getData().moveNumber);
+      assertTrue(Lizzie.board.getData().blackToPlay);
+      String replay = commands(work).substring(before.length());
+      assertTrue(replay.indexOf("play B pass") < replay.indexOf("play W Q4"));
+      assertTrue(replay.indexOf("play W Q4") < replay.indexOf("kata-search_analyze_cancellable B"));
+      Files.writeString(work.resolve("four-action-recovery-gtp.txt"), gtp(work));
+      send(peer, "FAMOVE,0,B," + move.substring("AFPLAY,B,".length()));
+      await(() -> Lizzie.board.getHistory().getMoveNumber() == 5, 5, "fresh recovery move confirmed");
+      capture(fox, work.resolve("fox-four-action-recovered.png"));
       SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(historic[0]));
       String beforeStop = commands(work);
       SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
-      await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(), 35, "cancel safe Stop");
+      await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(), 35, "recovered safe Stop");
       assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
       String stopReplay = commands(work).substring(beforeStop.length());
       assertTrue(stopReplay.contains("play B R16") && stopReplay.contains("play W D4"), stopReplay);
       assertFalse(stopReplay.contains("play B pass"), "Stop restores displayed two moves, not live trailing pass");
-      Files.writeString(work.resolve("reconnect-cancel-stop-gtp.txt"), stopReplay);
+      Files.writeString(work.resolve("reconnect-displayed-stop-gtp.txt"), stopReplay);
     }
   }
 
@@ -961,7 +1030,6 @@ public final class FoxLiveSessionAcceptanceIT {
       send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
           "FATIMELEFT,50,30,3", "FAMOVE,1,B,2^3^15^W");
       await(() -> hasText(fox, "Fox.recoveryUnconfirmed"), 5, "retained pending refusal");
-      assertFalse(button(fox, "Fox.recoveryConfirm").isEnabled());
       assertTrue(target.hasExclusiveGtpLease());
       String beforeBrowse = commands(work);
       SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(firstMove[0]));
