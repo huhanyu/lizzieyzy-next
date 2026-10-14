@@ -5,6 +5,7 @@ import featurecat.lizzie.analysis.FoxEngineSession;
 import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
+import featurecat.lizzie.gui.AppleStyleSupport;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.logging.FoxObservation;
 import featurecat.lizzie.rules.Board;
@@ -13,10 +14,21 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.SGFParser;
 import featurecat.lizzie.rules.Stone;
 import java.awt.BorderLayout;
-import java.awt.GridLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.RenderingHints;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.*;
@@ -32,13 +44,13 @@ public final class FoxLiveSession {
   private final ExecutorService wire = Executors.newSingleThreadExecutor(r -> {
     Thread t = new Thread(r, "fox-ai-send"); t.setDaemon(true); return t;
   });
-  private final JLabel clockStatus = new JLabel();
+  private final JLabel clockStatus = new DetailLabel();
   private boolean engineReady;
   private long scheduledRevision = -1;
   private long refreshDeadlineNanos;
   private final JDialog dialog;
   private final JLabel status = new JLabel();
-  private final JTextArea output = new JTextArea(10, 56);
+  private final JTextArea output = new JTextArea(14, 56);
   private final JSpinner port = new JSpinner(new SpinnerNumberModel(7000, 1, 65535, 1));
   private final JTextField rules = new JTextField();
   private final JTextField maxTime = new JTextField(8);
@@ -54,7 +66,7 @@ public final class FoxLiveSession {
   private final JButton start = new JButton(text("Fox.start"));
   private final JButton stop = new JButton(text("Fox.stop"));
   private final JButton returnLive = new JButton(text("Fox.returnLive"));
-  private final JLabel browsingStatus = new JLabel();
+  private final JLabel browsingStatus = new DetailLabel();
   private FoxConnection connection;
   private long connectionToken;
   private volatile long workGeneration;
@@ -77,7 +89,7 @@ public final class FoxLiveSession {
   private Object retainedReader;
   private boolean retainedHistory;
   private boolean recoveryAdmission;
-  private final JLabel pdaStatus = new JLabel();
+  private final JLabel pdaStatus = new DetailLabel();
   private boolean pdaUpdating;
 
   /** True means Fox consumed this toolbar intent, including refusal and invalid drafts. */
@@ -160,13 +172,20 @@ public final class FoxLiveSession {
   }
 
 
+  /** Statuses that stop automation or need the user's hand; everything else is idle or live. */
+  private static final Set<String> ATTENTION_STATUS = Set.of(
+      "Fox.portBusy", "Fox.invalidPort", "Fox.invalidLimits", "Fox.rulesUnavailable",
+      "Fox.engineUnavailable", "Fox.engineError", "Fox.unrestored", "Fox.connectionError",
+      "Fox.protocolError", "Fox.disconnected", "Fox.incomplete", "Fox.clockRisk",
+      "Fox.confirmationFailed", "Fox.officialAction", "Fox.conflict", "Fox.pdaFailed",
+      "Fox.noCheckpoint", "Fox.recoveryMismatch", "Fox.recoveryUnconfirmed",
+      "Fox.recoveryEngineChanged");
+  private static final int STATUS_DOT = 8;
+  private static final int ROW_GAP = 8;
+  private static final int GROUP_GAP = 16;
+
   private FoxLiveSession() {
     dialog = new JDialog(Lizzie.frame, text("Fox.title"), false);
-    JPanel controls = new JPanel(new GridLayout(4, 3, 8, 8));
-    controls.add(new JLabel(text("Fox.port")));
-    controls.add(port);
-    controls.add(start);
-    controls.add(new JLabel(text("Fox.rules")));
     JSpinner.NumberEditor portEditor = new JSpinner.NumberEditor(port, "0");
     javax.swing.text.NumberFormatter portFormat = new javax.swing.text.NumberFormatter(
         new java.text.DecimalFormat("0")) {
@@ -179,37 +198,99 @@ public final class FoxLiveSession {
     portFormat.setMinimum(1);
     portFormat.setMaximum(65535);
     portEditor.getTextField().setFormatterFactory(new javax.swing.text.DefaultFormatterFactory(portFormat));
+    portEditor.getTextField().setColumns(5);
     port.setEditor(portEditor);
+    // Read-only value, not an input: no field chrome and no focus/caret. Sized for the standard
+    // summary; the tooltip carries any longer extension fields.
     rules.setEditable(false);
-    controls.add(rules);
-    controls.add(stop);
+    rules.setFocusable(false);
+    rules.setOpaque(false);
+    rules.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+    rules.setColumns(68);
     maxTime.setName("fox-max-time");
     maxVisits.setName("fox-max-visits");
-    controls.add(new JLabel(text("Fox.maxTime")));
-    controls.add(maxTime);
-    controls.add(new JLabel(text("Fox.limitUnlimited")));
-    controls.add(new JLabel(text("Fox.maxVisits")));
-    controls.add(maxVisits);
-    controls.add(new JLabel(text("Fox.limitUnlimited")));
+    pdaStatus.setName("fox-pda-status");
+
+    Color ink = AppleStyleSupport.dialogTextColor();
+    Color muted = AppleStyleSupport.workspaceMuted();
+    status.setFont(status.getFont().deriveFont(Font.BOLD, status.getFont().getSize2D() + 2f));
+    status.setForeground(ink);
+    status.setIconTextGap(8);
+    clockStatus.setForeground(ink);
+    browsingStatus.setForeground(ink);
+    pdaStatus.setForeground(muted);
+    styleButton(returnLive, 88);
+    returnLive.setVisible(false);
+
+    JPanel statusCard = new JPanel(new GridBagLayout());
+    statusCard.setBackground(AppleStyleSupport.workspaceSurface());
+    statusCard.setBorder(BorderFactory.createCompoundBorder(
+        BorderFactory.createLineBorder(AppleStyleSupport.workspaceBorder()),
+        BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+    int indent = STATUS_DOT + status.getIconTextGap();
+    statusCard.add(status, cell(0, 0, 2, 1, new Insets(0, 0, 0, 0)));
+    statusCard.add(clockStatus, cell(0, 1, 2, 1, new Insets(6, indent, 0, 0)));
+    statusCard.add(pdaStatus, cell(0, 2, 2, 1, new Insets(4, indent, 0, 0)));
+    statusCard.add(browsingStatus, cell(0, 3, 1, 1, new Insets(6, indent, 0, 8)));
+    GridBagConstraints returnCell = cell(1, 3, 1, 0, new Insets(6, 0, 0, 0));
+    returnCell.fill = GridBagConstraints.NONE;
+    returnCell.anchor = GridBagConstraints.EAST;
+    statusCard.add(returnLive, returnCell);
+
+    JPanel form = new JPanel(new GridBagLayout());
+    form.setOpaque(false);
+    formRow(form, 0, "Fox.port", port);
+    formRow(form, 1, "Fox.maxTime", maxTime);
+    formRow(form, 2, "Fox.maxVisits", maxVisits);
+    form.add(note("Fox.limitUnlimited", muted), cell(1, 3, 1, 1, new Insets(6, 0, 0, 0)));
+    form.add(new JLabel(text("Fox.rules")), cell(0, 4, 2, 1, new Insets(GROUP_GAP, 0, 0, 0)));
+    form.add(rules, cell(0, 5, 2, 1, new Insets(4, 0, 0, 0)));
+    form.add(note("Fox.breadthUnavailable", muted), cell(0, 6, 2, 1, new Insets(ROW_GAP, 0, 0, 0)));
+
+    styleButton(start, 88);
+    styleButton(stop, 88);
+    JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+    actions.setOpaque(false);
+    actions.add(start);
+    actions.add(Box.createHorizontalStrut(ROW_GAP));
+    actions.add(stop);
+
+    JPanel setup = new JPanel();
+    setup.setOpaque(false);
+    setup.setLayout(new BoxLayout(setup, BoxLayout.Y_AXIS));
+    setup.add(statusCard);
+    setup.add(Box.createVerticalStrut(GROUP_GAP));
+    setup.add(form);
+    setup.add(Box.createVerticalStrut(12));
+    setup.add(actions);
+
     output.setEditable(false);
     output.setLineWrap(false);
-    JPanel content = new JPanel(new BorderLayout(8, 8));
-    content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-    content.add(controls, BorderLayout.NORTH);
+    output.setFont(new Font(Font.MONOSPACED, Font.PLAIN, output.getFont().getSize()));
+    output.setMargin(new Insets(6, 8, 6, 8));
     JScrollPane communication = new JScrollPane(output);
-    communication.setBorder(BorderFactory.createTitledBorder(text("Fox.communication")));
-    content.add(communication, BorderLayout.CENTER);
-    JPanel statePanel = new JPanel(new GridLayout(6, 1));
-    statePanel.add(new JLabel(text("Fox.breadthUnavailable")));
-    pdaStatus.setName("fox-pda-status");
-    statePanel.add(pdaStatus);
-    statePanel.add(status);
-    statePanel.add(clockStatus);
-    statePanel.add(browsingStatus);
-    statePanel.add(returnLive);
-    content.add(statePanel, BorderLayout.SOUTH);
+    communication.setBorder(BorderFactory.createLineBorder(AppleStyleSupport.workspaceBorder()));
+    // The pane keeps the 14-row opening size; the area itself only claims its content, so the
+    // scrollbar appears when the transcript overflows, not whenever the status card grows.
+    communication.setPreferredSize(communication.getPreferredSize());
+    output.setRows(0);
+    output.setColumns(0);
+    JPanel transcript = new JPanel(new BorderLayout(0, 6));
+    transcript.setOpaque(false);
+    transcript.setBorder(BorderFactory.createEmptyBorder(GROUP_GAP, 0, 0, 0));
+    transcript.add(note("Fox.communication", muted), BorderLayout.NORTH);
+    transcript.add(communication, BorderLayout.CENTER);
+
+    JPanel content = new JPanel(new BorderLayout());
+    content.setBackground(AppleStyleSupport.workspaceBackground());
+    content.setBorder(BorderFactory.createEmptyBorder(GROUP_GAP, GROUP_GAP, GROUP_GAP, GROUP_GAP));
+    content.add(setup, BorderLayout.NORTH);
+    content.add(transcript, BorderLayout.CENTER);
     dialog.setContentPane(content);
+    // The status line must hold text before pack, or the transcript is sized one line short.
+    showStatus("Fox.waiting");
     dialog.pack();
+    dialog.setMinimumSize(dialog.getSize());
     dialog.setLocationRelativeTo(Lizzie.frame);
     start.addActionListener(e -> start());
     stop.addActionListener(e -> stop());
@@ -219,9 +300,62 @@ public final class FoxLiveSession {
       }
     });
     returnLive.setEnabled(false);
-    showStatus("Fox.waiting");
     stop.setEnabled(false);
     new Timer(100, e -> tick()).start();
+  }
+
+  private static GridBagConstraints cell(int x, int y, int width, double weightx, Insets insets) {
+    GridBagConstraints c = new GridBagConstraints();
+    c.gridx = x;
+    c.gridy = y;
+    c.gridwidth = width;
+    c.weightx = weightx;
+    c.fill = GridBagConstraints.HORIZONTAL;
+    c.anchor = GridBagConstraints.WEST;
+    c.insets = insets;
+    return c;
+  }
+
+  private static void formRow(JPanel form, int row, String labelKey, JComponent field) {
+    int top = row == 0 ? 0 : ROW_GAP;
+    GridBagConstraints label = cell(0, row, 1, 0, new Insets(top, 0, 0, 12));
+    label.fill = GridBagConstraints.NONE;
+    form.add(new JLabel(text(labelKey)), label);
+    GridBagConstraints value = cell(1, row, 1, 1, new Insets(top, 0, 0, 0));
+    value.fill = GridBagConstraints.NONE;
+    form.add(field, value);
+  }
+
+  private static JLabel note(String key, Color color) {
+    JLabel note = new JLabel(text(key));
+    note.setForeground(color);
+    return note;
+  }
+
+  private static void styleButton(JButton button, int minWidth) {
+    AppleStyleSupport.installButtonStyle(button);
+    Dimension size = button.getPreferredSize();
+    button.setPreferredSize(new Dimension(Math.max(minWidth, size.width + 16), 28));
+  }
+
+  /** Secondary status rows take no space until they carry text. */
+  private static final class DetailLabel extends JLabel {
+    @Override public void setText(String text) {
+      super.setText(text);
+      setVisible(text != null && !text.isBlank());
+    }
+  }
+
+  private record StatusDot(Color color) implements Icon {
+    @Override public void paintIcon(Component c, Graphics g, int x, int y) {
+      Graphics2D g2 = (Graphics2D) g.create();
+      g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+      g2.setColor(color);
+      g2.fillOval(x, y, STATUS_DOT, STATUS_DOT);
+      g2.dispose();
+    }
+    @Override public int getIconWidth() { return STATUS_DOT; }
+    @Override public int getIconHeight() { return STATUS_DOT; }
   }
 
   public static void showDialog() {
@@ -265,7 +399,8 @@ public final class FoxLiveSession {
     if (featurecat.lizzie.gui.LizzieFrame.menu != null)
       featurecat.lizzie.gui.LizzieFrame.menu.refreshBreadthAdmission();
     boolean browsing = ownsBoard && liveHistory != null && displayCursor != liveTail;
-    browsingStatus.setText(browsing ? text(browsingStatusKey()) : " ");
+    browsingStatus.setText(browsing ? text(browsingStatusKey()) : "");
+    returnLive.setVisible(browsing);
     returnLive.setEnabled(browsing && !restoring);
   }
 
@@ -280,8 +415,13 @@ public final class FoxLiveSession {
 
   private void displayCurrentRules() {
     KataGoRules current = currentRules();
-    rules.setText(current == null ? text("Fox.rulesUnavailable") : current.fieldSummary());
+    showRules(current == null ? text("Fox.rulesUnavailable") : current.fieldSummary());
+  }
+
+  private void showRules(String value) {
+    rules.setText(value);
     rules.setCaretPosition(0);
+    rules.setToolTipText(value);
   }
 
   private void queryCurrentRules() {
@@ -292,7 +432,7 @@ public final class FoxLiveSession {
     Leelaz target = Lizzie.leelaz;
     Object reader = target.engineIncarnationToken();
     queryingRules = true;
-    rules.setText(text("SetKataRules.status.pending"));
+    showRules(text("SetKataRules.status.pending"));
     showStatus("SetKataRules.status.pending");
     refreshLimitControls();
     worker.execute(() -> {
@@ -390,6 +530,8 @@ public final class FoxLiveSession {
   private static String text(String key) { return Lizzie.resourceBundle.getString(key); }
   private void showStatus(String key) {
     status.setText(text(key));
+    status.setIcon(new StatusDot(ATTENTION_STATUS.contains(key) ? AppleStyleSupport.workspaceError()
+        : connection != null ? AppleStyleSupport.workspaceSuccess() : AppleStyleSupport.workspaceMuted()));
     FoxGameState.SubmissionFact fact = game.latestSubmission();
     if (fact != null && fact != loggedSubmission) {
       FoxObservation.submission(fact);
@@ -430,8 +572,7 @@ public final class FoxLiveSession {
     if (selectedRules == null || !selectedRules.hasRequiredFields()) {
       showStatus("Fox.rulesUnavailable"); return;
     }
-    rules.setText(selectedRules.fieldSummary());
-    rules.setCaretPosition(0);
+    showRules(selectedRules.fieldSummary());
     output.setText("");
     game.setDirectMaxTime(selectedLimits.maxTime());
     originalBoard = Lizzie.board.captureClearState();

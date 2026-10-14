@@ -4182,10 +4182,6 @@ public class Menu extends JMenuBar {
     live.setForeground(MorandiPalette.MENU_ITEM_TEXT);
     // live.setFont(headFont);
     this.add(live);
-    final JFontMenuItem foxAi = new JFontMenuItem(resourceBundle.getString("Fox.title"));
-    foxAi.addActionListener(e -> featurecat.lizzie.fox.FoxLiveSession.showDialog());
-    live.add(foxAi);
-
     final JFontMenuItem yikeLive =
         new JFontMenuItem(resourceBundle.getString("Menu.yikeLive")); // ("弈客直播(Shift+O)");
     yikeLive.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.SHIFT_DOWN_MASK));
@@ -4222,6 +4218,10 @@ public class Menu extends JMenuBar {
                 true);
           }
         });
+
+    final JFontMenuItem foxAi = new JFontMenuItem(resourceBundle.getString("Fox.title"));
+    foxAi.addActionListener(e -> featurecat.lizzie.fox.FoxLiveSession.showDialog());
+    live.add(foxAi);
 
     final JFontMenuItem foxKifu =
         new JFontMenuItem(resourceBundle.getString("Menu.foxKifu")); // ("野狐(腾讯)棋谱");
