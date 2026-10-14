@@ -670,8 +670,10 @@ public class SGFParser {
             // Save the step count
             //  subTreeStepMap.put(subTreeDepth, subTreeStepMap.get(subTreeDepth) + 1);
             Stone color = tag.equals("B") ? Stone.BLACK : Stone.WHITE;
+            BoardHistoryNode parent = Lizzie.board.getHistory().getCurrentHistoryNode();
             boolean newBranch =
-                Lizzie.board.getHistory().getCurrentHistoryNode().numberOfChildren() > 0;
+                parent.hasVariations()
+                    || parent.next(true).map(BoardHistoryNode::isEndDummay).orElse(false);
             if (move == null) {
               Lizzie.board.getHistory().pass(color, newBranch, false);
             } else {
@@ -4091,8 +4093,10 @@ public class SGFParser {
             // Save the step count
             //  subTreeStepMap.put(subTreeDepth, subTreeStepMap.get(subTreeDepth) + 1);
             Stone color = tag.equals("B") ? Stone.BLACK : Stone.WHITE;
-            // boolean newBranch = (subTreeStepMap.get(subTreeDepth) == 1);
-            boolean newBranch = history.getCurrentHistoryNode().numberOfChildren() > 0;
+            BoardHistoryNode parent = history.getCurrentHistoryNode();
+            boolean newBranch =
+                parent.hasVariations()
+                    || parent.next(true).map(BoardHistoryNode::isEndDummay).orElse(false);
             if (move == null) {
               history.pass(color, newBranch, false);
 
