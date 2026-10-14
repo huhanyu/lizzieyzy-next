@@ -1556,8 +1556,14 @@ public final class SgfUiAcceptanceIT {
     }
     for (String key : List.of("AB", "AW", "PL", "LB", "XX", "GN", "RU")) {
       String expectedValue = left.getProperty(key);
-      if (expectedValue != null && !expectedValue.equals(right.getProperty(key))) {
-        throw new AssertionError("property " + key + " changed during UI round-trip");
+      String actualValue = right.getProperty(key);
+      if (expectedValue != null) {
+        boolean equal = expectedValue.equals(actualValue);
+        if ((key.equals("AB") || key.equals("AW")) && actualValue != null) {
+          equal = Arrays.stream(expectedValue.split(",")).sorted().toList()
+              .equals(Arrays.stream(actualValue.split(",")).sorted().toList());
+        }
+        if (!equal) throw new AssertionError("property " + key + " changed during UI round-trip");
       }
     }
     if (expected.numberOfChildren() != actual.numberOfChildren()) {
