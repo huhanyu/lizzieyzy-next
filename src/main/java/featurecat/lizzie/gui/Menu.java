@@ -6175,6 +6175,7 @@ public class Menu extends JMenuBar {
     chkWRN.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
+            if (!breadthAdmissionAvailable()) return;
             Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
             if (chkWRN.isSelected()) {
               txtWRN.setEnabled(true);
@@ -6226,7 +6227,7 @@ public class Menu extends JMenuBar {
     dt3.addDocumentListener(
         new DocumentListener() {
           public void insertUpdate(DocumentEvent e) {
-            if (ShouldIgnoreDtChange) return;
+            if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
             double wrn = 0;
             boolean error = false;
             try {
@@ -6254,7 +6255,7 @@ public class Menu extends JMenuBar {
           }
 
           public void removeUpdate(DocumentEvent e) {
-            if (ShouldIgnoreDtChange) return;
+            if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
             double wrn = 0;
             boolean error = false;
             try {
@@ -6282,7 +6283,7 @@ public class Menu extends JMenuBar {
           }
 
           public void changedUpdate(DocumentEvent e) {
-            if (ShouldIgnoreDtChange) return;
+            if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
             double wrn = 0;
             boolean error = false;
             try {
@@ -9920,6 +9921,19 @@ public class Menu extends JMenuBar {
     // Lizzie.frame.reSetLoc();
   }
 
+  private boolean breadthAdmissionAvailable() {
+    return !featurecat.lizzie.fox.FoxLiveSession.ownsEngine()
+        && Lizzie.leelaz != null
+        && Lizzie.leelaz.previewExclusiveGtpLeaseAvailability()
+            == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE;
+  }
+
+  public void refreshBreadthAdmission() {
+    boolean available = breadthAdmissionAvailable();
+    chkWRN.setEnabled(available);
+    txtWRN.setEnabled(available && chkWRN.isSelected());
+  }
+
   public void setPdaAndWrn(double pda, double wrn) {
     ShouldIgnoreDtChange = true;
     if (pda == 0) {
@@ -9941,6 +9955,7 @@ public class Menu extends JMenuBar {
       txtWRN.setEnabled(true);
     }
     ShouldIgnoreDtChange = false;
+    refreshBreadthAdmission();
   }
 
   public void setPdaAndWrnByEngineForDouble() {
@@ -11094,7 +11109,7 @@ public class Menu extends JMenuBar {
     txtWRN.setText(String.valueOf(wrn));
     ShouldIgnoreDtChange = false;
     chkWRN.setSelected(use);
-    txtWRN.setEnabled(use);
+    refreshBreadthAdmission();
   }
 
   public void setUseGfPda(boolean use, String pda) {

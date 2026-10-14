@@ -128,7 +128,8 @@ public final class FoxLiveSession {
     JScrollPane communication = new JScrollPane(output);
     communication.setBorder(BorderFactory.createTitledBorder(text("Fox.communication")));
     content.add(communication, BorderLayout.CENTER);
-    JPanel statePanel = new JPanel(new GridLayout(5, 1));
+    JPanel statePanel = new JPanel(new GridLayout(6, 1));
+    statePanel.add(new JLabel(text("Fox.breadthUnavailable")));
     statePanel.add(status);
     statePanel.add(clockStatus);
     statePanel.add(browsingStatus);
@@ -189,6 +190,8 @@ public final class FoxLiveSession {
   }
 
   private void refreshDisplay() {
+    if (featurecat.lizzie.gui.LizzieFrame.menu != null)
+      featurecat.lizzie.gui.LizzieFrame.menu.refreshBreadthAdmission();
     boolean browsing = ownsBoard && liveHistory != null && displayCursor != liveTail;
     browsingStatus.setText(browsing ? text(browsingStatusKey()) : " ");
     returnLive.setEnabled(browsing && !restoring);
@@ -208,6 +211,7 @@ public final class FoxLiveSession {
     rules.setCaretPosition(0);
   }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
+  public static boolean ownsEngine() { return instance != null && instance.engine != null; }
   public static String browsingStatusKey() {
     return instance != null && instance.game.snapshot().searchable()
         && instance.blockedGame != instance.game.snapshot().game()
@@ -387,6 +391,7 @@ public final class FoxLiveSession {
           release(key, true);
         }));
     engine = owner;
+    refreshDisplay();
     output.setText("");
     owner.beginTranscript(state.connection());
     worker.execute(() -> {
@@ -509,6 +514,8 @@ public final class FoxLiveSession {
   }
 
   private void tick() {
+    if (featurecat.lizzie.gui.LizzieFrame.menu != null)
+      featurecat.lizzie.gui.LizzieFrame.menu.refreshBreadthAdmission();
     drainTranscript();
     FoxGameState.Snapshot state = game.snapshot();
     if (game.hasCheckpoint() && !recoveryEngineCurrent()) {

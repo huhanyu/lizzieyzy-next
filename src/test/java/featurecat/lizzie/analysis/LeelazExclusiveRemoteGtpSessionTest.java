@@ -1516,9 +1516,73 @@ class LeelazExclusiveRemoteGtpSessionTest {
         assertFalse(harness.engine.isLoaded());
         javax.swing.SwingUtilities.invokeAndWait(() -> {});
         assertEquals(0, harness.engine.ponderCount);
+        assertBreadthAvailable(false);
       }
     }
   }
+
+  @Test
+  void foxHandbackWaitsForBoardConfirmationAndDiscardsPriorPonderIntent() throws Exception {
+    RecordingRestoreLeelaz engine = recordingRestoreEngine();
+    installOutput(engine);
+    Board previousBoard = Lizzie.board;
+    Config previousConfig = Lizzie.config;
+    GtpConsolePane previousConsole = Lizzie.gtpConsole;
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      Lizzie.config = allocate(Config.class);
+      Lizzie.gtpConsole = allocate(SilentGtpConsole.class);
+      RecordingRestoreBoard board = allocate(RecordingRestoreBoard.class);
+      Lizzie.board = board;
+      engine.Pondering();
+      FoxEngineSession fox = new FoxEngineSession(engine, engine.engineIncarnationToken(),
+          value -> {}, key -> {});
+      assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, fox.acquire(() -> {}));
+      dispatch(engine, "=800000000");
+      dispatch(engine, "");
+      AtomicInteger completed = new AtomicInteger();
+      AtomicInteger failed = new AtomicInteger();
+      board.currentMarker = 2;
+      fox.release(completed::incrementAndGet, failed::incrementAndGet);
+      dispatch(engine, "=800000001");
+      dispatch(engine, "");
+      waitUntil(() -> board.resendCount == 1);
+      assertTrue(engine.hasExclusiveGtpWorkInProgress());
+      assertEquals(0, completed.get());
+      assertEquals(0, engine.ponderCount);
+      assertBreadthAvailable(false);
+      completeForegroundRestore(engine);
+      waitUntil(() -> completed.get() == 1);
+      assertEquals(2, board.restoredMarker);
+      assertEquals(0, failed.get());
+      assertFalse(engine.hasExclusiveGtpWorkInProgress());
+      assertEquals(0, engine.ponderCount, "Fox handback restores admission, not analysis intent");
+      assertFalse(engine.isPondering());
+      assertBreadthAvailable(true);
+    } finally {
+      Lizzie.board = previousBoard;
+      Lizzie.config = previousConfig;
+      Lizzie.gtpConsole = previousConsole;
+    }
+  }
+  private static void assertBreadthAvailable(boolean expected) throws Exception {
+    featurecat.lizzie.gui.Menu menu = allocate(featurecat.lizzie.gui.Menu.class);
+    Field checkbox = featurecat.lizzie.gui.Menu.class.getDeclaredField("chkWRN");
+    checkbox.setAccessible(true);
+    javax.swing.JCheckBox selected = (javax.swing.JCheckBox)
+        checkbox.getType().getConstructor().newInstance();
+    selected.setSelected(true);
+    checkbox.set(menu, selected);
+    Field text = featurecat.lizzie.gui.Menu.class.getDeclaredField("txtWRN");
+    javax.swing.JTextField input = (javax.swing.JTextField)
+        text.getType().getConstructor().newInstance();
+    text.set(menu, input);
+    javax.swing.SwingUtilities.invokeAndWait(() -> {
+      menu.refreshBreadthAdmission();
+      assertEquals(expected, selected.isEnabled());
+      assertEquals(expected, input.isEnabled());
+    });
+  }
+
 
   @Test
   void foregroundLeaseRestoresLatestBoardAndPreviousPonderingOnlyAfterRestoreResponse()

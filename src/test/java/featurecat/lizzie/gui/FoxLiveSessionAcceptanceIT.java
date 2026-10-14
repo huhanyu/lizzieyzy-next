@@ -127,6 +127,9 @@ public final class FoxLiveSessionAcceptanceIT {
       var logging = featurecat.lizzie.logging.LoggingRuntime.current().orElseThrow();
       assertFalse(logging.fullTraceActive(), "opening and starting the panel never enable disk full trace");
       logging.startFullTrace(java.util.Set.of(featurecat.lizzie.logging.TraceScope.ENGINE_GTP));
+      SwingUtilities.invokeAndWait(() -> Lizzie.frame.togglePonderMannul());
+      await(() -> target.isPondering() && Lizzie.board.getData().getPlayouts() > 0,
+          15, "ordinary search before Fox ownership");
       try (Socket peer = new Socket("127.0.0.1", port)) {
         peer.setSoTimeout(200);
         send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3");
@@ -142,6 +145,8 @@ public final class FoxLiveSessionAcceptanceIT {
         assertTrue(find(fox, JTextArea.class).getText().contains("< ="));
         assertTrue(find(fox, JTextArea.class).getText().contains(customRules.toGtpArgument()));
         assertFalse(find(fox, JSpinner.class).isEnabled());
+        assertBreadth(false);
+        assertTrue(hasText(fox, "Fox.breadthUnavailable"));
         String candidates = find(fox, JTextArea.class).getText();
         SwingUtilities.invokeAndWait(() -> {
           assertFalse(Lizzie.frame.getBestMoves().isEmpty(), "current Fox candidates reach ordinary table");
@@ -402,10 +407,17 @@ public final class FoxLiveSessionAcceptanceIT {
         send(peer, "FASCORE");
         await(() -> hasText(fox, "Fox.officialAction"), 5, "official request before terminal");
         assertTrue(target.hasExclusiveGtpLease());
+        String beforeTerminal = commands(work);
         send(peer, "FARESULT,W+R", "FASTATUS,0");
         await(() -> !target.hasExclusiveGtpWorkInProgress(), 35, "confirmed terminal handback");
         assertTrue(target.isLoaded());
+        assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
+        assertPausedHandbackAndExplicitAnalysis(target, work, beforeTerminal, "terminal");
         SwingUtilities.invokeAndWait(() -> assertTrue(Lizzie.board.previousMove(false)));
+        int navigationFence = gtp(work).length();
+        target.sendCommand("name");
+        await(() -> gtp(work).substring(navigationFence).contains("= KataGo"),
+            5, "ordinary navigation settled before next Fox game");
         send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
         peer.setSoTimeout(5000);
         assertEquals("AFSTATUS,B", receive(peer));
@@ -502,6 +514,8 @@ public final class FoxLiveSessionAcceptanceIT {
         SwingUtilities.invokeAndWait(() -> {
           button(fox, "Fox.stop").doClick();
           assertTrue(FoxLiveSession.rejectOrdinaryMutation(), "ordinary commands blocked during handback");
+          assertFalse(LizzieFrame.menu.chkWRN.isEnabled());
+          assertFalse(LizzieFrame.menu.txtWRN.isEnabled());
         });
         await(() -> !FoxLiveSession.isActive() && !target.hasExclusiveGtpWorkInProgress(),
             35, "active explicit stop handback");
@@ -518,6 +532,7 @@ public final class FoxLiveSessionAcceptanceIT {
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-history-stopped.png").toFile());
         Files.writeString(work.resolve("history-stop-gtp.txt"), restoredCommands);
+        assertPausedHandbackAndExplicitAnalysis(target, work, beforeStop, "direct-stop");
       }
       retainedReconnect(fox, port, target, work);
       unconfirmedRetainedStop(fox, port, target, work);
@@ -549,7 +564,8 @@ public final class FoxLiveSessionAcceptanceIT {
         observedClocks++;
       }
       assertEquals(2, observedClocks);
-      target.ponder();
+      if (target.isPondering()) SwingUtilities.invokeAndWait(() -> Lizzie.frame.togglePonderMannul());
+      SwingUtilities.invokeAndWait(() -> Lizzie.frame.togglePonderMannul());
       await(() -> Lizzie.board.getData().getPlayouts() > 0, 15, "ordinary analysis after confirmed handback");
       SwingUtilities.invokeAndWait(() -> assertSame(Lizzie.board.getData().bestMoves, Lizzie.frame.getBestMoves()));
       captureMain(work.resolve("fox-ordinary-analysis-restored.png"));
@@ -613,6 +629,47 @@ public final class FoxLiveSessionAcceptanceIT {
     robot.delay(200);
     ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
         "png", image.toFile());
+  }
+
+  private static void assertBreadth(boolean available) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      assertEquals(available, LizzieFrame.menu.chkWRN.isEnabled());
+      assertEquals(available && LizzieFrame.menu.chkWRN.isSelected(),
+          LizzieFrame.menu.txtWRN.isEnabled());
+    });
+  }
+
+  private static void assertPausedHandbackAndExplicitAnalysis(
+      Leelaz target, Path work, String before, String scenario) throws Exception {
+    await(() -> !FoxLiveSession.ownsEngine(), 5, scenario + " UI handback");
+    assertBreadth(true);
+    String restored = commands(work).substring(before.length());
+    assertTrue(restored.contains("kata-time_settings none"), restored);
+    assertTrue(restored.contains("kata-set-rules"), restored);
+    assertTrue(restored.contains("kata-set-param maxTime"), restored);
+    assertFalse(restored.contains("kata-analyze"), "handback must not start ordinary analysis");
+    assertFalse(target.isPondering());
+    Thread.sleep(200);
+    String quietCommands = commands(work);
+    String quietOutput = gtp(work);
+    Path tracePath = work.resolve("logs/engine-trace.log");
+    String quietTrace = Files.readString(tracePath);
+    Thread.sleep(750);
+    assertEquals(quietCommands, commands(work), "paused handback emits no automatic commands");
+    assertEquals(quietOutput, gtp(work), "paused handback emits no automatic engine output");
+    assertEquals(quietTrace, Files.readString(tracePath), "single-reader raw GTP remains quiet");
+    captureMain(work.resolve("fox-" + scenario + "-paused.png"));
+    BoardHistoryNode retained = Lizzie.board.getHistory().getCurrentHistoryNode();
+    SwingUtilities.invokeAndWait(() -> Lizzie.frame.togglePonderMannul());
+    await(() -> commands(work).substring(quietCommands.length()).contains("kata-analyze")
+        && rawTrace(tracePath).substring(quietTrace.length()).contains("info move")
+        && Lizzie.board.getData().getPlayouts() > 0, 15, scenario + " explicit ordinary output");
+    assertSame(retained, Lizzie.board.getHistory().getCurrentHistoryNode());
+    captureMain(work.resolve("fox-" + scenario + "-explicit-analysis.png"));
+    Files.writeString(work.resolve(scenario + "-paused-handback.txt"),
+        "pausedCommandsAndOutput=true\nbreadthReleased=true\nretainedMove="
+            + retained.getData().moveNumber + "\nplayouts=" + Lizzie.board.getData().getPlayouts()
+            + "\n" + Files.readString(tracePath).substring(quietTrace.length()));
   }
 
   /** A legal two-eye setup leaves White no legal stone placement; the real engine chooses PASS. */
@@ -697,6 +754,7 @@ public final class FoxLiveSessionAcceptanceIT {
     }
     await(() -> hasText(fox, "Fox.disconnected") && target.hasExclusiveGtpLease(),
         5, "retained disconnected owner");
+    assertBreadth(false);
     assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
     try (Socket peer = new Socket("127.0.0.1", port)) {
       send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B,2^3^15^W",
@@ -710,6 +768,7 @@ public final class FoxLiveSessionAcceptanceIT {
       await(() -> modal() != null, 5, "actual same-game assertion dialog");
       capture(fox, work.resolve("fox-reconnect-confirm.png"));
       answerModal(JOptionPane.YES_OPTION);
+      assertBreadth(false);
       await(() -> commands(work).substring(before.length()).contains("kata-search_analyze_cancellable W"),
           20, "replayed pass before new opponent search");
       assertSame(historic[0], Lizzie.board.getHistory().getCurrentHistoryNode());
@@ -854,6 +913,11 @@ public final class FoxLiveSessionAcceptanceIT {
       if (child instanceof Container c && hasText(c, key)) return true;
     }
     return false;
+  }
+
+  private static String rawTrace(Path path) {
+    try { return Files.readString(path); }
+    catch (java.io.IOException failure) { throw new AssertionError(failure); }
   }
 
   private static String gtp(Path work) {

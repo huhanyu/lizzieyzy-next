@@ -14735,7 +14735,8 @@ public class Leelaz {
             onReady,
             onClosed,
             exclusiveGtpResponseCommandIds.getAndIncrement());
-    session.wasPondering = isPondering();
+    // Fox restores operation admission, while ordinary analysis needs a new user request.
+    session.wasPondering = !(owner instanceof FoxEngineSession) && isPondering();
     session.readerBinding = readerStreamBinding;
     exclusiveGtpSession = session;
     return session;
