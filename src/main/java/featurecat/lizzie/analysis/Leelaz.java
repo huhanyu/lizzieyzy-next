@@ -15932,6 +15932,17 @@ public class Leelaz {
       }
       if (session.foxMaxTime != null) {
         confirmForegroundRestoreCommand(session, "kata-set-rules " + session.originalRules);
+        try {
+          EngineRulesResult restoredRules = queryEngineRulesOperation(5000).await(6000);
+          KataGoRules expectedRules = KataGoRules.parse(session.originalRules).orElseThrow();
+          if (restoredRules == null || !restoredRules.isConfirmed()
+              || !expectedRules.semanticallyEquals(restoredRules.observed())) {
+            throw new IllegalStateException("Fox restored rules readback was not confirmed");
+          }
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new IllegalStateException("Fox restored rules readback interrupted", interrupted);
+        }
         confirmForegroundRestoreCommand(session, "kata-set-param maxTime " + session.foxMaxTime);
         confirmForegroundRestoreCommand(session, "kata-time_settings none");
       } else if (session.originalRules != null) {
@@ -16555,6 +16566,7 @@ public class Leelaz {
           }
         }
         if (onPhysicalWrite != null) onPhysicalWrite.run();
+        if (expectedSession.owner instanceof FoxEngineSession fox) fox.transcript.sent(command);
         currentOutputStream.write((command + "\n").getBytes());
         currentOutputStream.flush();
       }
@@ -16616,6 +16628,7 @@ public class Leelaz {
         || binding.terminated) {
       return false;
     }
+    if (session.owner instanceof FoxEngineSession fox) fox.transcript.received(line == null ? "" : line);
     String trimmed = line == null ? "" : line.trim();
     synchronized (engineArbitrationLock()) {
       if (trimmed.startsWith("=") || trimmed.startsWith("?")) {

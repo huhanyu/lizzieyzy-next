@@ -1321,6 +1321,51 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   @Test
+  void foxPreparationRequiresCompleteMatchingRulesWithoutChangingOtherParameters() throws Exception {
+    KataGoRules custom = KataGoRules.parse("chinese").orElseThrow()
+        .overlayEditor("AREA", "POSITIONAL", true, "ALL", "N-1", false);
+    for (String result : List.of("success", "mismatch", "rejected", "invalid")) {
+      Leelaz engine = reusableKatagoEngine(false, false);
+      ByteArrayOutputStream output = installOutput(engine);
+      try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+        FoxEngineSession adapter = new FoxEngineSession(engine, engine.engineIncarnationToken(),
+            candidates -> {}, reason -> fail(reason));
+        assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, adapter.acquire(() -> {}));
+        dispatch(engine, "=800000000");
+        dispatch(engine, "");
+        AtomicInteger consumed = new AtomicInteger(1);
+        var preparation = new java.util.concurrent.FutureTask<Void>(() -> {
+          adapter.prepare(custom.toGtpArgument()); return null;
+        });
+        Thread thread = new Thread(preparation, "fox-custom-rules-test");
+        thread.setDaemon(true);
+        thread.start();
+        for (int i = 0; i < 6; i++) {
+          String command = nextFoxCommand(output, consumed);
+          boolean set = command.contains(" kata-set-rules ");
+          if (set) assertTrue(command.endsWith(custom.toGtpArgument()));
+          String payload = command.endsWith(" list_commands")
+              ? "kata-search_analyze_cancellable kata-get-rules kata-set-rules kata-get-param kata-set-param kgs-time_settings kata-time_settings kata-list_time_settings set_free_handicap time_left stop"
+              : command.endsWith(" kata-list_time_settings") ? "none byoyomi"
+              : command.endsWith(" kata-get-param maxTime") ? "3.0"
+              : command.endsWith(" kata-get-rules") ? (i < 5 ? "japanese"
+                  : result.equals("mismatch") ? "chinese"
+                  : result.equals("invalid") ? "{}" : custom.toGtpArgument()) : "";
+          boolean reject = set && result.equals("rejected");
+          dispatch(engine, (reject ? "?" : "=") + command.split(" ", 2)[0] + " " + payload);
+          dispatch(engine, "");
+          if (reject) break;
+        }
+        if (result.equals("success")) preparation.get(2, TimeUnit.SECONDS);
+        else assertThrows(java.util.concurrent.ExecutionException.class,
+            () -> preparation.get(2, TimeUnit.SECONDS));
+        assertFalse(output.toString(StandardCharsets.UTF_8).contains("kata-set-param"),
+            "preparation preserves threads and all non-owned parameters");
+      }
+    }
+  }
+
+  @Test
   void foxCancelledAndLateRealChoicesCannotAcquireSubmissionPermission() throws Exception {
     for (String terminal : List.of("cancelled", "cancel-race", "late-choice")) {
       Leelaz engine = reusableKatagoEngine(false, false);
@@ -1367,9 +1412,15 @@ class LeelazExclusiveRemoteGtpSessionTest {
           dispatch(engine, "=" + command.split(" ", 2)[0]);
           dispatch(engine, "");
         }
+        dispatch(engine, "=" + command.split(" ", 2)[0] + "0 unrelated response");
+        dispatch(engine, "");
         dispatch(engine, "=" + command.split(" ", 2)[0]);
         dispatch(engine, "info move D4 visits 12 winrate 0.55 scoreMean 1 pv D4");
         waitUntil(() -> candidates.get() != null);
+        if (terminal.equals("late-choice")) {
+          for (int i = 0; i < 1500; i++)
+            dispatch(engine, "info move D4 visits " + (20 + i) + " winrate 0.55 scoreMean 1 pv D4 Q16");
+        }
         if (terminal.equals("cancel-race")) adapter.invalidate();
         dispatch(engine, terminal.equals("cancelled") ? "play cancelled" : "play D4");
         dispatch(engine, "");
@@ -1378,12 +1429,36 @@ class LeelazExclusiveRemoteGtpSessionTest {
           assertNotNull(selection);
           assertEquals(candidates.get().identity(), selection.identity());
           assertEquals("D4", selection.vertex());
+          String stream = adapter.drainTranscript();
+          assertTrue(stream.length() <= FoxGtpTranscript.MAX_CHARS);
+          assertFalse(stream.contains("list_commands"), "old display entries evicted");
+          assertTrue(stream.contains("< info move D4 visits 1519"));
+          assertTrue(stream.contains("< play D4"), "final response retains protocol ownership");
           adapter.invalidate();
           assertFalse(adapter.claimSubmission(selection, () -> true));
         } else assertNull(selection);
         assertTrue(state.snapshot().actions().isEmpty());
       }
     }
+  }
+
+  @Test
+  void foxTranscriptDoesNotRelabelOldResponsesAfterReconnect() {
+    FoxGtpTranscript transcript = new FoxGtpTranscript();
+    transcript.begin(1);
+    transcript.sent("101 kata-search_analyze_cancellable B 10");
+    transcript.received("=101");
+    transcript.begin(2);
+    transcript.received("info move D4 visits 12");
+    transcript.received("play D4");
+    transcript.received("");
+    assertEquals("", transcript.drain());
+    transcript.sent("102 name");
+    transcript.received("=101 stale");
+    transcript.received("");
+    transcript.received("=102 KataGo");
+    transcript.received("");
+    assertEquals("[2] > 102 name\n[2] < =102 KataGo\n[2] < \n", transcript.drain());
   }
 
   private static String nextFoxCommand(ByteArrayOutputStream output, AtomicInteger consumed) throws Exception {
@@ -1427,7 +1502,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
   @Test
   void foxRuntimeRestoreRejectionCannotBeHiddenByFinalName() throws Exception {
-    for (String rejected : List.of("kata-set-rules", "kata-set-param maxTime", "kata-time_settings none")) {
+    for (String rejected : List.of("kata-set-rules", "kata-get-rules", "kata-set-param maxTime", "kata-time_settings none")) {
       try (ProductionForegroundRestoreHarness harness =
           ProductionForegroundRestoreHarness.open(true, rejected)) {
         assertTrue(harness.engine.setFoxRestoreState(harness.lease, "chinese", 3.0));
@@ -1436,8 +1511,10 @@ class LeelazExclusiveRemoteGtpSessionTest {
         dispatch(harness.engine, "=800000001");
         dispatch(harness.engine, "");
         waitUntil(() -> harness.failures.get() == 1);
+        assertTrue(harness.output.rejected, "restore must reach " + rejected);
         assertEquals(0, harness.completions.get());
         assertFalse(harness.engine.isLoaded());
+        javax.swing.SwingUtilities.invokeAndWait(() -> {});
         assertEquals(0, harness.engine.ponderCount);
       }
     }
@@ -2851,18 +2928,22 @@ class LeelazExclusiveRemoteGtpSessionTest {
           throw new IOException("Failed to consume exact restore SGF", ex);
         }
       }
+      if (command.contains("kata-get-rules")) {
+        response += " " + KataGoRules.parse("chinese").orElseThrow().toGtpArgument();
+      }
       if (rejectedCommand != null && command.contains(rejectedCommand)) {
         rejected = true;
         response = "?" + response.substring(1) + " injected restore rejection";
       }
       try {
         if (command.contains("kata-set-rules") || command.contains("kata-set-param")
-            || command.contains("kata-time_settings")) {
+            || command.contains("kata-get-rules") || command.contains("kata-time_settings")) {
           String reply = response;
           Thread reader = new Thread(() -> {
             try {
               Thread.sleep(20);
               processCommandResponse(engine, reply);
+              processCommandResponse(engine, "");
             } catch (Exception failure) {
               throw new AssertionError(failure);
             }
@@ -3078,6 +3159,9 @@ class LeelazExclusiveRemoteGtpSessionTest {
         config.alwaysGtp = false;
         Lizzie.config = config;
         Lizzie.frame = allocate(LizzieFrame.class);
+        Field listeners = LizzieFrame.class.getDeclaredField("problemListListeners");
+        listeners.setAccessible(true);
+        listeners.set(Lizzie.frame, new ArrayList<>());
         Lizzie.gtpConsole = allocate(SilentGtpConsole.class);
 
         BoardData snapshot = BoardData.empty(13, 9);

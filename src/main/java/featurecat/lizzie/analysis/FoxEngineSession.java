@@ -21,7 +21,8 @@ public final class FoxEngineSession {
   private final Leelaz engine;
   private final Object readerIdentity;
   private final String loggingEngineId;
-  private final Object owner = new Object();
+  private final Object owner = this;
+  final FoxGtpTranscript transcript = new FoxGtpTranscript();
   private final BlockingQueue<String> lines = new LinkedBlockingQueue<>(4096);
   private final AtomicLong search = new AtomicLong();
   private final Consumer<Candidates> candidates;
@@ -48,6 +49,9 @@ public final class FoxEngineSession {
     this.failure = failure;
   }
 
+  public void beginTranscript(long connection) { transcript.begin(connection); }
+  public String drainTranscript() { return transcript.drain(); }
+
   public Leelaz.ExclusiveGtpLeaseAvailability acquire(Runnable ready) {
     if (!engine.isCurrentEngineIncarnationToken(readerIdentity))
       return Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY;
@@ -71,6 +75,9 @@ public final class FoxEngineSession {
 
   /** Runs on the adapter worker, never on EDT or Leelaz's reader. */
   public void prepare(String selectedRules) throws Exception {
+    KataGoRules requested = KataGoRules.parse(selectedRules)
+        .filter(KataGoRules::hasRequiredFields)
+        .orElseThrow(() -> new IllegalArgumentException("Incomplete current application rules"));
     String commands = request("list_commands", null, 5000);
     for (String required : List.of("kata-search_analyze_cancellable", "kata-get-rules",
         "kata-set-rules", "kata-get-param", "kata-set-param", "kgs-time_settings",
@@ -87,8 +94,13 @@ public final class FoxEngineSession {
     if (!engine.setFoxRestoreState(owner, rules, maxTime)) {
       throw new IllegalStateException("Fox owner lost before runtime capture");
     }
-    request("kata-set-rules " + selectedRules, null, 5000);
-    request("kata-get-rules", null, 5000);
+    request("kata-set-rules " + requested.toGtpArgument(), null, 5000);
+    KataGoRules actual = KataGoRules.parse(request("kata-get-rules", null, 5000))
+        .filter(KataGoRules::hasRequiredFields)
+        .orElseThrow(() -> new IllegalStateException("Invalid Fox rules readback"));
+    if (!requested.semanticallyEquals(actual)) {
+      throw new IllegalStateException("Fox rules readback differs from current application rules");
+    }
     originalMaxTime = maxTime;
     prepared = true;
   }
@@ -185,7 +197,7 @@ public final class FoxEngineSession {
       String line = lines.poll(100, TimeUnit.MILLISECONDS);
       if (line == null) continue;
       String text = line.trim();
-      if (text.startsWith("=" + id) || text.startsWith("?" + id)) {
+      if (text.matches("[=?]" + id + "(?:\\s.*)?")) {
         response = true;
         error = text.charAt(0) == '?';
         payload.append(text.substring(Integer.toString(id).length() + 1).trim());

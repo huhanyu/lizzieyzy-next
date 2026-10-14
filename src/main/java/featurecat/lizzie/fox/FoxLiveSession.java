@@ -2,6 +2,7 @@ package featurecat.lizzie.fox;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.FoxEngineSession;
+import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -39,7 +40,7 @@ public final class FoxLiveSession {
   private final JLabel status = new JLabel();
   private final JTextArea output = new JTextArea(10, 56);
   private final JSpinner port = new JSpinner(new SpinnerNumberModel(7000, 1, 65535, 1));
-  private final JComboBox<String> rules = new JComboBox<>(new String[] {"chinese", "japanese", "aga", "tromp-taylor"});
+  private final JTextField rules = new JTextField();
   private final JButton start = new JButton(text("Fox.start"));
   private final JButton stop = new JButton(text("Fox.stop"));
   private final JButton returnLive = new JButton(text("Fox.returnLive"));
@@ -61,7 +62,7 @@ public final class FoxLiveSession {
   private FoxEngineSession.Candidates liveCandidates;
   private List<MoveData> liveMoves = List.of();
   private FoxGameState.SubmissionFact loggedSubmission;
-  private String selectedRules;
+  private KataGoRules selectedRules;
   private final JButton recover = new JButton(text("Fox.recoveryConfirm"));
   private Leelaz retainedEngine;
   private Object retainedReader;
@@ -93,7 +94,6 @@ public final class FoxLiveSession {
     } else {
       recover.setEnabled(false);
       showStatus(game.recoveryStatus());
-      output.setText(text(game.recoveryStatus()));
     }
   }
 
@@ -104,32 +104,30 @@ public final class FoxLiveSession {
     controls.add(port);
     controls.add(start);
     controls.add(new JLabel(text("Fox.rules")));
-    rules.setRenderer(new DefaultListCellRenderer() {
-      @Override
-      public java.awt.Component getListCellRendererComponent(
-          JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-        super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-        if (value instanceof String rule) {
-          setText(switch (rule) {
-            case "chinese" -> text("SetKataRules.btnChnRule");
-            case "japanese" -> text("SetKataRules.btnJpnRule");
-            case "aga" -> text("MatchRules.option.agaBga");
-            case "tromp-taylor" -> text("SetKataRules.btnTTRule");
-            default -> rule;
-          });
-        }
-        return this;
+    JSpinner.NumberEditor portEditor = new JSpinner.NumberEditor(port, "0");
+    javax.swing.text.NumberFormatter portFormat = new javax.swing.text.NumberFormatter(
+        new java.text.DecimalFormat("0")) {
+      @Override public Object stringToValue(String text) throws java.text.ParseException {
+        if (!text.matches("[0-9]+")) throw new java.text.ParseException("Invalid port", 0);
+        return super.stringToValue(text);
       }
-    });
+    };
+    portFormat.setValueClass(Integer.class);
+    portFormat.setMinimum(1);
+    portFormat.setMaximum(65535);
+    portEditor.getTextField().setFormatterFactory(new javax.swing.text.DefaultFormatterFactory(portFormat));
+    port.setEditor(portEditor);
+    rules.setEditable(false);
     controls.add(rules);
     controls.add(stop);
     output.setEditable(false);
-    output.setLineWrap(true);
-    output.setWrapStyleWord(true);
+    output.setLineWrap(false);
     JPanel content = new JPanel(new BorderLayout(8, 8));
     content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
     content.add(controls, BorderLayout.NORTH);
-    content.add(new JScrollPane(output), BorderLayout.CENTER);
+    JScrollPane communication = new JScrollPane(output);
+    communication.setBorder(BorderFactory.createTitledBorder(text("Fox.communication")));
+    content.add(communication, BorderLayout.CENTER);
     JPanel statePanel = new JPanel(new GridLayout(5, 1));
     statePanel.add(status);
     statePanel.add(clockStatus);
@@ -151,7 +149,6 @@ public final class FoxLiveSession {
     });
     returnLive.setEnabled(false);
     showStatus("Fox.waiting");
-    output.setText(text("Fox.automatic"));
     stop.setEnabled(false);
     new Timer(100, e -> tick()).start();
   }
@@ -161,6 +158,7 @@ public final class FoxLiveSession {
       SwingUtilities.invokeLater(FoxLiveSession::showDialog); return;
     }
     if (instance == null) instance = new FoxLiveSession();
+    if (instance.connection == null && !instance.restoring) instance.displayCurrentRules();
     instance.dialog.setVisible(true);
   }
 
@@ -194,12 +192,20 @@ public final class FoxLiveSession {
     boolean browsing = ownsBoard && liveHistory != null && displayCursor != liveTail;
     browsingStatus.setText(browsing ? text(browsingStatusKey()) : " ");
     returnLive.setEnabled(browsing && !restoring);
-    FoxGameState.Snapshot state = game.snapshot();
-    if (state.active() && state.automationBlocked())
-      output.setText(text(state.statusKey()) + (browsing ? "\n" + text(browsingStatusKey()) : ""));
-    else if (browsing) output.setText(text(browsingStatusKey()));
-    else if (liveCandidates != null) showCandidates();
-    else output.setText(text("Fox.automatic") + "\n\n" + text("Fox.waitingCandidate"));
+  }
+
+  private KataGoRules currentRules() {
+    BoardHistoryList.SessionRulesTarget target = Lizzie.board.getHistory().captureSessionRules();
+    if (target.kind() != BoardHistoryList.SessionRulesKind.UNSPECIFIED)
+      return target.parsedRules().filter(KataGoRules::hasRequiredFields).orElse(null);
+    if (Lizzie.leelaz == null || !Lizzie.leelaz.engineRulesResult().isConfirmed()) return null;
+    return Lizzie.leelaz.engineRulesResult().observed();
+  }
+
+  private void displayCurrentRules() {
+    KataGoRules current = currentRules();
+    rules.setText(current == null ? text("Fox.rulesUnavailable") : current.fieldSummary());
+    rules.setCaretPosition(0);
   }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
   public static String browsingStatusKey() {
@@ -249,6 +255,8 @@ public final class FoxLiveSession {
 
   private void start() {
     if (connection != null || restoring) return;
+    try { port.commitEdit(); }
+    catch (java.text.ParseException invalid) { showStatus("Fox.invalidPort"); return; }
     if (Lizzie.config.isDoubleEngineMode() || Lizzie.leelaz == null
         || Lizzie.leelaz.previewForegroundAnalysisLeaseAvailability()
             != Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE) {
@@ -264,7 +272,13 @@ public final class FoxLiveSession {
       if (choice == 0) { LizzieFrame.saveFile(false); return; }
       if (choice != 1) return;
     }
-    selectedRules = (String) rules.getSelectedItem();
+    selectedRules = currentRules();
+    if (selectedRules == null || !selectedRules.hasRequiredFields()) {
+      showStatus("Fox.rulesUnavailable"); return;
+    }
+    rules.setText(selectedRules.fieldSummary());
+    rules.setCaretPosition(0);
+    output.setText("");
     originalBoard = Lizzie.board.captureClearState();
     try {
       connection = new FoxConnection((Integer) port.getValue(), new FoxConnection.Listener() {
@@ -273,6 +287,8 @@ public final class FoxLiveSession {
           connectionToken = token;
           invalidate();
           game.connected();
+          output.setText("");
+          if (engine != null) engine.beginTranscript(game.snapshot().connection());
           recover.setEnabled(false);
           clockStatus.setText(" ");
           showStatus("Fox.syncing");
@@ -292,7 +308,6 @@ public final class FoxLiveSession {
       start.setEnabled(false);
       stop.setEnabled(true);
       port.setEnabled(false);
-      rules.setEnabled(false);
       showStatus("Fox.listening");
       Lizzie.frame.refresh();
     } catch (IOException failure) {
@@ -331,7 +346,6 @@ public final class FoxLiveSession {
       showStatus(reason);
       recover.setEnabled(!restoring && reason.equals("Fox.recoveryConfirm"));
       refreshDisplay();
-      output.setText(text(reason) + "\n" + state.placements());
       return;
     }
     if (restoring || blockedGame == state.game()) return;
@@ -341,21 +355,6 @@ public final class FoxLiveSession {
     update(state);
   }
 
-  private void showCandidates() {
-    StringBuilder display = new StringBuilder(text("Fox.automatic")).append("\n\n");
-    display.append(text("AnalysisFrame.column2")).append("   ")
-        .append(text("AnalysisFrame.column5")).append("   ")
-        .append(text("AnalysisFrame.column4")).append("   ")
-        .append(text("AnalysisFrame.column8")).append('\n');
-    int count = 0;
-    for (MoveData move : liveMoves) {
-      if (count++ >= 12) break;
-      display.append(String.format(java.util.Locale.ROOT, "%s   %d   %.1f%%   %+.1f%n",
-          move.coordinate, move.playouts, move.winrate, move.scoreMean));
-    }
-    output.setText(display.toString());
-    output.setCaretPosition(0);
-  }
 
   private void acquire(FoxGameState.Snapshot state) {
     if (Lizzie.leelaz == null) { showStatus("Fox.engineUnavailable"); return; }
@@ -381,7 +380,6 @@ public final class FoxLiveSession {
           }
           liveMoves = List.copyOf(moves);
           showStatus(current.statusKey());
-          if (displayCursor == liveTail) showCandidates();
           Lizzie.frame.refresh();
         }), key -> onEdt(() -> {
           if (ownerToken != ownerGeneration || engine == null) return;
@@ -389,10 +387,12 @@ public final class FoxLiveSession {
           release(key, true);
         }));
     engine = owner;
+    output.setText("");
+    owner.beginTranscript(state.connection());
     worker.execute(() -> {
       Leelaz.ExclusiveGtpLeaseAvailability availability = owner.acquire(() -> worker.execute(() -> {
         try {
-          owner.prepare(selectedRules);
+          owner.prepare(selectedRules.toGtpArgument());
           onEdt(() -> {
             if (engine == owner && game.snapshot().searchable()) {
               engineReady = true;
@@ -505,11 +505,11 @@ public final class FoxLiveSession {
     }
     retainedHistory = true;
     showStatus(reason);
-    output.setText(text(reason));
     Lizzie.frame.refresh();
   }
 
   private void tick() {
+    drainTranscript();
     FoxGameState.Snapshot state = game.snapshot();
     if (game.hasCheckpoint() && !recoveryEngineCurrent()) {
       game.revokeRecovery("Fox.recoveryEngineChanged");
@@ -533,7 +533,8 @@ public final class FoxLiveSession {
   private void apply(FoxGameState.Snapshot state) {
     if (adoptedGame != state.game() || liveHistory == null) {
       StringBuilder sgf = new StringBuilder("(;GM[1]FF[4]SZ[").append(state.rules().size())
-          .append("]KM[").append(state.rules().komi()).append("]RU[").append(selectedRules)
+          .append("]KM[").append(state.rules().komi()).append("]RU[")
+          .append(selectedRules.toGtpArgument().replace("\\", "\\\\").replace("]", "\\]"))
           .append("]PL[").append(state.rules().setup().isEmpty() ? 'B' : 'W').append(']');
       if (!state.rules().setup().isEmpty()) {
         sgf.append("HA[").append(state.rules().setup().size()).append("]AB");
@@ -543,6 +544,7 @@ public final class FoxLiveSession {
       }
       liveHistory = SGFParser.parseSgf(sgf.append(')').toString(), true);
       if (liveHistory == null) throw new IllegalStateException("Invalid Fox starting position");
+      liveHistory.publishExternalRules(selectedRules.toGtpArgument());
       Lizzie.board.setHistory(liveHistory);
       adoptedGame = state.game();
       appliedActions = 0;
@@ -603,6 +605,7 @@ public final class FoxLiveSession {
   }
 
   private void restored(FoxEngineSession owner, String key, boolean success) {
+    drainTranscript();
     if (engine != owner) return;
     engine = null;
     restoring = false;
@@ -631,7 +634,25 @@ public final class FoxLiveSession {
     if (engine == null) { ownsBoard = false; start.setEnabled(true); }
     stop.setEnabled(false);
     port.setEnabled(true);
-    rules.setEnabled(true);
+  }
+
+  private void drainTranscript() {
+    if (engine == null) return;
+    if (!recoveryEngineCurrent()) {
+      engine.drainTranscript();
+      output.setText("");
+      return;
+    }
+    String batch = engine.drainTranscript();
+    if (batch.isEmpty()) return;
+    output.append(batch);
+    int excess = output.getDocument().getLength() - 65536;
+    if (excess > 0) {
+      var lines = output.getDocument().getDefaultRootElement();
+      int end = lines.getElement(lines.getElementIndex(excess)).getEndOffset();
+      output.replaceRange("", 0, Math.min(end, output.getDocument().getLength()));
+    }
+    output.setCaretPosition(output.getDocument().getLength());
   }
 
   private static void onEdt(Runnable action) { SwingUtilities.invokeLater(action); }

@@ -3,6 +3,7 @@ package featurecat.lizzie.gui;
 import static org.junit.jupiter.api.Assertions.*;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.fox.FoxLiveSession;
 import featurecat.lizzie.fox.FoxProtocol;
 import featurecat.lizzie.rules.BoardHistoryNode;
@@ -50,8 +51,6 @@ public final class FoxLiveSessionAcceptanceIT {
       System.setProperty("lizzie.work.dir", work.toString());
       Lizzie.main(new String[0]);
       await(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), 30, "main Swing window");
-      featurecat.lizzie.logging.LoggingRuntime.current().orElseThrow().startFullTrace(
-          java.util.Set.of(featurecat.lizzie.logging.TraceScope.ENGINE_GTP));
       SwingUtilities.invokeAndWait(() -> {
         for (Window window : Window.getWindows()) if (window instanceof Dialog) window.dispose();
       });
@@ -71,9 +70,45 @@ public final class FoxLiveSessionAcceptanceIT {
       target.notPondering();
       target.sendCommand("stop");
       Thread.sleep(500);
+      KataGoRules customRules = KataGoRules.parse("chinese").orElseThrow()
+          .overlayEditor("AREA", "SITUATIONAL", false, "ALL", "N-1", false);
+      for (KataGoRules selected : List.of(KataGoRules.parse("japanese").orElseThrow(), customRules)) {
+        var operation = target.applyEngineRulesOperation(selected);
+        await(operation::isDone, 10, "real current rule set/readback");
+        assertTrue(operation.snapshot().isConfirmed());
+        assertTrue(selected.semanticallyEquals(operation.snapshot().observed()));
+      }
+      SwingUtilities.invokeAndWait(() -> Lizzie.board.getHistory().publishManualRules(customRules));
+      assertThreads(target, work);
       BoardHistoryNode originalDisplay = Lizzie.board.getHistory().getCurrentHistoryNode();
-      SwingUtilities.invokeAndWait(FoxLiveSession::showDialog);
+      SwingUtilities.invokeAndWait(() -> {
+        JMenuBar bar = LizzieFrame.menu;
+        int found = 0;
+        for (int m = 0; m < bar.getMenuCount(); m++) {
+          JMenu menu = bar.getMenu(m);
+          if (menu == null) continue;
+          for (Component child : menu.getMenuComponents()) {
+            if (child instanceof JMenuItem item && item.getText().equals(Lizzie.resourceBundle.getString("Fox.title"))) {
+              assertEquals(Lizzie.resourceBundle.getString("Menu.sync"), menu.getText());
+              found++;
+              item.doClick();
+            }
+          }
+        }
+        assertEquals(1, found, "sole sync-menu entry");
+      });
       JDialog fox = dialog();
+      SwingUtilities.invokeAndWait(() -> {
+        JSpinner spinner = find(fox, JSpinner.class);
+        JFormattedTextField editor = ((JSpinner.DefaultEditor) spinner.getEditor()).getTextField();
+        assertEquals("7000", editor.getText());
+        for (String invalid : List.of("7,000", "7000.5", "0", "65536"))
+          assertThrows(java.text.ParseException.class, () -> editor.getFormatter().stringToValue(invalid));
+        assertEquals(7000, editor.getValue());
+        assertNull(find(fox, JComboBox.class), "no independent rules selector");
+        assertFalse(find(fox, JTextArea.class).isEditable(), "communication has no command input");
+        assertTrue(readOnlyRules(fox).getText().contains("tax=ALL"));
+      });
       int port;
       try (ServerSocket available = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
         port = available.getLocalPort();
@@ -89,6 +124,9 @@ public final class FoxLiveSessionAcceptanceIT {
         modal.dispose();
       });
       await(() -> button(fox, "Fox.stop").isEnabled(), 5, "listener start");
+      var logging = featurecat.lizzie.logging.LoggingRuntime.current().orElseThrow();
+      assertFalse(logging.fullTraceActive(), "opening and starting the panel never enable disk full trace");
+      logging.startFullTrace(java.util.Set.of(featurecat.lizzie.logging.TraceScope.ENGINE_GTP));
       try (Socket peer = new Socket("127.0.0.1", port)) {
         peer.setSoTimeout(200);
         send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3");
@@ -98,7 +136,12 @@ public final class FoxLiveSessionAcceptanceIT {
         peer.setSoTimeout(15000);
         assertEquals("AFSTATUS,B", receive(peer));
         send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "real current candidates");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 25, "real current candidates");
+        await(() -> find(fox, JTextArea.class).getText().contains("< info move"), 5, "raw analysis stream");
+        assertTrue(find(fox, JTextArea.class).getText().contains("> "));
+        assertTrue(find(fox, JTextArea.class).getText().contains("< ="));
+        assertTrue(find(fox, JTextArea.class).getText().contains(customRules.toGtpArgument()));
+        assertFalse(find(fox, JSpinner.class).isEnabled());
         String candidates = find(fox, JTextArea.class).getText();
         SwingUtilities.invokeAndWait(() -> {
           assertFalse(Lizzie.frame.getBestMoves().isEmpty(), "current Fox candidates reach ordinary table");
@@ -142,7 +185,12 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> gtp(work).lines().anyMatch(line -> line.contains("Controller:")
             && line.endsWith("play B " + vertex)), 5, "timely confirmed engine sync");
         long synchronizedAt = System.nanoTime();
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "opponent candidates");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "opponent candidates");
+        assertFalse(target.applyEngineRulesOperation(KataGoRules.parse("japanese").orElseThrow()).accepted(),
+            "rules cannot change while Fox owns engine");
+        SwingUtilities.invokeAndWait(fox::toFront);
+        capture(fox, work.resolve("fox-current-rules-stream.png"));
+        Files.writeString(work.resolve("current-rules-stream.txt"), find(fox, JTextArea.class).getText());
         await(() -> log(work.resolve("logs/app.log")).contains("outcome=CONFIRMED"),
             5, "production on-disk submission confirmation");
         String durable = log(work.resolve("logs/app.log"));
@@ -255,7 +303,7 @@ public final class FoxLiveSessionAcceptanceIT {
         BoardHistoryNode historical = pass.previous().orElseThrow();
         assertTrue(pass.getData().isPassNode());
         await(() -> gtp(work).contains("play B pass"), 10, "real pass replay");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "pass-position candidate");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "pass-position candidate");
         String navigationCommands = commands(work);
         Controller[] controls = new Controller[1];
         SwingUtilities.invokeAndWait(() -> {
@@ -265,7 +313,7 @@ public final class FoxLiveSessionAcceptanceIT {
         });
         assertSame(historical, Lizzie.board.getHistory().getCurrentHistoryNode());
         assertTrue(hasText(fox, "Fox.browsing"));
-        assertFalse(find(fox, JTextArea.class).getText().contains("%"));
+        assertDisplayCandidates(false);
         SwingUtilities.invokeAndWait(() -> {
           controls[0].dispose();
           Lizzie.frame.toFront();
@@ -321,8 +369,7 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals("AFSTATUS,B", receive(peer));
         SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return while waiting");
-        assertTrue(find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.waitingCandidate")));
-        assertFalse(find(fox, JTextArea.class).getText().contains("%"), "no old candidate flicker");
+        assertTrue(Lizzie.frame.getBestMoves().isEmpty(), "no old candidate flicker");
         assertDisplayCandidates(false);
         SwingUtilities.invokeAndWait(() -> Lizzie.board.moveToAnyPosition(historical));
         send(peer, "FASTATUS,1,B," + tuple + "," + white + "," + fourth,
@@ -333,12 +380,12 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals(4, Lizzie.board.getHistory().getMainEnd().getData().moveNumber);
         assertEquals(oldPlayouts, historical.getData().getPlayouts());
         assertEquals(oldMoves, historical.getData().bestMoves);
-        assertFalse(find(fox, JTextArea.class).getText().contains("%"));
+        assertTrue(Lizzie.frame.getBestMoves().isEmpty());
         assertDisplayCandidates(false);
         String beforeReturn = commands(work);
         SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 4, 5, "return to current live tail");
-        assertTrue(find(fox, JTextArea.class).getText().contains("%"), "current valid candidate immediately returns");
+        assertFalse(Lizzie.frame.getBestMoves().isEmpty(), "current valid candidate immediately returns");
         assertTrue(hasText(fox, "Fox.pending"));
         assertEquals(beforeReturn, commands(work));
         assertDisplayCandidates(true);
@@ -411,8 +458,7 @@ public final class FoxLiveSessionAcceptanceIT {
       try (Socket reconnected = new Socket("127.0.0.1", port)) {
         send(reconnected, "FARULE,19,60,30,3,650", "FASTATUS,1,B,1^16^3^B",
             "FATIMELEFT,60,30,3", "FAMOVE,0,B,1^16^3^B");
-        await(() -> find(fox, JTextArea.class).getText().contains(
-            Lizzie.resourceBundle.getString("Fox.recoveryUnconfirmed")), 5, "unconfirmed reconnect blocked");
+        await(() -> hasText(fox, "Fox.recoveryUnconfirmed"), 5, "unconfirmed reconnect blocked");
         assertTrue(target.hasExclusiveGtpLease());
         assertEquals(0, Lizzie.board.getHistory().getMoveNumber(),
             "incoming incomplete observation never replaces confirmed pre-submit root");
@@ -426,15 +472,14 @@ public final class FoxLiveSessionAcceptanceIT {
         reconnected.setSoTimeout(5000);
         assertEquals("AFSTATUS,B", receive(reconnected));
         send(reconnected, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 25, "new connection search candidates");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 25, "new connection search candidates");
         String lastSubmission = receive(reconnected);
         assertTrue(lastSubmission.startsWith("AFPLAY,B,1^"), lastSubmission);
         send(reconnected, "FAMOVE,0,B," + lastSubmission.substring("AFPLAY,B,".length()));
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "last confirmed live move");
-        await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "last opponent search");
+        await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "last opponent search");
         send(reconnected, "FASCORE");
-        await(() -> hasText(fox, "Fox.officialAction") && find(fox, JTextArea.class).getText()
-            .contains(Lizzie.resourceBundle.getString("Fox.officialAction")), 5, "stable official action instruction");
+        await(() -> hasText(fox, "Fox.officialAction"), 5, "stable official action instruction");
         send(reconnected, "FASTATUS,1,B," + lastSubmission.substring("AFPLAY,B,".length()),
             "FATIMELEFT,58,30,3", "FAMOVE,0,B," + lastSubmission.substring("AFPLAY,B,".length()));
         reconnected.setSoTimeout(500);
@@ -447,12 +492,11 @@ public final class FoxLiveSessionAcceptanceIT {
         SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
         SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(exitDisplay));
         assertTrue(hasText(fox, "Fox.officialAction"));
-        assertTrue(find(fox, JTextArea.class).getText().contains(Lizzie.resourceBundle.getString("Fox.officialAction")));
         assertEquals(scoreCommands, commands(work), "official request queries and navigation never resume search");
         assertEquals(1, Lizzie.board.getHistory().getMainEnd().getData().moveNumber);
         assertTrue(target.hasExclusiveGtpLease());
         capture(fox, work.resolve("fox-score-after-query-navigation.png"));
-        Files.writeString(work.resolve("score-status.txt"), find(fox, JTextArea.class).getText());
+        Files.writeString(work.resolve("score-status.txt"), "officialAction=" + hasText(fox, "Fox.officialAction"));
         Files.writeString(work.resolve("score-gtp.txt"), gtp(work));
         String beforeStop = commands(work);
         SwingUtilities.invokeAndWait(() -> {
@@ -479,6 +523,8 @@ public final class FoxLiveSessionAcceptanceIT {
       unconfirmedRetainedStop(fox, port, target, work);
       naturalPassReconnect(fox, port, target, work);
       assertTrue(target.isLoaded());
+      assertThreads(target, work);
+      assertTrue(customRules.semanticallyEquals(Lizzie.board.getHistory().captureSessionRules().parsedRules().orElseThrow()));
       assertTrue(target.beginExclusiveGtpLifecycleTransition());
       target.endExclusiveGtpLifecycleTransition();
       String handback = gtp(work);
@@ -486,10 +532,11 @@ public final class FoxLiveSessionAcceptanceIT {
       int reset = handback.lastIndexOf("kata-time_settings none");
       assertTrue(handback.substring(reset).matches("(?s)kata-time_settings none\\R[^\\n]*: =[^\\n]*\\R.*Controller:.*name.*"),
           "reset response precedes final handback fence");
+      int clockFenceStart = gtp(work).length();
       DesktopTimeControl.applyEngineGameTime(target, DesktopTimeControl.SideMode.ENGINE_OWNED, 0, "");
       target.sendCommand("kata-debug-print-tc");
-      target.sendCommand("137001 name");
-      await(() -> gtp(work).contains("=137001 KataGo"), 5, "post-stop engine-owned clock observation");
+      target.sendCommand("name");
+      await(() -> gtp(work).substring(clockFenceStart).contains("= KataGo"), 5, "post-stop engine-owned clock observation");
       Files.writeString(work.resolve("post-stop-time-control.txt"), gtp(work).substring(reset));
       var clocks = java.util.regex.Pattern.compile(
           "(Black|White) originalMainTime ([^ ]+) mainTimeLeft ([^ ]+) inOvertime ([01])")
@@ -507,8 +554,9 @@ public final class FoxLiveSessionAcceptanceIT {
       SwingUtilities.invokeAndWait(() -> assertSame(Lizzie.board.getData().bestMoves, Lizzie.frame.getBestMoves()));
       captureMain(work.resolve("fox-ordinary-analysis-restored.png"));
       target.notPondering();
-      target.sendCommand("137002 name");
-      await(() -> gtp(work).contains("=137002 KataGo"), 5, "ordinary pause fence");
+      int pauseFenceStart = gtp(work).length();
+      target.sendCommand("name");
+      await(() -> gtp(work).substring(pauseFenceStart).contains("= KataGo"), 5, "ordinary pause fence");
       assertFalse(target.isPondering());
       SwingUtilities.invokeAndWait(() -> {
         Lizzie.frame.onlyIndependMainBoard();
@@ -643,7 +691,7 @@ public final class FoxLiveSessionAcceptanceIT {
       send(peer, "FASTATUS,0", "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3",
           "FAMOVE,1,B,0^0^0^N", "FAMOVE,0,B,1^16^3^B", "FAMOVE,1,B,2^3^15^W", "FASKIP,0,B");
       await(() -> Lizzie.board.getHistory().getMoveNumber() == 3
-          && find(fox, JTextArea.class).getText().contains("%"), 25, "retained pass live candidate");
+          && !Lizzie.frame.getBestMoves().isEmpty(), 25, "retained pass live candidate");
       historic[0] = Lizzie.board.getHistory().getCurrentHistoryNode().previous().orElseThrow();
       SwingUtilities.invokeAndWait(() -> Lizzie.board.navigateToNode(historic[0]));
     }
@@ -671,7 +719,7 @@ public final class FoxLiveSessionAcceptanceIT {
       assertTrue(replay.contains("time_left B 40.0 0"), replay);
       assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "opponent no send after recovery");
       SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
-      await(() -> find(fox, JTextArea.class).getText().contains("%"), 15, "new recovery candidates");
+      await(() -> !Lizzie.frame.getBestMoves().isEmpty(), 15, "new recovery candidates");
       Files.writeString(work.resolve("reconnect-replay-gtp.txt"), gtp(work));
       capture(fox, work.resolve("fox-reconnect-restored.png"));
     }
@@ -849,6 +897,25 @@ public final class FoxLiveSessionAcceptanceIT {
     }
     return null;
   }
+  private static void assertThreads(Leelaz target, Path work) throws Exception {
+    int before = gtp(work).length();
+    target.sendCommand("kata-get-param numSearchThreads");
+    await(() -> gtp(work).substring(before).matches(
+        "(?s).*Controller: kata-get-param numSearchThreads\\R[^\\n]*: = 2\\s.*"),
+        5, "effective engine threads remain two");
+  }
+
+  private static JTextField readOnlyRules(Container parent) {
+    for (Component child : parent.getComponents()) {
+      if (child instanceof JTextField field && !field.isEditable()) return field;
+      if (child instanceof Container container) {
+        JTextField found = readOnlyRules(container);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
   private static <T> T find(Container parent, Class<T> type) {
     if (type.isInstance(parent)) return type.cast(parent);
     for (Component child : parent.getComponents()) {

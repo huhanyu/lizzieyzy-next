@@ -285,9 +285,6 @@ public class Menu extends JMenuBar {
         });
 
     fileMenu.add(openUrl);
-    final JFontMenuItem foxAi = new JFontMenuItem(resourceBundle.getString("Fox.title"));
-    foxAi.addActionListener(e -> featurecat.lizzie.fox.FoxLiveSession.showDialog());
-    fileMenu.add(foxAi);
     fileMenu.addSeparator();
 
     final JFontMenuItem save =
@@ -4185,6 +4182,9 @@ public class Menu extends JMenuBar {
     live.setForeground(MorandiPalette.MENU_ITEM_TEXT);
     // live.setFont(headFont);
     this.add(live);
+    final JFontMenuItem foxAi = new JFontMenuItem(resourceBundle.getString("Fox.title"));
+    foxAi.addActionListener(e -> featurecat.lizzie.fox.FoxLiveSession.showDialog());
+    live.add(foxAi);
 
     final JFontMenuItem yikeLive =
         new JFontMenuItem(resourceBundle.getString("Menu.yikeLive")); // ("弈客直播(Shift+O)");
