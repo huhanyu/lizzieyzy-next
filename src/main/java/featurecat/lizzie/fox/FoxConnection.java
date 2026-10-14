@@ -96,11 +96,13 @@ public final class FoxConnection implements AutoCloseable {
         if (!closed && client == socket) listener.problem("Fox.connectionError");
       }
     } finally {
+      try { socket.close(); } catch (IOException ignored) { }
       synchronized (this) {
+        // Admission needs this lock and an empty slot: the old disconnect is delivered before any
+        // replacement's connected callback, so its checkpoint/unresolved-submission transition runs.
+        listener.disconnected(token);
         if (client == socket) client = null;
       }
-      try { socket.close(); } catch (IOException ignored) { }
-      listener.disconnected(token);
     }
   }
 

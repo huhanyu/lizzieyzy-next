@@ -72,6 +72,46 @@ class FoxSubmissionTransportTest {
     }
   }
 
+  @Test void replacementClientIsAdmittedOnlyAfterOldDisconnectIsDelivered() throws Exception {
+    int port;
+    try (ServerSocket free = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+      port = free.getLocalPort();
+    }
+    java.util.List<String> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+    CountDownLatch firstConnected = new CountDownLatch(1);
+    CountDownLatch disconnectEntered = new CountDownLatch(1);
+    CountDownLatch releaseDisconnect = new CountDownLatch(1);
+    CountDownLatch secondConnected = new CountDownLatch(1);
+    try (FoxConnection transport = new FoxConnection(port, new FoxConnection.Listener() {
+      public void connected(long value) {
+        events.add("connected");
+        if (firstConnected.getCount() > 0) firstConnected.countDown(); else secondConnected.countDown();
+      }
+      public void received(long value, String body) {}
+      public void disconnected(long value) {
+        events.add("disconnected");
+        disconnectEntered.countDown();
+        try { releaseDisconnect.await(5, TimeUnit.SECONDS); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+      }
+      public void problem(String key) { events.add(key); }
+    })) {
+      Socket first = new Socket("127.0.0.1", port);
+      assertTrue(firstConnected.await(2, TimeUnit.SECONDS));
+      first.close();
+      assertTrue(disconnectEntered.await(2, TimeUnit.SECONDS));
+      try (Socket replacement = new Socket("127.0.0.1", port)) {
+        assertFalse(secondConnected.await(300, TimeUnit.MILLISECONDS),
+            "replacement must wait until the old disconnect has been delivered");
+        releaseDisconnect.countDown();
+        assertTrue(secondConnected.await(2, TimeUnit.SECONDS), "replacement is then admitted, not rejected");
+        assertEquals(java.util.List.of("connected", "disconnected", "connected"), events);
+      }
+    } finally {
+      releaseDisconnect.countDown();
+    }
+  }
+
   private void queuedWrite(boolean expireDirectLimit, boolean pda) throws Exception {
     AtomicLong token = new AtomicLong();
     CountDownLatch connected = new CountDownLatch(1);
