@@ -1405,8 +1405,10 @@ class BoardNodeKindHistoryPipelineTest {
   @Test
   void loadFromStringYikeHandicapHeaderOrderUsesSgfKomiWhenReadKomiDisabled() throws Exception {
     TestEnvironment env = TestEnvironment.open();
+    BoardRenderer previousBoardRenderer = LizzieFrame.boardRenderer;
     int previousCurrentEngineNo = EngineManager.currentEngineNo;
     try {
+      LizzieFrame.boardRenderer = new BoardRenderer(false);
       Lizzie.config.readKomi = false;
       EngineManager.currentEngineNo = 0;
       EngineManager.isEmpty = false;
@@ -1428,7 +1430,7 @@ class BoardNodeKindHistoryPipelineTest {
               + staleAnalysis
               + "];W[ba])";
 
-      assertTrue(SGFParser.loadFromString(sgf));
+      assertTrue(SGFParser.loadFromString(sgf, false));
 
       BoardHistoryList history = Lizzie.board.getHistory();
       assertEquals(0.0, history.getGameInfo().getKomi(), 0.0001);
@@ -1445,6 +1447,7 @@ class BoardNodeKindHistoryPipelineTest {
           0.0001,
           "late engine first-load board-size initialization must not overwrite a loaded SGF komi.");
     } finally {
+      LizzieFrame.boardRenderer = previousBoardRenderer;
       EngineManager.currentEngineNo = previousCurrentEngineNo;
       env.close();
     }
