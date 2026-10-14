@@ -281,7 +281,7 @@ class SGFParserSemanticRoundTripTest {
       assertTrue(SGFParser.loadFromStringforedit(sgf));
       assertTreeSemanticsEqual(expected, Lizzie.board.getHistory());
       BoardHistoryList branch = SGFParser.parseSgf("(;SZ[5])", true);
-      SGFParser.parseBranch(branch, "(;;DD[true])(;W[]C[real])");
+      SGFParser.parseBranch(branch, sgf.substring(sgf.indexOf('(', 1)));
       assertTreeSemanticsEqual(expected, branch);
     }
   }
