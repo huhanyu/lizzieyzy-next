@@ -147,25 +147,17 @@ public final class RealCpuEngineAcceptanceIT {
         MoveData candidate = positiveLegalCandidate(target).orElseThrow();
         real.togglePonder();
         awaitAnalysisQuiescence(real, target, Deadline.after(STOP_BUDGET));
-        String black = queryInitialPosition(real, "list_stones black");
-        String white = queryInitialPosition(real, "list_stones white");
-        assertEquals(Set.of("D4", "Q16"), responseCoordinates(black));
-        assertEquals(kind.equals("mixed") ? Set.of("D16", "Q4") : Set.of(), responseCoordinates(white));
-        Path trace = LoggingRuntime.current().orElseThrow().logsDirectory().resolve("engine-trace.log");
-        long offset = Files.size(trace);
-        real.sendCommand("showboard");
-        await(() -> Files.readString(trace).substring((int) offset).contains("Next player"),
-            Deadline.after(POSITION_BUDGET), "engine side-to-play response");
-        String boardResponse = Files.readString(trace).substring((int) offset);
-        assertTrue(boardResponse.matches("(?s).*Next player[^\\n]*[Ww](?:hite)?.*"), boardResponse);
-        Files.writeString(result.resolveSibling("position-" + round + ".txt"),
-            "black=" + black + "\nwhite=" + white + "\n" + boardResponse);
+        queryInitialPosition(real, "showboard");
+        queryInitialPosition(real, "name");
+        String boardResponse = recentEngineOutput(real);
+        Files.writeString(result.resolveSibling("position-" + round + ".txt"), boardResponse);
+        assertEngineInitialBoard(boardResponse, target.getData());
         java.awt.Robot robot = new java.awt.Robot();
         robot.waitForIdle();
         javax.imageio.ImageIO.write(robot.createScreenCapture(Lizzie.frame.getBounds()), "png",
             result.resolveSibling("position-" + round + ".png").toFile());
         positions.put(new JSONObject().put("round", round).put("confirmed", true)
-            .put("black", black).put("white", white).put("turn", "W")
+            .put("board", boardResponse).put("turn", "W")
             .put("visits", candidate.playouts).put("move", candidate.coordinate));
       }
       record.put("positions", positions).put("pid", state.peer.pid());
@@ -181,9 +173,31 @@ public final class RealCpuEngineAcceptanceIT {
     }
   }
 
-  private static Set<String> responseCoordinates(String response) {
-    String payload = response.replaceFirst("^[=?]\\d*\\s*", "").trim();
-    return payload.isEmpty() ? Set.of() : Set.of(payload.split("\\s+"));
+  private static String recentEngineOutput(Leelaz engine) throws Exception {
+    Field field = Leelaz.class.getDeclaredField("recentStdoutLines");
+    field.setAccessible(true);
+    @SuppressWarnings("unchecked")
+    java.util.ArrayDeque<String> lines = (java.util.ArrayDeque<String>) field.get(engine);
+    synchronized (lines) { return String.join("\n", lines); }
+  }
+
+  private static void assertEngineInitialBoard(String response, BoardData expected) {
+    assertTrue(response.matches("(?s).*Next player[^\\n]*[Ww](?:hite)?.*"), response);
+    int rows = 0;
+    for (String line : response.split("\\n")) {
+      java.util.regex.Matcher row = java.util.regex.Pattern.compile("^\\s*(\\d{1,2})\\s+([.XO+ ]+)(?:\\s+\\d+)?\\s*$").matcher(line);
+      if (!row.matches()) continue;
+      String cells = row.group(2).replace(" ", "");
+      if (cells.length() != 19) continue;
+      int y = 19 - Integer.parseInt(row.group(1));
+      for (int x = 0; x < 19; x++) {
+        Stone stone = cells.charAt(x) == 'X' ? Stone.BLACK
+            : cells.charAt(x) == 'O' ? Stone.WHITE : Stone.EMPTY;
+        assertEquals(expected.stones[Board.getIndex(x, y)], stone, "engine cell " + x + "," + y);
+      }
+      rows++;
+    }
+    assertEquals(19, rows, response);
   }
 
   private static String queryInitialPosition(Leelaz engine, String command) throws Exception {
