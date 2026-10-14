@@ -17,6 +17,20 @@ public final class FoxEngineSession {
   public record SearchIdentity(long connection, long game, long revision, long search) {}
   public record Candidates(SearchIdentity identity, String info) {}
   public record Selection(SearchIdentity identity, String vertex, long completedNanos) {}
+  public record Limits(double maxTime, long maxVisits) {
+    public Limits {
+      if (!Double.isFinite(maxTime) || maxTime <= 0 || maxTime > 1e20
+          || maxVisits <= 0 || maxVisits > 1125899906842624L)
+        throw new IllegalArgumentException("Invalid Fox search limits");
+    }
+    /** Ordinary KataGo limit controls use zero to mean unlimited. */
+    public static Limits parse(String time, String visits) {
+      double seconds = Double.parseDouble(time.trim());
+      long count = Long.parseLong(visits.trim());
+      return new Limits(seconds == 0 ? 1e20 : seconds,
+          count == 0 ? 1125899906842624L : count);
+    }
+  }
   private static final AtomicInteger COMMAND = new AtomicInteger(700000000);
   private final Leelaz engine;
   private final Object readerIdentity;
@@ -30,7 +44,8 @@ public final class FoxEngineSession {
   private volatile boolean closing;
   private volatile boolean searching;
   private volatile boolean prepared;
-  private double originalMaxTime;
+  private Limits limits;
+  private java.util.function.LongSupplier nanoTime = System::nanoTime;
   private final Object searchLock = new Object();
 
   public boolean claimSubmission(Selection selection, java.util.function.BooleanSupplier claim) {
@@ -74,7 +89,7 @@ public final class FoxEngineSession {
   }
 
   /** Runs on the adapter worker, never on EDT or Leelaz's reader. */
-  public void prepare(String selectedRules) throws Exception {
+  public void prepare(String selectedRules, Limits requestedLimits) throws Exception {
     KataGoRules requested = KataGoRules.parse(selectedRules)
         .filter(KataGoRules::hasRequiredFields)
         .orElseThrow(() -> new IllegalArgumentException("Incomplete current application rules"));
@@ -91,7 +106,9 @@ public final class FoxEngineSession {
     }
     String rules = request("kata-get-rules", null, 5000).trim();
     double maxTime = Double.parseDouble(request("kata-get-param maxTime", null, 5000).trim());
-    if (!engine.setFoxRestoreState(owner, rules, maxTime)) {
+    long maxVisits = Long.parseLong(request("kata-get-param maxVisits", null, 5000).trim());
+    Limits original = new Limits(maxTime, maxVisits);
+    if (!engine.setFoxRestoreState(owner, rules, maxTime, maxVisits)) {
       throw new IllegalStateException("Fox owner lost before runtime capture");
     }
     request("kata-set-rules " + requested.toGtpArgument(), null, 5000);
@@ -101,7 +118,8 @@ public final class FoxEngineSession {
     if (!requested.semanticallyEquals(actual)) {
       throw new IllegalStateException("Fox rules readback differs from current application rules");
     }
-    originalMaxTime = maxTime;
+    limits = requestedLimits == null ? original : requestedLimits;
+    request("kata-set-param maxVisits " + limits.maxVisits(), null, 5000);
     prepared = true;
   }
 
@@ -131,24 +149,26 @@ public final class FoxEngineSession {
     int periods = state.clock().mainSeconds() > 0 ? 0 : state.clock().periods();
     if (state.ownTurn()) {
       if (!state.clockRefreshed()) return null;
-      seconds = (state.submitDeadlineNanos() - System.nanoTime()) / 1e9;
-      if (seconds <= 0) throw new IllegalStateException("Fox turn budget exhausted during synchronization");
+      if (remainingSeconds(state) <= 0)
+        throw new IllegalStateException("Fox turn budget exhausted during synchronization");
+      seconds = (state.foxDeadlineNanos() - nanoTime.getAsLong()) / 1e9;
     }
     request("time_left " + state.ai() + " " + seconds + " " + periods, null, 5000);
-    double limit = state.ownTurn()
-        ? (state.submitDeadlineNanos() - System.nanoTime()) / 1e9 : 5.0;
+    double limit = state.ownTurn() ? remainingSeconds(state) : Math.min(limits.maxTime(), 5.0);
     if (limit <= 0) throw new IllegalStateException("Fox turn budget exhausted before search");
-    request("kata-set-param maxTime " + Math.min(originalMaxTime, limit), null, 5000);
+    // Leave a bounded delivery margin inside the original turn; a cap is not a minimum wait.
+    double searchLimit = state.ownTurn() ? Math.min(limits.maxTime(), limit) * 0.95 : limit;
+    request("kata-set-param maxTime " + searchLimit, null, 5000);
     synchronized (searchLock) {
       if (search.get() != generation || closing) return null;
       searching = true;
     }
     try {
       long timeout = state.ownTurn()
-          ? (state.submitDeadlineNanos() - System.nanoTime()) / 1_000_000L : 7000;
+          ? (long) (remainingSeconds(state) * 1000) : 7000;
       if (timeout <= 0) throw new IllegalStateException("Fox turn budget exhausted in queue");
       FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "started",
-          Math.min(originalMaxTime, limit));
+          searchLimit);
       String result = request("kata-search_analyze_cancellable " + state.toPlay() + " 10",
           line -> {
             if (!closing && search.get() == generation && Lizzie.leelaz == engine
@@ -163,15 +183,22 @@ public final class FoxEngineSession {
       if (!vertex.matches("(?i:pass)|[A-HJ-Z][0-9]{1,2}")) {
         throw new IllegalStateException("Fox search returned no valid final choice: " + result);
       }
-      long completed = System.nanoTime();
+      long completed = nanoTime.getAsLong();
+      if (state.ownTurn() && completed >= state.submitDeadlineNanos()) return null;
       FoxObservation.selection(loggingEngineId, identity, vertex, completed);
       return new Selection(identity, vertex, completed);
     } finally {
       searching = false;
       FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "finished",
-          Math.min(originalMaxTime, limit));
+          searchLimit);
     }
   }
+
+  private double remainingSeconds(FoxGameState.Snapshot state) {
+    return (state.submitDeadlineNanos() - nanoTime.getAsLong()) / 1e9;
+  }
+
+  void useClockForTest(java.util.function.LongSupplier clock) { nanoTime = clock; }
 
   private String request(String command, Consumer<String> info, long timeout) throws Exception {
     return request(command, info, timeout, -1);

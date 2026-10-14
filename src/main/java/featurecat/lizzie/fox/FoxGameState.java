@@ -28,7 +28,7 @@ public final class FoxGameState {
       Clock clock, char ai, Character toPlay, List<Placement> placements,
       List<Action> actions, boolean initialized, boolean complete, boolean active,
       String statusKey, boolean clockRefreshed, long submitDeadlineNanos, Submission pending,
-      boolean automationBlocked, long turnStartedNanos) {
+      boolean automationBlocked, long turnStartedNanos, long foxDeadlineNanos) {
     public boolean searchable() { return initialized && complete && active && !automationBlocked; }
     public boolean ownTurn() { return toPlay != null && toPlay == ai; }
   }
@@ -50,6 +50,22 @@ public final class FoxGameState {
   private String statusKey = "Fox.waiting";
   private long turnStartedNanos;
   private long submitDeadlineNanos;
+  private double directMaxTime = 1e20;
+
+  /** Configured before connecting; every search consumes the original authoritative turn. */
+  public synchronized void setDirectMaxTime(double seconds) {
+    if (!Double.isFinite(seconds) || seconds <= 0) throw new IllegalArgumentException("maxTime");
+    directMaxTime = seconds;
+  }
+
+  private long effectiveDeadlineNanos() {
+    if (toPlay == null || toPlay != ai) return submitDeadlineNanos;
+    double nanos = directMaxTime * 1e9;
+    long duration = nanos >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) nanos;
+    long directDeadline = turnStartedNanos > Long.MAX_VALUE - duration
+        ? Long.MAX_VALUE : turnStartedNanos + duration;
+    return Math.min(submitDeadlineNanos, directDeadline);
+  }
   private long refreshStartedNanos;
   private boolean refreshRequested;
   private boolean clockRefreshed;
@@ -131,7 +147,7 @@ public final class FoxGameState {
     Snapshot current = snapshot();
     if (expected.connection != connection || expected.game != game || expected.revision != revision
         || !current.searchable() || !current.ownTurn() || !clockRefreshed || automationBlocked
-        || pending != null || now >= submitDeadlineNanos) return null;
+        || pending != null || now >= effectiveDeadlineNanos()) return null;
     Placement move = null;
     if (!vertex.equalsIgnoreCase("pass")) {
       require(vertex.matches("[A-HJ-Z][0-9]{1,2}"));
@@ -143,7 +159,7 @@ public final class FoxGameState {
     Action action = new Action(move, ai, move == null ? placements.size() : move.number);
     String body = move == null ? "AFSKIP," + ai
         : "AFPLAY," + ai + "," + move.number + "^" + move.x + "^" + move.y + "^" + ai;
-    pending = new Submission(connection, game, revision, search, action, body, now, submitDeadlineNanos);
+    pending = new Submission(connection, game, revision, search, action, body, now, effectiveDeadlineNanos());
     written = false;
     submissions.add(new SubmissionFact(pending, SubmissionOutcome.PENDING, 0, 0, ""));
     statusKey = "Fox.pending";
@@ -154,7 +170,7 @@ public final class FoxGameState {
   public synchronized boolean claimSubmission(Submission expected, long now) {
     if (pending != expected || written || automationBlocked || !active || !complete
         || expected.connection != connection || expected.game != game || expected.revision != revision
-        || toPlay == null || toPlay != ai || now >= Math.min(expected.deadlineNanos, submitDeadlineNanos)) return false;
+        || toPlay == null || toPlay != ai || now >= Math.min(expected.deadlineNanos, effectiveDeadlineNanos())) return false;
     written = true;
     submissions.set(submissions.size() - 1,
         new SubmissionFact(pending, SubmissionOutcome.PENDING, now, 0, ""));
@@ -247,7 +263,7 @@ public final class FoxGameState {
     return new Snapshot(connection, game, revision, rules, clock, ai, toPlay,
         placements, List.copyOf(actions), rules != null && statusSeen && clock != null
         && toPlay != null, complete, active, active && automationBlocked ? automationStopReason : statusKey,
-        clockRefreshed, submitDeadlineNanos, pending, automationBlocked, turnStartedNanos);
+        clockRefreshed, effectiveDeadlineNanos(), pending, automationBlocked, turnStartedNanos, submitDeadlineNanos);
   }
 
   public synchronized void reject() {

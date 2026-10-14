@@ -8,6 +8,14 @@ import org.junit.jupiter.api.Test;
 
 class FoxSubmissionTransportTest {
   @Test void cancelledQueuedWriteCannotSendAndSuccessorCannotInheritIt() throws Exception {
+    queuedWrite(false);
+  }
+
+  @Test void directDeadlineExpiringBehindOutputLockCannotSubmit() throws Exception {
+    queuedWrite(true);
+  }
+
+  private void queuedWrite(boolean expireDirectLimit) throws Exception {
     AtomicLong token = new AtomicLong();
     CountDownLatch connected = new CountDownLatch(1);
     int port;
@@ -15,6 +23,7 @@ class FoxSubmissionTransportTest {
       port = free.getLocalPort();
     }
     FoxGameState game = new FoxGameState();
+    if (expireDirectLimit) game.setDirectMaxTime(2);
     game.connected();
     game.receive("FARULE,19,60,30,3,650", 0);
     game.receive("FASTATUS,1,B", 0);
@@ -41,8 +50,8 @@ class FoxSubmissionTransportTest {
       }));
       assertTrue(outputHeld.await(2, TimeUnit.SECONDS));
       Future<Boolean> queued = writers.submit(() -> transport.send(original, pending.body(),
-          () -> game.claimSubmission(pending, 3)));
-      game.stopAutomation("Fox.stopped", 2);
+          () -> game.claimSubmission(pending, expireDirectLimit ? 3_000_000_000L : 3)));
+      if (!expireDirectLimit) game.stopAutomation("Fox.stopped", 2);
       releaseOutput.countDown();
       assertTrue(first.get(2, TimeUnit.SECONDS));
       assertFalse(queued.get(2, TimeUnit.SECONDS));
@@ -52,7 +61,8 @@ class FoxSubmissionTransportTest {
       assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
       assertFalse(transport.send(original + 1, pending.body(), () -> true));
       assertTrue(game.snapshot().actions().isEmpty());
-      assertEquals(FoxGameState.SubmissionOutcome.FAILED, game.submissions().get(0).outcome());
+      assertEquals(expireDirectLimit ? FoxGameState.SubmissionOutcome.PENDING
+          : FoxGameState.SubmissionOutcome.FAILED, game.submissions().get(0).outcome());
     } finally {
       releaseOutput.countDown();
       writers.shutdownNow();

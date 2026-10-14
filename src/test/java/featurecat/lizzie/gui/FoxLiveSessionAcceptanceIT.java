@@ -98,6 +98,14 @@ public final class FoxLiveSessionAcceptanceIT {
         assertEquals(1, found, "sole sync-menu entry");
       });
       JDialog fox = dialog();
+      await(() -> button(fox, "Fox.start").isEnabled(), 10, "confirmed current engine limits");
+      SwingUtilities.invokeAndWait(() -> {
+        assertEquals("3.0", limitField(fox, "fox-max-time").getText());
+        assertEquals("64", limitField(fox, "fox-max-visits").getText());
+        limitField(fox, "fox-max-time").setText("10");
+        limitField(fox, "fox-max-visits").setText("128");
+      });
+      capture(fox, work.resolve("fox-limits-before-start.png"));
       SwingUtilities.invokeAndWait(() -> {
         JSpinner spinner = find(fox, JSpinner.class);
         JFormattedTextField editor = ((JSpinner.DefaultEditor) spinner.getEditor()).getTextField();
@@ -145,6 +153,8 @@ public final class FoxLiveSessionAcceptanceIT {
         assertTrue(find(fox, JTextArea.class).getText().contains("< ="));
         assertTrue(find(fox, JTextArea.class).getText().contains(customRules.toGtpArgument()));
         assertFalse(find(fox, JSpinner.class).isEnabled());
+        assertFalse(limitField(fox, "fox-max-time").isEnabled());
+        assertFalse(limitField(fox, "fox-max-visits").isEnabled());
         assertBreadth(false);
         assertTrue(hasText(fox, "Fox.breadthUnavailable"));
         String candidates = find(fox, JTextArea.class).getText();
@@ -537,6 +547,7 @@ public final class FoxLiveSessionAcceptanceIT {
       retainedReconnect(fox, port, target, work);
       unconfirmedRetainedStop(fox, port, target, work);
       naturalPassReconnect(fox, port, target, work);
+      directLimitCases(fox, port, target, work);
       assertTrue(target.isLoaded());
       assertThreads(target, work);
       assertTrue(customRules.semanticallyEquals(Lizzie.board.getHistory().captureSessionRules().parsedRules().orElseThrow()));
@@ -647,6 +658,9 @@ public final class FoxLiveSessionAcceptanceIT {
     assertTrue(restored.contains("kata-time_settings none"), restored);
     assertTrue(restored.contains("kata-set-rules"), restored);
     assertTrue(restored.contains("kata-set-param maxTime"), restored);
+    assertTrue(restored.contains("kata-set-param maxVisits"), restored);
+    assertEquals(new featurecat.lizzie.analysis.FoxEngineSession.Limits(3.0, 64),
+        target.queryFoxLimits().get(10, TimeUnit.SECONDS));
     assertFalse(restored.contains("kata-analyze"), "handback must not start ordinary analysis");
     assertFalse(target.isPondering());
     Thread.sleep(200);
@@ -670,6 +684,57 @@ public final class FoxLiveSessionAcceptanceIT {
         "pausedCommandsAndOutput=true\nbreadthReleased=true\nretainedMove="
             + retained.getData().moveNumber + "\nplayouts=" + Lizzie.board.getData().getPlayouts()
             + "\n" + Files.readString(tracePath).substring(quietTrace.length()));
+  }
+
+  private static void directLimitCases(JDialog fox, int port, Leelaz target, Path work) throws Exception {
+    for (String scenario : List.of("visits", "time", "fox-clock")) {
+      await(() -> button(fox, "Fox.start").isEnabled(), 10, "limit controls released");
+      SwingUtilities.invokeAndWait(() -> {
+        limitField(fox, "fox-max-time").setText(scenario.equals("time") ? "1.5" : "10");
+        limitField(fox, "fox-max-visits").setText(scenario.equals("visits") ? "128" : "0");
+      });
+      SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
+      await(() -> modal() != null, 5, "limit case confirmation");
+      answerModal(JOptionPane.OK_OPTION);
+      await(() -> modal() != null, 5, "limit case replace history");
+      SwingUtilities.invokeAndWait(() -> button(modal(), "Fox.replace").doClick());
+      await(() -> button(fox, "Fox.stop").isEnabled(), 5, "limit case listener");
+      int logStart = gtp(work).length();
+      long started = System.nanoTime();
+      try (Socket peer = new Socket("127.0.0.1", port)) {
+        peer.setSoTimeout(15000);
+        String time = scenario.equals("fox-clock") ? "0,3,1" : "60,30,3";
+        send(peer, "FASTATUS,0", "FARULE,19," + time + ",650", "FASTATUS,1,B",
+            "FATIMELEFT," + time, "FAMOVE,1,B,0^0^0^N");
+        assertEquals("AFSTATUS,B", receive(peer));
+        send(peer, "FASTATUS,1,B", "FATIMELEFT," + time, "FAMOVE,1,B,0^0^0^N");
+        String move = receive(peer);
+        long elapsed = System.nanoTime() - started;
+        assertTrue(move.startsWith("AFPLAY,B,"), move);
+        assertTrue(elapsed < TimeUnit.SECONDS.toNanos(scenario.equals("visits") ? 10 : 3));
+        String search = gtp(work).substring(logStart);
+        assertTrue(search.contains("kata-set-param maxVisits " + (scenario.equals("visits") ? "128" : "1125899906842624")));
+        var visits = java.util.regex.Pattern.compile("Root visits: (\\d+)").matcher(search);
+        long maximum = 0;
+        while (visits.find()) maximum = Math.max(maximum, Long.parseLong(visits.group(1)));
+        if (scenario.equals("visits")) assertTrue(maximum > 64 && maximum <= 130,
+            "actual root visits include at most the two in-flight search threads: " + maximum);
+        else assertTrue(maximum > 0 && maximum < 1125899906842624L);
+        send(peer, "FAMOVE,0,B," + move.substring("AFPLAY,B,".length()));
+        await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "capped move confirmed");
+        SwingUtilities.invokeAndWait(fox::toFront);
+        capture(fox, work.resolve("fox-limit-" + scenario + ".png"));
+        Files.writeString(work.resolve("limit-" + scenario + ".txt"),
+            "elapsedNanos=" + elapsed + "\nmaxObservedVisits=" + maximum + "\n" + search);
+        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.stop").doClick());
+        await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(), 15, "cap restore");
+        assertFalse(target.isPondering());
+        assertEquals(new featurecat.lizzie.analysis.FoxEngineSession.Limits(3.0, 64),
+            target.queryFoxLimits().get(10, TimeUnit.SECONDS));
+        Files.writeString(work.resolve("limit-" + scenario + "-restored.txt"),
+            "maxTime=3.0\nmaxVisits=64\npaused=true\n" + gtp(work).substring(logStart));
+      }
+    }
   }
 
   /** A legal two-eye setup leaves White no legal stone placement; the real engine chooses PASS. */
@@ -979,6 +1044,17 @@ public final class FoxLiveSessionAcceptanceIT {
     }
     return null;
   }
+  private static JTextField limitField(Container parent, String name) {
+    for (Component child : parent.getComponents()) {
+      if (child instanceof JTextField field && name.equals(field.getName())) return field;
+      if (child instanceof Container container) {
+        JTextField found = limitField(container, name);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
 
   private static <T> T find(Container parent, Class<T> type) {
     if (type.isInstance(parent)) return type.cast(parent);

@@ -7,6 +7,25 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FoxProtocolStateTest {
+  @Test void directBudgetIncludesInitializationAndRefreshAndFencesPhysicalWrite() {
+    FoxGameState state = initialized();
+    state.setDirectMaxTime(10);
+    refresh(state, 3_000_000_000L, "60,30,3");
+    assertEquals(0, state.snapshot().turnStartedNanos());
+    assertEquals(10_000_000_000L, state.snapshot().submitDeadlineNanos());
+    state.receive("FATIMELEFT,60,30,3", 8_000_000_000L);
+    assertEquals(10_000_000_000L, state.snapshot().submitDeadlineNanos());
+    var pending = state.prepareSubmission(state.snapshot(), 1, "D4", 9_000_000_000L);
+    assertNotNull(pending);
+    assertFalse(state.claimSubmission(pending, 10_000_000_000L));
+    assertNull(state.prepareSubmission(state.snapshot(), 2, "Q4", 11_000_000_000L));
+
+    FoxGameState tighter = initialized();
+    tighter.setDirectMaxTime(120);
+    refresh(tighter, 2_000_000_000L, "60,30,3");
+    assertEquals(59_000_000_000L, tighter.snapshot().submitDeadlineNanos());
+  }
+
   @Test void repeatedInitializationCannotResetIdentityBudgetHistoryOrFailedSubmission() {
     FoxGameState state = initialized();
     refresh(state, 0, "60,30,3");

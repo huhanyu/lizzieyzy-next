@@ -1324,7 +1324,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
   void foxPreparationRequiresCompleteMatchingRulesWithoutChangingOtherParameters() throws Exception {
     KataGoRules custom = KataGoRules.parse("chinese").orElseThrow()
         .overlayEditor("AREA", "POSITIONAL", true, "ALL", "N-1", false);
-    for (String result : List.of("success", "mismatch", "rejected", "invalid")) {
+    for (String result : List.of("success", "mismatch", "rejected", "invalid", "visits-rejected")) {
       Leelaz engine = reusableKatagoEngine(false, false);
       ByteArrayOutputStream output = installOutput(engine);
       try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
@@ -1335,12 +1335,12 @@ class LeelazExclusiveRemoteGtpSessionTest {
         dispatch(engine, "");
         AtomicInteger consumed = new AtomicInteger(1);
         var preparation = new java.util.concurrent.FutureTask<Void>(() -> {
-          adapter.prepare(custom.toGtpArgument()); return null;
+          adapter.prepare(custom.toGtpArgument(), null); return null;
         });
         Thread thread = new Thread(preparation, "fox-custom-rules-test");
         thread.setDaemon(true);
         thread.start();
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < (result.equals("success") || result.equals("visits-rejected") ? 8 : 7); i++) {
           String command = nextFoxCommand(output, consumed);
           boolean set = command.contains(" kata-set-rules ");
           if (set) assertTrue(command.endsWith(custom.toGtpArgument()));
@@ -1348,10 +1348,12 @@ class LeelazExclusiveRemoteGtpSessionTest {
               ? "kata-search_analyze_cancellable kata-get-rules kata-set-rules kata-get-param kata-set-param kgs-time_settings kata-time_settings kata-list_time_settings set_free_handicap time_left stop"
               : command.endsWith(" kata-list_time_settings") ? "none byoyomi"
               : command.endsWith(" kata-get-param maxTime") ? "3.0"
+              : command.endsWith(" kata-get-param maxVisits") ? "500"
               : command.endsWith(" kata-get-rules") ? (i < 5 ? "japanese"
                   : result.equals("mismatch") ? "chinese"
                   : result.equals("invalid") ? "{}" : custom.toGtpArgument()) : "";
-          boolean reject = set && result.equals("rejected");
+          boolean reject = (set && result.equals("rejected"))
+              || (command.contains("kata-set-param maxVisits") && result.equals("visits-rejected"));
           dispatch(engine, (reject ? "?" : "=") + command.split(" ", 2)[0] + " " + payload);
           dispatch(engine, "");
           if (reject) break;
@@ -1359,7 +1361,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
         if (result.equals("success")) preparation.get(2, TimeUnit.SECONDS);
         else assertThrows(java.util.concurrent.ExecutionException.class,
             () -> preparation.get(2, TimeUnit.SECONDS));
-        assertFalse(output.toString(StandardCharsets.UTF_8).contains("kata-set-param"),
+        assertFalse(output.toString(StandardCharsets.UTF_8).contains("kata-set-param numSearchThreads"),
             "preparation preserves threads and all non-owned parameters");
       }
     }
@@ -1378,17 +1380,18 @@ class LeelazExclusiveRemoteGtpSessionTest {
         dispatch(engine, "=800000000");
         dispatch(engine, "");
         AtomicInteger consumed = new AtomicInteger(1);
-        var preparation = new java.util.concurrent.FutureTask<Void>(() -> { adapter.prepare("chinese"); return null; });
+        var preparation = new java.util.concurrent.FutureTask<Void>(() -> { adapter.prepare("chinese", null); return null; });
         Thread preparationThread = new Thread(preparation, "fox-prepare-boundary-test");
         preparationThread.setDaemon(true);
         preparationThread.start();
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 8; i++) {
           String command = nextFoxCommand(output, consumed);
           String payload = command.endsWith(" list_commands")
               ? "kata-search_analyze_cancellable kata-get-rules kata-set-rules kata-get-param kata-set-param kgs-time_settings kata-time_settings kata-list_time_settings set_free_handicap time_left stop"
               : command.endsWith(" kata-list_time_settings") ? "none byoyomi"
               : command.endsWith(" kata-get-rules") ? "chinese"
-              : command.endsWith(" kata-get-param maxTime") ? "0.25" : "";
+              : command.endsWith(" kata-get-param maxTime") ? "0.25"
+              : command.endsWith(" kata-get-param maxVisits") ? "500" : "";
           dispatch(engine, "=" + command.split(" ", 2)[0] + " " + payload);
           dispatch(engine, "");
         }
@@ -1408,7 +1411,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
         searchThread.start();
         String command;
         while (!(command = nextFoxCommand(output, consumed)).contains("kata-search_analyze_cancellable")) {
-          if (command.contains("kata-set-param maxTime")) assertTrue(command.endsWith(" 0.25"));
+          if (command.contains("kata-set-param maxTime")) assertTrue(command.endsWith(" 0.2375"));
           dispatch(engine, "=" + command.split(" ", 2)[0]);
           dispatch(engine, "");
         }
@@ -1461,6 +1464,121 @@ class LeelazExclusiveRemoteGtpSessionTest {
     assertEquals("[2] > 102 name\n[2] < =102 KataGo\n[2] < \n", transcript.drain());
   }
 
+  @Test void foxLimitValidationUsesOrdinaryUnlimitedSentinels() {
+    assertEquals(new FoxEngineSession.Limits(1e20, 1125899906842624L), FoxEngineSession.Limits.parse("0", "0"));
+    assertEquals(new FoxEngineSession.Limits(0.5, 200), FoxEngineSession.Limits.parse("0.5", "200"));
+    for (String value : List.of("-1", "NaN", "Infinity", "1e21", ""))
+      assertThrows(IllegalArgumentException.class, () -> FoxEngineSession.Limits.parse(value, "100"));
+    for (String value : List.of("-1", "2.5", "1125899906842625", ""))
+      assertThrows(IllegalArgumentException.class, () -> FoxEngineSession.Limits.parse("1", value));
+  }
+
+  @Test
+  void foxExplicitLimitsAndResearchConsumeOriginalTurnIncludingReplayAndQueue() throws Exception {
+    for (String scenario : List.of("visits-first", "time-first", "fox-first", "queue", "replay", "set-error", "late")) {
+      Leelaz engine = reusableKatagoEngine(false, false);
+      ByteArrayOutputStream output = installOutput(engine);
+      try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+        var clock = new java.util.concurrent.atomic.AtomicLong();
+        FoxEngineSession adapter = new FoxEngineSession(engine, engine.engineIncarnationToken(),
+            value -> {}, reason -> fail(reason));
+        adapter.useClockForTest(clock::get);
+        assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, adapter.acquire(() -> {}));
+        dispatch(engine, "=800000000");
+        dispatch(engine, "");
+        AtomicInteger consumed = new AtomicInteger(1);
+        var preparation = new java.util.concurrent.FutureTask<Void>(() -> {
+          adapter.prepare("chinese", new FoxEngineSession.Limits(10, 256)); return null;
+        });
+        startFoxTestTask(preparation);
+        for (int i = 0; i < 8; i++) {
+          String command = nextFoxCommand(output, consumed);
+          String payload = command.endsWith(" list_commands")
+              ? "kata-search_analyze_cancellable kata-get-rules kata-set-rules kata-get-param kata-set-param kgs-time_settings kata-time_settings kata-list_time_settings set_free_handicap time_left stop"
+              : command.endsWith(" kata-list_time_settings") ? "none byoyomi"
+              : command.endsWith(" kata-get-rules") ? "chinese"
+              : command.endsWith(" kata-get-param maxTime") ? "0.25"
+              : command.endsWith(" kata-get-param maxVisits") ? "8" : "";
+          if (command.contains("kata-set-param maxVisits")) assertTrue(command.endsWith(" 256"));
+          dispatch(engine, "=" + command.split(" ", 2)[0] + " " + payload);
+          dispatch(engine, "");
+        }
+        preparation.get(2, TimeUnit.SECONDS);
+        clock.set(2_000_000_000L); // owner initialization and parameter ACK cost
+        var state = new featurecat.lizzie.fox.FoxGameState();
+        state.setDirectMaxTime(10);
+        state.connected();
+        state.receive("FARULE,19,60,30,3,650", 0);
+        state.receive("FASTATUS,1,B", 0);
+        state.receive("FATIMELEFT,60,30,3", 0);
+        state.receive("FAMOVE,1,B,0^0^0^N", 0);
+        state.receive("FAMOVE,0,B,1^16^3^B", 0);
+        state.receive("FAMOVE,1,B,2^3^15^W", 0);
+        assertTrue(state.beginClockRefresh(0));
+        state.receive(scenario.equals("fox-first") ? "FATIMELEFT,8,30,3" : "FATIMELEFT,60,30,3", 0);
+        long deadline = state.snapshot().submitDeadlineNanos();
+        int rounds = scenario.equals("visits-first") ? 2 : 1;
+        for (int round = 0; round < rounds; round++) {
+          var search = new java.util.concurrent.FutureTask<FoxEngineSession.Selection>(() -> adapter.analyze(state.snapshot()));
+          startFoxTestTask(search);
+          boolean searchSent = false;
+          while (true) {
+            String command = nextFoxCommand(output, consumed);
+            boolean setTime = command.contains("kata-set-param maxTime");
+            if (command.contains(" play ")) {
+              clock.addAndGet(1_000_000_000L);
+              if (scenario.equals("replay")) clock.set(11_000_000_000L);
+            }
+            if (command.contains(" time_left "))
+              assertTrue(command.endsWith(" " + (scenario.equals("fox-first") ? "3.0" : round == 1 ? "52.0" : "55.0") + " 0"),
+                  "time_left reports the Fox clock, while maxTime owns the direct cap: " + command);
+            if (setTime) {
+              double value = Double.parseDouble(command.substring(command.lastIndexOf(' ') + 1));
+              assertEquals(scenario.equals("fox-first") || round == 1 ? 2.85 : 5.7, value, 1e-6);
+              assertTrue(value > 0.25, "explicit cap can exceed original ordinary cap");
+              if (scenario.equals("queue")) clock.set(10_000_000_000L);
+            }
+            boolean rejected = setTime && scenario.equals("set-error");
+            if (command.contains("kata-search_analyze_cancellable")) {
+              searchSent = true;
+              clock.set(scenario.equals("late") ? deadline
+                  : scenario.equals("time-first") || scenario.equals("fox-first") ? deadline - 100_000_000L
+                  : clock.get() + 1_000_000_000L);
+              dispatch(engine, "=" + command.split(" ", 2)[0]);
+              dispatch(engine, "play D4");
+              dispatch(engine, "");
+              break;
+            }
+            dispatch(engine, (rejected ? "?" : "=") + command.split(" ", 2)[0]);
+            dispatch(engine, "");
+            if (rejected || (setTime && scenario.equals("queue"))
+                || (command.contains("kgs-time_settings") && scenario.equals("replay"))) break;
+          }
+          if (List.of("queue", "replay", "set-error").contains(scenario)) {
+            assertThrows(java.util.concurrent.ExecutionException.class, () -> search.get(2, TimeUnit.SECONDS));
+            assertFalse(searchSent);
+          } else if (scenario.equals("late")) assertNull(search.get(2, TimeUnit.SECONDS));
+          else {
+            var choice = search.get(2, TimeUnit.SECONDS);
+            assertNotNull(choice);
+            assertTrue(choice.completedNanos() < deadline);
+            if (round == rounds - 1)
+              assertNotNull(state.prepareSubmission(state.snapshot(), choice.identity().search(), "D4", clock.get()));
+            else adapter.invalidate();
+          }
+          assertEquals(deadline, state.snapshot().submitDeadlineNanos());
+          assertEquals(0, state.snapshot().turnStartedNanos());
+        }
+      }
+    }
+  }
+
+  private static void startFoxTestTask(Runnable task) {
+    Thread thread = new Thread(task, "fox-budget-test");
+    thread.setDaemon(true);
+    thread.start();
+  }
+
   private static String nextFoxCommand(ByteArrayOutputStream output, AtomicInteger consumed) throws Exception {
     waitUntil(() -> output.toString(StandardCharsets.UTF_8).lines().count() > consumed.get());
     return output.toString(StandardCharsets.UTF_8).lines().toList().get(consumed.getAndIncrement());
@@ -1494,7 +1612,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
           candidates -> fail("old assertion published candidates"), reason -> {});
       assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY,
           adapter.acquire(() -> fail("old assertion acquired replacement")));
-      assertThrows(IllegalStateException.class, () -> adapter.prepare("chinese"));
+      assertThrows(IllegalStateException.class, () -> adapter.prepare("chinese", null));
       assertEquals("", replacement.toString(StandardCharsets.UTF_8));
       assertFalse(engine.hasExclusiveGtpLease());
     }
@@ -1502,10 +1620,10 @@ class LeelazExclusiveRemoteGtpSessionTest {
 
   @Test
   void foxRuntimeRestoreRejectionCannotBeHiddenByFinalName() throws Exception {
-    for (String rejected : List.of("kata-set-rules", "kata-get-rules", "kata-set-param maxTime", "kata-time_settings none")) {
+    for (String rejected : List.of("kata-set-rules", "kata-get-rules", "kata-set-param maxTime", "kata-set-param maxVisits", "kata-time_settings none")) {
       try (ProductionForegroundRestoreHarness harness =
           ProductionForegroundRestoreHarness.open(true, rejected)) {
-        assertTrue(harness.engine.setFoxRestoreState(harness.lease, "chinese", 3.0));
+        assertTrue(harness.engine.setFoxRestoreState(harness.lease, "chinese", 3.0, 500));
         assertTrue(harness.lease.release(harness.completions::incrementAndGet,
             harness.failures::incrementAndGet));
         dispatch(harness.engine, "=800000001");

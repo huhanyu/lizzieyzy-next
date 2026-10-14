@@ -15091,15 +15091,51 @@ public class Leelaz {
     }
   }
 
-  boolean setFoxRestoreState(Object owner, String rules, double maxTime) {
+  boolean setFoxRestoreState(Object owner, String rules, double maxTime, long maxVisits) {
     synchronized (engineArbitrationLock()) {
       ExclusiveGtpSession session = exclusiveGtpSession;
       if (session == null || session.owner != owner || !session.active || session.closing
-          || !Double.isFinite(maxTime) || maxTime <= 0 || rules == null) return false;
+          || !Double.isFinite(maxTime) || maxTime <= 0 || maxVisits <= 0 || rules == null) return false;
       session.originalRules = rules;
       session.foxMaxTime = maxTime;
+      session.foxMaxVisits = maxVisits;
       return true;
     }
+  }
+
+  /** Confirmed, reader-bound ordinary queries for the pre-start Fox controls. */
+  public CompletableFuture<FoxEngineSession.Limits> queryFoxLimits() {
+    ReaderStreamBinding binding = readerStreamBinding;
+    long generation = Lizzie.capturePrimaryEngineGeneration(this);
+    return queryFoxLimit("maxTime", binding, generation).thenCompose(time ->
+        queryFoxLimit("maxVisits", binding, generation).thenApply(visits ->
+            new FoxEngineSession.Limits(Double.parseDouble(time), Long.parseLong(visits))));
+  }
+
+  private CompletableFuture<String> queryFoxLimit(
+      String parameter, ReaderStreamBinding binding, long generation) {
+    CompletableFuture<String> result = new CompletableFuture<>();
+    Runnable response = () -> {
+      if (generation < 0 || Lizzie.capturePrimaryEngineGeneration(this) != generation
+          || !isCurrentLiveEngineIncarnation(binding) || isCurrentCommandResponseError()) {
+        result.completeExceptionally(new IllegalStateException("Fox parameter query failed"));
+      } else result.complete(gtpResponsePayload(currentCommandResponseLine()));
+    };
+    COMMAND_DISPATCH_EXECUTOR.execute(() -> {
+      if (generation < 0 || Lizzie.capturePrimaryEngineGeneration(this) != generation
+          || !isCurrentLiveEngineIncarnation(binding)
+          || !sendCommand("kata-get-param " + parameter, response,
+              result::completeExceptionally, true, false, null, false, binding)) {
+        result.completeExceptionally(new IllegalStateException("Fox parameter query unavailable"));
+        return;
+      }
+      var timeout = RUNTIME_THREAD_TIMEOUT_EXECUTOR.schedule(() -> {
+        if (result.completeExceptionally(new IllegalStateException("Fox parameter query timeout")))
+          retireTimedOutNormalCommand(response);
+      }, 5, TimeUnit.SECONDS);
+      result.whenComplete((value, failure) -> timeout.cancel(false));
+    });
+    return result;
   }
 
   public boolean beginExclusiveGtpLifecycleTransition() {
@@ -15945,6 +15981,7 @@ public class Leelaz {
           throw new IllegalStateException("Fox restored rules readback interrupted", interrupted);
         }
         confirmForegroundRestoreCommand(session, "kata-set-param maxTime " + session.foxMaxTime);
+        confirmForegroundRestoreCommand(session, "kata-set-param maxVisits " + session.foxMaxVisits);
         confirmForegroundRestoreCommand(session, "kata-time_settings none");
       } else if (session.originalRules != null) {
         sendCommand("kata-set-rules " + session.originalRules);
@@ -17275,6 +17312,7 @@ public class Leelaz {
     private boolean finiteSearchError;
     private boolean releaseStopComplete;
     private Double foxMaxTime;
+    private Long foxMaxVisits;
     private Runnable afterRestore;
     private Runnable afterRestoreFailure;
     private Thread restoreThread;

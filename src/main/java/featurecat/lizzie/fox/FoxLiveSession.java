@@ -41,6 +41,15 @@ public final class FoxLiveSession {
   private final JTextArea output = new JTextArea(10, 56);
   private final JSpinner port = new JSpinner(new SpinnerNumberModel(7000, 1, 65535, 1));
   private final JTextField rules = new JTextField();
+  private final JTextField maxTime = new JTextField(8);
+  private final JTextField maxVisits = new JTextField(12);
+  private FoxEngineSession.Limits selectedLimits;
+  private Leelaz limitsEngine;
+  private Object limitsReader;
+  private boolean queryingLimits;
+  private boolean limitsConfirmed;
+  private String initializedTime = "";
+  private String initializedVisits = "";
   private final JButton start = new JButton(text("Fox.start"));
   private final JButton stop = new JButton(text("Fox.stop"));
   private final JButton returnLive = new JButton(text("Fox.returnLive"));
@@ -99,7 +108,7 @@ public final class FoxLiveSession {
 
   private FoxLiveSession() {
     dialog = new JDialog(Lizzie.frame, text("Fox.title"), false);
-    JPanel controls = new JPanel(new GridLayout(2, 3, 8, 8));
+    JPanel controls = new JPanel(new GridLayout(4, 3, 8, 8));
     controls.add(new JLabel(text("Fox.port")));
     controls.add(port);
     controls.add(start);
@@ -120,6 +129,14 @@ public final class FoxLiveSession {
     rules.setEditable(false);
     controls.add(rules);
     controls.add(stop);
+    maxTime.setName("fox-max-time");
+    maxVisits.setName("fox-max-visits");
+    controls.add(new JLabel(text("Fox.maxTime")));
+    controls.add(maxTime);
+    controls.add(new JLabel(text("Fox.limitUnlimited")));
+    controls.add(new JLabel(text("Fox.maxVisits")));
+    controls.add(maxVisits);
+    controls.add(new JLabel(text("Fox.limitUnlimited")));
     output.setEditable(false);
     output.setLineWrap(false);
     JPanel content = new JPanel(new BorderLayout(8, 8));
@@ -161,6 +178,7 @@ public final class FoxLiveSession {
     if (instance == null) instance = new FoxLiveSession();
     if (instance.connection == null && !instance.restoring) instance.displayCurrentRules();
     instance.dialog.setVisible(true);
+    instance.queryLimits();
   }
 
   /** Mutations remain excluded while display-only history navigation is admitted separately. */
@@ -209,6 +227,44 @@ public final class FoxLiveSession {
     KataGoRules current = currentRules();
     rules.setText(current == null ? text("Fox.rulesUnavailable") : current.fieldSummary());
     rules.setCaretPosition(0);
+  }
+
+  private void queryLimits() {
+    if (connection != null || engine != null || restoring || queryingLimits || Lizzie.leelaz == null) return;
+    Leelaz target = Lizzie.leelaz;
+    Object reader = target.engineIncarnationToken();
+    boolean replaceTime = maxTime.getText().equals(initializedTime);
+    boolean replaceVisits = maxVisits.getText().equals(initializedVisits);
+    queryingLimits = true;
+    limitsConfirmed = false;
+    refreshLimitControls();
+    target.queryFoxLimits().whenComplete((limits, failure) -> onEdt(() -> {
+      queryingLimits = false;
+      if (connection != null || engine != null || restoring) return;
+      if (failure != null || Lizzie.leelaz != target || !target.isCurrentEngineIncarnationToken(reader)) {
+        showStatus("Fox.limitsUnavailable");
+      } else {
+        limitsEngine = target;
+        limitsReader = reader;
+        limitsConfirmed = true;
+        initializedTime = limits.maxTime() == 1e20 ? "0" : Double.toString(limits.maxTime());
+        initializedVisits = limits.maxVisits() == 1125899906842624L ? "0" : Long.toString(limits.maxVisits());
+        if (replaceTime) maxTime.setText(initializedTime);
+        if (replaceVisits) maxVisits.setText(initializedVisits);
+      }
+      refreshLimitControls();
+    }));
+  }
+
+  private void refreshLimitControls() {
+    boolean available = connection == null && engine == null && !restoring && !queryingLimits
+        && limitsConfirmed && Lizzie.leelaz == limitsEngine
+        && limitsEngine.isCurrentEngineIncarnationToken(limitsReader)
+        && limitsEngine.previewForegroundAnalysisLeaseAvailability()
+            == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE;
+    maxTime.setEnabled(available);
+    maxVisits.setEnabled(available);
+    start.setEnabled(available);
   }
   public static boolean isActive() { return instance != null && instance.ownsBoard; }
   public static boolean ownsEngine() { return instance != null && instance.engine != null; }
@@ -259,6 +315,12 @@ public final class FoxLiveSession {
 
   private void start() {
     if (connection != null || restoring) return;
+    if (!limitsConfirmed || Lizzie.leelaz != limitsEngine
+        || !limitsEngine.isCurrentEngineIncarnationToken(limitsReader)) {
+      queryLimits(); showStatus("Fox.limitsUnavailable"); return;
+    }
+    try { selectedLimits = FoxEngineSession.Limits.parse(maxTime.getText(), maxVisits.getText()); }
+    catch (IllegalArgumentException invalid) { showStatus("Fox.invalidLimits"); return; }
     try { port.commitEdit(); }
     catch (java.text.ParseException invalid) { showStatus("Fox.invalidPort"); return; }
     if (Lizzie.config.isDoubleEngineMode() || Lizzie.leelaz == null
@@ -283,6 +345,7 @@ public final class FoxLiveSession {
     rules.setText(selectedRules.fieldSummary());
     rules.setCaretPosition(0);
     output.setText("");
+    game.setDirectMaxTime(selectedLimits.maxTime());
     originalBoard = Lizzie.board.captureClearState();
     try {
       connection = new FoxConnection((Integer) port.getValue(), new FoxConnection.Listener() {
@@ -312,6 +375,7 @@ public final class FoxLiveSession {
       start.setEnabled(false);
       stop.setEnabled(true);
       port.setEnabled(false);
+      refreshLimitControls();
       showStatus("Fox.listening");
       Lizzie.frame.refresh();
     } catch (IOException failure) {
@@ -397,7 +461,7 @@ public final class FoxLiveSession {
     worker.execute(() -> {
       Leelaz.ExclusiveGtpLeaseAvailability availability = owner.acquire(() -> worker.execute(() -> {
         try {
-          owner.prepare(selectedRules.toGtpArgument());
+          owner.prepare(selectedRules.toGtpArgument(), selectedLimits);
           onEdt(() -> {
             if (engine == owner && game.snapshot().searchable()) {
               engineReady = true;
@@ -514,6 +578,7 @@ public final class FoxLiveSession {
   }
 
   private void tick() {
+    refreshLimitControls();
     if (featurecat.lizzie.gui.LizzieFrame.menu != null)
       featurecat.lizzie.gui.LizzieFrame.menu.refreshBreadthAdmission();
     drainTranscript();
@@ -623,8 +688,8 @@ public final class FoxLiveSession {
     recover.setEnabled(success && game.recoveryStatus().equals("Fox.recoveryConfirm"));
     refreshDisplay();
     Lizzie.frame.refresh();
-    if (connection == null) start.setEnabled(success);
-    else if (success && game.snapshot().searchable() && blockedGame != game.snapshot().game()) {
+    refreshLimitControls();
+    if (connection != null && success && game.snapshot().searchable() && blockedGame != game.snapshot().game()) {
       acquire(game.snapshot());
     }
   }
@@ -638,9 +703,10 @@ public final class FoxLiveSession {
     retainedHistory = false;
     game.revokeRecovery("Fox.noCheckpoint");
     recover.setEnabled(false);
-    if (engine == null) { ownsBoard = false; start.setEnabled(true); }
+    if (engine == null) ownsBoard = false;
     stop.setEnabled(false);
     port.setEnabled(true);
+    refreshLimitControls();
   }
 
   private void drainTranscript() {
