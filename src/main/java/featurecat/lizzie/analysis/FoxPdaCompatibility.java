@@ -1,5 +1,6 @@
 package featurecat.lizzie.analysis;
 
+import featurecat.lizzie.util.CommandLaunchHelper;
 import featurecat.lizzie.util.katago.tuning.KataGoCommandSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,7 +15,8 @@ final class FoxPdaCompatibility {
 
   static String inspect(List<String> command, Path directory) {
     try {
-      if (command.size() < 2 || !command.get(1).equals("gtp")) return "Fox.pdaUnknown";
+      if (command.size() < 2 || !command.get(1).equals("gtp")
+          || CommandLaunchHelper.isIndirectLauncher(command.get(0))) return "Fox.pdaUnknown";
       boolean configSeen = false;
       boolean dynamic = KataGoCommandSpec.parse(command).effectiveOverrides().containsKey(DYNAMIC);
       Set<String> valued = Set.of("-model", "--model", "-weights", "--weights", "-config", "--config",

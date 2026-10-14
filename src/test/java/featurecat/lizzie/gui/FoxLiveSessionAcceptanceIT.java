@@ -51,6 +51,15 @@ public final class FoxLiveSessionAcceptanceIT {
     assertTrue(Files.readString(result).contains("PASS"));
   }
 
+  @Test void actualToolbarRefusesWrappedStaticConfiguration() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
+    DesktopProbeProcess.requireDisplay();
+    Path result = DesktopProbeProcess.run(FoxLiveSessionAcceptanceIT.class, "fox-pda-wrapper",
+        List.of("-Dfox.pda.wrapper=true"),
+        List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")), 90);
+    assertTrue(Files.readString(result).contains("PASS"));
+  }
+
   @Test void actualRecoveredKoPreservesEngineLegality() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
     DesktopProbeProcess.requireDisplay();
@@ -86,7 +95,15 @@ public final class FoxLiveSessionAcceptanceIT {
       EngineData entry = new EngineData();
       entry.id = UUID.randomUUID().toString();
       entry.index = Lizzie.engineManager.engineList.size();
-      entry.commands = quote(args[0]) + " gtp -model " + quote(args[1]) + " -config " + quote(engineConfig.toString());
+      String executable = args[0];
+      if (Boolean.getBoolean("fox.pda.wrapper")) {
+        Path wrapper = work.resolve("wrapper.sh");
+        Files.writeString(wrapper, "#!/bin/sh\nexec " + quote(args[0])
+            + " \"$@\" -override-config dynamicPlayoutDoublingAdvantageCapPerOppLead=0\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        executable = wrapper.toString();
+      }
+      entry.commands = quote(executable) + " gtp -model " + quote(args[1]) + " -config " + quote(engineConfig.toString());
       entry.name = "Fox real KataGo acceptance";
       entry.width = entry.height = 19;
       entry.komi = 6.5f;
@@ -196,12 +213,17 @@ public final class FoxLiveSessionAcceptanceIT {
           LizzieFrame.menu.txtGfPDA.setText("0.4");
           LizzieFrame.menu.txtGfPDA.setText("0.8");
         });
-        if (Boolean.getBoolean("fox.pda.dynamic")) {
-          await(() -> hasText(fox, "Fox.pdaDynamic"), 5, "visible dynamic override refusal");
+        if (Boolean.getBoolean("fox.pda.dynamic") || Boolean.getBoolean("fox.pda.wrapper")) {
+          String reason = Boolean.getBoolean("fox.pda.wrapper") ? "Fox.pdaUnknown" : "Fox.pdaDynamic";
+          await(() -> hasText(fox, reason), 5, "visible unsupported PDA refusal");
           assertEquals(0.2, target.pda, 1e-9);
           assertFalse(commands(work).substring(beforePda.length()).contains("kata-set-param playoutDoublingAdvantage"));
           SwingUtilities.invokeAndWait(() -> assertEquals("0.2", LizzieFrame.menu.txtGfPDA.getText()));
           String move = receive(peer);
+          String rejectedEditCommands = commands(work).substring(beforePda.length());
+          assertFalse(rejectedEditCommands.contains(" stop"), "rejected edit keeps original search");
+          assertFalse(rejectedEditCommands.contains("kata-search_analyze_cancellable"), "no replacement search");
+          assertFalse(rejectedEditCommands.contains("kata-set-param playoutDoublingAdvantage"));
           send(peer, "FAMOVE,0,B," + move.substring("AFPLAY,B,".length()));
           await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "refused update retains safe search");
           capture(fox, work.resolve("fox-pda-dynamic-refused.png"));
@@ -209,8 +231,10 @@ public final class FoxLiveSessionAcceptanceIT {
           await(() -> !FoxLiveSession.ownsEngine() && !target.hasExclusiveGtpWorkInProgress(), 15, "dynamic handback");
           assertFalse(target.isPondering());
           assertEquals(0.2, target.pda, 1e-9);
-          Files.writeString(work.resolve("pda-dynamic.txt"), "refused=true\nconfirmed=0.2\npaused=true\n" + gtp(work));
-          Files.writeString(result, "PASS actual Swing toolbar dynamic override refusal; safe search and confirmed PDA retained\n");
+          Files.writeString(work.resolve("pda-refused.txt"), "reason=" + reason
+              + "\nlaunch=" + entry.commands + "\nrefused=true\nconfirmed=0.2\npaused=true\n" + gtp(work));
+          Files.writeString(result, "PASS actual Swing toolbar " + reason
+              + " refusal; safe original search and confirmed PDA retained\n");
           target.sendCommand("quit");
           System.exit(0);
         }

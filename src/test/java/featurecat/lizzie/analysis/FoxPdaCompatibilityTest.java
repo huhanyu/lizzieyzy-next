@@ -26,4 +26,17 @@ class FoxPdaCompatibilityTest {
     assertEquals("Fox.pdaUnknown", FoxPdaCompatibility.inspect(command, directory));
     assertEquals("Fox.pdaUnknown", FoxPdaCompatibility.inspect(List.of("ssh", "host", "katago"), directory));
   }
+
+  @Test void refusesIndirectLaunchersEvenWithApparentStaticGtpConfiguration() throws Exception {
+    Files.writeString(directory.resolve("engine.cfg"), "playoutDoublingAdvantage = 0.2\n");
+    for (String executable : List.of("/engines/wrapper.sh", "C:\\engines\\wrapper.CMD",
+        "wrapper.bat", "wrapper.ps1", "bash", "python3", "ssh", "docker", "env")) {
+      assertEquals("Fox.pdaUnknown", FoxPdaCompatibility.inspect(
+          List.of(executable, "gtp", "-config", "engine.cfg"), directory), executable);
+    }
+    for (String executable : List.of("/engines/katago", "C:\\engines\\katago.exe")) {
+      assertEquals("", FoxPdaCompatibility.inspect(
+          List.of(executable, "gtp", "-config", "engine.cfg"), directory), executable);
+    }
+  }
 }
