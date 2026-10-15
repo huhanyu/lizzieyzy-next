@@ -1415,7 +1415,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
         searchThread.start();
         String command;
         while (!(command = nextFoxCommand(output, consumed)).contains("kata-search_analyze_cancellable")) {
-          if (command.contains("kata-set-param maxTime")) assertTrue(command.endsWith(" 0.2375"));
+          if (command.contains("kata-set-param maxTime")) assertTrue(command.endsWith(" 0.125"));
           dispatch(engine, "=" + command.split(" ", 2)[0]);
           dispatch(engine, "");
         }
@@ -1546,7 +1546,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
                   "time_left reports the Fox clock, while maxTime owns the direct cap: " + command);
             if (setTime) {
               double value = Double.parseDouble(command.substring(command.lastIndexOf(' ') + 1));
-              assertEquals(scenario.equals("fox-first") || round == 1 ? 2.85 : 5.7, value, 1e-6);
+              assertEquals(scenario.equals("fox-first") || round == 1 ? 2.5 : 5.5, value, 1e-6);
               assertTrue(value > 0.25, "explicit cap can exceed original ordinary cap");
               if (scenario.equals("queue")) clock.set(10_000_000_000L);
             }
@@ -1771,7 +1771,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
         while (true) {
           command = nextFoxCommand(output, consumed);
           if (command.contains("kata-set-param maxTime"))
-            assertEquals(5.7, Double.parseDouble(command.substring(command.lastIndexOf(' ') + 1)), 1e-9);
+            assertEquals(5.5, Double.parseDouble(command.substring(command.lastIndexOf(' ') + 1)), 1e-9);
           if (command.contains("kata-search_analyze_cancellable")) {
             dispatch(engine, "=" + command.split(" ", 2)[0]);
             dispatch(engine, "play Q16"); dispatch(engine, "");
