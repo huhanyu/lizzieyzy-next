@@ -30,12 +30,15 @@ final class XGBoostStrengthModel {
 
   private final double baseScore;
   private final int featureCount;
+  private final List<String> featureNames;
   private final List<Tree> trees;
 
-  private XGBoostStrengthModel(double baseScore, int featureCount, List<Tree> trees) {
+  private XGBoostStrengthModel(
+      double baseScore, int featureCount, List<Tree> trees, List<String> featureNames) {
     this.baseScore = baseScore;
     this.featureCount = featureCount;
     this.trees = trees;
+    this.featureNames = featureNames;
   }
 
   static boolean isXGBoost20TunAvailable() {
@@ -103,6 +106,20 @@ final class XGBoostStrengthModel {
 
   static double xgboost20TunSigma() {
     return XGBOOST20TUN_SIGMA;
+  }
+
+  static double predictUncalibrated(String resource, double[] features, String[] names) {
+    XGBoostStrengthModel model = modelFor(resource, null);
+    if (model == null
+        || features == null
+        || features.length != model.featureCount
+        || !model.featureNames.equals(java.util.Arrays.asList(names))) {
+      throw new IllegalArgumentException("Missing strength model or wrong feature count");
+    }
+    for (double value : features) {
+      if (Double.isInfinite(value)) throw new IllegalArgumentException("Infinite feature value");
+    }
+    return Math.max(0.0, Math.min(12.0, model.predict(features)));
   }
 
   private double predict(double[] features) {
@@ -184,7 +201,11 @@ final class XGBoostStrengthModel {
     for (int index = 0; index < treesJson.length(); index++) {
       trees.add(Tree.fromJson(treesJson.getJSONObject(index)));
     }
-    return new XGBoostStrengthModel(baseScore, featureCount, trees);
+    List<String> names = new ArrayList<>();
+    JSONArray featureNames = learner.optJSONArray("feature_names");
+    if (featureNames != null)
+      for (int i = 0; i < featureNames.length(); i++) names.add(featureNames.getString(i));
+    return new XGBoostStrengthModel(baseScore, featureCount, trees, names);
   }
 
   private static Path configuredXGBoost20TunPath() {

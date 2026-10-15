@@ -9,6 +9,7 @@ import featurecat.lizzie.training.HumanMoveDecision;
 import featurecat.lizzie.util.CommandLaunchHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
+import featurecat.lizzie.util.katago.tuning.KataGoCommandSpec;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -23,6 +24,7 @@ import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -59,6 +61,11 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     READY
   }
 
+  public enum LaunchProfile {
+    DEFAULT,
+    POLICY_SUPPLEMENT
+  }
+
   @FunctionalInterface
   public interface StartupListener {
     void onStartupProgress(StartupStage stage, String detail);
@@ -66,6 +73,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
 
   private final List<String> commandParts;
   private final ProcessStarter processStarter;
+  private final LaunchProfile launchProfile;
   private final AtomicInteger nextRequestId = new AtomicInteger(1);
   private final AtomicInteger processGeneration = new AtomicInteger();
   private final ConcurrentMap<String, CompletableFuture<JSONObject>> pendingResponses =
@@ -86,12 +94,24 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
   private volatile StartupListener startupListener;
 
   public HumanSlAnalysisRunner(String analysisCommand, Path humanModelPath) {
-    this(buildHumanSlCommand(analysisCommand, humanModelPath), ProcessBuilder::start);
+    this(analysisCommand, humanModelPath, LaunchProfile.DEFAULT);
+  }
+
+  public HumanSlAnalysisRunner(
+      String analysisCommand, Path humanModelPath, LaunchProfile launchProfile) {
+    this(
+        buildHumanSlCommand(analysisCommand, humanModelPath), ProcessBuilder::start, launchProfile);
   }
 
   HumanSlAnalysisRunner(List<String> commandParts, ProcessStarter processStarter) {
+    this(commandParts, processStarter, LaunchProfile.DEFAULT);
+  }
+
+  HumanSlAnalysisRunner(
+      List<String> commandParts, ProcessStarter processStarter, LaunchProfile launchProfile) {
     this.commandParts = new ArrayList<String>(commandParts);
     this.processStarter = processStarter;
+    this.launchProfile = java.util.Objects.requireNonNull(launchProfile);
   }
 
   public synchronized boolean start() {
@@ -132,6 +152,17 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
       launchCommands =
           KataGoRuntimeHelper.prepareBundledLaunchCommand(
               preparedCommands, engineExecutable, KataGoRuntimeHelper.LaunchPurpose.HUMAN_SL);
+      if (launchProfile == LaunchProfile.POLICY_SUPPLEMENT
+          && Config.isBundledKataGoExecutable(engineExecutable)) {
+        // Retain bundled runtime/companion setup, but restore the policy-only batching budget.
+        launchCommands =
+            KataGoCommandSpec.parse(launchCommands)
+                .withForcedOverrides(
+                    Map.of(
+                        "numAnalysisThreads", "4",
+                        "numSearchThreadsPerAnalysisThread", "1",
+                        "nnMaxBatchSize", "32"));
+      }
     } catch (IllegalStateException e) {
       unavailableReason = usefulMessage(e, "HumanSL engine launch configuration is invalid.");
       return false;
