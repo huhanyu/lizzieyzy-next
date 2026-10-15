@@ -367,6 +367,16 @@ public final class FoxLiveSessionAcceptanceIT {
         assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read(), "opponent never submits");
         String previewCommands = commands(work);
         SwingUtilities.invokeAndWait(() -> {
+          fox.setVisible(false);
+          Lizzie.frame.toFront();
+          Lizzie.frame.setMainPanelFocus();
+        });
+        Robot previewRobot = new Robot();
+        previewRobot.mouseMove(Lizzie.frame.getX() + 20, Lizzie.frame.getY() + 10);
+        previewRobot.waitForIdle();
+        previewRobot.delay(200);
+        SwingUtilities.invokeAndWait(() -> {
+          Lizzie.frame.clearMouseOverCoordinate(false);
           Lizzie.frame.setMouseOverCoords(0);
           Lizzie.frame.refresh();
         });
@@ -422,7 +432,10 @@ public final class FoxLiveSessionAcceptanceIT {
             0, 0, Lizzie.frame.independentMainBoard.getWidth(), Lizzie.frame.independentMainBoard.getHeight()));
         ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-float-history.png").toFile());
-        SwingUtilities.invokeAndWait(() -> button(fox, "Fox.returnLive").doClick());
+        SwingUtilities.invokeAndWait(() -> {
+          fox.setVisible(true);
+          button(fox, "Fox.returnLive").doClick();
+        });
         assertSame(floatLiveNode, Lizzie.board.getHistory().getCurrentHistoryNode());
         assertEquals(floatCommands, commands(work), "floating navigation and return do not restart search");
         SwingUtilities.invokeAndWait(() -> {
