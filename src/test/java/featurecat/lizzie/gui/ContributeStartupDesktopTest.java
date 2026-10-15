@@ -306,7 +306,7 @@ public class ContributeStartupDesktopTest {
       case "game", "game-ready", "game-exit" -> {
         System.out.println(
             new JSONObject()
-                .put("gameId", "fixture-1")
+                .put("gameId", "fixture-" + ProcessHandle.current().pid())
                 .put("blackPlayer", "fixture-game")
                 .put("whitePlayer", "fixture-game")
                 .put("boardXSize", 19)
