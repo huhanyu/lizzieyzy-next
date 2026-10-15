@@ -72,6 +72,10 @@ DESKTOP_REQUIRED_TESTS = (
 )
 ENGINE_PROCESS_REQUIRED_TESTS = (
     (
+        "featurecat.lizzie.gui.ContributeSavedEngineSelectionDesktopTest",
+        "selectSavedEngineSaveReloadAndStartContribution",
+    ),
+    (
         "featurecat.lizzie.gui.EngineProcessSmokeTest",
         "restoresSnapshotAnalyzesAndQuits",
     ),
@@ -620,7 +624,8 @@ def build_steps(
             "retiresSnapshotTimeoutAndRejectsLateResponse+recoversSnapshotAfterPeerCrash+"
             "isolatesLateOutputAfterEngineSwitch+drainsPeerPipeBurstAndRemainsResponsive+"
             "cleansUpPeerThatRefusesQuit,ContributeStartupDesktopTest,"
-            "ContributionLocalClearDesktopTest,ContributeCertificateRecoveryTest"
+            "ContributionLocalClearDesktopTest,ContributeCertificateRecoveryTest,"
+            "ContributeSavedEngineSelectionDesktopTest"
         )
         return [
             Step(

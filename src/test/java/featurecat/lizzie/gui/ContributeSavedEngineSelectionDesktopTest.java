@@ -189,6 +189,7 @@ public class ContributeSavedEngineSelectionDesktopTest {
 
     ContributeSettings settings = openSettings();
     JButton savedButton = button(settings, "ContributeSettings.btnSavedEngine");
+    assertTrue(savedButton.isFocusable(), "Saved engines must remain keyboard accessible");
     JTextComponent path = enginePathField(settings);
     assertEquals(ORIGINAL_PATH, text(path));
 

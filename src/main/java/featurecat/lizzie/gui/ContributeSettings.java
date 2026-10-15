@@ -11,6 +11,8 @@ import java.awt.Insets;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.net.URI;
 import java.util.List;
 import javax.swing.JButton;
@@ -122,9 +124,15 @@ public class ContributeSettings extends JDialog {
     btnSavedEngine.setToolTipText(savedEngineTip);
     btnSavedEngine.getAccessibleContext().setAccessibleDescription(savedEngineTip);
     btnSavedEngine.addActionListener(e -> chooseSavedEnginePath());
-    // Same as the saved-engine button in AnalysisSettings: no initial focus ring on open.
     btnSavedEngine.setMargin(new Insets(0, 0, 0, 0));
-    btnSavedEngine.setFocusable(false);
+    // Start in the path field without removing the chooser from keyboard traversal.
+    addWindowListener(
+        new WindowAdapter() {
+          @Override
+          public void windowOpened(WindowEvent event) {
+            (txtEnginePath.isEnabled() ? txtEnginePath : txtCommand).requestFocusInWindow();
+          }
+        });
     JPanel savedEngineRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
     savedEngineRow.add(btnSavedEngine);
 

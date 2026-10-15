@@ -145,7 +145,8 @@ class RunLocalCiTest(unittest.TestCase):
             "retiresSnapshotTimeoutAndRejectsLateResponse+recoversSnapshotAfterPeerCrash+"
             "isolatesLateOutputAfterEngineSwitch+drainsPeerPipeBurstAndRemainsResponsive+"
             "cleansUpPeerThatRefusesQuit,ContributeStartupDesktopTest,"
-            "ContributionLocalClearDesktopTest,ContributeCertificateRecoveryTest",
+            "ContributionLocalClearDesktopTest,ContributeCertificateRecoveryTest,"
+            "ContributeSavedEngineSelectionDesktopTest",
             steps[0].command,
         )
         self.assertIn(
@@ -158,14 +159,14 @@ class RunLocalCiTest(unittest.TestCase):
             ),
             steps[0].command,
         )
-        self.assertEqual(18, len(run_local_ci.ENGINE_PROCESS_REQUIRED_TESTS))
+        self.assertEqual(19, len(run_local_ci.ENGINE_PROCESS_REQUIRED_TESTS))
         windows = run_local_ci.build_steps("windows", "mvn", None, None, "engine-process")
         self.assertEqual(steps, windows)
 
     def test_engine_process_reports_require_every_contribution_case(self):
         required = run_local_ci.ENGINE_PROCESS_REQUIRED_TESTS
         contribution = [case for case in required if "Contribut" in case[0]]
-        self.assertEqual(11, len(contribution))
+        self.assertEqual(12, len(contribution))
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             reports = root / "surefire-reports"
@@ -184,7 +185,7 @@ class RunLocalCiTest(unittest.TestCase):
                             cases.append(f'<testcase classname="{classname}" name="{name}">{body}</testcase>')
                         report.write_text(f'<testsuite tests="{len(cases)}">{"".join(cases)}</testsuite>')
                         if outcome == "passed":
-                            self.assertEqual(18, run_local_ci.collect_junit_summary(root, required).tests)
+                            self.assertEqual(19, run_local_ci.collect_junit_summary(root, required).tests)
                         else:
                             with self.assertRaisesRegex(RuntimeError, "Required JUnit execution"):
                                 run_local_ci.collect_junit_summary(root, required)
@@ -688,7 +689,7 @@ class RunLocalCiTest(unittest.TestCase):
             result, summary = run_with_report(suite_xml(required[:-1]))
             self.assertEqual(1, result)
             self.assertEqual("FAIL", summary["result"])
-            self.assertEqual(17, summary["junit"]["tests"])
+            self.assertEqual(18, summary["junit"]["tests"])
             self.assertTrue(desktop_report.is_file())
             self.assertTrue(java_report.is_file())
 
@@ -700,7 +701,7 @@ class RunLocalCiTest(unittest.TestCase):
             result, summary = run_with_report(suite_xml(required))
             self.assertEqual(0, result)
             self.assertEqual("PASS", summary["result"])
-            self.assertEqual(18, summary["junit"]["tests"])
+            self.assertEqual(19, summary["junit"]["tests"])
 
     def test_desktop_and_java_and_nonjava_report_isolation(self):
         with tempfile.TemporaryDirectory() as temporary:
