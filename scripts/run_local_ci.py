@@ -99,6 +99,31 @@ ENGINE_PROCESS_REQUIRED_TESTS = (
         "featurecat.lizzie.gui.EngineProcessFailureTest",
         "cleansUpPeerThatRefusesQuit",
     ),
+    *tuple(
+        ("featurecat.lizzie.gui.ContributeStartupDesktopTest", method)
+        for method in (
+            "serverRejectionUsesOneLaunchAndRetainsFailure",
+            "outputOrderingReadinessAndRetryBudget",
+            "stopRestartAndValidGameDisplay",
+            "permanentOutputSurvivesPausedEdt",
+            "modalNotificationsDoNotBlockDrainOrStopReplacement",
+        )
+    ),
+    *tuple(
+        (
+            "featurecat.lizzie.gui.ContributionLocalClearDesktopTest",
+            f"contributionClearsLocallyAndHonorsRealOccupancy(String)[{invocation}]",
+        )
+        for invocation in range(1, 4)
+    ),
+    *tuple(
+        ("featurecat.lizzie.analysis.ContributeCertificateRecoveryTest", method)
+        for method in (
+            "remoteCommandsNeverAcquireClientCertificatePaths",
+            "pureCommandsRemainUserOwned",
+            "localRecoveryUsesCertificateBesideExecutable",
+        )
+    ),
 )
 TENSORRT_UI_REQUIRED_TESTS = (
     (
@@ -594,7 +619,8 @@ def build_steps(
             "EngineProcessFailureTest#rejectsSnapshotErrorWithoutTailOrAnalysis+"
             "retiresSnapshotTimeoutAndRejectsLateResponse+recoversSnapshotAfterPeerCrash+"
             "isolatesLateOutputAfterEngineSwitch+drainsPeerPipeBurstAndRemainsResponsive+"
-            "cleansUpPeerThatRefusesQuit"
+            "cleansUpPeerThatRefusesQuit,ContributeStartupDesktopTest,"
+            "ContributionLocalClearDesktopTest,ContributeCertificateRecoveryTest"
         )
         return [
             Step(

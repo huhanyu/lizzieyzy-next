@@ -40,6 +40,11 @@ public class ContributeStartupDesktopTest {
     probe("paused-edt");
   }
 
+  @Test
+  void modalNotificationsDoNotBlockDrainOrStopReplacement() throws Exception {
+    probe("modal");
+  }
+
   private void probe(String suite) throws Exception {
     DesktopProbeProcess.requireDisplay();
     Path result =
@@ -128,6 +133,44 @@ public class ContributeStartupDesktopTest {
           if (mode.startsWith("game-"))
             assertEquals(0, Lizzie.frame.contributeEngine.watchingGameIndex);
         }
+      } else if (args[0].equals("modal")) {
+        Path rejected = start(work, "modal-reject", true);
+        await(() -> notification() != null);
+        JDialog oldVersion = notification();
+        Files.writeString(rejected.resolve("release"), "release");
+        verifyFailure(rejected, 1, "Contribute.tips.buildRejected");
+        assertTrue(oldVersion.isShowing(), "Failure drains while actual modal stays open");
+        SwingUtilities.invokeAndWait(oldVersion::dispose);
+
+        Path clean = start(work, "modal-clean", true);
+        await(() -> notification() != null);
+        JDialog cleanNotice = notification();
+        Files.writeString(clean.resolve("release"), "release");
+        await(() -> !Lizzie.frame.isContributing);
+        assertEquals(1, launches(clean).size());
+        assertTrue(cleanNotice.isShowing(), "EOF must finish without modal dismissal");
+        assertNull(failureWindow());
+        SwingUtilities.invokeAndWait(cleanNotice::dispose);
+
+        Path replaced = start(work, "modal-replace", true);
+        await(() -> notification() != null);
+        JDialog stale = notification();
+        Path successor = Files.createTempDirectory(work, "modal-successor-");
+        SwingUtilities.invokeAndWait(
+            () -> {
+              Lizzie.frame.closeContributeEngine();
+              Lizzie.config.contributeCommand = command(successor, "game");
+              Lizzie.frame.startContributeEngine();
+            });
+        var successorEngine = Lizzie.frame.contributeEngine;
+        await(() -> successorEngine.watchingGameIndex == 0);
+        SwingUtilities.invokeAndWait(stale::dispose);
+        SwingUtilities.invokeAndWait(() -> {});
+        assertSame(successorEngine, Lizzie.frame.contributeEngine);
+        assertTrue(Lizzie.frame.isContributing);
+        assertTrue(Lizzie.frame.contributeView.isShowing());
+        assertEquals(1, launches(replaced).size());
+        assertEquals(1, launches(successor).size());
       } else if (args[0].equals("paused-edt")) {
         for (String mode : List.of("paused-reject-json", "paused-unsupported-err")) {
           Path run = start(work, mode, true);
@@ -245,6 +288,14 @@ public class ContributeStartupDesktopTest {
         StandardOpenOption.CREATE,
         StandardOpenOption.APPEND);
     switch (mode) {
+      case "modal-reject", "modal-replace", "modal-clean" -> {
+        System.out.println(mode.equals("modal-clean")
+            ? "All cleaned up, quitting"
+            : "2026-10-15 12:00:00+0000: KataGo v1.10.0");
+        System.out.flush();
+        waitFile(run.resolve("release"));
+        if (mode.equals("modal-reject")) System.err.println(REJECTION);
+      }
       case "paused-reject-json", "paused-unsupported-err" -> {
         waitFile(run.resolve("release"));
         Files.writeString(run.resolve("emitted"), "emitted");
@@ -517,6 +568,12 @@ public class ContributeStartupDesktopTest {
     } catch (Exception error) {
       throw new AssertionError(error);
     }
+  }
+
+  private static JDialog notification() {
+    for (Window window : Window.getWindows())
+      if (window instanceof HtmlMessage dialog && dialog.isShowing()) return dialog;
+    return null;
   }
 
   static EngineFailedMessage failureWindow() {
