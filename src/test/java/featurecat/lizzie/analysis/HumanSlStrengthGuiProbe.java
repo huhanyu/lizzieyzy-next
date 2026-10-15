@@ -112,7 +112,11 @@ public final class HumanSlStrengthGuiProbe {
         .put("autoload-last", false)
         .put("autoload-empty", true)
         .put("auto-quick-analyze-on-load", false)
-        .put("analysis-engine-command", "/opt/homebrew/bin/katago analysis");
+        .put(
+            "analysis-engine-command",
+            HumanSlStrengthReuseSession.quoteCommandArgument(
+                    System.getProperty("lizzie.strength.humansl40.engine", "/opt/homebrew/bin/katago"))
+                + " analysis");
     config.save();
     Thread monitor =
         new Thread(
@@ -196,14 +200,14 @@ public final class HumanSlStrengthGuiProbe {
                               pending,
                               javax.swing.JCheckBox.class,
                               c -> "strength40-background".equals(c.getName()));
-                      if (background == null || !background.isSelected())
-                        throw new AssertionError("Background default is not on");
-                      background.doClick();
-                      if (HumanSlStrengthPreparation.backgroundEnabled())
-                        throw new AssertionError("Off preference was not saved");
+                      if (background == null || background.isSelected())
+                        throw new AssertionError("Background computation must require opt-in");
                       background.doClick();
                       if (!HumanSlStrengthPreparation.backgroundEnabled())
                         throw new AssertionError("On preference was not saved");
+                      background.doClick();
+                      if (HumanSlStrengthPreparation.backgroundEnabled())
+                        throw new AssertionError("Off preference was not saved");
                     });
                 screenshot(pending, work.resolve("dashboard-manual-pending.png"));
                 SwingUtilities.invokeLater(
@@ -339,7 +343,7 @@ public final class HumanSlStrengthGuiProbe {
                         .put("original_dropdown_selected", true)
                         .put("selection_does_not_start_progress", true)
                         .put("manual_button_starts_supplement", true)
-                        .put("background_defaults_on", true)
+                        .put("background_defaults_off", true)
                         .put("original_dashboard_results", true)
                         .put("finite_card_prediction", true)
                         .put("original_match_and_performance_views", true)
