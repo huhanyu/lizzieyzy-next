@@ -52,6 +52,8 @@ public class ContributeSavedEngineSelectionDesktopTest {
   private static final String FIXTURE = WINDOWS ? "katago.exe" : "katago";
   private static final String ORIGINAL_PATH = "\"original contribution katago\"";
   private static final String CUSTOM_COMMAND = "custom-contribution-command --keep";
+  // Optional PID-filtered PrintWindow script for runs on a private Windows desktop.
+  private static final String NATIVE_CAPTURE = "lizzie.native.capture";
   private static final List<String> SECRETS =
       List.of(
           "fixture-ssh-password",
@@ -76,7 +78,7 @@ public class ContributeSavedEngineSelectionDesktopTest {
           DesktopProbeProcess.run(
               ContributeSavedEngineSelectionDesktopTest.class,
               "saved-engine-" + phase,
-              List.of(),
+              nativeCaptureArgs(),
               List.of(phase, shared.toString()),
               120);
       assertEquals("passed", new JSONObject(Files.readString(result)).getString("result"), phase);
@@ -218,6 +220,7 @@ public class ContributeSavedEngineSelectionDesktopTest {
     assertEquals("3 | KataGo | " + local() + " | " + b, rows.get(2));
     assertReason(chooser, table, fill, 3, "reasonRemote");
     assertReason(chooser, table, fill, 4, "reasonIndirect");
+    capture(chooser, result.resolveSibling("chooser-unavailable.png"));
     assertReason(chooser, table, fill, 5, "reasonEmpty");
     assertReason(chooser, table, fill, 6, "reasonMissing");
     onEdt(() -> table.setRowSelectionInterval(2, 2));
@@ -333,6 +336,7 @@ public class ContributeSavedEngineSelectionDesktopTest {
     Lizzie.config.contributeUseCommand = true;
     ContributeSettings custom = openSettings();
     assertEnabled(custom, false);
+    capture(custom, result.resolveSibling("settings-custom-mode.png"));
     assertEquals(CUSTOM_COMMAND, text(commandField(custom)));
     onEdt(() -> useCommandBox(custom).doClick());
     assertEnabled(custom, true);
@@ -751,6 +755,33 @@ public class ContributeSavedEngineSelectionDesktopTest {
     AtomicReference<Rectangle> bounds = new AtomicReference<>();
     onEdt(() -> bounds.set(window.getBounds()));
     ImageIO.write(new Robot().createScreenCapture(bounds.get()), "png", file.toFile());
+    String script = System.getProperty(NATIVE_CAPTURE);
+    if (script == null) return;
+    // Robot cannot see a private Win32 desktop; capture this JVM's windows natively instead.
+    String name = file.getFileName().toString().replaceFirst("\\.png$", "");
+    Process capture =
+        new ProcessBuilder(
+                "pwsh.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                script,
+                "-OwnerPid",
+                Long.toString(ProcessHandle.current().pid()),
+                "-OutputDirectory",
+                file.resolveSibling(name + "-native").toString())
+            .redirectErrorStream(true)
+            .redirectOutput(file.resolveSibling(name + "-native.log").toFile())
+            .start();
+    assertTrue(capture.waitFor(60, TimeUnit.SECONDS), "Native capture timed out");
+    assertEquals(0, capture.exitValue(), "Native capture failed for " + name);
+  }
+
+  /** Forwards an optional native window capture script to the probe JVMs. */
+  private static List<String> nativeCaptureArgs() {
+    String script = System.getProperty(NATIVE_CAPTURE);
+    return script == null ? List.of() : List.of("-D" + NATIVE_CAPTURE + "=" + script);
   }
 
   private static String quote(Path value) {

@@ -123,14 +123,19 @@ public final class SavedEnginePathResolver {
     }
 
     /**
-     * Text for the contribution engine path field: quoted by the existing command-line rule so the
-     * contribution command keeps it as one executable argument.
+     * Text for the contribution engine path field, quoted so that {@link Utils#splitCommand} reads
+     * it back as exactly one executable argument when the contribution command is built.
      */
     public String fieldText() {
       if (executable == null) {
         throw new IllegalStateException("Unavailable saved engine has no executable path");
       }
-      return AnalysisEngineCommandHelper.buildCommandLine(List.of(executable.toString()));
+      String path = executable.toString();
+      if (path.chars().noneMatch(c -> c == ' ' || c == '\t' || c == '\'' || c == '"')) {
+        return path;
+      }
+      // Apostrophes are literal inside double quotes; a double quote is spliced in as '"'.
+      return "\"" + path.replace("\"", "\"'\"'\"") + "\"";
     }
   }
 }

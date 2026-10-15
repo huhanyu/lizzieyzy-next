@@ -55,6 +55,26 @@ class SavedEnginePathResolverTest {
   }
 
   @Test
+  void pathWithQuoteCharactersStaysOneExecutableArgument() throws Exception {
+    List<String> names =
+        System.getProperty("os.name").startsWith("Windows")
+            ? List.of("O'Neil")
+            : List.of("O'Neil", "say\"hi", "both'\" mixed");
+    for (String name : names) {
+      Path executable = file(tempDir.resolve(name).resolve("katago"));
+      String source = "\"" + executable.toString().replace("\"", "\"'\"'\"") + "\" gtp";
+
+      Candidate candidate = SavedEnginePathResolver.resolve(engine(name, source), 1);
+
+      assertEquals(executable.toAbsolutePath().normalize(), candidate.executable(), name);
+      assertEquals(
+          List.of(executable.toString(), "contribute"),
+          Utils.splitCommand(candidate.fieldText() + " contribute"),
+          name);
+    }
+  }
+
+  @Test
   void unquotedPathWithoutSpacesIsFilledAsIs() throws Exception {
     Path executable = file(tempDir.resolve("katago"));
 
