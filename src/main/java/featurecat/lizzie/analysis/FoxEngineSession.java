@@ -210,8 +210,7 @@ public final class FoxEngineSession {
     request("time_left " + state.ai() + " " + seconds + " " + periods, null, 5000);
     double limit = state.ownTurn() ? remainingSeconds(state) : Math.min(limits.maxTime(), 5.0);
     if (limit <= 0) throw new IllegalStateException("Fox turn budget exhausted before search");
-    // Leave a bounded delivery margin inside the original turn; a cap is not a minimum wait.
-    double searchLimit = state.ownTurn() ? Math.min(limits.maxTime(), limit) * 0.95 : limit;
+    double searchLimit = state.ownTurn() ? ownTurnSearchLimit(limits.maxTime(), limit) : limit;
     request("kata-set-param maxTime " + searchLimit, null, 5000);
     synchronized (searchLock) {
       if (search.get() != generation || closing) return null;
@@ -249,6 +248,14 @@ public final class FoxEngineSession {
 
   private double remainingSeconds(FoxGameState.Snapshot state) {
     return (state.submitDeadlineNanos() - nanoTime.getAsLong()) / 1e9;
+  }
+
+  static double ownTurnSearchLimit(double maximumSeconds, double remainingSeconds) {
+    double budget = Math.min(maximumSeconds, remainingSeconds);
+    // GPU batches can finish after maxTime. Reserve real delivery time even for short turns,
+    // without extending the authoritative deadline or consuming all of a tiny remaining budget.
+    double margin = Math.min(budget * 0.5, Math.max(0.5, budget * 0.05));
+    return budget - margin;
   }
 
   void useClockForTest(java.util.function.LongSupplier clock) { nanoTime = clock; }
