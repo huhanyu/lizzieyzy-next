@@ -45,201 +45,187 @@ class UpdateCheckCoordinatorTest {
   }
 
   @Test
-  void secondStartWhileInFlightIsRejectedAndDiscoveryRunsOnce() {
-    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator();
-    FakePage page = new FakePage();
+  void enablingVisiblePreferencesBeforeReadinessOnlyAuthorizesNextProcess() {
     RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
     QueueRunner runner = new QueueRunner();
-    UpdateCheckSelection snapshot = officialSnapshot();
-
-    assertTrue(coordinator.start(page, snapshot, discovery, unusedHandoff(), runner));
-    assertFalse(page.checkEnabled);
-    assertFalse(page.closeAllowed);
-    assertEquals(0, discovery.seen.size());
-
-    FakePage otherPage = new FakePage();
-    assertFalse(coordinator.start(otherPage, snapshot, discovery, unusedHandoff(), runner));
-    assertTrue(otherPage.checkEnabled);
-    assertTrue(otherPage.closeAllowed);
-    assertEquals(0, discovery.seen.size());
-
+    UpdateCheckCoordinator current = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
+    current.captureStartupPolicy(UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(),
+        officialSnapshot());
+    UpdatePreferences.persistAutoCheck(true);
+    UpdatePreferences.persistAutoDownload(true);
+    current.applicationReady();
+    current.applicationReady();
+    assertFalse(current.busy());
+    assertTrue(discovery.seen.isEmpty());
+    assertTrue(current.checkManually(officialSnapshot()));
     runner.drain();
-
     assertEquals(1, discovery.seen.size());
-    assertSame(snapshot, discovery.seen.get(0));
-    assertEquals(UpdateCheckResult.Reason.NO_UPDATE, page.stayResults.get(0).reason);
-    assertTrue(page.checkEnabled);
-    assertTrue(page.closeAllowed);
+
+    UpdateCheckCoordinator next = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
+    next.captureStartupPolicy(UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(),
+        officialSnapshot());
+    assertFalse(next.busy());
+    next.applicationReady();
+    next.applicationReady();
+    runner.drain();
+    assertEquals(2, discovery.seen.size());
+    assertEquals(UpdateCheckCoordinator.Origin.AUTOMATIC, next.state().origin());
   }
 
   @Test
-  void nonOfferResultsStayOnPageAndRestoreCheckAndClose() {
-    UpdateCheckResult[] stays =
-        new UpdateCheckResult[] {
-          UpdateCheckResult.unavailableBuild(),
-          UpdateCheckResult.unsupportedPlatform(),
-          UpdateCheckResult.noUpdate(),
-          UpdateCheckResult.noPackage(),
-          UpdateCheckResult.failure(UpdateCheckResult.FailureKind.FETCH)
-        };
-    for (UpdateCheckResult stay : stays) {
-      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator();
-      FakePage page = new FakePage();
-      RecordingDiscovery discovery = new RecordingDiscovery(stay);
+  void earlyDisableOrSelectionChangePermanentlyRevokesCapturedStartup() {
+    RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
+    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
+    coordinator.captureStartupPolicy(true, true, officialSnapshot());
+    coordinator.invalidateAutomatic();
+    coordinator.captureStartupPolicy(true, true, officialSnapshot());
+    coordinator.applicationReady();
+    coordinator.applicationReady();
+    assertTrue(discovery.seen.isEmpty());
+    assertNull(coordinator.state().result());
+    assertTrue(coordinator.checkManually(officialSnapshot()));
+    assertEquals(1, discovery.seen.size());
+  }
 
-      assertTrue(
-          coordinator.start(
-              page, officialSnapshot(), discovery, unusedHandoff(), ImmediateRunner.INSTANCE));
+  @Test
+  void startupIsOnceAndManualJoinsUntilTerminalThenCanRetry() {
+    QueueRunner runner = new QueueRunner();
+    RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
+    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), runner, s -> { throw new AssertionError(); });
+    UpdateCheckSelection snapshot = officialSnapshot();
+    coordinator.captureStartupPolicy(true, false, snapshot);
+    coordinator.applicationReady();
+    coordinator.captureStartupPolicy(true, false, snapshot);
+    coordinator.applicationReady();
+    assertTrue(coordinator.state().checking());
+    assertFalse(coordinator.checkManually(snapshot));
+    runner.drain();
+    assertEquals(1, discovery.seen.size());
+    assertSame(snapshot, coordinator.state().selection());
+    assertEquals(UpdateCheckResult.Reason.NO_UPDATE, coordinator.state().result().reason);
+    assertTrue(coordinator.checkManually(snapshot));
+    runner.drain();
+    assertEquals(2, discovery.seen.size());
+  }
 
-      assertEquals(1, page.stayResults.size());
-      assertEquals(stay.reason, page.stayResults.get(0).reason);
-      assertEquals(0, page.disposeCount);
-      assertTrue(page.checkEnabled);
-      assertTrue(page.closeAllowed);
+  @Test
+  void disabledStartupDoesNotCatchUpWhenEnabled() {
+    RecordingDiscovery discovery = new RecordingDiscovery(UpdateCheckResult.noUpdate());
+    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+        discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
+    coordinator.captureStartupPolicy(false, false, officialSnapshot());
+    coordinator.applicationReady();
+    coordinator.captureStartupPolicy(true, false, officialSnapshot());
+    coordinator.applicationReady();
+    assertTrue(discovery.seen.isEmpty());
+    assertTrue(coordinator.checkManually(officialSnapshot()));
+    assertEquals(1, discovery.seen.size());
+  }
+
+  @Test
+  void automaticNonOffersRemainDistinctQuietAndRecoverable() {
+    for (UpdateCheckResult result : List.of(UpdateCheckResult.unavailableBuild(),
+        UpdateCheckResult.unsupportedPlatform(), UpdateCheckResult.noUpdate(),
+        UpdateCheckResult.noPackage(), UpdateCheckResult.failure(UpdateCheckResult.FailureKind.FETCH))) {
+      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+          s -> result, unusedHandoff(), ImmediateRunner.INSTANCE,
+          s -> { throw new AssertionError(); });
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
+      List<UpdateCheckCoordinator.State> view = new ArrayList<>();
+      coordinator.subscribe(view::add);
+      assertSame(result, view.get(0).result());
+      assertFalse(view.get(0).checking());
     }
   }
 
   @Test
-  void nonOfferTerminalAllowsRetryWithNewSnapshot() {
-    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator();
-    FakePage page = new FakePage();
-    List<UpdateCheckResult> results = new ArrayList<>();
-    results.add(UpdateCheckResult.noUpdate());
-    results.add(UpdateCheckResult.noPackage());
-    RecordingDiscovery discovery = new RecordingDiscovery(results);
-    UpdateCheckSelection first = officialSnapshot();
-    UpdateCheckSelection second =
-        UpdateCheckSelection.of(
-            UpdateChannel.BETA, UpdateSource.OFFICIAL_SITE, "next-2026-08-01.1");
-
-    assertTrue(
-        coordinator.start(page, first, discovery, unusedHandoff(), ImmediateRunner.INSTANCE));
-    assertEquals(UpdateCheckResult.Reason.NO_UPDATE, page.stayResults.get(0).reason);
-    assertTrue(page.checkEnabled);
-    assertTrue(page.closeAllowed);
-
-    assertTrue(
-        coordinator.start(page, second, discovery, unusedHandoff(), ImmediateRunner.INSTANCE));
-    assertEquals(2, discovery.seen.size());
-    assertSame(first, discovery.seen.get(0));
-    assertSame(second, discovery.seen.get(1));
-    assertEquals(UpdateCheckResult.Reason.NO_PACKAGE, page.stayResults.get(1).reason);
-  }
-
-  @Test
-  void offerWindowsDisposesPageAndHandsOffPlan() {
-    WindowsUpdatePlan plan = windowsPlan();
-    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator();
-    FakePage page = new FakePage();
+  void automaticOfferSurvivesClosedViewAndRemindsOnlyOnceWithoutHandoff() {
+    QueueRunner runner = new QueueRunner();
     FakeHandoff handoff = new FakeHandoff();
-    UpdateCheckSelection snapshot = officialSnapshot();
-
-    assertTrue(
-        coordinator.start(
-            page,
-            snapshot,
-            new RecordingDiscovery(UpdateCheckResult.offerWindows(plan)),
-            handoff,
-            ImmediateRunner.INSTANCE));
-
-    assertEquals(1, page.disposeCount);
-    assertTrue(page.stayResults.isEmpty());
-    assertSame(snapshot, handoff.windowsSelection);
-    assertSame(plan, handoff.windowsPlan);
-    assertNull(handoff.packagePlan);
-  }
-
-  @Test
-  void offerPackageDisposesPageAndHandsOffPlan() {
-    PackageUpdatePlan plan = new PackageUpdatePlan(null, null, "v", "linux", "x64", "cpu");
-    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator();
-    FakePage page = new FakePage();
-    FakeHandoff handoff = new FakeHandoff();
-    UpdateCheckSelection snapshot = officialSnapshot();
-
-    assertTrue(
-        coordinator.start(
-            page,
-            snapshot,
-            new RecordingDiscovery(UpdateCheckResult.offerPackage(plan)),
-            handoff,
-            ImmediateRunner.INSTANCE));
-
-    assertEquals(1, page.disposeCount);
-    assertTrue(page.stayResults.isEmpty());
-    assertSame(snapshot, handoff.packageSelection);
-    assertSame(plan, handoff.packagePlan);
+    AtomicInteger reminders = new AtomicInteger();
+    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+        s -> UpdateCheckResult.offerWindows(windowsPlan()), handoff, runner,
+        s -> reminders.incrementAndGet());
+    List<UpdateCheckCoordinator.State> states = new ArrayList<>();
+    java.util.function.Consumer<UpdateCheckCoordinator.State> view = states::add;
+    coordinator.subscribe(view);
+    coordinator.captureStartupPolicy(true, false, officialSnapshot());
+    coordinator.applicationReady();
+    coordinator.unsubscribe(view);
+    runner.drain();
+    assertEquals(1, reminders.get());
     assertNull(handoff.windowsPlan);
+    coordinator.subscribe(view);
+    assertTrue(states.get(states.size() - 1).hasOffer());
+    coordinator.captureStartupPolicy(true, false, officialSnapshot());
+    coordinator.applicationReady();
+    assertEquals(1, reminders.get());
+    coordinator.openOffer();
+    assertSame(coordinator.state().result().windowsPlan, handoff.windowsPlan);
+    assertEquals(UpdateCheckCoordinator.Origin.AUTOMATIC, coordinator.state().origin());
   }
 
   @Test
-  void offerWithoutPlanStaysOnPageAsFailure() {
-    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator();
-    FakePage page = new FakePage();
-    FakeHandoff handoff = new FakeHandoff();
-
-    assertTrue(
-        coordinator.start(
-            page,
-            officialSnapshot(),
-            new RecordingDiscovery(UpdateCheckResult.offerWindows(null)),
-            handoff,
-            ImmediateRunner.INSTANCE));
-
-    assertEquals(0, page.disposeCount);
-    assertEquals(UpdateCheckResult.Reason.FAILURE, page.stayResults.get(0).reason);
-    assertEquals(UpdateCheckResult.FailureKind.ADAPTER, page.stayResults.get(0).failureKind);
-    assertNull(handoff.windowsPlan);
-    assertTrue(page.checkEnabled);
-    assertTrue(page.closeAllowed);
+  void invalidatedAutomaticSuccessAndFailureCannotPublishAndDoNotOverlapManualCheck() {
+    for (UpdateCheckResult result : List.of(UpdateCheckResult.offerWindows(windowsPlan()),
+        UpdateCheckResult.failure(UpdateCheckResult.FailureKind.FETCH))) {
+      QueueRunner runner = new QueueRunner();
+      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+          s -> result, unusedHandoff(), runner, s -> { throw new AssertionError(); });
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
+      runner.background.run();
+      coordinator.invalidateAutomatic();
+      assertNull(coordinator.state().result());
+      assertFalse(coordinator.checkManually(officialSnapshot()));
+      runner.edt.run();
+      assertNull(coordinator.state().result());
+      assertFalse(coordinator.state().checking());
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
+      assertNull(coordinator.state().selection());
+      assertTrue(coordinator.checkManually(officialSnapshot()));
+    }
   }
 
   @Test
-  void checkUsesClickSnapshotAndDoesNotRereadConfig() {
-    UpdateChannel.persist(UpdateChannel.STABLE);
-    UpdateSource.persist(UpdateSource.OFFICIAL_SITE);
-    UpdateCheckSelection snapshot =
-        UpdateCheckSelection.of(UpdateChannel.STABLE, UpdateSource.GITHUB, "next-2026-08-01.1");
-    RecordingDiscovery discovery =
-        new RecordingDiscovery(
-            selection -> {
-              UpdateChannel.persist(UpdateChannel.BETA);
-              UpdateSource.persist(UpdateSource.OFFICIAL_SITE);
-              Lizzie.nextVersion = "next-dev";
-              return UpdateCheckResult.noUpdate();
-            });
-    FakePage page = new FakePage();
-
-    assertTrue(
-        new UpdateCheckCoordinator()
-            .start(page, snapshot, discovery, unusedHandoff(), ImmediateRunner.INSTANCE));
-
-    assertEquals(1, discovery.seen.size());
-    assertSame(snapshot, discovery.seen.get(0));
-    assertEquals(UpdateChannel.STABLE, discovery.seen.get(0).channel);
-    assertEquals(UpdateSource.GITHUB, discovery.seen.get(0).effectiveSource);
-    assertEquals("next-2026-08-01.1", discovery.seen.get(0).installedVersion);
+  void manualSnapshotAndHandoffSurviveAutomaticPolicyChanges() {
+    for (UpdateCheckResult result : List.of(UpdateCheckResult.offerWindows(windowsPlan()),
+        UpdateCheckResult.offerPackage(new PackageUpdatePlan(null, null, "v", "linux", "x64", "cpu")))) {
+      QueueRunner runner = new QueueRunner();
+      FakeHandoff handoff = new FakeHandoff();
+      RecordingDiscovery discovery = new RecordingDiscovery(result);
+      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+          discovery, handoff, runner, s -> { throw new AssertionError(); });
+      UpdateCheckSelection snapshot = officialSnapshot();
+      coordinator.checkManually(snapshot);
+      CheckUpdateDialog.persistSelection(UpdateChannel.BETA, UpdateSource.GITHUB);
+      coordinator.invalidateAutomatic();
+      runner.drain();
+      assertSame(snapshot, discovery.seen.get(0));
+      assertSame(snapshot, coordinator.state().selection());
+      assertEquals(UpdateCheckCoordinator.Origin.MANUAL, coordinator.state().origin());
+      assertSame(result.windowsPlan, handoff.windowsPlan);
+      assertSame(result.packagePlan, handoff.packagePlan);
+    }
   }
 
   @Test
-  void startDoesNotPersistChannelOrSource() {
-    UpdateChannel.persist(UpdateChannel.STABLE);
-    UpdateSource.persist(UpdateSource.OFFICIAL_SITE);
-    UpdateCheckSelection snapshot =
-        UpdateCheckSelection.of(UpdateChannel.BETA, UpdateSource.GITHUB, "next-2026-08-01.1");
-
-    assertTrue(
-        new UpdateCheckCoordinator()
-            .start(
-                new FakePage(),
-                snapshot,
-                new RecordingDiscovery(UpdateCheckResult.noUpdate()),
-                unusedHandoff(),
-                ImmediateRunner.INSTANCE));
-
-    assertEquals(UpdateChannel.STABLE, UpdateChannel.current());
-    assertEquals(UpdateSource.OFFICIAL_SITE, UpdateSource.current());
-    assertEquals(UpdateSource.GITHUB, snapshot.effectiveSource);
+  void malformedOfferAndThrownDiscoveryBecomeRetryableFailures() {
+    for (UpdateCheckCoordinator.Discovery discovery : List.<UpdateCheckCoordinator.Discovery>of(
+        s -> UpdateCheckResult.offerWindows(null), s -> { throw new IllegalStateException(); })) {
+      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+          discovery, unusedHandoff(), ImmediateRunner.INSTANCE, s -> { throw new AssertionError(); });
+      coordinator.captureStartupPolicy(true, false, officialSnapshot());
+      coordinator.applicationReady();
+      assertEquals(UpdateCheckResult.Reason.FAILURE, coordinator.state().result().reason);
+      assertTrue(coordinator.checkManually(officialSnapshot()));
+    }
   }
 
   @Test
@@ -281,76 +267,33 @@ class UpdateCheckCoordinatorTest {
     return new FakeHandoff();
   }
 
-  private static final class FakePage implements UpdateCheckCoordinator.Page {
-    boolean checkEnabled = true;
-    boolean closeAllowed = true;
-    final List<UpdateCheckResult> stayResults = new ArrayList<>();
-    int disposeCount;
-
-    @Override
-    public void setCheckEnabled(boolean enabled) {
-      checkEnabled = enabled;
-    }
-
-    @Override
-    public void setCloseAllowed(boolean allowed) {
-      closeAllowed = allowed;
-    }
-
-    @Override
-    public void showStayOnPage(UpdateCheckResult result, UpdateCheckSelection snapshot) {
-      stayResults.add(result);
-    }
-
-    @Override
-    public void disposeForOffer() {
-      disposeCount++;
-    }
-  }
-
   private static final class FakeHandoff implements UpdateCheckCoordinator.OfferHandoff {
-    UpdateCheckSelection windowsSelection;
     WindowsUpdatePlan windowsPlan;
-    UpdateCheckSelection packageSelection;
     PackageUpdatePlan packagePlan;
 
     @Override
     public void openWindows(UpdateCheckSelection selection, UpdateCheckResult result) {
-      windowsSelection = selection;
       windowsPlan = result.windowsPlan;
     }
 
     @Override
     public void openPackage(UpdateCheckSelection selection, UpdateCheckResult result) {
-      packageSelection = selection;
       packagePlan = result.packagePlan;
     }
   }
 
   private static final class RecordingDiscovery implements UpdateCheckCoordinator.Discovery {
     final List<UpdateCheckSelection> seen = new ArrayList<>();
-    private final List<UpdateCheckResult> results = new ArrayList<>();
-    private final java.util.function.Function<UpdateCheckSelection, UpdateCheckResult> factory;
-    private final AtomicInteger index = new AtomicInteger();
+    private final UpdateCheckResult result;
 
     RecordingDiscovery(UpdateCheckResult result) {
-      this.factory = selection -> result;
-    }
-
-    RecordingDiscovery(List<UpdateCheckResult> results) {
-      this.results.addAll(results);
-      this.factory = selection -> this.results.get(index.getAndIncrement());
-    }
-
-    RecordingDiscovery(
-        java.util.function.Function<UpdateCheckSelection, UpdateCheckResult> factory) {
-      this.factory = factory;
+      this.result = result;
     }
 
     @Override
     public UpdateCheckResult check(UpdateCheckSelection selection) {
       seen.add(selection);
-      return factory.apply(selection);
+      return result;
     }
   }
 
@@ -370,6 +313,7 @@ class UpdateCheckCoordinatorTest {
 
   private static final class QueueRunner implements UpdateCheckCoordinator.Runner {
     private Runnable background;
+    private Runnable edt;
 
     @Override
     public void runBackground(Runnable work) {
@@ -378,11 +322,12 @@ class UpdateCheckCoordinatorTest {
 
     @Override
     public void runOnEdt(Runnable work) {
-      work.run();
+      edt = work;
     }
 
     void drain() {
       background.run();
+      edt.run();
     }
   }
 }

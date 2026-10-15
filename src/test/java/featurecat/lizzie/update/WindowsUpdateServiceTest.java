@@ -48,7 +48,8 @@ class WindowsUpdateServiceTest {
 
       Path requestPath = new WindowsUpdateService().downloadAndPrepare(plan, null);
 
-      Path archivePath = requestPath.getParent().resolve("2026-06-12-windows64.core-update.zip");
+      Path archivePath = requestPath.getParent().resolve(sha256(archive))
+          .resolve("2026-06-12-windows64.core-update.zip");
       assertEquals("downloaded archive", Files.readString(archivePath));
       JSONObject request = new JSONObject(Files.readString(requestPath));
       assertEquals(
@@ -56,6 +57,62 @@ class WindowsUpdateServiceTest {
           request.getJSONArray("components").getJSONObject(0).getString("sourcePath"));
       assertEquals(1, proxy.requests.get());
       assertTrue(proxy.lastRequestLine.contains("http://example.invalid/core.zip"));
+      request.put("mainPid", -1L);
+      request.put("workDir", "stale");
+      Files.writeString(requestPath, request.toString());
+      new WindowsUpdateService().downloadAndPrepare(plan, null);
+      JSONObject refreshed = new JSONObject(Files.readString(requestPath));
+      assertEquals(ProcessHandle.current().pid(), refreshed.getLong("mainPid"));
+      assertEquals(tempDir.resolve("work").toString(), refreshed.getString("workDir"));
+      assertEquals(1, proxy.requests.get(), "Verified cache must not transfer again");
+    }
+  }
+
+  @Test
+  void automaticWindowsPreparationNeedsExplicitActionForCurrentRequest() throws Exception {
+    byte[] archive = "verified Windows component".getBytes(StandardCharsets.UTF_8);
+    try (OneShotHttp proxy = new OneShotHttp(archive)) {
+      useManualProxy(proxy.port());
+      configureUpdatePaths();
+      WindowsUpdatePlan plan = updatePlan("http://example.invalid/core.zip", archive);
+      UpdateCheckResult offer = UpdateCheckResult.offerWindows(plan);
+      AtomicInteger launches = new AtomicInteger();
+      java.util.concurrent.atomic.AtomicReference<Path> prepared = new java.util.concurrent.atomic.AtomicReference<>();
+      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(s -> offer,
+          new UpdateCheckCoordinator.OfferHandoff() {
+            public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) {
+              assertEquals(0, launches.get(), "Viewing prepared files must not launch the updater");
+            }
+            public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) {
+              throw new AssertionError("Wrong platform");
+            }
+          }, new UpdateCheckCoordinator.Runner() {
+            public void runBackground(Runnable r) { r.run(); }
+            public void runOnEdt(Runnable r) { r.run(); }
+          }, s -> {}, new UpdateCheckCoordinator.DownloadService() {
+            public Path prepare(UpdateCheckResult r, ResumableDownloader.Control control,
+                ResumableDownloader.ProgressListener listener) throws Exception {
+              Path request = new WindowsUpdateService().downloadAndPrepare(r.windowsPlan, control, listener);
+              prepared.set(request);
+              return request;
+            }
+            public void apply(UpdateCheckResult r, Path request) throws Exception {
+              assertEquals(prepared.get(), request);
+              assertEquals(ProcessHandle.current().pid(), new JSONObject(Files.readString(request)).getLong("mainPid"));
+              launches.incrementAndGet();
+            }
+          });
+      coordinator.captureStartupPolicy(true, true, UpdateCheckSelection.of(
+          UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-06-01.1"));
+      coordinator.applicationReady();
+      assertTrue(coordinator.state().ready());
+      assertEquals(0, launches.get());
+      assertEquals(1, proxy.requests.get());
+      coordinator.openOffer();
+      assertEquals(0, launches.get());
+      coordinator.startDownload(offer, true);
+      assertEquals(1, proxy.requests.get(), "Confirmation must not download the prepared update again");
+      assertEquals(1, launches.get());
     }
   }
 

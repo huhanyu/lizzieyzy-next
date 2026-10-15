@@ -14,7 +14,6 @@ import java.awt.Font;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.net.URI;
-import java.nio.file.Path;
 import javax.swing.BorderFactory;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -26,9 +25,10 @@ import javax.swing.UIManager;
 
 /** Download-and-open flow for signed macOS DMGs and Linux archives. */
 public final class PackageUpdateDialog extends JDialog {
-  private final PlatformUpdateService service;
+  private final UpdateCheckCoordinator coordinator;
+  private final UpdateCheckResult offered;
   private final PackageUpdatePlan plan;
-  private ResumableDownloader.Control control = new ResumableDownloader.Control();
+  private final java.util.function.Consumer<UpdateCheckCoordinator.State> observer = this::showState;
   private final JProgressBar progressBar = new JProgressBar(0, 1000);
   private final JTextArea statusLabel = UpdateText.createStatusArea();
   private final JFontButton downloadButton =
@@ -39,20 +39,19 @@ public final class PackageUpdateDialog extends JDialog {
       new JFontButton(UpdateText.tr("WindowsUpdate.btnCancel", "取消", "Cancel"));
   private final JFontButton releaseButton =
       new JFontButton(UpdateText.tr("WindowsUpdate.btnRelease", "查看 Release", "View release"));
-  private volatile boolean downloading;
 
-  public PackageUpdateDialog(
-      Component parent,
-      PlatformUpdateService service,
-      PackageUpdatePlan plan,
-      String checkWarning) {
+  PackageUpdateDialog(Component parent, UpdateCheckCoordinator coordinator,
+      UpdateCheckResult result, String checkWarning) {
     super(
         parent == null ? null : SwingUtilities.getWindowAncestor(parent),
         UpdateText.tr("WindowsUpdate.title", "发现新版本", "New version available"),
         ModalityType.MODELESS);
-    this.service = service;
-    this.plan = plan;
+    this.coordinator = coordinator;
+    this.offered = result;
+    this.plan = result.packagePlan;
+    setAutoRequestFocus(coordinator.state().origin() != UpdateCheckCoordinator.Origin.AUTOMATIC);
     buildUi(parent, checkWarning);
+    coordinator.subscribe(observer);
   }
 
   private void buildUi(Component parent, String checkWarning) {
@@ -133,7 +132,7 @@ public final class PackageUpdateDialog extends JDialog {
     releaseButton.addActionListener(event -> openRelease());
     downloadButton.addActionListener(event -> startDownload());
     pauseButton.addActionListener(event -> togglePause());
-    cancelButton.addActionListener(event -> control.cancel());
+    cancelButton.addActionListener(event -> coordinator.cancelDownload());
     pack();
     setLocationRelativeTo(parent == null ? Lizzie.frame : parent);
   }
@@ -166,54 +165,33 @@ public final class PackageUpdateDialog extends JDialog {
   }
 
   private void startDownload() {
-    if (downloading) {
-      return;
-    }
-    if (control.isCancelled()) {
-      control = new ResumableDownloader.Control();
-    }
-    downloading = true;
-    progressBar.setVisible(true);
-    downloadButton.setEnabled(false);
-    pauseButton.setEnabled(true);
-    cancelButton.setEnabled(true);
-    statusLabel.setText(
-        UpdateText.tr("WindowsUpdate.status.preparing", "准备下载...", "Preparing download..."));
-    Thread worker =
-        new Thread(
-            () -> {
-              try {
-                Path downloaded =
-                    service.download(
-                        plan,
-                        control,
-                        progress -> SwingUtilities.invokeLater(() -> updateProgress(progress)));
-                SwingUtilities.invokeLater(() -> downloadComplete(downloaded));
-              } catch (ResumableDownloader.DownloadCancelledException e) {
-                SwingUtilities.invokeLater(this::downloadCancelled);
-              } catch (Exception e) {
-                e.printStackTrace();
-                SwingUtilities.invokeLater(() -> downloadFailed(e));
-              }
-            },
-            "lizzie-platform-update-download");
-    worker.setDaemon(true);
-    worker.start();
+    if (coordinator.state().result() != offered) return;
+    coordinator.startDownload(offered, true);
   }
 
   private void togglePause() {
-    if (control.isPaused()) {
-      control.resume();
-      pauseButton.setText(UpdateText.tr("WindowsUpdate.btnPause", "暂停", "Pause"));
-    } else {
-      control.pause();
-      pauseButton.setText(UpdateText.tr("WindowsUpdate.btnResume", "继续", "Resume"));
-      statusLabel.setText(
-          UpdateText.tr(
-              "WindowsUpdate.status.paused",
-              "下载已暂停，进度已保留。",
-              "Download paused. Progress is preserved."));
-    }
+    coordinator.togglePause();
+  }
+
+  private void showState(UpdateCheckCoordinator.State state) {
+    boolean current = state.result() == offered;
+    downloadButton.setEnabled(current && !coordinator.busy());
+    downloadButton.setText(state.ready() ? UpdateDownloadText.action(offered)
+        : UpdateText.tr("WindowsUpdate.btnDownload", "下载新版", "Download update"));
+    pauseButton.setEnabled(current && state.downloading());
+    pauseButton.setText(UpdateDownloadText.pauseAction(state));
+    cancelButton.setEnabled(current && state.downloading());
+    if (!current) { dispose(); return; }
+    progressBar.setVisible(state.download().phase() != UpdateCheckCoordinator.DownloadPhase.NONE);
+    if (state.download().progress() != null) updateProgress(state.download().progress());
+    String status = UpdateDownloadText.status(state);
+    if (!status.isEmpty()) statusLabel.setText(status);
+  }
+
+  @Override
+  public void dispose() {
+    coordinator.unsubscribe(observer);
+    super.dispose();
   }
 
   private void updateProgress(ResumableDownloader.Progress progress) {
@@ -267,46 +245,6 @@ public final class PackageUpdateDialog extends JDialog {
             + speed);
   }
 
-  private void downloadComplete(Path downloaded) {
-    downloading = false;
-    pauseButton.setEnabled(false);
-    cancelButton.setEnabled(false);
-    statusLabel.setText(
-        UpdateText.tr(
-            "WindowsUpdate.status.verified", "下载和校验完成，正在打开...", "Download verified; opening..."));
-    try {
-      service.openDownloadedPackage(plan, downloaded);
-      downloadButton.setText(UpdateText.tr("WindowsUpdate.btnDownloaded", "已下载", "Downloaded"));
-    } catch (Exception e) {
-      downloadFailed(e);
-    }
-  }
-
-  private void downloadCancelled() {
-    downloading = false;
-    pauseButton.setEnabled(false);
-    cancelButton.setEnabled(false);
-    downloadButton.setEnabled(true);
-    downloadButton.setText(UpdateText.tr("WindowsUpdate.btnResume", "继续", "Resume"));
-    statusLabel.setText(
-        UpdateText.tr(
-            "WindowsUpdate.status.cancelled",
-            "下载已停止，已保留进度，下次可继续。",
-            "Download stopped. Progress was kept so it can resume later."));
-  }
-
-  private void downloadFailed(Exception error) {
-    downloading = false;
-    pauseButton.setEnabled(false);
-    cancelButton.setEnabled(false);
-    downloadButton.setEnabled(true);
-    String message =
-        UpdateText.tr("WindowsUpdate.status.failed", "更新失败", "Update failed")
-            + ": "
-            + UpdateText.userFacingError(error);
-    statusLabel.setText(message);
-    Utils.showMsg(message);
-  }
 
   private void openRelease() {
     try {
@@ -326,9 +264,6 @@ public final class PackageUpdateDialog extends JDialog {
   }
 
   private void closeRequested() {
-    if (downloading) {
-      control.cancel();
-    }
     dispose();
   }
 }

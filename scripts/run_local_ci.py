@@ -46,6 +46,29 @@ DESKTOP_REQUIRED_TESTS = (
     ("featurecat.lizzie.gui.FunctionSearchInputTest", "chineseInputChain"),
     ("featurecat.lizzie.gui.FunctionSearchInputTest", "englishInputChain"),
     ("featurecat.lizzie.gui.OfflineBoardAcceptanceTest", "editsAndImportsWithNoEngine"),
+    (
+        "featurecat.lizzie.update.CheckUpdateDialogTest",
+        "preferencesAndResultSurviveClosingAndReopeningWithoutAnotherCheck",
+    ),
+    *tuple(
+        (
+            "featurecat.lizzie.update.CheckUpdateDialogTest",
+            f"automaticOfferIsViewOnlyUntilUpdateNowEvenAfterReopening(boolean)[{case}]",
+        )
+        for case in range(1, 3)
+    ),
+    (
+        "featurecat.lizzie.update.UpdatePauseRecoveryTest",
+        "windowsManualDownloadCanResumeAfterClosingItsView",
+    ),
+    (
+        "featurecat.lizzie.update.UpdatePauseRecoveryTest",
+        "packageManualDownloadCanResumeAfterClosingItsView",
+    ),
+    (
+        "featurecat.lizzie.update.UpdatePauseRecoveryTest",
+        "recoveringAutomaticDownloadDoesNotGrantCompletionAuthority",
+    ),
 )
 ENGINE_PROCESS_REQUIRED_TESTS = (
     (
@@ -557,7 +580,7 @@ def build_steps(
                     "-Dlizzie.desktop.required=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
-                    "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest",
+                    "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest,CheckUpdateDialogTest,UpdatePauseRecoveryTest",
                     "test",
                 ),
                 group="desktop",
