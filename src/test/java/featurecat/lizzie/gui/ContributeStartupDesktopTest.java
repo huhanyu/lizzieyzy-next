@@ -60,13 +60,14 @@ public class ContributeStartupDesktopTest {
         for (String mode :
             List.of(
                 "reject-json", "reject-text", "unsupported-out", "unsupported-err", "duplicate")) {
-          Path run = start(work, mode, true);
+          Path run = start(work, mode, mode.equals("duplicate"));
           verifyFailure(
               run,
               1,
               mode.startsWith("unsupported")
                   ? "Contribute.tips.useOfficialEngineSupportDistributedTraining"
                   : "Contribute.tips.buildRejected");
+          assertFalse(launches(run).get(0).contains("-cacerts"));
         }
       } else if (args[0].equals("lifecycle")) {
         for (String mode : List.of("stdout-first", "stderr-first")) {
