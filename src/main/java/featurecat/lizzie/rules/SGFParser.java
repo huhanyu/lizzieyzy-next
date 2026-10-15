@@ -64,7 +64,7 @@ public class SGFParser {
       if (syncPrimaryEngine) {
         Lizzie.board.clear(false);
       } else {
-        Lizzie.board.clearForSgfLoadWithoutPrimaryEngineForwarding();
+        Lizzie.board.clearWithoutPrimaryEngineForwarding();
       }
       File file = new File(filename);
       if (!file.exists() || !file.canRead()) {
@@ -177,7 +177,7 @@ public class SGFParser {
       if (syncPrimaryEngine) {
         Lizzie.board.clear(false);
       } else {
-        Lizzie.board.clearForSgfLoadWithoutPrimaryEngineForwarding();
+        Lizzie.board.clearWithoutPrimaryEngineForwarding();
       }
       try {
         result = parse(sgfString);

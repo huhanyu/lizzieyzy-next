@@ -124,7 +124,7 @@ public class ContributeEngine {
     startEngine();
     timeStamp = new SimpleDateFormat("yyyy-MM-dd-HH").format(new Date());
     Lizzie.frame.isContributing = true;
-    Lizzie.board.clear(false);
+    Lizzie.board.clearWithoutPrimaryEngineForwarding();
     Menu.engineMenu.setText(Lizzie.resourceBundle.getString("Contribute.engineMenu.contributing"));
     Lizzie.frame.refresh();
   }
