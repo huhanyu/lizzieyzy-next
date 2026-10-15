@@ -79,7 +79,7 @@ public class ContributeSavedEngineSelectionDesktopTest {
               ContributeSavedEngineSelectionDesktopTest.class,
               "saved-engine-" + phase,
               nativeCaptureArgs(),
-              List.of(phase, shared.toString()),
+              List.of(phase, encodePath(shared)),
               120);
       assertEquals("passed", new JSONObject(Files.readString(result)).getString("result"), phase);
     }
@@ -87,10 +87,10 @@ public class ContributeSavedEngineSelectionDesktopTest {
 
   public static void main(String[] args) throws Exception {
     if (args[0].equals("foreground")) {
-      foreground(Path.of(args[1]));
+      foreground(decodePath(args[1]));
       return;
     }
-    Path shared = Path.of(args[1]);
+    Path shared = decodePath(args[1]);
     Path work = Path.of(args[2]);
     Path result = Path.of(args[3]);
     int exit = 0;
@@ -741,7 +741,17 @@ public class ContributeSavedEngineSelectionDesktopTest {
         + " "
         + mode
         + " "
-        + quote(file);
+        + encodePath(file);
+  }
+
+  // Test JVM launcher arguments use the Windows system code page on some JDKs. Keep the
+  // harness transport ASCII while still exercising real CJK paths inside the application.
+  private static String encodePath(Path path) {
+    return java.util.Base64.getUrlEncoder().encodeToString(path.toString().getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static Path decodePath(String encoded) {
+    return Path.of(new String(java.util.Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
   }
 
   private static Set<Long> descendants() {

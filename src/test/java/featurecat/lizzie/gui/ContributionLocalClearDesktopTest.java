@@ -106,9 +106,11 @@ public class ContributionLocalClearDesktopTest {
             Lizzie.leelaz == engine
                 && engine.previewExclusiveGtpLeaseAvailability()
                     == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE);
-    SwingUtilities.invokeAndWait(() -> Lizzie.board.place(3, 3, Stone.BLACK));
     engine.ponder();
-    await(() -> read(commands).contains("kata-analyze"));
+    await(() -> read(commands).contains("kata-analyze B"));
+    SwingUtilities.invokeAndWait(() -> Lizzie.board.place(3, 3, Stone.BLACK));
+    // Observe the new position, not the earlier empty-board analysis, before freezing I/O.
+    await(() -> read(commands).contains("kata-analyze W"));
     assertEquals(Stone.BLACK, Lizzie.board.getData().stones[3 * 19 + 3]);
     var oldHistory = Lizzie.board.getHistory();
     long foregroundPid =

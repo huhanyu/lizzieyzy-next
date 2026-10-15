@@ -461,6 +461,8 @@ public final class FoxLiveSessionAcceptanceIT {
         assertDisplayCandidates(false);
         SwingUtilities.invokeAndWait(() -> {
           controls[0].dispose();
+          // macOS keeps owned dialogs above their owner even after owner.toFront().
+          fox.setVisible(false);
           Lizzie.frame.toFront();
           Lizzie.frame.setMainPanelFocus();
         });
@@ -471,10 +473,37 @@ public final class FoxLiveSessionAcceptanceIT {
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "actual keyboard history");
         Component keyboardHost = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
         assertNotNull(keyboardHost);
-        Point hostOrigin = keyboardHost.getLocationOnScreen();
-        robot.mouseMove(hostOrigin.x + 10, hostOrigin.y + 10);
-        robot.mouseWheel(1);
-        await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == historical, 5, "actual wheel history");
+        Point[] wheelPoint = new Point[1];
+        SwingUtilities.invokeAndWait(() -> {
+          Point origin = Lizzie.frame.mainPanel.getLocationOnScreen();
+          Rectangle board = Lizzie.frame.boardRenderer.getBoardBounds();
+          // The panel corner can be a subboard or overlay; scroll the actual main board.
+          wheelPoint[0] = new Point(origin.x + Utils.zoomIn(board.x + board.width / 2),
+              origin.y + Utils.zoomIn(board.y + board.height / 2));
+        });
+        robot.mouseMove(wheelPoint[0].x, wheelPoint[0].y);
+        robot.waitForIdle();
+        robot.delay(150);
+        java.util.concurrent.atomic.AtomicInteger rotation = new java.util.concurrent.atomic.AtomicInteger();
+        java.awt.event.AWTEventListener wheelObserver = event -> {
+          if (event instanceof java.awt.event.MouseWheelEvent wheel
+              && wheel.getSource() == Lizzie.frame.mainPanel) rotation.set(wheel.getWheelRotation());
+        };
+        Toolkit.getDefaultToolkit().addAWTEventListener(wheelObserver, AWTEvent.MOUSE_WHEEL_EVENT_MASK);
+        try {
+          // Native natural scrolling can invert Robot's requested direction on macOS.
+          robot.mouseWheel(1);
+          await(() -> rotation.get() != 0, 5, "native wheel delivered to the main board");
+          int expectedMove = 1 + Integer.signum(rotation.get());
+          await(() -> Lizzie.board.getHistory().getMoveNumber() == expectedMove, 5, "actual wheel history");
+          robot.mouseWheel(-1);
+          await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, 5, "actual reverse wheel history");
+        } finally {
+          Toolkit.getDefaultToolkit().removeAWTEventListener(wheelObserver);
+        }
+        robot.keyPress(java.awt.event.KeyEvent.VK_DOWN);
+        robot.keyRelease(java.awt.event.KeyEvent.VK_DOWN);
+        await(() -> Lizzie.board.getHistory().getCurrentHistoryNode() == historical, 5, "history restored after wheel test");
         SwingUtilities.invokeAndWait(() -> {
           Lizzie.config.showVariationGraph = true;
           Lizzie.config.showScrollVariation = false;
@@ -503,7 +532,10 @@ public final class FoxLiveSessionAcceptanceIT {
         robot.delay(200);
         ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
             "png", work.resolve("fox-history.png").toFile());
-        SwingUtilities.invokeAndWait(() -> fox.toFront());
+        SwingUtilities.invokeAndWait(() -> {
+          fox.setVisible(true);
+          fox.toFront();
+        });
         robot.waitForIdle();
         robot.delay(100);
         ImageIO.write(robot.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
