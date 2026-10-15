@@ -117,7 +117,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_local_ci.ps1 -Profile All -
 | `repository` | 换行自测、换行、Markdown 链接 | 换行 | 无 |
 | `scripts` | Python 辅助脚本、KataGo shell、Bash 语法 | JCEF、NVIDIA、RTX50 PowerShell 语法、原生 CI 进程监督检查 | Portable 需 Bash；Windows 需 PowerShell 7 |
 | `java` | 原完整 Maven verify | 凭据专项，再执行原完整 Maven verify | Maven、JDK 21；不查找 Bash/PowerShell |
-| `desktop` | 五个生产窗口导航 / 搜索输入 / 引擎进程生命周期测试 | 相同显式测试选择；不代表 Windows 原生 UI 验收 | Maven、JDK 21、可用显示环境；Linux 使用 Xvfb |
+| `desktop` | 七个测试类覆盖生产窗口导航 / 搜索输入 / 离线棋盘 / 引擎进程生命周期 / 更新窗口 | 相同显式测试选择；不代表 Windows 原生 UI 验收 | Maven、JDK 21、可用显示环境；Linux 使用 Xvfb |
 | `engine-process` | 七个真实引擎进程生命周期 / 失败恢复用例 | 相同七个用例的原生 Windows 执行 | Maven、JDK 21、可用显示环境；Linux 使用 Xvfb |
 
 例如仅运行无 Java 的仓库检查：
@@ -152,13 +152,23 @@ Linux 安装 `xvfb xauth fonts-dejavu-core fonts-noto-cjk` 后运行：
 LANG=C.UTF-8 LC_ALL=C.UTF-8 xvfb-run -a -s '-screen 0 1920x1080x24 -nolisten tcp' bash scripts/run_local_ci.sh --profile portable --group desktop --summary-dir target/local-ci/portable-desktop
 ```
 
-该组要求以下五个用例全部成功执行：
+该组要求以下用例全部成功执行（含导航重复运行和自动下载参数化场景）：
 
 - `FunctionSearchNavigationTest.navigationPreservesRealStateAcrossNativeAndCustomMenus`
 - `ConfigDialog2NavigationTest.blackWinrateRemainsReachableAcrossRebuildsAndRecreation`
 - `EngineProcessSmokeTest.restoresSnapshotAnalyzesAndQuits`
 - `FunctionSearchInputTest.chineseInputChain`
 - `FunctionSearchInputTest.englishInputChain`
+- `OfflineBoardAcceptanceTest.editsAndImportsWithNoEngine`
+- `CheckUpdateDialogTest.preferencesAndResultSurviveClosingAndReopeningWithoutAnotherCheck`
+- `CheckUpdateDialogTest.automaticOfferIsViewOnlyUntilUpdateNowEvenAfterReopening`（自动下载关闭 / 开启）
+- `UpdatePauseRecoveryTest.windowsManualDownloadCanResumeAfterClosingItsView`
+- `UpdatePauseRecoveryTest.packageManualDownloadCanResumeAfterClosingItsView`
+- `UpdatePauseRecoveryTest.recoveringAutomaticDownloadDoesNotGrantCompletionAuthority`
+
+两个更新窗口测试类在 headless Java 作业中跳过，在 `desktop` 作业中必须实际执行全部六个用例。
+它们验证偏好与更新结果在关闭 / 重开窗口后保留、点击“立即更新”前不授予安装权限，以及暂停下载的恢复。
+缺失或跳过任一用例均使 desktop gate 失败；受控下载服务不替代 Windows 原生安装与重启验收。
 
 两个搜索输入用例在独立的 zh_CN/native 和 en_US/custom 子 JVM 中，通过真实 Robot 输入覆盖工具栏、
 `Ctrl+K`、查询、方向键、Enter、Escape、文本组件所有权和模态窗口边界。引擎进程用例在独立子 JVM 中

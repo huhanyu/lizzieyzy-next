@@ -46,8 +46,35 @@ DESKTOP_REQUIRED_TESTS = (
     ("featurecat.lizzie.gui.FunctionSearchInputTest", "chineseInputChain"),
     ("featurecat.lizzie.gui.FunctionSearchInputTest", "englishInputChain"),
     ("featurecat.lizzie.gui.OfflineBoardAcceptanceTest", "editsAndImportsWithNoEngine"),
+    (
+        "featurecat.lizzie.update.CheckUpdateDialogTest",
+        "preferencesAndResultSurviveClosingAndReopeningWithoutAnotherCheck",
+    ),
+    *tuple(
+        (
+            "featurecat.lizzie.update.CheckUpdateDialogTest",
+            f"automaticOfferIsViewOnlyUntilUpdateNowEvenAfterReopening(boolean)[{case}]",
+        )
+        for case in range(1, 3)
+    ),
+    (
+        "featurecat.lizzie.update.UpdatePauseRecoveryTest",
+        "windowsManualDownloadCanResumeAfterClosingItsView",
+    ),
+    (
+        "featurecat.lizzie.update.UpdatePauseRecoveryTest",
+        "packageManualDownloadCanResumeAfterClosingItsView",
+    ),
+    (
+        "featurecat.lizzie.update.UpdatePauseRecoveryTest",
+        "recoveringAutomaticDownloadDoesNotGrantCompletionAuthority",
+    ),
 )
 ENGINE_PROCESS_REQUIRED_TESTS = (
+    (
+        "featurecat.lizzie.gui.ContributeSavedEngineSelectionDesktopTest",
+        "selectSavedEngineSaveReloadAndStartContribution",
+    ),
     (
         "featurecat.lizzie.gui.EngineProcessSmokeTest",
         "restoresSnapshotAnalyzesAndQuits",
@@ -75,6 +102,31 @@ ENGINE_PROCESS_REQUIRED_TESTS = (
     (
         "featurecat.lizzie.gui.EngineProcessFailureTest",
         "cleansUpPeerThatRefusesQuit",
+    ),
+    *tuple(
+        ("featurecat.lizzie.gui.ContributeStartupDesktopTest", method)
+        for method in (
+            "serverRejectionUsesOneLaunchAndRetainsFailure",
+            "outputOrderingReadinessAndRetryBudget",
+            "stopRestartAndValidGameDisplay",
+            "permanentOutputSurvivesPausedEdt",
+            "modalNotificationsDoNotBlockDrainOrStopReplacement",
+        )
+    ),
+    *tuple(
+        (
+            "featurecat.lizzie.gui.ContributionLocalClearDesktopTest",
+            f"contributionClearsLocallyAndHonorsRealOccupancy(String)[{invocation}]",
+        )
+        for invocation in range(1, 4)
+    ),
+    *tuple(
+        ("featurecat.lizzie.analysis.ContributeCertificateRecoveryTest", method)
+        for method in (
+            "remoteCommandsNeverAcquireClientCertificatePaths",
+            "pureCommandsRemainUserOwned",
+            "localRecoveryUsesCertificateBesideExecutable",
+        )
     ),
 )
 TENSORRT_UI_REQUIRED_TESTS = (
@@ -557,7 +609,7 @@ def build_steps(
                     "-Dlizzie.desktop.required=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
-                    "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest",
+                    "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest,CheckUpdateDialogTest,UpdatePauseRecoveryTest",
                     "test",
                 ),
                 group="desktop",
@@ -571,7 +623,9 @@ def build_steps(
             "EngineProcessFailureTest#rejectsSnapshotErrorWithoutTailOrAnalysis+"
             "retiresSnapshotTimeoutAndRejectsLateResponse+recoversSnapshotAfterPeerCrash+"
             "isolatesLateOutputAfterEngineSwitch+drainsPeerPipeBurstAndRemainsResponsive+"
-            "cleansUpPeerThatRefusesQuit"
+            "cleansUpPeerThatRefusesQuit,ContributeStartupDesktopTest,"
+            "ContributionLocalClearDesktopTest,ContributeCertificateRecoveryTest,"
+            "ContributeSavedEngineSelectionDesktopTest"
         )
         return [
             Step(

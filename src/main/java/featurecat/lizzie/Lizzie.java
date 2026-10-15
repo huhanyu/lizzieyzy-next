@@ -999,6 +999,7 @@ public class Lizzie {
   }
 
   public static void start(int index, boolean loadDefault) {
+    featurecat.lizzie.update.WindowsUpdateController.captureStartupPolicy();
     setBoard(new Board());
     frame = new LizzieFrame();
     LizzieFrame.toolbar.setPopupMenu();
@@ -1006,6 +1007,7 @@ public class Lizzie {
     frame.reSetLoc();
     frame.showMainPanel();
     logApplicationReady();
+    featurecat.lizzie.update.WindowsUpdateController.applicationReady();
     frame.addResizeLis();
     // 引擎跟随控制器：试下期间让引擎跟随 displayNode 实时分析
     EngineCommandSink sink = new LeelazEngineCommandSink();
@@ -1473,6 +1475,8 @@ public class Lizzie {
       return;
     }
     logShutdownRequested();
+    java.util.concurrent.CompletableFuture<Void> strengthShutdown =
+        frame.shutdownHumanSlPreparation();
     try {
       if (config.autoSaveOnExit) frame.saveAutoGame(1);
     } catch (Exception e) {
@@ -1546,9 +1550,11 @@ public class Lizzie {
       }
     }
     if (engineManager == null) {
-      shutdownLoggingThenExit(exit);
+      strengthShutdown.thenRun(() -> shutdownLoggingThenExit(exit));
     } else {
-      engineManager.cancelBenchmarks().thenRun(() -> shutdownLoggingThenExit(exit));
+      java.util.concurrent.CompletableFuture.allOf(
+              strengthShutdown, engineManager.cancelBenchmarks())
+          .thenRun(() -> shutdownLoggingThenExit(exit));
     }
   }
 

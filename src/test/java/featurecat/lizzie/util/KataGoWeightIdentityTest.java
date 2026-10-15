@@ -80,11 +80,11 @@ class KataGoWeightIdentityTest {
     writeHeader(weight, first);
     FileTime modified = Files.getLastModifiedTime(weight);
     long size = Files.size(weight);
-    assertEquals(first, KataGoAutoSetupHelper.resolveWeightDisplayName(weight));
+    assertEquals("B11 · s12000M-d6200M", KataGoAutoSetupHelper.resolveWeightDisplayName(weight));
     writeHeader(weight, second);
     Files.setLastModifiedTime(weight, modified);
     assertEquals(size, Files.size(weight));
-    assertEquals(second, KataGoAutoSetupHelper.resolveWeightDisplayName(weight));
+    assertEquals("B11 · s13000M-d6300M", KataGoAutoSetupHelper.resolveWeightDisplayName(weight));
     assertTrue(KataGoAutoSetupHelper.isTransformerWeight(weight));
   }
 

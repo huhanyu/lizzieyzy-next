@@ -60,7 +60,7 @@ public final class WindowsUpdateService {
     JSONArray requestComponents = new JSONArray();
     for (WindowsUpdatePlan.Item item : selected) {
       UpdateManifest.Component component = item.component;
-      Path archive = stagingDir.resolve(component.assetName).normalize();
+      Path archive = stagingDir.resolve(component.sha256).resolve(component.assetName).normalize();
       long offset = completedBefore;
       downloader.download(
           ResumableDownloader.DownloadSpec.from(component),

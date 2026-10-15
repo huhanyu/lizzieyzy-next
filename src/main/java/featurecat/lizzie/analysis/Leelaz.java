@@ -428,6 +428,17 @@ public class Leelaz {
   public double wrn = 0;
   private double pdaBeforeGame = 0;
   public double pdaCap = 0;
+  private volatile String foxPdaCompatibility = "Fox.pdaUnknown";
+
+  public String foxPdaUnavailableReason() {
+    return isKataGoPda || isDymPda ? "Fox.pdaDynamic"
+        : isKatagoCustom ? "Fox.pdaUnknown" : foxPdaCompatibility;
+  }
+
+  public void confirmFoxPda(double value) {
+    pda = value;
+    pdaBeforeGame = value;
+  }
   public boolean startAutoAna = false;
   // for Multiple Engine
   public String oriEngineCommand = "";
@@ -1318,6 +1329,7 @@ public class Leelaz {
     startupPrimaryEngineGeneration =
         deferredEngineGameRecovery ? -1L : Lizzie.capturePrimaryEngineGeneration(this);
     canRestoreDymPda = false;
+    foxPdaCompatibility = "Fox.pdaUnknown";
     supportMovesOwnership = false;
     supportRootInfo = false;
     CommandLaunchHelper.LaunchSpec launchSpec =
@@ -1513,6 +1525,8 @@ public class Leelaz {
       modelLaunchCommands = List.copyOf(launchCommands);
       CommandLaunchHelper.configureProcessBuilder(processBuilder, launchSpec);
       KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, engineExecutable);
+      foxPdaCompatibility = FoxPdaCompatibility.inspect(launchCommands,
+          processBuilder.directory() == null ? Path.of("").toAbsolutePath() : processBuilder.directory().toPath());
       processBuilder.redirectErrorStream(false);
       if (startupDiagnosticAttempt != null) startupDiagnosticAttempt.capture(processBuilder);
       try {
@@ -10191,6 +10205,7 @@ public class Leelaz {
           continue;
         }
         if (dispatchExclusiveGtpLine(binding, line)) {
+          EngineObservation.traceRawStream(loggingEngineId, null, line);
           lineInProgress = false;
           endReaderLine(binding);
           continue;
@@ -14734,7 +14749,8 @@ public class Leelaz {
             onReady,
             onClosed,
             exclusiveGtpResponseCommandIds.getAndIncrement());
-    session.wasPondering = isPondering();
+    // Fox restores operation admission, while ordinary analysis needs a new user request.
+    session.wasPondering = !(owner instanceof FoxEngineSession) && isPondering();
     session.readerBinding = readerStreamBinding;
     exclusiveGtpSession = session;
     return session;
@@ -14948,6 +14964,19 @@ public class Leelaz {
         session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
   }
 
+  /** Long-lived adapters must present their owner on every write, including cancellation. */
+  public boolean sendExclusiveGtpCommand(Object owner, String command) {
+    ExclusiveGtpSession session;
+    synchronized (engineArbitrationLock()) {
+      session = exclusiveGtpSession;
+      if (session == null || session.owner != owner || !session.active || session.closing
+          || session.readerBinding != readerStreamBinding || session.readerBinding == null
+          || session.readerBinding.terminated || session.releaseRequested
+          || command == null || command.trim().isEmpty()) return false;
+    }
+    return writeExclusiveGtpCommand(session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
+  }
+
 
 
 
@@ -15048,6 +15077,17 @@ public class Leelaz {
       return exclusiveGtpSession != null && exclusiveGtpSession.owner == owner;
     }
   }
+  /** Fox's nonblocking write-start claim shares the physical reader ownership boundary. */
+  boolean claimFoxSubmission(Object owner, java.util.function.BooleanSupplier claim) {
+    synchronized (engineArbitrationLock()) {
+      ExclusiveGtpSession session = exclusiveGtpSession;
+      return session != null && session.owner == owner && session.active && !session.closing
+          && !session.releaseRequested && session.readerBinding != null
+          && session.readerBinding == readerStreamBinding && !session.readerBinding.terminated
+          && claim.getAsBoolean();
+    }
+  }
+
 
   boolean setForegroundAnalysisLeaseRestoreRules(Object owner, String rules) {
     synchronized (engineArbitrationLock()) {
@@ -15063,6 +15103,53 @@ public class Leelaz {
       session.originalRules = rules.trim();
       return true;
     }
+  }
+
+  boolean setFoxRestoreState(Object owner, String rules, double maxTime, long maxVisits) {
+    synchronized (engineArbitrationLock()) {
+      ExclusiveGtpSession session = exclusiveGtpSession;
+      if (session == null || session.owner != owner || !session.active || session.closing
+          || !Double.isFinite(maxTime) || maxTime <= 0 || maxVisits <= 0 || rules == null) return false;
+      session.originalRules = rules;
+      session.foxMaxTime = maxTime;
+      session.foxMaxVisits = maxVisits;
+      return true;
+    }
+  }
+
+  /** Confirmed, reader-bound ordinary queries for the pre-start Fox controls. */
+  public CompletableFuture<FoxEngineSession.Limits> queryFoxLimits() {
+    ReaderStreamBinding binding = readerStreamBinding;
+    long generation = Lizzie.capturePrimaryEngineGeneration(this);
+    return queryFoxLimit("maxTime", binding, generation).thenCompose(time ->
+        queryFoxLimit("maxVisits", binding, generation).thenApply(visits ->
+            new FoxEngineSession.Limits(Double.parseDouble(time), Long.parseLong(visits))));
+  }
+
+  private CompletableFuture<String> queryFoxLimit(
+      String parameter, ReaderStreamBinding binding, long generation) {
+    CompletableFuture<String> result = new CompletableFuture<>();
+    Runnable response = () -> {
+      if (generation < 0 || Lizzie.capturePrimaryEngineGeneration(this) != generation
+          || !isCurrentLiveEngineIncarnation(binding) || isCurrentCommandResponseError()) {
+        result.completeExceptionally(new IllegalStateException("Fox parameter query failed"));
+      } else result.complete(gtpResponsePayload(currentCommandResponseLine()));
+    };
+    COMMAND_DISPATCH_EXECUTOR.execute(() -> {
+      if (generation < 0 || Lizzie.capturePrimaryEngineGeneration(this) != generation
+          || !isCurrentLiveEngineIncarnation(binding)
+          || !sendCommand("kata-get-param " + parameter, response,
+              result::completeExceptionally, true, false, null, false, binding)) {
+        result.completeExceptionally(new IllegalStateException("Fox parameter query unavailable"));
+        return;
+      }
+      var timeout = RUNTIME_THREAD_TIMEOUT_EXECUTOR.schedule(() -> {
+        if (result.completeExceptionally(new IllegalStateException("Fox parameter query timeout")))
+          retireTimedOutNormalCommand(response);
+      }, 5, TimeUnit.SECONDS);
+      result.whenComplete((value, failure) -> timeout.cancel(false));
+    });
+    return result;
   }
 
   public boolean beginExclusiveGtpLifecycleTransition() {
@@ -15573,6 +15660,15 @@ public class Leelaz {
     }
   }
 
+  void markFoxPdaUnconfirmed(Object owner) {
+    synchronized (engineArbitrationLock()) {
+      ExclusiveGtpSession session = exclusiveGtpSession;
+      if (session == null || session.owner != owner || session.readerBinding != readerStreamBinding) return;
+      session.restoreFailed = true;
+      recordForegroundAnalysisLeaseFailure(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED);
+    }
+  }
+
   public void endForegroundAnalysisLease(Object owner) {
     endForegroundAnalysisLease(owner, null);
   }
@@ -15857,6 +15953,7 @@ public class Leelaz {
       return;
     }
     if (!canRestore) {
+      if (session.foxMaxTime != null) session.restoreFailed = true;
       completeForegroundRestore(session);
       return;
     }
@@ -15893,7 +15990,23 @@ public class Leelaz {
       if (restoreCapture == null) {
         throw new IllegalStateException("Foreground restore capture is unavailable");
       }
-      if (session.originalRules != null) {
+      if (session.foxMaxTime != null) {
+        confirmForegroundRestoreCommand(session, "kata-set-rules " + session.originalRules);
+        try {
+          EngineRulesResult restoredRules = queryEngineRulesOperation(5000).await(6000);
+          KataGoRules expectedRules = KataGoRules.parse(session.originalRules).orElseThrow();
+          if (restoredRules == null || !restoredRules.isConfirmed()
+              || !expectedRules.semanticallyEquals(restoredRules.observed())) {
+            throw new IllegalStateException("Fox restored rules readback was not confirmed");
+          }
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new IllegalStateException("Fox restored rules readback interrupted", interrupted);
+        }
+        confirmForegroundRestoreCommand(session, "kata-set-param maxTime " + session.foxMaxTime);
+        confirmForegroundRestoreCommand(session, "kata-set-param maxVisits " + session.foxMaxVisits);
+        confirmForegroundRestoreCommand(session, "kata-time_settings none");
+      } else if (session.originalRules != null) {
         sendCommand("kata-set-rules " + session.originalRules);
       }
       restoreCapture.execute(this);
@@ -15910,6 +16023,26 @@ public class Leelaz {
       failForegroundRestore(session, ex.getMessage());
     } finally {
       foregroundRestoreCommandSession.remove();
+    }
+  }
+
+  private void confirmForegroundRestoreCommand(ExclusiveGtpSession session, String command) {
+    CompletableFuture<Void> confirmed = new CompletableFuture<>();
+    sendCommand(command, () -> {
+      if (currentCommandResponseError) {
+        confirmed.completeExceptionally(new IllegalStateException(currentCommandResponseLine));
+      } else {
+        confirmed.complete(null);
+      }
+    }, confirmed::completeExceptionally, true, false);
+    try {
+      confirmed.get(5, java.util.concurrent.TimeUnit.SECONDS);
+      if (session.readerBinding != readerStreamBinding || session.readerBinding.terminated
+          || Lizzie.leelaz != this || isForegroundRestoreCompleted(session)) {
+        throw new IllegalStateException("Fox restore engine instance changed");
+      }
+    } catch (Exception failure) {
+      throw new IllegalStateException("Fox runtime restore was not confirmed", failure);
     }
   }
 
@@ -15977,16 +16110,21 @@ public class Leelaz {
         && !current.readerShutdownRequested;
   }
 
-  /** Records a settled automatic-lease failure for the reader that the lease actually borrowed. */
+  /** Records a settled borrowed-engine failure only for its original reader. */
   private UnrestoredForegroundLease recordUnrestoredForegroundLeaseLocked(
       ExclusiveGtpSession session) {
-    if (!(session.owner instanceof ForegroundAnalysisLease lease)
-        || lease.reportRestoreFailureToUser
-        || session.readerBinding == null
-        || session.readerBinding != readerStreamBinding) {
+    if (session.readerBinding == null || session.readerBinding != readerStreamBinding) {
       return null;
     }
-    ForegroundAnalysisLeaseFailure reason = lease.failureReason().orElse(null);
+    ForegroundAnalysisLeaseFailure reason;
+    if (session.foxMaxTime != null) {
+      reason = ForegroundAnalysisLeaseFailure.RESTORE_FAILED;
+    } else if (session.owner instanceof ForegroundAnalysisLease lease
+        && !lease.reportRestoreFailureToUser) {
+      reason = lease.failureReason().orElse(null);
+    } else {
+      return null;
+    }
     if (!isForegroundHandbackFailure(reason)) {
       return null;
     }
@@ -16074,7 +16212,7 @@ public class Leelaz {
           releaseStopFailed = session.releaseStopFailed;
           restoreTimeout = session.restoreTimeout;
           restoreThread = session.restoreThread;
-          if (restoreFailed) {
+          if (restoreFailed && session.readerBinding == readerStreamBinding) {
             isLoaded = false;
             unrestored = recordUnrestoredForegroundLeaseLocked(session);
           }
@@ -16489,9 +16627,11 @@ public class Leelaz {
           }
         }
         if (onPhysicalWrite != null) onPhysicalWrite.run();
+        if (expectedSession.owner instanceof FoxEngineSession fox) fox.transcript.sent(command);
         currentOutputStream.write((command + "\n").getBytes());
         currentOutputStream.flush();
       }
+      EngineObservation.traceRawCommand(loggingEngineId, null, command);
       return ExclusiveGtpWriteResult.SENT;
     } catch (IOException ex) {
       clearBufferedCommandBytesAfterSendFailure(currentOutputStream);
@@ -16549,6 +16689,7 @@ public class Leelaz {
         || binding.terminated) {
       return false;
     }
+    if (session.owner instanceof FoxEngineSession fox) fox.transcript.received(line == null ? "" : line);
     String trimmed = line == null ? "" : line.trim();
     synchronized (engineArbitrationLock()) {
       if (trimmed.startsWith("=") || trimmed.startsWith("?")) {
@@ -17193,6 +17334,8 @@ public class Leelaz {
     private boolean finiteSearchPlayed;
     private boolean finiteSearchError;
     private boolean releaseStopComplete;
+    private Double foxMaxTime;
+    private Long foxMaxVisits;
     private Runnable afterRestore;
     private Runnable afterRestoreFailure;
     private Thread restoreThread;

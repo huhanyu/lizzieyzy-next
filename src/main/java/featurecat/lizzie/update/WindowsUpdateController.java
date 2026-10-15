@@ -5,34 +5,61 @@ import java.awt.Component;
 import javax.swing.SwingUtilities;
 
 public final class WindowsUpdateController {
-  private static final UpdateCheckCoordinator COORDINATOR = new UpdateCheckCoordinator();
-  private static final UpdateCheckCoordinator.OfferHandoff HANDOFF = new ProductionHandoff();
-  private static final UpdateCheckCoordinator.Runner RUNNER = new SwingRunner();
+  private static final UpdateCheckCoordinator COORDINATOR =
+      new UpdateCheckCoordinator(UpdateDiscovery::check, new ProductionHandoff(),
+          new SwingRunner(), state -> coordinator().openOffer());
+  private static CheckUpdateDialog page;
 
   private WindowsUpdateController() {}
 
   public static void openCheckUpdatePage(Component parent) {
-    SwingUtilities.invokeLater(() -> new CheckUpdateDialog(parent).setVisible(true));
+    SwingUtilities.invokeLater(() -> showPage(parent));
   }
 
-  static void checkForUpdate(UpdateCheckCoordinator.Page page, UpdateCheckSelection snapshot) {
-    COORDINATOR.start(page, snapshot, UpdateDiscovery::check, HANDOFF, RUNNER);
+  public static void captureStartupPolicy() {
+    COORDINATOR.captureStartupPolicy(
+        UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(), UpdateCheckSelection.of(
+            UpdateChannel.current(), UpdateSource.current(), Lizzie.nextVersion));
+  }
+
+  public static void applicationReady() {
+    SwingUtilities.invokeLater(COORDINATOR::applicationReady);
+  }
+
+  static UpdateCheckCoordinator coordinator() { return COORDINATOR; }
+
+  static void automaticPolicyChanged() {
+    COORDINATOR.invalidateAutomatic();
+  }
+
+  static void automaticDownloadDisabled() {
+    COORDINATOR.disableAutomaticDownload();
+  }
+
+  private static void showPage(Component parent) {
+    if (page != null && page.isDisplayable()) {
+      page.setVisible(true);
+      page.toFront();
+      return;
+    }
+    page = new CheckUpdateDialog(parent, COORDINATOR);
+    page.setVisible(true);
   }
 
   private static final class ProductionHandoff implements UpdateCheckCoordinator.OfferHandoff {
     @Override
     public void openWindows(UpdateCheckSelection selection, UpdateCheckResult result) {
-      WindowsUpdateService service = new WindowsUpdateService();
+      if (page != null) page.dispose();
       new WindowsUpdateDialog(
-              Lizzie.frame, service, result.windowsPlan, UpdateCheckFeedback.warning(result))
+              Lizzie.frame, COORDINATOR, result, UpdateCheckFeedback.warning(result))
           .setVisible(true);
     }
 
     @Override
     public void openPackage(UpdateCheckSelection selection, UpdateCheckResult result) {
-      PlatformUpdateService service = new PlatformUpdateService();
+      if (page != null) page.dispose();
       new PackageUpdateDialog(
-              Lizzie.frame, service, result.packagePlan, UpdateCheckFeedback.warning(result))
+              Lizzie.frame, COORDINATOR, result, UpdateCheckFeedback.warning(result))
           .setVisible(true);
     }
   }
@@ -40,7 +67,7 @@ public final class WindowsUpdateController {
   private static final class SwingRunner implements UpdateCheckCoordinator.Runner {
     @Override
     public void runBackground(Runnable work) {
-      Thread thread = new Thread(work, "lizzie-update-manual");
+      Thread thread = new Thread(work, "lizzie-update-discovery");
       thread.setDaemon(true);
       thread.start();
     }

@@ -269,7 +269,13 @@ public class BoardHistoryList {
     }
   }
 
+  private boolean rejectFoxNavigation() {
+    return Lizzie.board != null && Lizzie.board.getHistory() == this
+        && featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation();
+  }
+
   public void toBranchTop() {
+    if (rejectFoxNavigation()) return;
     BoardHistoryNode start = head;
     while (start.previous().isPresent()) {
       BoardHistoryNode pre = start.previous().get();
@@ -341,8 +347,9 @@ public class BoardHistoryList {
    * @return data of previous node, Optional.empty if there is no previous node
    */
   public Optional<BoardData> previous() {
+    if (rejectFoxNavigation()) return Optional.empty();
     if (!head.previous().isPresent()) return Optional.empty();
-    else head = head.previous().get();
+    else setHead(head.previous().get());
     return Optional.of(head.getData());
   }
 
@@ -361,11 +368,13 @@ public class BoardHistoryList {
   }
 
   public Optional<BoardData> next(boolean includeDummay) {
+    if (rejectFoxNavigation()) return Optional.empty();
     Optional<BoardHistoryNode> n = head.next(includeDummay);
     // n.ifPresent(x -> head = x);
     if (n.isPresent()) {
-      if (Lizzie.leelaz != null) Lizzie.leelaz.clearBestMoves();
-      head = n.get();
+      if (!featurecat.lizzie.fox.FoxLiveSession.isActive() && Lizzie.leelaz != null)
+        Lizzie.leelaz.clearBestMoves();
+      setHead(n.get());
       // Lizzie.board.clearAfterMove();
     }
     return n.map(x -> x.getData());
@@ -377,18 +386,22 @@ public class BoardHistoryList {
    * @return the data of next node, Optional.empty if there is no variation with index.
    */
   public Optional<BoardData> nextVariation(int idx) {
+    if (rejectFoxNavigation()) return Optional.empty();
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive())
+      return nextVariationWithoutEngineSync(idx);
     Optional<BoardHistoryNode> n = head.getVariation(idx);
     if (n.isPresent()) {
       if (head.hasRemovedStone()) head.clearAndSyncBoard(true);
-      head = n.get();
+      setHead(n.get());
       head.placeExtraStones();
     }
     return n.map(x -> x.getData());
   }
 
   Optional<BoardData> nextVariationWithoutEngineSync(int idx) {
+    if (rejectFoxNavigation()) return Optional.empty();
     Optional<BoardHistoryNode> next = head.getVariation(idx);
-    next.ifPresent(node -> head = node);
+    next.ifPresent(this::setHead);
     return next.map(BoardHistoryNode::getData);
   }
 
@@ -476,7 +489,16 @@ public class BoardHistoryList {
   }
 
   public void setHead(BoardHistoryNode node) {
+    if (rejectFoxNavigation()) return;
+    if (node == null) return;
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()
+        && Lizzie.board != null && Lizzie.board.getHistory() == this) {
+      BoardHistoryNode targetRoot = node;
+      while (targetRoot.previous().isPresent()) targetRoot = targetRoot.previous().get();
+      if (targetRoot != root()) return;
+    }
     head = node;
+    featurecat.lizzie.fox.FoxLiveSession.historyCursorChanged(this);
   }
 
   public boolean isEmptyBoard() {

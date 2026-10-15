@@ -2,7 +2,9 @@ package featurecat.lizzie.analysis;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -63,16 +65,23 @@ class PlayerStrengthEstimatorTest {
   }
 
   @Test
-  void exposesCurrentAndPreviousBundledTunModels() {
+  void exposesCurrentTunAndHumanSlModelsWithoutRetiredPreviousModel() {
     boolean foundCurrent = false;
-    boolean foundPrevious = false;
+    boolean foundHumanSl = false;
     for (PlayerStrengthEstimator.StrengthModel model : PlayerStrengthEstimator.selectableModels()) {
       foundCurrent |= model.equals(PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN);
-      foundPrevious |= model.equals(PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN_PREVIOUS);
+      foundHumanSl |= model.equals(PlayerStrengthEstimator.StrengthModel.HUMANSL40);
+      assertNotEquals("xgboost20tun-previous", model.displayName());
     }
 
     assertTrue(foundCurrent);
-    assertTrue(foundPrevious);
+    assertTrue(foundHumanSl);
+    assertNull(
+        PlayerStrengthEstimator.class.getResource(
+            "/models/strength/xgboost20tun_previous_booster.json"));
+    assertNull(
+        PlayerStrengthEstimator.class.getResource(
+            "/models/strength/xgboost20tun_previous_residual_calibrator.json"));
   }
 
   @Test
