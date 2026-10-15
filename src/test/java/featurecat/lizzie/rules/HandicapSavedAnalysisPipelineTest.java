@@ -46,9 +46,11 @@ class HandicapSavedAnalysisPipelineTest {
   @TempDir Path tempDirectory;
 
   @ParameterizedTest
-  @CsvSource({"file, true", "file, false", "string, true", "string, false"})
+  @CsvSource({"file, true, HA[2]AB[aa][ee]PL[W]", "file, false, HA[2]AB[aa][ee]PL[W]",
+      "string, true, HA[2]AB[aa][ee]PL[W]", "string, false, HA[2]AB[aa][ee]PL[W]",
+      "string, true, AB[aa][ee]", "string, true, AB[aa]AW[ee]"})
   void synchronizedHandicapImportProtectsSavedAnalysisUntilDeeperRootInfo(
-      String entrypoint, boolean readKomi) throws Exception {
+      String entrypoint, boolean readKomi, String setupProperties) throws Exception {
     ResourceBundle previousResources = Lizzie.resourceBundle;
     BottomToolbar previousToolbar = LizzieFrame.toolbar;
     Leelaz previousSecondary = Lizzie.leelaz2;
@@ -104,7 +106,7 @@ class HandicapSavedAnalysisPipelineTest {
               });
       try {
         String sgf =
-            "(;SZ[5]HA[2]AB[aa][ee]PL[W]KM[0.5]"
+            "(;SZ[5]" + setupProperties + "KM[0.5]"
                 + "LZOP[b11 40 10 2 1 0 rootVisits=10\n"
                 + "move C3 visits 10 winrate 6000 scoreMean 2 pv C3]"
                 + ";W[bb];B[cc]LZ[b11 30 100 3 1 0 rootVisits=100\n"
@@ -159,8 +161,20 @@ class HandicapSavedAnalysisPipelineTest {
         assertEquals(0.5, restoredRoot.getGameInfo().getKomi(), 0.0001);
         assertArrayEquals(root.stones, restoredRoot.getStart().getData().stones);
         assertEquals(root.blackToPlay, restoredRoot.getStart().getData().blackToPlay);
+        assertFalse(root.blackToPlay, "inferred White is independent of handicap eligibility");
         assertEquals(10, root.getPlayouts());
         assertFalse(root.isChanged, "position/komi synchronization must preserve imported analysis");
+
+        navigateForward(env.board(), engine, transport);
+        SwingUtilities.invokeAndWait(() -> assertTrue(env.board().previousMove(false)));
+        awaitHistoryRestores();
+        awaitEngineIdle(engine, transport);
+        assertSame(root, env.board().getData());
+        BoardHistoryList returned = SGFParser.parseSgf(
+            restoredSnapshots.get(restoredSnapshots.size() - 1), true);
+        assertArrayEquals(root.stones, returned.getStart().getData().stones);
+        assertFalse(returned.getStart().getData().blackToPlay);
+        assertEquals(10, root.getPlayouts());
 
         navigateForward(env.board(), engine, transport);
         navigateForward(env.board(), engine, transport);
