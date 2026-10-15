@@ -305,22 +305,24 @@ public class ContributeEngine {
     launch.pendingUi++;
     SwingUtilities.invokeLater(
         () -> {
+          Runnable notification = null;
           synchronized (ContributeEngine.this) {
             try {
-              if (active == launch && !stopped && !launch.terminal && !launch.permanent())
-                consumeUiOutput(launch, line, stderr, outputJson);
+              if (ownsOutput(launch) && !launch.terminal && !launch.permanent())
+                notification = consumeUiOutput(launch, line, stderr, outputJson);
             } finally {
               launch.pendingUi--;
             }
           }
+          if (notification != null) notification.run();
         });
   }
 
-  private void consumeUiOutput(Launch launch, String line, boolean stderr, JSONObject json) {
+  private Runnable consumeUiOutput(Launch launch, String line, boolean stderr, JSONObject json) {
     if (json != null) {
       if (json.has("error")) {
         Lizzie.frame.addContributeLine(sanitizer.sanitize(line), !stderr);
-        return;
+        return null;
       }
       if (json.has("gameId")
           && json.has("initialStones")
@@ -336,12 +338,12 @@ public class ContributeEngine {
           startWatchingGameThread();
         }
       }
-      return;
+      return null;
     }
     if (stderr) {
       Lizzie.frame.addContributeLine(sanitizer.sanitize(line), false);
-      parseTips(line, launch.diagnostic);
-    } else parseLine(line, launch.diagnostic);
+      return parseTips(line, launch);
+    } else return parseLine(line, launch);
   }
 
   private void classify(Launch launch, String line) {
@@ -403,16 +405,22 @@ public class ContributeEngine {
     if (!normal && !launch.permanent() && launches < 4) {
       if (launch.failure == Failure.CA_CERTIFICATES && !pureCommand && !addCacerts) {
         addCacerts = true;
-        String executable = commands.get(0);
-        engineCommand +=
-            " -cacerts \""
-                + new File(new File(executable).getAbsoluteFile().getParentFile(), "cacert.pem")
-                + "\"";
+        engineCommand =
+            certificateRecoveryCommand(engineCommand, commands.get(0), useJavaSSH, pureCommand);
       }
       startEngine();
     } else {
       presentWhenCaptured(launch, message, normal);
     }
+  }
+
+  static String certificateRecoveryCommand(
+      String command, String executable, boolean remote, boolean pure) {
+    if (remote || pure) return command;
+    return command
+        + " -cacerts \""
+        + new File(new File(executable).getAbsoluteFile().getParentFile(), "cacert.pem")
+        + "\"";
   }
 
   private synchronized void presentWhenCaptured(Launch launch, String message, boolean normal) {
@@ -455,8 +463,33 @@ public class ContributeEngine {
         });
   }
 
-  private void parseLine(String line, EngineStartupDiagnostics.Attempt launchAttempt) {
-    // TODO Auto-generated method stub
+  private boolean ownsOutput(Launch launch) {
+    return active == launch
+        && !stopped
+        && (Lizzie.frame.contributeEngine == null || Lizzie.frame.contributeEngine == this);
+  }
+
+  private Runnable outputNotification(Launch launch, String message, boolean quitAfterDismissal) {
+    return () -> {
+      synchronized (ContributeEngine.this) {
+        if (!ownsOutput(launch)) return;
+      }
+      // A modal dialog runs a nested EDT loop. Readers and lifecycle cleanup must stay free,
+      // and dismissal must not act on an owner replaced inside that nested loop.
+      Utils.showMsg(message);
+      if (quitAfterDismissal) {
+        synchronized (ContributeEngine.this) {
+          if (!ownsOutput(launch) || launch.terminal || launch.permanent()) return;
+          normalQuit();
+          if (Lizzie.frame.contributeView != null)
+            Lizzie.frame.contributeView.setVisible(false);
+        }
+      }
+    };
+  }
+
+  private Runnable parseLine(String line, Launch launch) {
+    Runnable notification = null;
     // 2022-03-14 09:00:41+0800: KataGo v1.10.0
     if (!getVersion && line.contains("KataGo")) {
       String params[] = line.split(" ");
@@ -467,15 +500,14 @@ public class ContributeEngine {
             int ver1 = Integer.parseInt(version[0].substring(1));
             int ver2 = Integer.parseInt(version[1]);
             if (ver1 <= 1 && ver2 < 11) {
-              Utils.showMsg(
+              notification = outputNotification(
+                  launch,
                   Lizzie.resourceBundle.getString("Contribute.version.outOfDate")
                       + " ("
                       + params[3]
                       + "), "
-                      + Lizzie.resourceBundle.getString("Contribute.version.outOfDate2"));
-              normalQuit();
-              if (Lizzie.frame.contributeView != null)
-                Lizzie.frame.contributeView.setVisible(false);
+                      + Lizzie.resourceBundle.getString("Contribute.version.outOfDate2"),
+                  true);
             }
           } catch (NumberFormatException e) {
             e.printStackTrace();
@@ -515,7 +547,8 @@ public class ContributeEngine {
         }
       }
     }
-    parseTips(line, launchAttempt);
+    Runnable tipNotification = parseTips(line, launch);
+    return notification == null ? tipNotification : notification;
   }
 
   private void setViewGames() {
@@ -529,9 +562,10 @@ public class ContributeEngine {
       Lizzie.frame.contributeView.setGames(finishedGames, playingGames);
   }
 
-  private void parseTips(String line, EngineStartupDiagnostics.Attempt launchAttempt) {
+  private Runnable parseTips(String line, Launch launch) {
+    Runnable notification = null;
     if (STARTING_GAME.matcher(line).matches()) {
-      launchAttempt.ready();
+      launch.diagnostic.ready();
       setTip(Lizzie.resourceBundle.getString("Contribute.tips.startingNewGame"));
     }
     if (line.toLowerCase().contains("predownload")) {
@@ -598,7 +632,8 @@ public class ContributeEngine {
     }
     if (line.contains("Exited cleanly after signal") || line.contains("All cleaned up, quitting")) {
       isNormalEnd = true;
-      Utils.showMsg(Lizzie.resourceBundle.getString("Contribute.tips.exitedAfterSignal"));
+      notification = outputNotification(
+          launch, Lizzie.resourceBundle.getString("Contribute.tips.exitedAfterSignal"), false);
       Menu.engineMenu.setText(Lizzie.resourceBundle.getString("Menu.noEngine"));
       if (Lizzie.frame.contributeView != null) Lizzie.frame.contributeView.exitedAfterSignal();
     }
@@ -608,6 +643,7 @@ public class ContributeEngine {
     if (line.contains("Resuming contribute")) {
       setTip(Lizzie.resourceBundle.getString("Contribute.tips.ResumeHaveSent"), true);
     }
+    return notification;
   }
 
   private boolean hasEternalTip = false;
