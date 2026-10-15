@@ -122,6 +122,9 @@ public class ContributeSettings extends JDialog {
     btnSavedEngine.setToolTipText(savedEngineTip);
     btnSavedEngine.getAccessibleContext().setAccessibleDescription(savedEngineTip);
     btnSavedEngine.addActionListener(e -> chooseSavedEnginePath());
+    // Same as the saved-engine button in AnalysisSettings: no initial focus ring on open.
+    btnSavedEngine.setMargin(new Insets(0, 0, 0, 0));
+    btnSavedEngine.setFocusable(false);
     JPanel savedEngineRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
     savedEngineRow.add(btnSavedEngine);
 
