@@ -809,8 +809,11 @@ public class KataGoAutoSetupHelperTest {
             + "</td></tr></table>";
     try (FixtureServer server = FixtureServer.start(html.getBytes(StandardCharsets.UTF_8))) {
       String previous = System.getProperty("lizzie.katago.networks.url");
+      String previousStrongest = System.getProperty("lizzie.katago.strongest.url");
       try {
         System.setProperty("lizzie.katago.networks.url", server.url());
+        // The fixture answers HTML, so the strongest API is unusable and catalog rows remain.
+        System.setProperty("lizzie.katago.strongest.url", server.url());
         List<KataGoAutoSetupHelper.RemoteWeightInfo> weights =
             KataGoAutoSetupHelper.fetchOfficialWeights();
         assertEquals(3, weights.size());
@@ -821,6 +824,7 @@ public class KataGoAutoSetupHelperTest {
         assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SIZE_BYTES, b11.sizeBytes);
       } finally {
         restoreProperty("lizzie.katago.networks.url", previous);
+        restoreProperty("lizzie.katago.strongest.url", previousStrongest);
       }
     }
   }
@@ -829,8 +833,10 @@ public class KataGoAutoSetupHelperTest {
   void officialTransformerCatalogRemainsAvailableWhenNetworksPageIsOffline() throws Exception {
     try (ErrorFixtureServer server = ErrorFixtureServer.start()) {
       String previous = System.getProperty("lizzie.katago.networks.url");
+      String previousStrongest = System.getProperty("lizzie.katago.strongest.url");
       try {
         System.setProperty("lizzie.katago.networks.url", server.url());
+        System.setProperty("lizzie.katago.strongest.url", server.url());
         List<KataGoAutoSetupHelper.RemoteWeightInfo> weights =
             KataGoAutoSetupHelper.fetchOfficialWeights();
 
@@ -839,8 +845,166 @@ public class KataGoAutoSetupHelperTest {
             weights.stream().allMatch(KataGoAutoSetupHelper.RemoteWeightInfo::isTransformer));
       } finally {
         restoreProperty("lizzie.katago.networks.url", previous);
+        restoreProperty("lizzie.katago.strongest.url", previousStrongest);
       }
     }
+  }
+
+  private static final String STRONGEST_NAME = "kata1-tf3-b11c768-s11003M-d5973M-7gres";
+  private static final String STRONGEST_SHA256 =
+      "93bdb63a3bfae4a70db0cb5265287495ecfc10b1ba1cc6814feeba1cdf055871";
+
+  private static String strongestJson(String name, String modelFile, long bytes, String sha256) {
+    return "{\"name\":\""
+        + name
+        + "\",\"created_at\":\"2026-09-25T02:04:37.536189Z\",\"model_file\":\""
+        + modelFile
+        + "\",\"model_file_bytes\":"
+        + bytes
+        + ",\"model_file_sha256\":\""
+        + sha256
+        + "\"}";
+  }
+
+  private static String officialModelUrl(String name) {
+    return "https://media.katagotraining.org/uploaded/networks/models/kata1/" + name + ".bin.gz";
+  }
+
+  @Test
+  void officialStrongestAcceptsTransformerAndClassicNetworksWithIntegrityMetadata()
+      throws Exception {
+    KataGoAutoSetupHelper.RemoteWeightInfo transformer =
+        KataGoAutoSetupHelper.parseOfficialStrongest(
+            strongestJson(
+                STRONGEST_NAME, officialModelUrl(STRONGEST_NAME), 262039869L, STRONGEST_SHA256));
+    assertTrue(transformer.officialStrongest);
+    assertEquals(STRONGEST_NAME + ".bin.gz", transformer.fileName());
+    assertEquals(262039869L, transformer.sizeBytes);
+    assertEquals(STRONGEST_SHA256, transformer.sha256);
+    assertEquals("2026-09-25", transformer.uploadedAt);
+    assertEquals("1.17.0", transformer.minimumKataGoVersion);
+    assertEquals(KataGoAutoSetupHelper.TransformerTier.UNTIERED, transformer.transformerTier);
+    assertFalse(transformer.recommended);
+    assertTrue(
+        KataGoAutoSetupHelper.resolveRemoteWeightDisplayName(transformer)
+            .endsWith(" · B11 · 2026-09-25"));
+
+    String classicName = "kata1-b28c512nbt-s12763923712-d5805955894";
+    KataGoAutoSetupHelper.RemoteWeightInfo classic =
+        KataGoAutoSetupHelper.parseOfficialStrongest(
+            strongestJson(classicName, officialModelUrl(classicName), 1000L, STRONGEST_SHA256));
+    assertEquals("", classic.minimumKataGoVersion);
+    assertFalse(classic.isTransformer());
+    assertTrue(
+        KataGoAutoSetupHelper.resolveRemoteWeightDisplayName(classic)
+            .endsWith(" · B28 · 2026-09-25"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "unknown-name",
+        "foreign-host",
+        "missing-sha",
+        "zero-size",
+        "not-json",
+      })
+  void officialStrongestRejectsUnrecognizedOrUnverifiableNetworks(String variant) {
+    String body;
+    switch (variant) {
+      case "unknown-name":
+        body =
+            strongestJson(
+                "kata1-zhizi-b28c512nbt-fdx6d",
+                officialModelUrl("kata1-zhizi-b28c512nbt-fdx6d"),
+                1000L,
+                STRONGEST_SHA256);
+        break;
+      case "foreign-host":
+        body =
+            strongestJson(
+                STRONGEST_NAME,
+                "https://example.com/" + STRONGEST_NAME + ".bin.gz",
+                1000L,
+                STRONGEST_SHA256);
+        break;
+      case "missing-sha":
+        body = strongestJson(STRONGEST_NAME, officialModelUrl(STRONGEST_NAME), 1000L, "");
+        break;
+      case "zero-size":
+        body =
+            strongestJson(STRONGEST_NAME, officialModelUrl(STRONGEST_NAME), 0L, STRONGEST_SHA256);
+        break;
+      default:
+        body = "<html>browsable api</html>";
+    }
+    assertThrows(IOException.class, () -> KataGoAutoSetupHelper.parseOfficialStrongest(body));
+  }
+
+  @Test
+  void officialStrongestLeadsCatalogAndTakesOnlineRatingByFile() throws Exception {
+    // Eight preferred families fill the table choices, so the b11 rows are never selected;
+    // pinned rows must still take their rating from the full table.
+    StringBuilder html = new StringBuilder("<table class=\"table mt-3\">");
+    for (String family : List.of("b28", "b40", "b60", "b20", "b18", "b15", "b10", "b6")) {
+      html.append(officialRow(officialModel(family, 1), "2026-06-01", "13000 Elo"));
+    }
+    html.append(officialRow(STRONGEST_NAME, "2026-09-25", "14603.4 Elo"))
+        .append(
+            officialRow(
+                KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_MODEL, "2026-09-25", "14594.3 Elo"))
+        .append("</table>");
+    try (RoutesFixtureServer server =
+        RoutesFixtureServer.start(
+            "/strongest/",
+            strongestJson(
+                STRONGEST_NAME, officialModelUrl(STRONGEST_NAME), 262039869L, STRONGEST_SHA256),
+            "/networks/",
+            html.toString())) {
+      String previous = System.getProperty("lizzie.katago.networks.url");
+      String previousStrongest = System.getProperty("lizzie.katago.strongest.url");
+      try {
+        System.setProperty("lizzie.katago.networks.url", server.url("/networks/"));
+        System.setProperty("lizzie.katago.strongest.url", server.url("/strongest/"));
+        List<KataGoAutoSetupHelper.RemoteWeightInfo> weights =
+            KataGoAutoSetupHelper.fetchOfficialWeights();
+
+        assertEquals(12, weights.size());
+        KataGoAutoSetupHelper.RemoteWeightInfo first = weights.get(0);
+        assertTrue(first.officialStrongest);
+        assertEquals(STRONGEST_NAME, first.modelName);
+        assertEquals("14603.4 Elo", first.eloRating);
+        assertEquals(STRONGEST_SHA256, first.sha256);
+        KataGoAutoSetupHelper.RemoteWeightInfo catalogB11 = weights.get(1);
+        assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_MODEL, catalogB11.modelName);
+        assertEquals(KataGoAutoSetupHelper.TransformerTier.STRONGEST, catalogB11.transformerTier);
+        assertTrue(catalogB11.recommended);
+        assertFalse(catalogB11.officialStrongest);
+        assertEquals("14594.3 Elo", catalogB11.eloRating);
+      } finally {
+        restoreProperty("lizzie.katago.networks.url", previous);
+        restoreProperty("lizzie.katago.strongest.url", previousStrongest);
+      }
+    }
+  }
+
+  @Test
+  void officialStrongestMatchingCatalogFileKeepsPinnedIntegrity() throws Exception {
+    String catalogName = KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_MODEL;
+    KataGoAutoSetupHelper.RemoteWeightInfo strongest =
+        KataGoAutoSetupHelper.parseOfficialStrongest(
+            strongestJson(catalogName, officialModelUrl(catalogName), 1000L, STRONGEST_SHA256));
+
+    List<KataGoAutoSetupHelper.RemoteWeightInfo> rows =
+        KataGoAutoSetupHelper.withOfficialStrongest(
+            KataGoAutoSetupHelper.officialTransformerWeights(), strongest);
+
+    assertEquals(3, rows.size());
+    KataGoAutoSetupHelper.RemoteWeightInfo merged = rows.get(0);
+    assertTrue(merged.officialStrongest);
+    assertEquals(KataGoAutoSetupHelper.TransformerTier.STRONGEST, merged.transformerTier);
+    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SHA256, merged.sha256);
+    assertEquals(KataGoAutoSetupHelper.DEFAULT_TRANSFORMER_SIZE_BYTES, merged.sizeBytes);
   }
 
   @Test
@@ -2711,6 +2875,45 @@ public class KataGoAutoSetupHelperTest {
 
     private String lastRangeHeader() {
       return lastRangeHeader;
+    }
+
+    @Override
+    public void close() {
+      server.stop(0);
+      executor.shutdownNow();
+    }
+  }
+
+  private static final class RoutesFixtureServer implements AutoCloseable {
+    private final HttpServer server;
+    private final ExecutorService executor;
+
+    private RoutesFixtureServer(HttpServer server, ExecutorService executor) {
+      this.server = server;
+      this.executor = executor;
+    }
+
+    private static RoutesFixtureServer start(String... pathAndBody) throws IOException {
+      HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+      ExecutorService executor = Executors.newSingleThreadExecutor();
+      for (int i = 0; i < pathAndBody.length; i += 2) {
+        byte[] bytes = pathAndBody[i + 1].getBytes(StandardCharsets.UTF_8);
+        server.createContext(
+            pathAndBody[i],
+            exchange -> {
+              exchange.sendResponseHeaders(200, bytes.length);
+              try (OutputStream body = exchange.getResponseBody()) {
+                body.write(bytes);
+              }
+            });
+      }
+      server.setExecutor(executor);
+      server.start();
+      return new RoutesFixtureServer(server, executor);
+    }
+
+    private String url(String path) {
+      return "http://127.0.0.1:" + server.getAddress().getPort() + path;
     }
 
     @Override
