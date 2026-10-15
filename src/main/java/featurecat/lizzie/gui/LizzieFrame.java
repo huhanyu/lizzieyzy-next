@@ -20,6 +20,8 @@ import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.EngineRulesResult;
 import featurecat.lizzie.analysis.ForegroundRestoreResult;
 import featurecat.lizzie.analysis.GameInfo;
+import featurecat.lizzie.analysis.HumanSlStrengthPreparation;
+import featurecat.lizzie.analysis.HumanSlStrengthReuseSession;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.analysis.MoveRankDefinition;
@@ -336,6 +338,9 @@ public class LizzieFrame extends JFrame {
   private volatile BoardHistoryNode pendingKifuEngineSyncRoot;
   private Runnable pendingKifuRulesConsent;
   private AutomaticQuickAnalysisTask automaticQuickAnalysisTask;
+  private final HumanSlStrengthPreparation humanSlStrengthPreparation =
+      new HumanSlStrengthPreparation();
+  private javax.swing.Timer humanSlPreparationTimer;
   private BoardHistoryNode automaticQuickAnalysisRoot;
   private AutomaticQuickAnalysisEngineAdapter automaticQuickAnalysisAdapter;
   private volatile boolean userAnalysisPaused;
@@ -1551,6 +1556,7 @@ public class LizzieFrame extends JFrame {
     this.addWindowListener(
         new WindowAdapter() {
           public void windowClosing(WindowEvent e) {
+            stopHumanSlPreparation();
             Lizzie.shutdown();
           }
         });
@@ -1728,6 +1734,8 @@ public class LizzieFrame extends JFrame {
     commentScrollPane.setVisible(false);
     blunderContentPane.setVisible(false);
     installGraphicsConfigurationScaleListener();
+    humanSlPreparationTimer = new javax.swing.Timer(1000, event -> pollHumanSlPreparation());
+    humanSlPreparationTimer.start();
     setVisible(true);
     requestProblemListRefresh();
   }
@@ -10227,6 +10235,7 @@ public class LizzieFrame extends JFrame {
 
   @Override
   public void dispose() {
+    stopHumanSlPreparation();
     cancelPendingSuggestionHoverPreview();
     isMouseOver = false;
     mouseOverCoordinate = outOfBoundCoordinate;
@@ -17203,8 +17212,15 @@ public class LizzieFrame extends JFrame {
       Utils.showMsg(Lizzie.resourceBundle.getString("PlayerStrengthEstimate.needMoreData"), this);
       return;
     }
-    PlayerStrengthEstimator.Report report =
-        PlayerStrengthEstimator.estimate(Lizzie.board.getHistory().getStart());
+    PlayerStrengthEstimator.Report report;
+    if (PlayerStrengthEstimator.activeModel().isHumanSl40()) {
+      report = currentHumanSlReport();
+      if (report == null)
+        report =
+            PlayerStrengthEstimator.estimate(null, PlayerStrengthEstimator.StrengthModel.HUMANSL40);
+    } else {
+      report = PlayerStrengthEstimator.estimate(Lizzie.board.getHistory().getStart());
+    }
     String title = Lizzie.resourceBundle.getString("PlayerStrengthEstimate.title");
     JDialog dialog = new JDialog(this, title, true);
     dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
@@ -17218,7 +17234,117 @@ public class LizzieFrame extends JFrame {
     constrainWindowToAvailableWorkArea(dialog);
     AccessibilitySupport.applyToTree(dialog.getContentPane());
     AccessibilitySupport.installEscapeAction(dialog.getRootPane(), dialog, dialog::dispose);
+    installHumanSlDashboardRefresh(dialog);
     dialog.setVisible(true);
+  }
+
+  public HumanSlStrengthPreparation humanSlStrengthPreparation() {
+    return humanSlStrengthPreparation;
+  }
+
+  private void stopHumanSlPreparation() {
+    if (humanSlPreparationTimer != null) humanSlPreparationTimer.stop();
+    if (humanSlStrengthPreparation != null) humanSlStrengthPreparation.close();
+  }
+
+  public java.util.concurrent.CompletableFuture<Void> shutdownHumanSlPreparation() {
+    stopHumanSlPreparation();
+    return humanSlStrengthPreparation == null
+        ? java.util.concurrent.CompletableFuture.completedFuture(null)
+        : humanSlStrengthPreparation.termination();
+  }
+
+  void pollHumanSlPreparation() {
+    if (Lizzie.board == null || Lizzie.config == null || !isDisplayable()) return;
+    try {
+      boolean foreground =
+          (Lizzie.leelaz != null && Lizzie.leelaz.isPondering())
+              || (analysisEngine != null && analysisEngine.isAnalysisInProgress())
+              || hasActiveAutomaticQuickAnalysis();
+      humanSlStrengthPreparation.observe(
+          HumanSlStrengthReuseSession.preparationSnapshot(),
+          HumanSlStrengthPreparation.backgroundEnabled(),
+          foreground
+              && !EngineGamePresentation.current().startingOrPlaying()
+              && !isPlayingAgainstLeelaz,
+          isUserAnalysisPaused());
+    } catch (RuntimeException unsupportedGame) {
+      humanSlStrengthPreparation.invalidate();
+    }
+  }
+
+  private PlayerStrengthEstimator.Report currentHumanSlReport() {
+    try {
+      return humanSlStrengthPreparation.readyReport(HumanSlStrengthReuseSession.capture());
+    } catch (RuntimeException incomplete) {
+      return null;
+    }
+  }
+
+  private String humanSlPreparationStatus() {
+    var status = humanSlStrengthPreparation.status();
+    String key = status.key();
+    if (key.equals("HumanSL40.needEngine")) key = "HumanSL40.backgroundNeedEngine";
+    else if (key.equals("HumanSL40.failed")
+        || key.equals("HumanSL40.invalidModel")
+        || key.equals("HumanSL40.invalidResponse")) key = "HumanSL40.backgroundFailed";
+    return java.text.MessageFormat.format(
+        Lizzie.resourceBundle.getString(key), status.completed(), status.total());
+  }
+
+  private void installHumanSlDashboardRefresh(JDialog dialog) {
+    final long[] previous = {Long.MIN_VALUE};
+    javax.swing.Timer timer =
+        new javax.swing.Timer(
+            700,
+            event -> {
+              if (!dialog.isDisplayable()) return;
+              JComponent panel = (JComponent) dialog.getContentPane().getComponent(0);
+              Object label = panel.getClientProperty("strength40-status");
+              if (label instanceof JLabel status) status.setText(humanSlPreparationStatus());
+              if (!PlayerStrengthEstimator.activeModel().isHumanSl40()) return;
+              Object selector = panel.getClientProperty("strength40-selector");
+              if (selector instanceof JComboBox<?> combo && combo.isPopupVisible()) return;
+              long stamp = humanSlStrengthPreparation.status().revision();
+              BoardHistoryNode node = Lizzie.board.getHistory().getStart();
+              stamp = 31 * stamp + System.identityHashCode(node);
+              stamp = 31 * stamp + humanSlStrengthPreparation.contextKey().hashCode();
+              for (int i = 0; i <= 210; i++) {
+                var data = node.getData();
+                synchronized (data) {
+                  stamp = 31 * stamp + data.getPlayouts();
+                  stamp = 31 * stamp + Double.doubleToLongBits(data.scoreMean);
+                  stamp = 31 * stamp + Double.doubleToLongBits(data.winrate);
+                  stamp = 31 * stamp + java.util.Objects.hashCode(data.engineName);
+                  stamp = 31 * stamp + System.identityHashCode(data.bestMoves);
+                  stamp = 31 * stamp + System.identityHashCode(data.bestMovesOutOfRange);
+                }
+                var next = node.next(true);
+                if (next.isEmpty()) break;
+                node = next.get();
+              }
+              if (previous[0] == stamp) return;
+              previous[0] = stamp;
+              var ready = currentHumanSlReport();
+              if (ready == null)
+                ready =
+                    PlayerStrengthEstimator.estimate(
+                        null, PlayerStrengthEstimator.StrengthModel.HUMANSL40);
+              dialog.getContentPane().removeAll();
+              dialog
+                  .getContentPane()
+                  .add(buildPlayerStrengthDashboardPanel(dialog, ready), BorderLayout.CENTER);
+              dialog.revalidate();
+              dialog.repaint();
+            });
+    dialog.addWindowListener(
+        new WindowAdapter() {
+          @Override
+          public void windowClosed(WindowEvent event) {
+            timer.stop();
+          }
+        });
+    timer.start();
   }
 
   private JComponent buildPlayerStrengthDashboardPanel(
@@ -17311,13 +17437,15 @@ public class LizzieFrame extends JFrame {
     header.add(titleBlock, BorderLayout.WEST);
     JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 6));
     actionPanel.setOpaque(false);
-    actionPanel.add(
+    JComboBox<PlayerStrengthEstimator.StrengthModel> modelSelector =
         createPlayerStrengthModelCombo(
             report.model,
             () -> {
               owner.dispose();
               SwingUtilities.invokeLater(this::showPlayerStrengthEstimate);
-            }));
+            });
+    root.putClientProperty("strength40-selector", modelSelector);
+    actionPanel.add(modelSelector);
     actionPanel.add(Box.createHorizontalStrut(10));
     actionPanel.add(
         createPlayerStrengthImportModelButton(
@@ -17331,6 +17459,42 @@ public class LizzieFrame extends JFrame {
 
     root.add(header, BorderLayout.NORTH);
     root.add(cards, BorderLayout.CENTER);
+    JPanel preparation = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+    preparation.setOpaque(false);
+    JCheckBox background =
+        new JCheckBox(
+            Lizzie.resourceBundle.getString("HumanSL40.backgroundToggle"),
+            HumanSlStrengthPreparation.backgroundEnabled());
+    background.setName("strength40-background");
+    background.setOpaque(false);
+    background.addActionListener(
+        event -> {
+          try {
+            HumanSlStrengthPreparation.saveBackgroundEnabled(background.isSelected());
+            humanSlStrengthPreparation.resetBackground();
+            pollHumanSlPreparation();
+          } catch (IOException error) {
+            background.setSelected(HumanSlStrengthPreparation.backgroundEnabled());
+            Utils.showMsg(error.getMessage(), owner);
+          }
+        });
+    preparation.add(background);
+    if (report.model.isHumanSl40()) {
+      JButton manual = new JButton(Lizzie.resourceBundle.getString("HumanSL40.manualRun"));
+      manual.setName("strength40-run");
+      manual.addActionListener(
+          event -> {
+            HumanSlStrengthDialog.prepare(this);
+            owner.dispose();
+            SwingUtilities.invokeLater(this::showPlayerStrengthEstimate);
+          });
+      preparation.add(manual);
+    }
+    JLabel state = new JLabel(humanSlPreparationStatus());
+    state.setFont(new Font(Config.sysDefaultFontName, Font.PLAIN, Config.frameFontSize - 1));
+    root.putClientProperty("strength40-status", state);
+    preparation.add(state);
+    root.add(preparation, BorderLayout.SOUTH);
     return root;
   }
 
@@ -17351,7 +17515,7 @@ public class LizzieFrame extends JFrame {
           if (selected instanceof PlayerStrengthEstimator.StrengthModel) {
             PlayerStrengthEstimator.StrengthModel model =
                 (PlayerStrengthEstimator.StrengthModel) selected;
-            if (!model.equals(PlayerStrengthEstimator.activeModel())) {
+            if (!model.equals(PlayerStrengthEstimator.activeModel()) || model.isHumanSl40()) {
               PlayerStrengthEstimator.setActiveModel(model);
               refreshAction.run();
             }
@@ -17428,7 +17592,7 @@ public class LizzieFrame extends JFrame {
                 : buildPlayerStrengthAssessmentPanel(report),
             BorderLayout.CENTER);
     detailDialog.setMinimumSize(new Dimension(760, 420));
-    Lizzie.setFrameSize(detailDialog, 900, 460);
+    Lizzie.setFrameSize(detailDialog, 900, report.model.isHumanSl40() ? 540 : 460);
     detailDialog.setLocationRelativeTo(owner);
     AccessibilitySupport.applyToTree(detailDialog.getContentPane());
     AccessibilitySupport.installEscapeAction(
@@ -17451,9 +17615,12 @@ public class LizzieFrame extends JFrame {
     panel.add(cards, BorderLayout.CENTER);
 
     String note =
-        report.hasEnoughData()
-            ? Lizzie.resourceBundle.getString("PlayerStrengthEstimate.reviewOnlyNote")
-            : Lizzie.resourceBundle.getString("PlayerStrengthEstimate.needMoreData");
+        report.model.isHumanSl40()
+            ? Lizzie.resourceBundle.getString(
+                report.hasEnoughData() ? "HumanSL40.reviewNote" : "HumanSL40.unavailable")
+            : report.hasEnoughData()
+                ? Lizzie.resourceBundle.getString("PlayerStrengthEstimate.reviewOnlyNote")
+                : Lizzie.resourceBundle.getString("PlayerStrengthEstimate.needMoreData");
     panel.add(new PlayerStrengthNoteStrip(note), BorderLayout.SOUTH);
     return panel;
   }
@@ -17521,7 +17688,10 @@ public class LizzieFrame extends JFrame {
     panel.add(cards, BorderLayout.CENTER);
     panel.add(
         new PlayerStrengthDetailNoteStrip(
-            Lizzie.resourceBundle.getString("PlayerStrengthEstimate.reviewOnlyNote")),
+            Lizzie.resourceBundle.getString(
+                report.model.isHumanSl40()
+                    ? "HumanSL40.reviewNote"
+                    : "PlayerStrengthEstimate.reviewOnlyNote")),
         BorderLayout.SOUTH);
     return panel;
   }
@@ -17585,6 +17755,17 @@ public class LizzieFrame extends JFrame {
         Lizzie.resourceBundle.getString("PlayerStrengthEstimate.match.overallMatch"),
         report.matchRateText());
 
+    if (report.model.isHumanSl40()) {
+      addPlayerStrengthMetric(
+          metrics,
+          Lizzie.resourceBundle.getString("HumanSL40.difficulty"),
+          report.difficultyText());
+      addPlayerStrengthMetric(
+          metrics,
+          Lizzie.resourceBundle.getString("HumanSL40.coverage"),
+          report.humanSlCoverageText());
+    }
+
     card.add(metrics, BorderLayout.CENTER);
     return card;
   }
@@ -17621,9 +17802,6 @@ public class LizzieFrame extends JFrame {
     String displayName = model.displayName();
     if ("xgboost20tun".equalsIgnoreCase(displayName)) {
       return "XGBoost 20TUN";
-    }
-    if ("xgboost20tun-previous".equalsIgnoreCase(displayName)) {
-      return "XGBoost 20TUN Previous";
     }
     return displayName == null || displayName.trim().isEmpty() ? "-" : displayName.trim();
   }
@@ -17812,6 +17990,7 @@ public class LizzieFrame extends JFrame {
 
   private static int playerStrengthMinimumSegmentSamples(
       PlayerStrengthEstimator.SideReport report) {
+    if (report != null && report.model.isHumanSl40()) return 6;
     int sampleCount = report == null ? 0 : report.sampleCount;
     if (sampleCount < 16) {
       return 3;
@@ -18588,6 +18767,12 @@ public class LizzieFrame extends JFrame {
         double fraction,
         Color color,
         int contentRight) {
+      if (report.model.isHumanSl40()
+          && !report.hasSamples()
+          && !label.equals(Lizzie.resourceBundle.getString("PlayerStrengthEstimate.moves"))) {
+        value = "-";
+        fraction = 0;
+      }
       int labelX = 36;
       int labelWidth = Math.max(120, contentRight - labelX);
       int valueX = labelX;
@@ -18621,7 +18806,10 @@ public class LizzieFrame extends JFrame {
     private void drawRankScalePanel(Graphics2D g2, int x, int y, int width, int height) {
       String[][] rows = playerStrengthRankScaleRows();
       int selected =
-          playerStrengthRankScaleSelectedIndex(report == null ? Double.NaN : report.rankValue);
+          report != null && report.model.isHumanSl40() && !report.hasSamples()
+              ? -1
+              : playerStrengthRankScaleSelectedIndex(
+                  report == null ? Double.NaN : report.rankValue);
       int panelY = y;
       int panelHeight = Math.max(154, height);
       playerStrengthDrawFittedText(
@@ -20261,6 +20449,7 @@ public class LizzieFrame extends JFrame {
     }
 
     private int minimumSegmentSamples(PlayerStrengthEstimator.SideReport report) {
+      if (report.model.isHumanSl40()) return 6;
       if (report.sampleCount < 16) {
         return 3;
       }

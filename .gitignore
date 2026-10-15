@@ -15,6 +15,7 @@ config.txt
 persist
 save/
 gtp_logs/
+analysis_logs/
 .superpowers/
 jcef-bundle/
 

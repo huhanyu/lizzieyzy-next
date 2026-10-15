@@ -1494,8 +1494,8 @@ class LizzieFrameRegressionTest {
         "XGBoost 20TUN",
         displayName.invoke(null, PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN));
     assertEquals(
-        "XGBoost 20TUN Previous",
-        displayName.invoke(null, PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN_PREVIOUS));
+        "HumanSL 40",
+        displayName.invoke(null, PlayerStrengthEstimator.StrengthModel.HUMANSL40));
   }
 
   @Test
