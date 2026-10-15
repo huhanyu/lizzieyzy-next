@@ -92,9 +92,9 @@ public final class HumanSlStrengthPreparation implements AutoCloseable {
   }
 
   public static boolean backgroundEnabled() {
-    return Lizzie.config == null
-        || Lizzie.config.uiConfig == null
-        || Lizzie.config.uiConfig.optBoolean(BACKGROUND_KEY, true);
+    return Lizzie.config != null
+        && Lizzie.config.uiConfig != null
+        && Lizzie.config.uiConfig.optBoolean(BACKGROUND_KEY, false);
   }
 
   public static void saveBackgroundEnabled(boolean enabled) throws IOException {

@@ -389,8 +389,14 @@ public final class HumanSlStrengthReuseSession {
             "logDir=" + cache.resolve("engine-logs"),
             "-quit-without-waiting");
     return command.stream()
-        .map(s -> "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+        .map(HumanSlStrengthReuseSession::quoteCommandArgument)
         .collect(Collectors.joining(" "));
+  }
+
+  static String quoteCommandArgument(String argument) {
+    // Utils.splitCommand is not a shell: backslashes are literal, including Windows paths.
+    // Alternate quote groups for a literal double quote instead of adding an escape character.
+    return "\"" + argument.replace("\"", "\"'\"'\"") + "\"";
   }
 
   public static String fingerprint(Path engine, Path cache) throws IOException {

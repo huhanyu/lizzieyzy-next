@@ -17281,13 +17281,19 @@ public class LizzieFrame extends JFrame {
           (Lizzie.leelaz != null && Lizzie.leelaz.isPondering())
               || (analysisEngine != null && analysisEngine.isAnalysisInProgress())
               || hasActiveAutomaticQuickAnalysis();
+      boolean reserved =
+          EngineGamePresentation.current().startingOrPlaying()
+              || isPlayingAgainstLeelaz
+              || isAnaPlayingAgainstLeelaz
+              || humanSlGame != null
+              || isContributing
+              || featurecat.lizzie.fox.FoxLiveSession.isActive()
+              || (Lizzie.leelaz != null && Lizzie.leelaz.hasExclusiveGtpWorkInProgress());
       humanSlStrengthPreparation.observe(
           HumanSlStrengthReuseSession.preparationSnapshot(),
           HumanSlStrengthPreparation.backgroundEnabled(),
-          foreground
-              && !EngineGamePresentation.current().startingOrPlaying()
-              && !isPlayingAgainstLeelaz,
-          isUserAnalysisPaused());
+          foreground && !reserved,
+          isUserAnalysisPaused() || reserved);
     } catch (RuntimeException unsupportedGame) {
       humanSlStrengthPreparation.invalidate();
     }

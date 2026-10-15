@@ -17,7 +17,8 @@ ordinary analysis, not a private game or model-accuracy benchmark.
 Selecting the model **never starts an engine, download prompt or progress dialog**.
 Use **Run HumanSL supplement** to explicitly open progress and prepare missing
 data. Completed background data are displayed without a progress window.
-The **Background HumanSL** checkbox is on by default and persisted per profile.
+The **Background HumanSL** checkbox is off by default and persisted per profile;
+enable it explicitly if spare local GPU capacity is available.
 While ordinary foreground pondering or game analysis is active, the background
 queue silently prefetches all main-line HumanSL policies, including moves after
 210. The 40-feature estimator still uses only the first 210 moves and current
@@ -28,7 +29,8 @@ search thread, enabling KataGo cross-position batching. It does not load an
 ordinary judge or repeat ordinary searches. Manual and background work share a
 single-owner queue: manual work retires the background attempt, waits for its
 worker to close, then resumes missing cache entries. Changing games/rules,
-disabling the checkbox, pausing ordinary analysis, or closing the app cancels
+disabling the checkbox, pausing ordinary analysis, entering a reserved game or
+engine task, or closing the app cancels
 background work and retains completed private cache entries. Turning background
 off does not cancel an explicitly requested manual job. Normal foreground
 completion permits an already-started background batch to finish. A failed

@@ -27,6 +27,23 @@ import org.junit.jupiter.api.io.TempDir;
 class HumanSlStrengthReuseSessionTest {
   @TempDir Path cache;
 
+  @Test
+  void policyArgumentsRoundTripWindowsAndQuotedPathsWithoutShellEscaping() {
+    for (String argument :
+        List.of(
+            "C:\\Program Files\\KataGo\\katago.exe",
+            "\\\\server\\shared models\\human.bin.gz",
+            "logDir=C:\\Users\\player\\engine logs",
+            "C:\\Users\\棋手\\模型\\human.bin.gz",
+            "/tmp/player's \"model\"/katago",
+            "")) {
+      assertEquals(
+          List.of(argument),
+          featurecat.lizzie.util.Utils.splitCommand(
+              HumanSlStrengthReuseSession.quoteCommandArgument(argument)));
+    }
+  }
+
   static JSONArray base(int positions) {
     JSONArray base = new JSONArray();
     for (int i = 0; i < positions; i++)

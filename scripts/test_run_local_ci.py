@@ -124,6 +124,15 @@ class RunLocalCiTest(unittest.TestCase):
         self.assertIn(script, run_local_ci.PY_COMPILE_FILES)
         self.assertIn("scripts/summarize_measured_analysis.py", run_local_ci.PY_COMPILE_FILES)
 
+    def test_desktop_plan_selects_all_required_classes(self):
+        steps = run_local_ci.build_steps("portable", "mvn", None, None, "desktop")
+        self.assertEqual(1, len(steps))
+        selection = next(arg for arg in steps[0].command if arg.startswith("-Dtest="))
+        selected = set(selection.removeprefix("-Dtest=").split(","))
+        required = {name.rsplit(".", 1)[-1] for name, _ in run_local_ci.DESKTOP_REQUIRED_TESTS}
+        self.assertEqual(required, selected)
+        self.assertTrue({"CheckUpdateDialogTest", "UpdatePauseRecoveryTest"} <= selected)
+
     def test_engine_process_plan_selects_exact_required_methods(self):
         steps = run_local_ci.build_steps(
             "portable", "mvn", None, None, "engine-process"

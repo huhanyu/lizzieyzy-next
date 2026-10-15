@@ -85,7 +85,7 @@ class UpdatePauseRecoveryTest {
             button(platform, "WindowsUpdate.btnPause", "Pause").doClick();
             assertTrue(control.isPaused());
             assertEquals("PAUSED", c.state().download().phase().name());
-            assertTrue(status(platform).contains("paused"));
+            assertTrue(status(platform).contains(pausedMessage()));
             assertTrue(button(platform, "WindowsUpdate.btnResume", "Resume").isEnabled());
             // A transfer event queued before the click must not erase the paused state.
             listener.onProgress(progress(ResumableDownloader.State.DOWNLOADING));
@@ -97,7 +97,7 @@ class UpdatePauseRecoveryTest {
             CheckUpdateDialog page = new CheckUpdateDialog(null, c);
             views.add(page);
             page.setVisible(true);
-            assertTrue(status(page).contains("paused"));
+            assertTrue(status(page).contains(pausedMessage()));
             assertTrue(c.busy());
             assertFalse(c.checkManually(c.state().selection()));
             c.retryDownload();
@@ -110,7 +110,7 @@ class UpdatePauseRecoveryTest {
             // A stale transport PAUSED event cannot revert the explicit resume command.
             listener.onProgress(progress(ResumableDownloader.State.PAUSED));
             drain(edt);
-            assertFalse(status(page).contains("paused"));
+            assertFalse(status(page).contains(pausedMessage()));
             button(page, "WindowsUpdate.btnPause", "Pause").doClick();
             assertTrue(control.isPaused());
             JDialog recoveredPlatform = platform(windows, c, offer);
@@ -118,7 +118,7 @@ class UpdatePauseRecoveryTest {
             recoveredPlatform.setVisible(true);
             button(recoveredPlatform, "WindowsUpdate.btnResume", "Resume").doClick();
             assertFalse(control.isPaused());
-            assertFalse(status(page).contains("paused"));
+            assertFalse(status(page).contains(pausedMessage()));
             if (manual) {
               c.disableAutomaticDownload();
               c.invalidateAutomatic();
@@ -167,6 +167,11 @@ class UpdatePauseRecoveryTest {
         Lizzie.config = previous;
       }
     });
+  }
+
+  private static String pausedMessage() {
+    return UpdateText.tr("WindowsUpdate.status.paused", "下载已暂停，进度已保留。",
+        "Download paused. Progress is preserved.");
   }
 
   private static JDialog platform(boolean windows, UpdateCheckCoordinator coordinator, UpdateCheckResult offer) {

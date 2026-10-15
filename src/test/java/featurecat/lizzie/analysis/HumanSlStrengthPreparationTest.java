@@ -77,12 +77,12 @@ class HumanSlStrengthPreparationTest {
   }
 
   @Test
-  void backgroundDefaultsOnAndPreferenceIsSaved() throws Exception {
+  void backgroundRequiresOptInAndPreferenceIsSaved() throws Exception {
     var previous = Lizzie.config;
     try {
       java.nio.file.Files.createDirectories(cache.resolve("save"));
       Lizzie.config = ConfigTestHelper.createBootstrapped(cache);
-      assertTrue(HumanSlStrengthPreparation.backgroundEnabled());
+      assertFalse(HumanSlStrengthPreparation.backgroundEnabled());
       HumanSlStrengthPreparation.saveBackgroundEnabled(false);
       assertFalse(HumanSlStrengthPreparation.backgroundEnabled());
       HumanSlStrengthPreparation.saveBackgroundEnabled(true);
