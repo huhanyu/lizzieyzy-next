@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Add "Configured Engines..." to KataGo distributed training settings: choose a saved local engine to fill in only its executable path (normalized and quoted as one argument). Analysis arguments, models and configs are not copied; selection does not save, launch or switch engines. The saved path is a snapshot that later engine-list edits do not change. Remote, launcher, script, empty and missing-file entries are shown with a reason and cannot be filled; listing an engine does not mean it supports contribution.
 - Use cancellable, visits-bounded searches for eligible built-in Zhizi automatic game analysis after checking capabilities. Accept complete natural results without per-position stop commands, and restore borrowed search parameters, rules and the latest board before cancellation or manual handoff releases the engine. Other engines and unsupported sessions retain their existing analysis path.
 - Set eligible Zhizi finite searches to a 10000-centisecond output interval so natural completion exposes the completed root budget. Keep continuous-analysis intervals, visit budgets, terminal validation and recovery unchanged.
 - Complete failed Zhizi search-parameter restoration outside engine arbitration so concurrent snapshot navigation can return and the borrowed engine is marked unavailable exactly once.

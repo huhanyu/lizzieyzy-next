@@ -1,8 +1,10 @@
 package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.util.SavedEnginePathResolver;
 import featurecat.lizzie.util.Utils;
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -10,6 +12,7 @@ import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.URI;
+import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JDialog;
@@ -36,6 +39,7 @@ public class ContributeSettings extends JDialog {
   private JCheckBox chkIgnoreSettings;
   // private JCheckBox chkSlowShutdown;
   private JButton btnRemoteSetting;
+  private JButton btnSavedEngine;
   private JDialog thisDialog = this;
 
   public ContributeSettings(Window owner) {
@@ -107,15 +111,29 @@ public class ContributeSettings extends JDialog {
     btnScanEngine.setToolTipText(engineTip);
 
     txtEnginePath = new JFontTextField();
+    txtEnginePath.setColumns(10);
+    txtEnginePath.setToolTipText(engineTip);
+    txtEnginePath.setText(Lizzie.config.contributeEnginePath);
+
+    // A separate row keeps the path field and Browse untouched.
+    String savedEngineTip = Lizzie.resourceBundle.getString("ContributeSettings.savedEngineTip");
+    btnSavedEngine =
+        new JFontButton(Lizzie.resourceBundle.getString("ContributeSettings.btnSavedEngine"));
+    btnSavedEngine.setToolTipText(savedEngineTip);
+    btnSavedEngine.getAccessibleContext().setAccessibleDescription(savedEngineTip);
+    btnSavedEngine.addActionListener(e -> chooseSavedEnginePath());
+    JPanel savedEngineRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    savedEngineRow.add(btnSavedEngine);
+
+    JPanel enginePathPanel = new JPanel(new BorderLayout(0, 2));
+    enginePathPanel.add(txtEnginePath, BorderLayout.CENTER);
+    enginePathPanel.add(savedEngineRow, BorderLayout.SOUTH);
     GridBagConstraints gbc_txtEngineFile = new GridBagConstraints();
     gbc_txtEngineFile.fill = GridBagConstraints.BOTH;
     gbc_txtEngineFile.insets = new Insets(0, 0, 5, 0);
     gbc_txtEngineFile.gridx = 1;
     gbc_txtEngineFile.gridy = 0;
-    mainPanel.add(txtEnginePath, gbc_txtEngineFile);
-    txtEnginePath.setColumns(10);
-    txtEnginePath.setToolTipText(engineTip);
-    txtEnginePath.setText(Lizzie.config.contributeEnginePath);
+    mainPanel.add(enginePathPanel, gbc_txtEngineFile);
 
     JPanel configFilePanel = new JPanel();
     GridBagConstraints gbc_configFilePanel = new GridBagConstraints();
@@ -179,6 +197,7 @@ public class ContributeSettings extends JDialog {
             txtEnginePath.setEnabled(!useCommand);
             txtConfigPath.setEnabled(!useCommand);
             btnScanEngine.setEnabled(!useCommand);
+            btnSavedEngine.setEnabled(!useCommand);
             btnScanConfig.setEnabled(!useCommand);
             setAferSets(chkUseCommand.isSelected() && chkIgnoreSettings.isSelected());
           }
@@ -223,6 +242,7 @@ public class ContributeSettings extends JDialog {
     txtEnginePath.setEnabled(!Lizzie.config.contributeUseCommand);
     txtConfigPath.setEnabled(!Lizzie.config.contributeUseCommand);
     btnScanEngine.setEnabled(!Lizzie.config.contributeUseCommand);
+    btnSavedEngine.setEnabled(!Lizzie.config.contributeUseCommand);
     btnScanConfig.setEnabled(!Lizzie.config.contributeUseCommand);
 
     chkIgnoreSettings =
@@ -473,6 +493,21 @@ public class ContributeSettings extends JDialog {
     setAferSets(Lizzie.config.contributeUseCommand && Lizzie.config.contributeUsePureCommand);
     pack();
     setLocationRelativeTo(owner);
+  }
+
+  /** Fills only the path field; nothing is saved, launched or switched until Save/Start. */
+  private void chooseSavedEnginePath() {
+    List<EngineData> engines = Utils.getEngineData();
+    if (engines.isEmpty()) {
+      Utils.showMsg(
+          Lizzie.resourceBundle.getString("ContributeSettings.savedEngine.empty"), thisDialog);
+      return;
+    }
+    SavedEnginePathResolver.Candidate chosen =
+        SavedEnginePathChooser.choose(thisDialog, SavedEnginePathResolver.resolveAll(engines));
+    if (chosen != null) {
+      txtEnginePath.setText(chosen.fieldText());
+    }
   }
 
   private void setAferSets(boolean ignore) {
