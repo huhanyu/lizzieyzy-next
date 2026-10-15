@@ -56,6 +56,7 @@ final class UpdateCheckCoordinator {
   private boolean startupConsumed;
   private boolean startupCaptured;
   private UpdateCheckSelection startupSelection;
+  private boolean automaticCheck;
   private boolean inFlight;
   private boolean automaticInvalidated;
   private boolean presentingOffer;
@@ -93,9 +94,15 @@ final class UpdateCheckCoordinator {
   void captureStartupPolicy(boolean enabled, boolean download, UpdateCheckSelection selection) {
     if (startupCaptured) return;
     startupCaptured = true;
+    automaticCheck = enabled;
     startupSelection = enabled ? selection : null;
     automaticDownload = enabled && download;
   }
+
+  /** This run's startup authority; re-enabling a revoked or new option only applies next launch. */
+  boolean automaticCheckActive() { return automaticCheck; }
+
+  boolean automaticDownloadActive() { return automaticDownload; }
 
   void applicationReady() {
     if (startupConsumed) return;
@@ -115,6 +122,12 @@ final class UpdateCheckCoordinator {
     prepared = null;
     automaticInvalidated = true;
     publish(new State(inFlight, Origin.AUTOMATIC, null, null));
+  }
+
+  void disableAutomaticCheck() {
+    automaticCheck = false;
+    automaticDownload = false;
+    invalidateAutomatic();
   }
 
   void disableAutomaticDownload() {

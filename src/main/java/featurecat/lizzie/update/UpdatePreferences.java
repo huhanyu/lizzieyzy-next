@@ -31,7 +31,7 @@ final class UpdatePreferences {
     Lizzie.config.uiConfig.put(AUTO_CHECK, enabled);
     if (!enabled) {
       Lizzie.config.uiConfig.put(AUTO_DOWNLOAD, false);
-      WindowsUpdateController.automaticPolicyChanged();
+      WindowsUpdateController.automaticCheckDisabled();
     }
     save();
   }
