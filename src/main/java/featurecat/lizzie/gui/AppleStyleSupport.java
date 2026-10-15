@@ -644,7 +644,7 @@ public final class AppleStyleSupport {
     return isAppleStyleEnabled() ? new Color(37, 76, 69) : new Color(226, 241, 236);
   }
 
-  static Color workspaceSuccess() {
+  public static Color workspaceSuccess() {
     return isAppleStyleEnabled() ? new Color(125, 215, 173) : new Color(25, 107, 73);
   }
 
@@ -652,7 +652,7 @@ public final class AppleStyleSupport {
     return isAppleStyleEnabled() ? new Color(239, 194, 112) : new Color(131, 78, 17);
   }
 
-  static Color workspaceError() {
+  public static Color workspaceError() {
     return isAppleStyleEnabled() ? new Color(246, 160, 151) : new Color(170, 51, 51);
   }
 

@@ -104,6 +104,11 @@ public final class KataGoRules {
     return fields.containsKey(name);
   }
 
+  /** Unmodifiable normalized fields, keyed by KataGo rule name. */
+  public Map<String, Object> fields() {
+    return fields;
+  }
+
   public String string(String name) {
     Object value = fields.get(name);
     return value == null ? "" : String.valueOf(value);

@@ -1019,10 +1019,14 @@ public class LizzieFrame extends JFrame {
             new ActionListener() {
               public void actionPerformed(ActionEvent evt) {
                 if (listTable.isVisible()) {
-                  if (!Lizzie.board.getHistory().getData().bestMoves.isEmpty()) {
-                    if (scoreColumnIsHidden && Lizzie.board.getHistory().getData().isKataData)
+                  List<MoveData> displayedMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
+                      ? getBestMoves() : Lizzie.board.getHistory().getData().bestMoves;
+                  if (!displayedMoves.isEmpty()) {
+                    boolean kataData = featurecat.lizzie.fox.FoxLiveSession.isActive()
+                        ? displayedMoves.get(0).isKataData : Lizzie.board.getHistory().getData().isKataData;
+                    if (scoreColumnIsHidden && kataData)
                       resumColumn(5, listTable, listTableColum5Width);
-                    if (!scoreColumnIsHidden && !Lizzie.board.getHistory().getData().isKataData) {
+                    if (!scoreColumnIsHidden && !kataData) {
                       listTableColum5Width = listTable.getColumnModel().getColumn(5).getWidth();
                       hiddenColumn(5, listTable);
                     }
@@ -3141,6 +3145,7 @@ public class LizzieFrame extends JFrame {
   }
 
   public void tryPlay(boolean needRefresh) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (EngineGamePresentation.current().startingOrPlaying()) return;
     if (floatBoard != null && floatBoard.isVisible() && floatBoard.editMode)
       floatBoard.changeEetEditMode();
@@ -3849,6 +3854,7 @@ public class LizzieFrame extends JFrame {
   }
 
   private static void editGameInfo(boolean locateKomi) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (Lizzie.frame != null && Lizzie.frame.isWholeGameAnalysisStartingOrRunning()) {
       Utils.showMsg(Lizzie.resourceBundle.getString("WholeGameAnalysis.conflict.analysis"));
       return;
@@ -3967,6 +3973,7 @@ public class LizzieFrame extends JFrame {
       SwingUtilities.invokeLater(this::openFile);
       return;
     }
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (deferKifuOpenUntilAutomaticQuickAnalysisRestored(this::openFile)) {
       return;
     }
@@ -3995,6 +4002,7 @@ public class LizzieFrame extends JFrame {
   }
 
   boolean importDroppedKifuFiles(Transferable transferable) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     List<File> capturedFiles = new ArrayList<>();
     try {
       Object transferData = transferable.getTransferData(DataFlavor.javaFileListFlavor);
@@ -4022,6 +4030,7 @@ public class LizzieFrame extends JFrame {
   }
 
   private boolean finishDroppedKifuImport(List<File> files) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     try {
       if (files.size() == 1) {
         boolean ponder = Lizzie.leelaz.isPondering() || !Lizzie.leelaz.isLoaded;
@@ -4896,6 +4905,10 @@ public class LizzieFrame extends JFrame {
       }
       return loaded[0];
     }
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) {
+      notifySgfLoadCompletion(completion, false);
+      return false;
+    }
     if (deferUntilHumanSlExit(
         () ->
             loadSgfStringInternal(
@@ -5107,6 +5120,7 @@ public class LizzieFrame extends JFrame {
   }
 
   public boolean loadFile(File file, boolean fromTemp, boolean showHint) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     if (EngineGamePresentation.current().startingOrPlaying()
         || isPlayingAgainstLeelaz
         || isAnaPlayingAgainstLeelaz) {
@@ -8174,6 +8188,10 @@ public class LizzieFrame extends JFrame {
     if (Lizzie.readMode || hasEngineStartupNotice()) {
       return;
     }
+    if (featurecat.lizzie.fox.FoxLiveSession.isBrowsingHistory()) {
+      text1 = Lizzie.resourceBundle.getString(featurecat.lizzie.fox.FoxLiveSession.browsingStatusKey());
+      text2 = Lizzie.resourceBundle.getString("Fox.returnLive");
+    }
     int lineCount = Lizzie.config.userKnownX ? 2 : 3;
     int[][] lines = statusLineBounds(statusAreaTop, currentStatusAreaBottom(), lineCount);
     drawStatusTextInBounds(g, text1, x, lines[0], true);
@@ -9911,6 +9929,8 @@ public class LizzieFrame extends JFrame {
 
   public List<MoveData> getBestMoves() {
     if (Lizzie.board != null && Lizzie.board.isSetupMode()) return new ArrayList<>();
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive())
+      return featurecat.lizzie.fox.FoxLiveSession.displayedCandidates(getDisplayNode());
     List<MoveData> bestMoves;
     if (EngineGamePresentation.current().playing()
         && Lizzie.config.showPreviousBestmovesInEngineGame) {
@@ -14575,7 +14595,8 @@ public class LizzieFrame extends JFrame {
       this.independentMainBoard.setMouseOverCoords(index);
       return;
     }
-    List<MoveData> bestMoves = Lizzie.board.getHistory().getData().bestMoves;
+    List<MoveData> bestMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
+        ? getBestMoves() : Lizzie.board.getHistory().getData().bestMoves;
     if (bestMoves == null || bestMoves.isEmpty()) return;
     if (index >= bestMoves.size()) return;
     if (curSuggestionMoveOrderByNumber == index) {
@@ -14586,9 +14607,7 @@ public class LizzieFrame extends JFrame {
     }
     isMouseOver = true;
     curSuggestionMoveOrderByNumber = index;
-    mouseOverCoordinate =
-        Board.convertNameToCoordinates(
-            Lizzie.board.getHistory().getData().bestMoves.get(index).coordinate);
+    mouseOverCoordinate = Board.convertNameToCoordinates(bestMoves.get(index).coordinate);
     boardRenderer.selectHoveredVariation();
     if (Lizzie.config.isDoubleEngineMode()) boardRenderer2.selectHoveredVariation();
   }
@@ -14657,7 +14676,8 @@ public class LizzieFrame extends JFrame {
         //   int rownum = 0;
         if (isInPlayMode()) return 0;
         data2 = new ArrayList<MoveData>();
-        if (EngineGamePresentation.current().playing()
+        if (featurecat.lizzie.fox.FoxLiveSession.isActive()) bestMoves = getBestMoves();
+        else if (EngineGamePresentation.current().playing()
             && Lizzie.config.showPreviousBestmovesInEngineGame) {
           if (Lizzie.board.getHistory().getCurrentHistoryNode().previous().isPresent())
             if ((bestMoves = Lizzie.leelaz.getBestMoves()).isEmpty())

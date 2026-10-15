@@ -909,7 +909,8 @@ public class IndependentMainBoard extends JFrame {
   }
 
   public void setMouseOverCoords(int index) {
-    List<MoveData> bestMoves = Lizzie.board.getHistory().getData().bestMoves;
+    List<MoveData> bestMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
+        ? Lizzie.frame.getBestMoves() : Lizzie.board.getHistory().getData().bestMoves;
     if (bestMoves == null || bestMoves.isEmpty()) return;
     if (index >= bestMoves.size()) return;
     if (curSuggestionMoveOrderByNumber == index) {
@@ -920,9 +921,7 @@ public class IndependentMainBoard extends JFrame {
     }
     curSuggestionMoveOrderByNumber = index;
     isMouseOver = true;
-    mouseOverCoordinate =
-        Board.convertNameToCoordinates(
-            Lizzie.board.getHistory().getData().bestMoves.get(index).coordinate);
+    mouseOverCoordinate = Board.convertNameToCoordinates(bestMoves.get(index).coordinate);
     boardRenderer.selectHoveredVariation();
   }
 

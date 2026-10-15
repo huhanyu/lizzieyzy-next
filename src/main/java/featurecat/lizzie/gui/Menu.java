@@ -4182,7 +4182,6 @@ public class Menu extends JMenuBar {
     live.setForeground(MorandiPalette.MENU_ITEM_TEXT);
     // live.setFont(headFont);
     this.add(live);
-
     final JFontMenuItem yikeLive =
         new JFontMenuItem(resourceBundle.getString("Menu.yikeLive")); // ("弈客直播(Shift+O)");
     yikeLive.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.SHIFT_DOWN_MASK));
@@ -4219,6 +4218,10 @@ public class Menu extends JMenuBar {
                 true);
           }
         });
+
+    final JFontMenuItem foxAi = new JFontMenuItem(resourceBundle.getString("Fox.title"));
+    foxAi.addActionListener(e -> featurecat.lizzie.fox.FoxLiveSession.showDialog());
+    live.add(foxAi);
 
     final JFontMenuItem foxKifu =
         new JFontMenuItem(resourceBundle.getString("Menu.foxKifu")); // ("野狐(腾讯)棋谱");
@@ -5950,6 +5953,7 @@ public class Menu extends JMenuBar {
           @Override
           public void keyReleased(KeyEvent e) {
             String text = txtPDA.getText().trim();
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(text)) return;
             if (text.isEmpty() || text.equals("-") || text.equals(".")) return;
             try {
               double value = Double.parseDouble(text);
@@ -6172,6 +6176,7 @@ public class Menu extends JMenuBar {
     chkWRN.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
+            if (!breadthAdmissionAvailable()) return;
             Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
             if (chkWRN.isSelected()) {
               txtWRN.setEnabled(true);
@@ -6223,7 +6228,7 @@ public class Menu extends JMenuBar {
     dt3.addDocumentListener(
         new DocumentListener() {
           public void insertUpdate(DocumentEvent e) {
-            if (ShouldIgnoreDtChange) return;
+            if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
             double wrn = 0;
             boolean error = false;
             try {
@@ -6251,7 +6256,7 @@ public class Menu extends JMenuBar {
           }
 
           public void removeUpdate(DocumentEvent e) {
-            if (ShouldIgnoreDtChange) return;
+            if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
             double wrn = 0;
             boolean error = false;
             try {
@@ -6279,7 +6284,7 @@ public class Menu extends JMenuBar {
           }
 
           public void changedUpdate(DocumentEvent e) {
-            if (ShouldIgnoreDtChange) return;
+            if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
             double wrn = 0;
             boolean error = false;
             try {
@@ -6312,6 +6317,11 @@ public class Menu extends JMenuBar {
     chkPDA.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(
+                chkPDA.isSelected() ? txtGfPDA.getText() : "0")) {
+              txtGfPDA.setEnabled(chkPDA.isSelected());
+              return;
+            }
             // Lizzie.board.clearbestmovesafter(Lizzie.board.getHistory().getStart());
             if (chkPDA.isSelected()) {
               txtGfPDA.setEnabled(true);
@@ -6359,6 +6369,7 @@ public class Menu extends JMenuBar {
         new DocumentListener() {
           public void insertUpdate(DocumentEvent e) {
             if (ShouldIgnoreDtChange) return;
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
             double pda = 0;
             boolean error = false;
             try {
@@ -6384,6 +6395,7 @@ public class Menu extends JMenuBar {
 
           public void removeUpdate(DocumentEvent e) {
             if (ShouldIgnoreDtChange) return;
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
             double pda = 0;
             boolean error = false;
             try {
@@ -6409,6 +6421,7 @@ public class Menu extends JMenuBar {
 
           public void changedUpdate(DocumentEvent e) {
             if (ShouldIgnoreDtChange) return;
+            if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
             double pda = 0;
             boolean error = false;
             try {
@@ -9917,6 +9930,19 @@ public class Menu extends JMenuBar {
     // Lizzie.frame.reSetLoc();
   }
 
+  private boolean breadthAdmissionAvailable() {
+    return !featurecat.lizzie.fox.FoxLiveSession.ownsEngine()
+        && Lizzie.leelaz != null
+        && Lizzie.leelaz.previewExclusiveGtpLeaseAvailability()
+            == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE;
+  }
+
+  public void refreshBreadthAdmission() {
+    boolean available = breadthAdmissionAvailable();
+    chkWRN.setEnabled(available);
+    txtWRN.setEnabled(available && chkWRN.isSelected());
+  }
+
   public void setPdaAndWrn(double pda, double wrn) {
     ShouldIgnoreDtChange = true;
     if (pda == 0) {
@@ -9938,6 +9964,7 @@ public class Menu extends JMenuBar {
       txtWRN.setEnabled(true);
     }
     ShouldIgnoreDtChange = false;
+    refreshBreadthAdmission();
   }
 
   public void setPdaAndWrnByEngineForDouble() {
@@ -11091,7 +11118,7 @@ public class Menu extends JMenuBar {
     txtWRN.setText(String.valueOf(wrn));
     ShouldIgnoreDtChange = false;
     chkWRN.setSelected(use);
-    txtWRN.setEnabled(use);
+    refreshBreadthAdmission();
   }
 
   public void setUseGfPda(boolean use, String pda) {

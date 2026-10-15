@@ -926,6 +926,7 @@ public class Board {
    * @param size
    */
   public void reopen(int width, int height) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     width = (width >= 2) ? width : 19;
     height = (height >= 2) ? height : 19;
 
@@ -951,6 +952,7 @@ public class Board {
   }
 
   public void reopenOnlyBoard(int width, int height) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     width = (width >= 2) ? width : 19;
     height = (height >= 2) ? height : 19;
 
@@ -1064,6 +1066,7 @@ public class Board {
    * @param color the type of stone to place
    */
   public void addStone(int x, int y, Stone color) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     synchronized (this) {
       if (!isValid(x, y) || history.getStones()[getIndex(x, y)] != Stone.EMPTY) return;
 
@@ -1086,6 +1089,7 @@ public class Board {
    * @param color the type of stone to place
    */
   public void removeStone(int x, int y, Stone color) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     synchronized (this) {
       if (!isValid(x, y) || history.getStones()[getIndex(x, y)] == Stone.EMPTY) return;
 
@@ -1110,6 +1114,7 @@ public class Board {
 
   /** Updates the starting-position setup mode used by the UI input router. */
   public void setSetupMode(boolean setupMode) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     this.setupMode = setupMode;
   }
 
@@ -1132,6 +1137,7 @@ public class Board {
 
   /** Places or replaces a setup stone without applying capture, ko, or suicide rules. */
   public boolean setupPlaceStone(int x, int y, Stone color) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     synchronized (this) {
       if (!isValid(x, y) || color == null || !(color.isBlack() || color.isWhite())) {
         return false;
@@ -1161,6 +1167,7 @@ public class Board {
 
   /** Erases only the selected setup stone from the root starting position. */
   public boolean setupEraseStone(int x, int y) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     synchronized (this) {
       if (!isValid(x, y)) {
         return false;
@@ -1186,6 +1193,7 @@ public class Board {
 
   /** Clears all setup stones while preserving game metadata and the selected side to play. */
   public boolean setupClearAll() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     synchronized (this) {
       BoardHistoryNode root = rootSetupNode();
       if (root == null) {
@@ -1215,6 +1223,7 @@ public class Board {
 
   /** Sets which color plays first from the edited starting position. */
   public boolean setupSetSideToPlay(boolean blackToPlay) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     synchronized (this) {
       BoardHistoryNode root = rootSetupNode();
       if (root == null) {
@@ -2593,6 +2602,7 @@ public class Board {
   }
 
   public void pass(Stone color, boolean newBranch, boolean dummy, boolean changeMove) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     synchronized (this) {
       if (setupMode) {
         return;
@@ -2700,11 +2710,13 @@ public class Board {
   }
 
   private void modifyStart() {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) return;
     if (Lizzie.leelaz != null) Lizzie.leelaz.modifyStart();
     if (Lizzie.config.isDoubleEngineMode() && Lizzie.leelaz2 != null) Lizzie.leelaz2.modifyStart();
   }
 
   private void modifyEnd() {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) return;
     if (Lizzie.leelaz != null) Lizzie.leelaz.setModifyEnd();
     if (Lizzie.config.isDoubleEngineMode() && Lizzie.leelaz2 != null) Lizzie.leelaz2.setModifyEnd();
   }
@@ -2722,6 +2734,7 @@ public class Board {
       boolean forSync,
       boolean forManual,
       boolean sendReadBoardPlaceOnHistoryNext) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     boolean shouldLogLocalMovePlace = shouldLogLocalMovePlace(forSync);
     if (shouldLogLocalMovePlace) {
       logLocalMovePlace(
@@ -3232,6 +3245,7 @@ public class Board {
 
   /** for handicap */
   public void flatten() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     synchronized (this) {
       Stone[] stones = history.getStones();
       boolean blackToPlay = history.isBlacksTurn();
@@ -3265,6 +3279,7 @@ public class Board {
    * @return {@code true} when the requested fixed handicap was applied
    */
   public boolean setupFixedHandicap(int handicap) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     synchronized (this) {
       int[][] points = fixedHandicapPoints(handicap);
       if (boardWidth != 19 || boardHeight != 19 || points.length == 0) {
@@ -3942,6 +3957,7 @@ public class Board {
   }
 
   public void navigateToNode(BoardHistoryNode targetNode) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return;
     if (targetNode == null || engineGamePlaying()) {
       return;
     }
@@ -4199,7 +4215,8 @@ public class Board {
   }
 
   private boolean shouldForwardHistoryNavigationToPrimaryEngine() {
-    return !isCollectingReadBoardSync()
+    return !featurecat.lizzie.fox.FoxLiveSession.isActive()
+        && !isCollectingReadBoardSync()
         && !isLoadingFile
         && !isEngineAlignmentPending()
         && isPrimaryEngineReady();
@@ -4293,6 +4310,7 @@ public class Board {
 
   private HistoryNavigationMutation moveHistoryForward(
       BoardHistoryList expectedHistory, BoardHistoryNode expectedChild) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return HistoryNavigationMutation.NOT_MOVED;
     markMoveNavigationForMovelistRefresh();
     synchronized (this) {
       if (expectedHistory != null && history != expectedHistory) {
@@ -4640,6 +4658,7 @@ public class Board {
   }
 
   public boolean goToMoveNumberHelper(int moveNumber, boolean withinBranch) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return false;
     if (engineGamePlaying()) return false;
     if (Lizzie.config.noRefreshOnMouseMove) {
       LizzieFrame.boardRenderer.clearBranch();
@@ -4670,6 +4689,7 @@ public class Board {
 
   /** Goes to the next variation, thread safe */
   public boolean nextVariation(int idx) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return false;
     synchronized (this) {
       modifyStart();
       updateWinrate();
@@ -4805,8 +4825,11 @@ public class Board {
    * @return void
    */
   public void moveToAnyPosition(BoardHistoryNode targetNode) {
-    if (isCollectingReadBoardSync() || isEngineAlignmentPending() || isLoadingFile) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return;
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()
+        || isCollectingReadBoardSync() || isEngineAlignmentPending() || isLoadingFile) {
       synchronized (this) {
+        if (targetNode == null || !belongsToCurrentHistory(targetNode)) return;
         if (history.getCurrentHistoryNode() == targetNode) return;
         if (Lizzie.leelaz != null) updateWinrate();
         history.setHead(targetNode);
@@ -4822,6 +4845,7 @@ public class Board {
 
   /** Updates the authoritative ReadBoard position without forwarding commands to its engine owner. */
   public synchronized void applyReadBoardSyncLocally(Runnable localChanges) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     readBoardSyncThread = Thread.currentThread();
     try {
       localChanges.run();
@@ -4858,6 +4882,11 @@ public class Board {
       CompletableFuture<Void> syncConfirmation,
       BoardHistoryNode sourceNode,
       boolean fullRestore) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) {
+      if (syncConfirmation != null) syncConfirmation.completeExceptionally(
+          new IllegalStateException("Fox owns board synchronization"));
+      return;
+    }
     if (engineGamePlaying()) {
       if (syncConfirmation != null)
         syncConfirmation.completeExceptionally(
@@ -5054,6 +5083,7 @@ public class Board {
   }
 
   public void deleteMove() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     EngineForwardingPlan forwarding = EngineForwardingPlan.none();
     synchronized (this) {
       BoardHistoryNode currentNode = history.getCurrentHistoryNode();
@@ -5097,6 +5127,7 @@ public class Board {
   }
 
   public void deleteMoveNoHintAfter() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (!history.getCurrentHistoryNode().next().isPresent()) return;
     saveListForEdit();
     EngineForwardingPlan forwarding = EngineForwardingPlan.none();
@@ -5129,6 +5160,7 @@ public class Board {
   }
 
   public void deleteMoveNoHint() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     EngineForwardingPlan forwarding = EngineForwardingPlan.none();
     synchronized (this) {
       BoardHistoryNode currentNode = history.getCurrentHistoryNode();
@@ -5160,6 +5192,7 @@ public class Board {
   }
 
   public void deleteBranch() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     int originalMoveNumber = history.getMoveNumber();
     undoToChildOfPreviousWithVariation();
     int moveNumberBeforeOperation = history.getMoveNumber();
@@ -5230,6 +5263,7 @@ public class Board {
   }
 
   public void setHistory(BoardHistoryList newList) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     synchronized (this) {
       movelistRefreshGeneration++;
       history = newList;
@@ -5332,6 +5366,7 @@ public class Board {
   }
 
   public boolean setAsMainBranch() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return false;
     if (history.getCurrentHistoryNode().isMainTrunk()) {
       Lizzie.board.clearNodeInfo(Lizzie.board.getHistory().getStart());
       setMovelistAll();
@@ -5396,6 +5431,7 @@ public class Board {
   //	    initializeForPk();
   //	  }
   public void clear(boolean isEngineGame) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     EngineForwardingPlan forwarding;
     synchronized (this) {
       forwarding = clearBoardState(isEngineGame);
@@ -5626,6 +5662,7 @@ public class Board {
   }
 
   public void clearForOnline() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     EngineForwardingPlan forwarding;
     synchronized (this) {
       double komi = Lizzie.leelaz == null ? history.getGameInfo().getKomi() : Lizzie.leelaz.orikomi;
@@ -5656,6 +5693,7 @@ public class Board {
   }
 
   public void clearforedit() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     EngineForwardingPlan forwarding;
     synchronized (this) {
       initialize(false);
@@ -5681,6 +5719,7 @@ public class Board {
   }
 
   private HistoryNavigationMutation moveHistoryBackward(BoardHistoryList expectedHistory) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectHistoryNavigation()) return HistoryNavigationMutation.NOT_MOVED;
     markMoveNavigationForMovelistRefresh();
     synchronized (this) {
       if (expectedHistory != null && history != expectedHistory) {
@@ -6436,6 +6475,7 @@ public class Board {
   }
 
   public void updateWinrate() {
+    if (featurecat.lizzie.fox.FoxLiveSession.isActive()) return;
     updateMovelist(history.getCurrentHistoryNode());
     if ((Lizzie.leelaz != null && Lizzie.leelaz.isPondering() && !isLoadingFile)
         || engineGamePlaying()) {
@@ -6759,6 +6799,7 @@ public class Board {
   }
 
   public void editMove(int[] coords, boolean isSwitch, boolean isDelete) {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
     boolean oriPlaySound = Lizzie.config.playSound;
     Lizzie.config.playSound = false;
@@ -7167,6 +7208,7 @@ public class Board {
   }
 
   public void changeNextTurn() {
+    if (featurecat.lizzie.fox.FoxLiveSession.rejectOrdinaryMutation()) return;
     if (Lizzie.leelaz != null && Lizzie.leelaz.canAddPlayer) {
       synchronized (this) {
         BoardData data = getHistory().getCurrentHistoryNode().getData();
