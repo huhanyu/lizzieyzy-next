@@ -35,6 +35,11 @@ public class ContributeStartupDesktopTest {
     probe("display");
   }
 
+  @Test
+  void permanentOutputSurvivesPausedEdt() throws Exception {
+    probe("paused-edt");
+  }
+
   private void probe(String suite) throws Exception {
     DesktopProbeProcess.requireDisplay();
     Path result =
@@ -109,15 +114,56 @@ public class ContributeStartupDesktopTest {
             assertEquals("unavailable", diagnostic.getString("exitObservation"));
           }
         }
-        for (String mode : List.of("starting-log", "game-ready")) {
+        for (String mode : List.of("starting-log", "game-ready", "starting-exit", "game-exit")) {
           Path ready = start(work, mode, true);
+          if (mode.equals("game-ready")) {
+            await(() -> Lizzie.frame.contributeEngine.watchingGameIndex == 0);
+            Files.writeString(ready.resolve("release"), "release");
+          }
           await(() -> failureWindow() != null);
           assertNull(
               bound(failureWindow()).snapshot(),
               "Genuine readiness retains generic ready/fail semantics");
-          assertEquals(1, launches(ready).size());
-          if (mode.equals("game-ready"))
+          assertEquals(mode.endsWith("-exit") ? 4 : 1, launches(ready).size());
+          if (mode.startsWith("game-"))
             assertEquals(0, Lizzie.frame.contributeEngine.watchingGameIndex);
+        }
+      } else if (args[0].equals("paused-edt")) {
+        for (String mode : List.of("paused-reject-json", "paused-unsupported-err")) {
+          Path run = start(work, mode, true);
+          var entered = new java.util.concurrent.CountDownLatch(1);
+          var release = new java.util.concurrent.CountDownLatch(1);
+          SwingUtilities.invokeLater(
+              () -> {
+                entered.countDown();
+                try {
+                  assertTrue(release.await(20, TimeUnit.SECONDS));
+                } catch (InterruptedException error) {
+                  throw new AssertionError(error);
+                }
+              });
+          assertTrue(entered.await(10, TimeUnit.SECONDS));
+          try {
+            Files.writeString(run.resolve("release"), "release");
+            await(() -> Files.exists(run.resolve("emitted")));
+            // Deliberately keep UI dispatch paused beyond the production tail deadline.
+            assertFalse(
+                release.await(
+                    featurecat.lizzie.analysis.EngineStartupDiagnostics.Policy.production()
+                            .deadlineMillis()
+                        + 1000,
+                    TimeUnit.MILLISECONDS));
+            assertEquals(
+                1, launches(run).size(), "Permanent output cannot retry behind a busy EDT");
+          } finally {
+            release.countDown();
+          }
+          verifyFailure(
+              run,
+              1,
+              mode.endsWith("unsupported-err")
+                  ? "Contribute.tips.useOfficialEngineSupportDistributedTraining"
+                  : "Contribute.tips.buildRejected");
         }
       } else {
         Path stopped = start(work, "stop", true);
@@ -143,8 +189,7 @@ public class ContributeStartupDesktopTest {
             new java.awt.Robot().createScreenCapture(Lizzie.frame.getBounds()),
             "png",
             screenshot.toFile());
-        // Hold the EDT until the real stdout reader is waiting to publish old output, then
-        // stop/restart inside that dispatch before allowing the queued callback to execute.
+        // Keep the old terminal UI callback queued across a public stop/restart.
         var entered = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
         SwingUtilities.invokeLater(
@@ -162,15 +207,13 @@ public class ContributeStartupDesktopTest {
         assertTrue(entered.await(10, TimeUnit.SECONDS));
         Files.writeString(game.resolve("release"), "release");
         try {
-          await(
-              () ->
-                  Thread.getAllStackTraces().entrySet().stream()
-                      .anyMatch(
-                          entry ->
-                              entry.getKey().getName().equals("contribution-stdout")
-                                  && java.util.Arrays.stream(entry.getValue())
-                                      .anyMatch(
-                                          frame -> frame.getMethodName().equals("invokeAndWait"))));
+          await(() -> Files.exists(game.resolve("emitted")));
+          assertFalse(
+              release.await(
+                  featurecat.lizzie.analysis.EngineStartupDiagnostics.Policy.production()
+                          .deadlineMillis()
+                      + 1000,
+                  TimeUnit.MILLISECONDS));
         } finally {
           release.countDown();
         }
@@ -202,6 +245,16 @@ public class ContributeStartupDesktopTest {
         StandardOpenOption.CREATE,
         StandardOpenOption.APPEND);
     switch (mode) {
+      case "paused-reject-json", "paused-unsupported-err" -> {
+        waitFile(run.resolve("release"));
+        Files.writeString(run.resolve("emitted"), "emitted");
+        System.out.println("Contribution startup fixture");
+        if (mode.endsWith("unsupported-err"))
+          System.err.println("Compile with -DBUILD_DISTRIBUTED to enable contribution");
+        else System.out.println(new JSONObject().put("error", REJECTION));
+        System.out.flush();
+        System.err.flush();
+      }
       case "reject-json" -> System.out.println(new JSONObject().put("error", REJECTION));
       case "reject-text" ->
           System.err.println(
@@ -245,11 +298,12 @@ public class ContributeStartupDesktopTest {
         Files.writeString(run.resolve("closed"), "closed");
         System.in.read();
       }
-      case "starting-log" -> {
+      case "starting-log", "starting-exit" -> {
         System.out.println("2026-10-14 12:00:00+0000: Starting game 7 (training)");
-        System.out.println(new JSONObject().put("error", REJECTION));
+        if (mode.equals("starting-log"))
+          System.out.println(new JSONObject().put("error", REJECTION));
       }
-      case "game", "game-ready" -> {
+      case "game", "game-ready", "game-exit" -> {
         System.out.println(
             new JSONObject()
                 .put("gameId", "fixture-1")
@@ -271,8 +325,11 @@ public class ContributeStartupDesktopTest {
                     new org.json.JSONArray().put(new org.json.JSONArray(List.of("B", "D4"))))
                 .put("move", new org.json.JSONArray(List.of("W", "Q16")))
                 .put("moveInfos", new org.json.JSONArray()));
-        if (mode.equals("game")) waitFile(run.resolve("release"));
-        System.out.println(new JSONObject().put("error", REJECTION));
+        if (!mode.equals("game-exit")) {
+          waitFile(run.resolve("release"));
+          Files.writeString(run.resolve("emitted"), "emitted");
+          System.out.println(new JSONObject().put("error", REJECTION));
+        }
       }
       default ->
           System.err.println(
@@ -346,6 +403,7 @@ public class ContributeStartupDesktopTest {
     SwingUtilities.invokeAndWait(
         () -> {
           String visible = text(dialog);
+          if (key != null) assertTrue(visible.contains(Lizzie.resourceBundle.getString(key)));
           assertFalse(visible.contains("fixture-password"));
           assertFalse(visible.contains("fixture-token"));
           assertFalse(visible.contains("fixture-user"));

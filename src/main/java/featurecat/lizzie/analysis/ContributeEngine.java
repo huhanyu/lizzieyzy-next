@@ -87,6 +87,7 @@ public class ContributeEngine {
     boolean terminal;
     boolean terminated;
     boolean presented;
+    int pendingUi;
     long deadline;
     Failure failure = Failure.OTHER;
     String error = "";
@@ -258,16 +259,11 @@ public class ContributeEngine {
               try {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                  launch.diagnostic.output(stderr ? "stderr" : "stdout", line);
-                  final String output = line;
-                  SwingUtilities.invokeAndWait(
-                      () -> {
-                        synchronized (ContributeEngine.this) {
-                          if (active != launch || stopped || launch.terminal || launch.permanent())
-                            return;
-                          consumeOutput(launch, output, stderr);
-                        }
-                      });
+                  synchronized (ContributeEngine.this) {
+                    launch.diagnostic.output(stderr ? "stderr" : "stdout", line);
+                    if (active == launch && !stopped && !launch.terminal && !launch.permanent())
+                      consumeOutput(launch, line, stderr);
+                  }
                 }
               } catch (Exception failure) {
                 error = failure.toString();
@@ -286,20 +282,44 @@ public class ContributeEngine {
   }
 
   private void consumeOutput(Launch launch, String line, boolean stderr) {
+    JSONObject json = null;
     String trimmed = line.trim();
     if (trimmed.startsWith("{")) {
-      JSONObject json;
       try {
         json = new JSONObject(trimmed);
       } catch (JSONException malformed) {
         return;
       }
       if (json.has("error")) {
-        Lizzie.frame.addContributeLine(sanitizer.sanitize(line), !stderr);
         launch.error =
             EngineStartupDiagnostic.bounded(
                 sanitizer.sanitize(json.optString("error", line)), 4096);
         classify(launch, json.optString("error", line));
+      }
+    } else {
+      classify(launch, line);
+      if (!launch.permanent() && STARTING_GAME.matcher(line).matches()) launch.diagnostic.ready();
+    }
+    if (launch.permanent()) return;
+    JSONObject outputJson = json;
+    launch.pendingUi++;
+    SwingUtilities.invokeLater(
+        () -> {
+          synchronized (ContributeEngine.this) {
+            try {
+              if (active == launch && !stopped && !launch.terminal && !launch.permanent())
+                consumeUiOutput(launch, line, stderr, outputJson);
+            } finally {
+              launch.pendingUi--;
+            }
+          }
+        });
+  }
+
+  private void consumeUiOutput(Launch launch, String line, boolean stderr, JSONObject json) {
+    if (json != null) {
+      if (json.has("error")) {
+        Lizzie.frame.addContributeLine(sanitizer.sanitize(line), !stderr);
         return;
       }
       if (json.has("gameId")
@@ -318,8 +338,6 @@ public class ContributeEngine {
       }
       return;
     }
-    classify(launch, line);
-    if (launch.permanent()) return;
     if (stderr) {
       Lizzie.frame.addContributeLine(sanitizer.sanitize(line), false);
       parseTips(line, launch.diagnostic);
@@ -365,7 +383,10 @@ public class ContributeEngine {
         (launch.process == null || !launch.process.isAlive())
             && (launch.stdout == null || launch.stdoutEnded)
             && (launch.stderr == null || launch.stderrEnded);
-    if (!complete && System.nanoTime() < launch.deadline) {
+    // Give already queued game parsing its normal EOF ordering, but never wait indefinitely
+    // for UI dispatch. Permanent failures have already been recorded by the readers.
+    if ((!complete || (!launch.permanent() && launch.pendingUi > 0))
+        && System.nanoTime() < launch.deadline) {
       lifecycle.schedule(() -> finishWhenDrained(launch), 20, TimeUnit.MILLISECONDS);
       return;
     }
