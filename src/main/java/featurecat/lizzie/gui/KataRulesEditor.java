@@ -47,6 +47,7 @@ final class KataRulesEditor {
   final JFontButton btnGoeRule;
 
   private final Container pane;
+  private Runnable changeListener = () -> {};
 
   KataRulesEditor(Container pane, ResourceBundle strings) {
     this.pane = pane;
@@ -114,6 +115,11 @@ final class KataRulesEditor {
   int bottom() { return bottom; }
 
   int width() { return width; }
+
+  /** Runs after any rule choice changes, including preset buttons and programmatic readbacks. */
+  void onChange(Runnable listener) {
+    changeListener = listener;
+  }
 
   /** Measure translated text and native control insets instead of trusting pixel-sized columns. */
   private void layoutForContent() {
@@ -268,6 +274,7 @@ final class KataRulesEditor {
   private JFontRadioButton radio(ResourceBundle strings, String key, int x, int y, int width) {
     JFontRadioButton radio = new JFontRadioButton(strings.getString(key));
     radio.setBounds(x, y, width, 23);
+    radio.addItemListener(event -> changeListener.run());
     pane.add(radio);
     return radio;
   }

@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.TreeMap;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -214,6 +215,25 @@ public final class KataGoRules {
       return Summary.GOE;
     }
     return Summary.OTHER;
+  }
+
+  /**
+   * KataGo's default komi for these rules, mirroring its rules parser: the New Zealand preset sets
+   * 7; otherwise territory scoring uses 6.5, area scoring with a button 7, other area scoring 7.5.
+   * Empty when the scoring rule is unknown.
+   */
+  public OptionalDouble defaultKomi() {
+    String scoring = string(SCORING);
+    if ("TERRITORY".equals(scoring)) {
+      return OptionalDouble.of(6.5);
+    }
+    if (!"AREA".equals(scoring)) {
+      return OptionalDouble.empty();
+    }
+    if (matchesOfficial("new-zealand") || bool(HAS_BUTTON)) {
+      return OptionalDouble.of(7.0);
+    }
+    return OptionalDouble.of(7.5);
   }
 
   public JSONObject toJson() {
