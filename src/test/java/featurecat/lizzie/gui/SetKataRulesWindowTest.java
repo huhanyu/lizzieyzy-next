@@ -33,8 +33,14 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.Border;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 
 class SetKataRulesWindowTest {
+  @BeforeEach
+  void requireDesktopWhenRequested() {
+    assertFalse(Boolean.getBoolean("lizzie.desktop.required") && GraphicsEnvironment.isHeadless());
+  }
+
   private static final String CHINESE =
       "{\"ko\":\"SIMPLE\",\"scoring\":\"AREA\",\"tax\":\"NONE\",\"suicide\":false,"
           + "\"hasButton\":false,\"whiteHandicapBonus\":\"N\",\"friendlyPassOk\":true}";
@@ -339,6 +345,23 @@ class SetKataRulesWindowTest {
   }
 
   @Test
+  void unchangedTerritoryRulesRoundTripWithoutRewritingHiddenFields() throws Exception {
+    assumeFalse(GraphicsEnvironment.isHeadless());
+    try (Fixture fixture = Fixture.ordinary()) {
+      for (String preset : KataGoRules.officialPresetNames()) {
+        KataGoRules initial = KataGoRules.parse(preset).orElseThrow();
+        SetKataRules dialog = new SetKataRules(fixture.engine, true, initial);
+        try {
+          dialog.applySelectedRules();
+          assertTrue(initial.semanticallyEquals(composedRules(dialog)), preset);
+        } finally {
+          closeDialog(dialog);
+        }
+      }
+    }
+  }
+
+  @Test
   void presetButtonsComposeExactPresetsAndTerritoryLocksFriendlyPass() throws Exception {
     assumeFalse(GraphicsEnvironment.isHeadless());
     try (Fixture fixture = Fixture.ordinary()) {
@@ -366,14 +389,14 @@ class SetKataRulesWindowTest {
       KataRulesEditor editor = dialog.editor;
       assertTrue(editor.rdoNoFriendlyPass.isSelected());
       SwingUtilities.invokeAndWait(editor.rdoTerritory::doClick);
-      assertTrue(editor.rdoFriendlyPass.isSelected());
+      assertTrue(editor.rdoNoFriendlyPass.isSelected());
       assertFalse(editor.rdoFriendlyPass.isEnabled());
       assertFalse(editor.rdoNoFriendlyPass.isEnabled());
       SwingUtilities.invokeAndWait(editor.rdoArea::doClick);
-      assertTrue(editor.rdoFriendlyPass.isSelected());
+      assertTrue(editor.rdoNoFriendlyPass.isSelected());
       assertTrue(editor.rdoNoFriendlyPass.isEnabled());
       dialog.applySelectedRules();
-      assertTrue(composedRules(dialog).bool(KataGoRules.FRIENDLY_PASS_OK));
+      assertFalse(composedRules(dialog).bool(KataGoRules.FRIENDLY_PASS_OK));
       assertFalse(fixture.output.toString().contains("kata-set-rules"));
       closeDialog(dialog);
     }

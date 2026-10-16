@@ -3,10 +3,16 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.KataGoRules;
 import java.awt.Container;
+import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Insets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.ResourceBundle;
 import javax.swing.AbstractButton;
 import javax.swing.ButtonGroup;
+import javax.swing.JLabel;
 import org.json.JSONObject;
 
 /**
@@ -14,8 +20,8 @@ import org.json.JSONObject;
  * rule field with that preset; territory scoring locks the area-only fields.
  */
 final class KataRulesEditor {
-  /** First free y coordinate below the editor rows. */
-  static final int BOTTOM = 302;
+  private int bottom;
+  private int width;
 
   final JFontRadioButton rdoArea;
   final JFontRadioButton rdoTerritory;
@@ -102,12 +108,47 @@ final class KataRulesEditor {
     rdoFriendlyPass = radio(strings, "SetKataRules.rdoButtonGo", 280, 272, 105);
     rdoNoFriendlyPass = radio(strings, "SetKataRules.rdoNoButtonGo", thirdColumn, 272, 143);
     group(rdoFriendlyPass, rdoNoFriendlyPass);
+    layoutForContent();
   }
 
-  /** Dialog width that fits the preset row at the current font size. */
-  static int dialogWidth() {
-    if (Lizzie.config.isFrameFontSmall()) return 700;
-    return Lizzie.config.isFrameFontMiddle() ? 720 : 890;
+  int bottom() { return bottom; }
+
+  int width() { return width; }
+
+  /** Measure translated text and native control insets instead of trusting pixel-sized columns. */
+  private void layoutForContent() {
+    List<List<Component>> rows = new ArrayList<>();
+    for (int i = 0; i < 8; i++) rows.add(new ArrayList<>());
+    for (Component component : pane.getComponents()) {
+      int row = component.getY() < 40 ? 0 : 1 + (component.getY() - 48) / 37;
+      rows.get(row).add(component);
+    }
+    rows.forEach(row -> row.sort(Comparator.comparingInt(Component::getX)));
+    int[] columns = new int[4];
+    for (List<Component> row : rows.subList(1, rows.size())) {
+      for (int i = 0; i < row.size(); i++) {
+        columns[i] = Math.max(columns[i], row.get(i).getPreferredSize().width);
+      }
+    }
+    int y = 12;
+    for (int index = 0; index < rows.size(); index++) {
+      List<Component> row = rows.get(index);
+      if (row.get(0) instanceof JLabel label && row.size() > 1) {
+        label.setLabelFor(row.get(1));
+      }
+      int height = row.stream().mapToInt(c -> c.getPreferredSize().height).max().orElse(27);
+      int x = 16;
+      for (int i = 0; i < row.size(); i++) {
+        Component component = row.get(i);
+        Dimension size = component.getPreferredSize();
+        int cellWidth = index == 0 ? size.width : columns[i];
+        component.setBounds(x, y + (height - size.height) / 2, cellWidth, size.height);
+        x += cellWidth + 14;
+      }
+      width = Math.max(width, x + 2);
+      y += height + 12;
+    }
+    bottom = y;
   }
 
   void applyPreset(String name) {
@@ -177,12 +218,9 @@ final class KataRulesEditor {
     return json;
   }
 
-  /** Territory scoring ignores the button and agreed dead stones always hold, so both lock. */
+  /** Area-only controls are disabled under territory scoring, without rewriting imported values. */
   private void updateScoringLocks() {
     boolean territory = rdoTerritory.isSelected();
-    if (territory) {
-      rdoFriendlyPass.setSelected(true);
-    }
     rdoButtonGo.setEnabled(!territory);
     rdoNoButtonGo.setEnabled(!territory);
     rdoFriendlyPass.setEnabled(!territory);
@@ -238,7 +276,6 @@ final class KataRulesEditor {
       ResourceBundle strings, String key, String preset, int x, int width) {
     JFontButton button = new JFontButton(strings.getString(key));
     button.setMargin(new Insets(0, 0, 0, 0));
-    button.setFocusable(false);
     button.addActionListener(event -> applyPreset(preset));
     button.setBounds(x, 11, width, 23);
     pane.add(button);

@@ -88,7 +88,7 @@ public class SetKataRules extends JDialog {
     AccessibilitySupport.installEscapeAction(getRootPane(), this, this::closeDialog);
 
     editor = new KataRulesEditor(getContentPane(), resourceBundle);
-    int below = KataRulesEditor.BOTTOM;
+    int below = editor.bottom();
 
     JFontButton btnCancel =
         new JFontButton(resourceBundle.getString("SetKataRules.btnCancel")); // ("取消");
@@ -121,8 +121,18 @@ public class SetKataRules extends JDialog {
     if (Lizzie.config.autoLoadKataRules) {
       chkbxAutoLoadRules.setSelected(true);
     }
-    setSize(KataRulesEditor.dialogWidth(), below + 125);
-    Lizzie.setFrameSize(this, KataRulesEditor.dialogWidth(), below + 125);
+    int width = Math.max(editor.width(), composeOnly ? 0
+        : chkbxAutoLoadRules.getPreferredSize().width + 36);
+    int checkHeight = chkbxAutoLoadRules.getPreferredSize().height;
+    chkbxAutoLoadRules.setBounds(18, below, width - 36, checkHeight);
+    int buttonHeight = Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
+    int buttonWidth = Math.max(93, Math.max(btnApply.getPreferredSize().width,
+        btnCancel.getPreferredSize().width));
+    int buttonY = below + (composeOnly ? 0 : checkHeight + configuredStatusHeight());
+    btnApply.setBounds(width / 2 - buttonWidth - 6, buttonY, buttonWidth, buttonHeight);
+    btnCancel.setBounds(width / 2 + 6, buttonY, buttonWidth, buttonHeight);
+    getContentPane().setPreferredSize(new Dimension(width, buttonY + buttonHeight + 16));
+    pack();
     try {
       this.setIconImage(ImageIO.read(MoreEngines.class.getResourceAsStream("/assets/logo.png")));
       Dimension screensize = Toolkit.getDefaultToolkit().getScreenSize();
@@ -137,7 +147,7 @@ public class SetKataRules extends JDialog {
       Utils.showMsg(resourceBundle.getString("SetKataRules.notKataGoHint"));
     }
     lblStatus = new JFontLabel("");
-    lblStatus.setBounds(18, below + 23, 897, 23);
+    lblStatus.setBounds(18, below + checkHeight, width - 36, configuredStatusHeight());
     getContentPane().add(lblStatus);
     if (composeOnly) {
       chkbxAutoLoadRules.setVisible(false);
@@ -151,6 +161,10 @@ public class SetKataRules extends JDialog {
       refreshStatus();
       watchEngineRulesStatus();
     }
+  }
+
+  private static int configuredStatusHeight() {
+    return Math.max(27, featurecat.lizzie.Config.frameFontSize + 12);
   }
 
   void locateRulesEditor() {

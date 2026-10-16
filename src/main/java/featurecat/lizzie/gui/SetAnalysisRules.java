@@ -35,7 +35,7 @@ public class SetAnalysisRules extends JDialog {
     //	        });
 
     editor = new KataRulesEditor(getContentPane(), resourceBundle);
-    int below = KataRulesEditor.BOTTOM;
+    int below = editor.bottom();
     if (Lizzie.config.analysisSpecificRules.isEmpty()) {
       editor.applyPreset("tromp-taylor");
     } else {
@@ -67,8 +67,14 @@ public class SetAnalysisRules extends JDialog {
         });
     btnApply.setBounds(183, below + 5, 93, 23);
     getContentPane().add(btnApply);
-    setSize(KataRulesEditor.dialogWidth(), below + 76);
-    Lizzie.setFrameSize(this, KataRulesEditor.dialogWidth(), below + 76);
+    int width = editor.width();
+    int buttonHeight = Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
+    int buttonWidth = Math.max(93, Math.max(btnApply.getPreferredSize().width,
+        btnCancel.getPreferredSize().width));
+    btnApply.setBounds(width / 2 - buttonWidth - 6, below, buttonWidth, buttonHeight);
+    btnCancel.setBounds(width / 2 + 6, below, buttonWidth, buttonHeight);
+    getContentPane().setPreferredSize(new Dimension(width, below + buttonHeight + 16));
+    pack();
     try {
       this.setIconImage(ImageIO.read(MoreEngines.class.getResourceAsStream("/assets/logo.png")));
       Dimension screensize = Toolkit.getDefaultToolkit().getScreenSize();
