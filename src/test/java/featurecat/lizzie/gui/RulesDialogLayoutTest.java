@@ -7,6 +7,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.KataGoRules;
+import featurecat.lizzie.analysis.Leelaz;
 import java.awt.Component;
 import java.awt.GraphicsEnvironment;
 import java.awt.image.BufferedImage;
@@ -32,15 +33,21 @@ class RulesDialogLayoutTest {
     SwingUtilities.invokeAndWait(() -> {
       var oldConfig = Lizzie.config;
       var oldBundle = Lizzie.resourceBundle;
+      var oldEngine = Lizzie.leelaz;
       int oldFont = Config.frameFontSize;
       try {
         Lizzie.config = ConfigTestHelper.createForTests(directory);
         Lizzie.config.analysisSpecificRules = "";
+        Leelaz pondering = new Leelaz("") {
+          @Override public boolean isPondering() { return true; }
+          @Override public void ponder() { fail("Cancel must not change the main engine"); }
+        };
         for (String language : List.of("zh-CN", "zh-TW", "en-US", "ja-JP", "ko", "th-TH")) {
           Lizzie.resourceBundle = ResourceBundle.getBundle("l10n.DisplayStrings",
               Locale.forLanguageTag(language));
           for (int size : List.of(12, 16, 20)) {
             Config.frameFontSize = size;
+            Lizzie.leelaz = size == 12 ? null : pondering;
             SetKataRules rules = new SetKataRules(null, true, KataGoRules.parse("goe").orElseThrow());
             SetAnalysisRules analysis = new SetAnalysisRules();
             try {
@@ -68,6 +75,13 @@ class RulesDialogLayoutTest {
                       language + "/" + size + " clipped text: " + control);
                 }
               }
+              for (Component component : analysis.getContentPane().getComponents()) {
+                if (component instanceof JFontButton button
+                    && button.getText().equals(Lizzie.resourceBundle.getString("SetKataRules.btnCancel"))) {
+                  button.doClick();
+                }
+              }
+              assertFalse(analysis.isVisible(), "Cancel must work with or without an engine");
             } finally {
               rules.dispose();
               analysis.dispose();
@@ -79,6 +93,7 @@ class RulesDialogLayoutTest {
       } finally {
         Lizzie.config = oldConfig;
         Lizzie.resourceBundle = oldBundle;
+        Lizzie.leelaz = oldEngine;
         Config.frameFontSize = oldFont;
       }
     });

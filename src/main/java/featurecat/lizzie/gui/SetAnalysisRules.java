@@ -47,7 +47,6 @@ public class SetAnalysisRules extends JDialog {
     btnCancel.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
-            if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
             setVisible(false);
           }
         });
