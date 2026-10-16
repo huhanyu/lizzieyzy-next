@@ -36,7 +36,8 @@ class FoxRulesTextTest {
 
   @Test
   void customRulesUseTheRulesDialogWording() {
-    KataGoRules custom = preset("chinese").overlayEditor("AREA", "SITUATIONAL", false, "ALL", "N-1", false);
+    KataGoRules custom =
+        preset("chinese").overlayEditor("AREA", "SITUATIONAL", false, "ALL", "N-1", false, true);
     assertEquals(
         "胜负判断：数子；打劫规则：同一方落子后禁全同；允许棋块自杀：否；还棋头：所有棋块；"
             + "让子贴还(让N子)：贴还N-1目；数子规则下收后方贴还0.5目：否；未提净死子时允许停一手：是",

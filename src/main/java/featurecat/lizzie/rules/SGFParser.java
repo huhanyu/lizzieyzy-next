@@ -4,6 +4,7 @@ import static java.util.Arrays.asList;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.GameInfo;
+import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.enginegame.EngineGameParticipantDescriptor;
 import featurecat.lizzie.enginegame.EngineGamePresentation;
@@ -1230,7 +1231,7 @@ public class SGFParser {
     if (side == null || !side.katago() || Lizzie.resourceBundle == null) {
       return;
     }
-    String rules = specificRulesLabel(side.usingSpecificRules());
+    String rules = rulesLabel(side.rulesSummary());
     if (rules.isEmpty()) {
       return;
     }
@@ -1242,24 +1243,11 @@ public class SGFParser {
     }
   }
 
-  private static String specificRulesLabel(int usingSpecificRules) {
-    if (Lizzie.resourceBundle == null) {
+  private static String rulesLabel(KataGoRules.Summary summary) {
+    if (summary == null || Lizzie.resourceBundle == null) {
       return "";
     }
-    switch (usingSpecificRules) {
-      case 1:
-        return Lizzie.resourceBundle.getString("LizzieFrame.currentRules.chinese");
-      case 2:
-        return Lizzie.resourceBundle.getString("LizzieFrame.currentRules.chn-ancient");
-      case 3:
-        return Lizzie.resourceBundle.getString("LizzieFrame.currentRules.japanese");
-      case 4:
-        return Lizzie.resourceBundle.getString("LizzieFrame.currentRules.tromp-taylor");
-      case 5:
-        return Lizzie.resourceBundle.getString("LizzieFrame.currentRules.others");
-      default:
-        return "";
-    }
+    return Lizzie.resourceBundle.getString(summary.labelKey());
   }
 
   public static void appendAiScoreBlunder() {
@@ -1419,33 +1407,8 @@ public class SGFParser {
           appendMatchRulesComment(history, gameInfo, engineContext);
         } else {
           if (Lizzie.leelaz != null && Lizzie.leelaz.isKatago && !fromAutoSave) {
-            String rules = "";
-            boolean usingSpecificRues = false;
-            if (Lizzie.leelaz.isKatago) {
-              switch (Lizzie.leelaz.usingSpecificRules) {
-                case 1:
-                  rules = Lizzie.resourceBundle.getString("LizzieFrame.currentRules.chinese");
-                  usingSpecificRues = true;
-                  break;
-                case 2:
-                  rules = Lizzie.resourceBundle.getString("LizzieFrame.currentRules.chn-ancient");
-                  usingSpecificRues = true;
-                  break;
-                case 3:
-                  rules = Lizzie.resourceBundle.getString("LizzieFrame.currentRules.japanese");
-                  usingSpecificRues = true;
-                  break;
-                case 4:
-                  rules = Lizzie.resourceBundle.getString("LizzieFrame.currentRules.tromp-taylor");
-                  usingSpecificRues = true;
-                  break;
-                case 5:
-                  rules = Lizzie.resourceBundle.getString("LizzieFrame.currentRules.others");
-                  usingSpecificRues = true;
-                  break;
-              }
-            }
-            if (usingSpecificRues) {
+            String rules = rulesLabel(Lizzie.leelaz.rulesSummary);
+            if (!rules.isEmpty()) {
               if (history.getStart().getData().comment.equals(""))
                 history.getStart().getData().comment +=
                     Lizzie.resourceBundle.getString("SGFParse.rules") + rules;

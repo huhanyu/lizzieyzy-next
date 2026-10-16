@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class KataGoRulesTest {
@@ -15,9 +16,103 @@ class KataGoRulesTest {
 
     assertEquals(KataGoRules.Summary.CHINESE, simple.summary());
     assertEquals(KataGoRules.Summary.CHINESE, positional.summary());
-    assertEquals(1, simple.legacyClassification());
-    assertEquals(1, positional.legacyClassification());
     assertFalse(simple.semanticallyEquals(positional));
+  }
+
+  @Test
+  void summaryNamesOnlyRulesThatEqualAPreset() {
+    Map<String, KataGoRules.Summary> expected =
+        Map.ofEntries(
+            Map.entry("chinese", KataGoRules.Summary.CHINESE),
+            Map.entry("chinese-kgs", KataGoRules.Summary.CHINESE),
+            Map.entry("japanese", KataGoRules.Summary.JAPANESE),
+            Map.entry("korean", KataGoRules.Summary.JAPANESE),
+            Map.entry("stone-scoring", KataGoRules.Summary.CHINESE_ANCIENT),
+            Map.entry("tromp-taylor", KataGoRules.Summary.TROMP_TAYLOR),
+            Map.entry("goe", KataGoRules.Summary.GOE),
+            Map.entry("aga", KataGoRules.Summary.OTHER),
+            Map.entry("new-zealand", KataGoRules.Summary.OTHER),
+            Map.entry("aga-button", KataGoRules.Summary.OTHER),
+            Map.entry("ancient-territory", KataGoRules.Summary.OTHER));
+    expected.forEach(
+        (name, summary) ->
+            assertEquals(summary, KataGoRules.parse(name).orElseThrow().summary(), name));
+
+    KataGoRules oldTrompTaylorButton =
+        KataGoRules.parse("tromp-taylor")
+            .orElseThrow()
+            .overlayEditor("AREA", "POSITIONAL", true, "NONE", "N", false, false);
+    KataGoRules chineseWithSuicide =
+        KataGoRules.parse("chinese")
+            .orElseThrow()
+            .overlayEditor("AREA", "SIMPLE", true, "NONE", "N", false, true);
+    assertEquals(KataGoRules.Summary.OTHER, oldTrompTaylorButton.summary());
+    assertEquals(KataGoRules.Summary.OTHER, chineseWithSuicide.summary());
+  }
+
+  @Test
+  void goeMatchesKataGoAndDiffersFromTrompTaylorOnlyByFriendlyPass() {
+    KataGoRules goe = KataGoRules.parse("GOE").orElseThrow();
+    KataGoRules kataGoReadback =
+        KataGoRules.parse(
+                "= {\"friendlyPassOk\":true,\"hasButton\":false,\"ko\":\"POSITIONAL\","
+                    + "\"scoring\":\"AREA\",\"suicide\":true,\"tax\":\"NONE\","
+                    + "\"whiteHandicapBonus\":\"0\"}")
+            .orElseThrow();
+    KataGoRules trompTaylor = KataGoRules.parse("tromp-taylor").orElseThrow();
+
+    assertTrue(goe.semanticallyEquals(kataGoReadback));
+    assertTrue(
+        trompTaylor
+            .overlayEditor("AREA", "POSITIONAL", true, "NONE", "0", false, true)
+            .semanticallyEquals(goe));
+    assertFalse(trompTaylor.semanticallyEquals(goe));
+  }
+
+  @Test
+  void declarationAliasesResolveToTheSamePreset() {
+    Map<String, String> aliases =
+        Map.ofEntries(
+            Map.entry("cn", "chinese"),
+            Map.entry(" CN ", "chinese"),
+            Map.entry("jp", "japanese"),
+            Map.entry("kr", "korean"),
+            Map.entry("ing", "goe"),
+            Map.entry("nz", "new-zealand"),
+            Map.entry("newzealand", "new-zealand"),
+            Map.entry("New Zealand", "new-zealand"),
+            Map.entry("new_zealand", "new-zealand"),
+            Map.entry("french", "aga"),
+            Map.entry("chineseogs", "chinese-ogs"),
+            Map.entry("chinese_kgs", "chinese-kgs"),
+            Map.entry("stonescoring", "stone-scoring"),
+            Map.entry("ancientarea", "stone-scoring"),
+            Map.entry("ancient area", "stone-scoring"),
+            Map.entry("ancientterritory", "ancient-territory"),
+            Map.entry("agabutton", "aga-button"),
+            Map.entry("tromptaylor", "tromp-taylor"),
+            Map.entry("Tromp Taylor", "tromp-taylor"));
+    aliases.forEach(
+        (alias, preset) ->
+            assertTrue(
+                KataGoRules.parse(alias)
+                    .orElseThrow()
+                    .semanticallyEquals(KataGoRules.parse(preset).orElseThrow()),
+                alias));
+    assertTrue(KataGoRules.parse("zh").isEmpty());
+    assertTrue(KataGoRules.parse("chinese rules").isEmpty());
+  }
+
+  @Test
+  void ancientTerritoryMatchesKataGo() {
+    KataGoRules ancient = KataGoRules.parse("ancient-territory").orElseThrow();
+    assertEquals("SIMPLE", ancient.string("ko"));
+    assertEquals("TERRITORY", ancient.string("scoring"));
+    assertEquals("ALL", ancient.string("tax"));
+    assertFalse(ancient.bool("suicide"));
+    assertFalse(ancient.bool("hasButton"));
+    assertEquals("0", ancient.string("whiteHandicapBonus"));
+    assertFalse(ancient.bool("friendlyPassOk"));
   }
 
   @Test
@@ -52,7 +147,7 @@ class KataGoRulesTest {
     assertFalse(withExtra.semanticallyEquals(chinese));
     assertTrue(
         withExtra
-            .overlayEditor("AREA", "SIMPLE", false, "NONE", "N", false)
+            .overlayEditor("AREA", "SIMPLE", false, "NONE", "N", false, true)
             .semanticallyEquals(withExtra));
   }
 
