@@ -14,16 +14,20 @@ import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.io.CleanupMode;
 
 /** Actual packaged-engine protocol acceptance; never substitutes a fake process. */
 @EnabledIfSystemProperty(named = "lizzie.acceptance.engine", matches = ".+")
 class KataGoRulesProcessIT {
-  @TempDir Path directory;
+  @TempDir(cleanup = CleanupMode.ON_SUCCESS) Path directory;
 
   @Test
   void everyPresetRoundTripsThroughRealKataGo() throws Exception {
     Path config = directory.resolve("gtp.cfg");
-    Files.writeString(config, "rules = chinese\nnumSearchThreads = 1\nmaxVisits = 16\n");
+    Files.writeString(config, "rules = chinese\nnumSearchThreads = 1\nmaxVisits = 16\n"
+        + "logAllGTPCommunication = true\nlogSearchInfo = true\n"
+        + "logSearchInfoForChosenMove = false\nponderingEnabled = false\n"
+        + "allowResignation = true\nresignThreshold = -0.90\nresignConsecTurns = 3\n");
     Process process = new ProcessBuilder(System.getProperty("lizzie.acceptance.engine"), "gtp",
         "-model", System.getProperty("lizzie.acceptance.model"), "-config", config.toString())
         .directory(directory.toFile()).redirectError(directory.resolve("engine.log").toFile()).start();
@@ -52,6 +56,9 @@ class KataGoRulesProcessIT {
       output.flush();
       assertTrue(process.waitFor(10, TimeUnit.SECONDS));
       assertEquals(0, process.exitValue());
+    } catch (Exception failure) {
+      throw new AssertionError("KataGo protocol acceptance failed: "
+          + Files.readString(directory.resolve("engine.log")), failure);
     } finally {
       process.destroyForcibly();
       reader.shutdownNow();
