@@ -411,8 +411,10 @@ class SetKataRulesWindowTest {
   private static void awaitConfirmedReadback(SetKataRules dialog) throws Exception {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
     while (System.nanoTime() < deadline) {
-      SwingUtilities.invokeAndWait(() -> {});
-      if (dialog.hasRulesResponse() && dialog.statusText().isEmpty()) {
+      boolean[] settled = new boolean[1];
+      SwingUtilities.invokeAndWait(
+          () -> settled[0] = dialog.hasRulesResponse() && dialog.statusText().isEmpty());
+      if (settled[0]) {
         return;
       }
       Thread.sleep(20L);
@@ -493,6 +495,8 @@ class SetKataRulesWindowTest {
   }
 
   private static final class Fixture implements AutoCloseable {
+    private final java.util.Set<java.awt.Window> previousWindows =
+        java.util.Set.copyOf(java.util.Arrays.asList(java.awt.Window.getWindows()));
     private final Config previousConfig;
     private final Leelaz previousLeelaz;
     private final Leelaz previousSecondary;
@@ -547,6 +551,23 @@ class SetKataRulesWindowTest {
 
     @Override
     public void close() {
+      try {
+        SwingUtilities.invokeAndWait(() -> {
+          for (java.awt.Window window : java.awt.Window.getWindows()) {
+            if (window instanceof SetKataRules dialog && !previousWindows.contains(window)) {
+              closeDialog(dialog);
+              window.dispose();
+            }
+          }
+        });
+      } catch (Exception failure) {
+        throw new AssertionError("Could not dispose test rule windows", failure);
+      } finally {
+        restoreState();
+      }
+    }
+
+    private void restoreState() {
       try {
         resetEngineGame();
       } catch (Exception ignored) {
