@@ -116,8 +116,13 @@ final class UpdateCheckCoordinator {
   }
 
   void invalidateAutomatic() {
+    automaticCheck = false;
+    automaticDownload = false;
     startupSelection = null;
-    if (state.origin() != Origin.AUTOMATIC || manualDownload) return;
+    if (state.origin() != Origin.AUTOMATIC || manualDownload) {
+      publish(state);
+      return;
+    }
     if (control != null) control.cancel();
     prepared = null;
     automaticInvalidated = true;
@@ -125,8 +130,6 @@ final class UpdateCheckCoordinator {
   }
 
   void disableAutomaticCheck() {
-    automaticCheck = false;
-    automaticDownload = false;
     invalidateAutomatic();
   }
 
@@ -134,7 +137,7 @@ final class UpdateCheckCoordinator {
     automaticDownload = false;
     if (state.origin() == Origin.AUTOMATIC && !manualDownload && state.downloading()) {
       cancelDownload();
-    }
+    } else publish(state);
   }
 
   private boolean start(Origin origin, UpdateCheckSelection selection) {

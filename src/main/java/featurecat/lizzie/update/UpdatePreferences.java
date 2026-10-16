@@ -20,18 +20,26 @@ final class UpdatePreferences {
   }
 
   static void persistAutoDownload(boolean enabled) {
+    persistAutoDownload(enabled, WindowsUpdateController.coordinator());
+  }
+
+  static void persistAutoDownload(boolean enabled, UpdateCheckCoordinator coordinator) {
     if (Lizzie.config == null || Lizzie.config.uiConfig == null) return;
     Lizzie.config.uiConfig.put(AUTO_DOWNLOAD, enabled && autoCheck());
-    if (!enabled) WindowsUpdateController.automaticDownloadDisabled();
+    if (!enabled) coordinator.disableAutomaticDownload();
     save();
   }
 
   static void persistAutoCheck(boolean enabled) {
+    persistAutoCheck(enabled, WindowsUpdateController.coordinator());
+  }
+
+  static void persistAutoCheck(boolean enabled, UpdateCheckCoordinator coordinator) {
     if (Lizzie.config == null || Lizzie.config.uiConfig == null) return;
     Lizzie.config.uiConfig.put(AUTO_CHECK, enabled);
     if (!enabled) {
       Lizzie.config.uiConfig.put(AUTO_DOWNLOAD, false);
-      WindowsUpdateController.automaticCheckDisabled();
+      coordinator.disableAutomaticCheck();
     }
     save();
   }

@@ -124,9 +124,59 @@ class CheckUpdateDialogTest {
         relaunchedCheck.doClick();
         assertEquals(plainCheck, relaunchedCheck.getText());
         assertEquals(plainDownload, relaunchedDownload.getText());
+        relaunchedCheck.doClick();
+        relaunchedDownload.doClick();
+        assertNotEquals(plainCheck, relaunchedCheck.getText());
+        assertNotEquals(plainDownload, relaunchedDownload.getText());
       } finally {
         if (launched != null) launched.dispose();
         if (relaunched != null) relaunched.dispose();
+        Lizzie.config = previous;
+      }
+    });
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void changingSelectionRevokesHintsImmediatelyAndAfterReopening(boolean channel) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      var previous = Lizzie.config;
+      List<JDialog> views = new ArrayList<>();
+      try {
+        Lizzie.config = ConfigTestHelper.createForTests(directory);
+        Lizzie.config.uiConfig = new JSONObject()
+            .put(UpdatePreferences.AUTO_CHECK, true).put(UpdatePreferences.AUTO_DOWNLOAD, true);
+        UpdateChannel.persist(UpdateChannel.STABLE);
+        UpdateSource.persist(UpdateSource.OFFICIAL_SITE);
+        UpdateCheckCoordinator coordinator = launchedCoordinator();
+        CheckUpdateDialog page = new CheckUpdateDialog(null, coordinator);
+        views.add(page);
+        page.setVisible(true);
+        JCheckBox check = find(page, JCheckBox.class);
+        JCheckBox download = findDownload(page, check);
+        String plainCheck = check.getText();
+        String plainDownload = download.getText();
+        button(page, "WindowsUpdate.channel.stable", "Official").doClick();
+        assertEquals(plainCheck, check.getText(), "An unchanged selection is not a revocation");
+        button(page, channel ? "WindowsUpdate.channel.beta" : "WindowsUpdate.source.github",
+            channel ? "Test" : "GitHub").doClick();
+        assertNotEquals(plainCheck, check.getText());
+        assertNotEquals(plainDownload, download.getText());
+        page.validate();
+        assertTrue(check.getWidth() >= check.getPreferredSize().width,
+            "Pending label must fit without a manual window resize");
+        button(page, channel ? "WindowsUpdate.channel.stable" : "WindowsUpdate.source.official",
+            channel ? "Official" : "Official site").doClick();
+        assertNotEquals(plainCheck, check.getText(), "Switching back does not reauthorize startup");
+        page.dispose();
+        CheckUpdateDialog reopened = new CheckUpdateDialog(null, coordinator);
+        views.add(reopened);
+        JCheckBox reopenedCheck = find(reopened, JCheckBox.class);
+        assertEquals(check.getText(), reopenedCheck.getText());
+        assertEquals(download.getText(), findDownload(reopened, reopenedCheck).getText());
+        coordinator.applicationReady();
+      } finally {
+        views.forEach(JDialog::dispose);
         Lizzie.config = previous;
       }
     });
