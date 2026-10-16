@@ -182,22 +182,23 @@ public final class CheckUpdateDialog extends JDialog {
     constraints.insets = new Insets(0, 0, 14, 0);
     form.add(sourceRow, constraints);
 
-    JCheckBox autoCheck = new JCheckBox(UpdateText.tr(
-        "WindowsUpdate.autoCheck", "启动时自动检查更新（下次启动生效）",
-        "Check for updates at startup (from next launch)"), UpdatePreferences.autoCheck());
+    JCheckBox autoCheck = new JCheckBox("", UpdatePreferences.autoCheck());
     autoCheck.setOpaque(false);
     autoCheck.setFont(stableButton.getFont());
-    JCheckBox autoDownload = new JCheckBox(UpdateText.tr(
-        "WindowsUpdate.autoDownload", "自动下载更新（下次启动生效）",
-        "Download updates automatically (from next launch)"), UpdatePreferences.autoDownload());
+    JCheckBox autoDownload = new JCheckBox("", UpdatePreferences.autoDownload());
     autoDownload.setOpaque(false);
     autoDownload.setFont(stableButton.getFont());
     autoDownload.setEnabled(autoCheck.isSelected());
-    autoDownload.addActionListener(e -> UpdatePreferences.persistAutoDownload(autoDownload.isSelected()));
+    refreshAutoLabels(autoCheck, autoDownload);
+    autoDownload.addActionListener(e -> {
+      UpdatePreferences.persistAutoDownload(autoDownload.isSelected());
+      refreshAutoLabels(autoCheck, autoDownload);
+    });
     autoCheck.addActionListener(e -> {
       UpdatePreferences.persistAutoCheck(autoCheck.isSelected());
       autoDownload.setEnabled(autoCheck.isSelected());
       autoDownload.setSelected(UpdatePreferences.autoDownload());
+      refreshAutoLabels(autoCheck, autoDownload);
     });
     constraints.gridy = 4;
     form.add(autoCheck, constraints);
@@ -215,6 +216,20 @@ public final class CheckUpdateDialog extends JDialog {
     constraints.insets = new Insets(0, 0, 0, 0);
     form.add(resultLabel, constraints);
     return form;
+  }
+
+  /** A checked option lacking this run's authority is pending; disabling takes effect immediately. */
+  private void refreshAutoLabels(JCheckBox autoCheck, JCheckBox autoDownload) {
+    autoCheck.setText(autoCheck.isSelected() && !coordinator.automaticCheckActive()
+        ? UpdateText.tr("WindowsUpdate.autoCheckPending", "启动时自动检查更新（下次启动生效）",
+            "Check for updates at startup (from next launch)")
+        : UpdateText.tr("WindowsUpdate.autoCheck", "启动时自动检查更新",
+            "Check for updates at startup"));
+    autoDownload.setText(autoDownload.isSelected() && !coordinator.automaticDownloadActive()
+        ? UpdateText.tr("WindowsUpdate.autoDownloadPending", "自动下载更新（下次启动生效）",
+            "Download updates automatically (from next launch)")
+        : UpdateText.tr("WindowsUpdate.autoDownload", "自动下载更新",
+            "Download updates automatically"));
   }
 
   private JPanel buildFooter() {

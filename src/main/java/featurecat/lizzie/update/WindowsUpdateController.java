@@ -32,6 +32,10 @@ public final class WindowsUpdateController {
     COORDINATOR.invalidateAutomatic();
   }
 
+  static void automaticCheckDisabled() {
+    COORDINATOR.disableAutomaticCheck();
+  }
+
   static void automaticDownloadDisabled() {
     COORDINATOR.disableAutomaticDownload();
   }
