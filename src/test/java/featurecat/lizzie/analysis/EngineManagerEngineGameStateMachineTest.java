@@ -27,6 +27,7 @@ import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.EngineCountDown;
 import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.util.Utils;
 import java.awt.Window;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -37,6 +38,7 @@ import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -137,6 +139,7 @@ class EngineManagerEngineGameStateMachineTest {
     Menu.engineMenu = previousEngineMenu;
     Lizzie.board = previousBoard;
     Lizzie.gtpConsole = previousGtpConsole;
+    Utils.setStoneSoundForTest(null);
     SwingUtilities.invokeAndWait(() -> {});
   }
 
@@ -997,6 +1000,9 @@ class EngineManagerEngineGameStateMachineTest {
     EngineManager.EngineGameMoveResponseContext move =
         EngineManager.captureEngineGameAnalysisMoveContext(primary);
     BoardHistoryNode parent = board.getHistory().getCurrentHistoryNode();
+    Lizzie.config.playSound = true;
+    AtomicInteger sounds = new AtomicInteger();
+    Utils.setStoneSoundForTest(node -> sounds.incrementAndGet());
     AtomicReference<EngineManager.EngineGamePostMoveToken> result = new AtomicReference<>();
     AtomicReference<Throwable> commitFailure = new AtomicReference<>();
     Thread commit =
@@ -1023,6 +1029,7 @@ class EngineManagerEngineGameStateMachineTest {
     assertEquals(0, parent.numberOfChildren());
     assertEquals(0, board.clearAfterMoveCalls.get());
     assertEquals(EngineManager.EngineGamePhase.FAILED, transaction.phase());
+    assertEquals(0, sounds.get());
   }
 
   @Test
@@ -1627,6 +1634,71 @@ class EngineManagerEngineGameStateMachineTest {
     assertEquals(EngineManager.EngineGamePhase.FAILED, transaction.phase());
     assertEquals(0, transaction.operationsInFlightForTest());
     assertEquals(1, board.getHistory().getMoveNumber());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void committedEngineGameMovePlaysGlobalStoneSoundOnceForCommittedNode(boolean pass)
+      throws Exception {
+    RecordingBoard board = recordingBoard();
+    Lizzie.board = board;
+    Lizzie.config.playSound = true;
+    List<BoardHistoryNode> sounded = new CopyOnWriteArrayList<>();
+    Utils.setStoneSoundForTest(sounded::add);
+    EngineManager.EngineGameMoveResponseContext response = activeAnalysisMoveResponse();
+
+    EngineManager.EngineGamePostMoveToken postMove =
+        EngineManager.commitEngineGameMove(
+            response, pass ? null : 3, pass ? null : 3, black, 0);
+
+    assertNotNull(postMove);
+    assertEquals(List.of(board.getHistory().getCurrentHistoryNode()), sounded);
+    assertSame(postMove.boardNode, sounded.get(0));
+    assertNull(
+        EngineManager.commitEngineGameMove(response, pass ? null : 4, pass ? null : 4, black, 0));
+    assertEquals(1, sounded.size());
+  }
+
+  @Test
+  void committedEngineGameMoveStaysSilentWhenGlobalStoneSoundIsOff() throws Exception {
+    RecordingBoard board = recordingBoard();
+    Lizzie.board = board;
+    Lizzie.config.playSound = false;
+    AtomicInteger sounds = new AtomicInteger();
+    Utils.setStoneSoundForTest(node -> sounds.incrementAndGet());
+
+    assertNotNull(
+        EngineManager.commitEngineGameMove(activeAnalysisMoveResponse(), 3, 3, black, 0));
+
+    assertEquals(1, board.getHistory().getMoveNumber());
+    assertEquals(0, sounds.get());
+  }
+
+  @Test
+  void engineGameMoveSoundFailureKeepsCommittedMoveAndGameActive() throws Exception {
+    RecordingBoard board = recordingBoard();
+    Lizzie.board = board;
+    Lizzie.config.playSound = true;
+    Utils.setStoneSoundForTest(
+        node -> {
+          throw new IllegalStateException("audio device unavailable");
+        });
+    EngineManager.EngineGameMoveResponseContext response = activeAnalysisMoveResponse();
+
+    EngineManager.EngineGamePostMoveToken postMove =
+        EngineManager.commitEngineGameMove(response, 3, 3, black, 0);
+
+    assertNotNull(postMove);
+    assertTrue(EngineManager.isCurrentEngineGamePostMoveToken(postMove));
+    assertEquals(EngineManager.EngineGamePhase.ACTIVE, response.transaction.phase());
+  }
+
+  private EngineManager.EngineGameMoveResponseContext activeAnalysisMoveResponse()
+      throws Exception {
+    activeTransaction(installManager(), gameInfo(), black, 0);
+    EngineManager.EngineGamePrimaryContext primary =
+        EngineManager.captureEngineGamePrimaryContext(black, black.currentEngineIncarnation());
+    return EngineManager.captureEngineGameAnalysisMoveContext(primary);
   }
 
   @Test

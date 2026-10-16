@@ -4336,7 +4336,6 @@ public class Board {
         modifyEnd();
         return HistoryNavigationMutation.NOT_MOVED;
       }
-      if (Lizzie.config.playSound) Utils.playVoiceFile();
       if (expectedChild == null) {
         if (!shouldForwardHistoryNavigationToPrimaryEngine())
           history.nextVariationWithoutEngineSync(0);
@@ -4344,6 +4343,7 @@ public class Board {
       } else {
         history.nextVariationWithoutEngineSync(childIndex);
       }
+      if (Lizzie.config.playSound) Utils.playVoiceFile(history.getCurrentHistoryNode());
       advanceContextRevision();
       boolean needSync =
           history.getCurrentHistoryNode().hasRemovedStone()
