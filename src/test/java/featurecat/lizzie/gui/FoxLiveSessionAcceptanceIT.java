@@ -148,7 +148,7 @@ public final class FoxLiveSessionAcceptanceIT {
       target.sendCommand("stop");
       Thread.sleep(500);
       KataGoRules customRules = KataGoRules.parse("chinese").orElseThrow()
-          .overlayEditor("AREA", "SITUATIONAL", false, "ALL", "N-1", false);
+          .overlayEditor("AREA", "SITUATIONAL", false, "ALL", "N-1", false, true);
       for (KataGoRules selected : List.of(KataGoRules.parse("japanese").orElseThrow(), customRules)) {
         var operation = target.applyEngineRulesOperation(selected);
         await(operation::isDone, 10, "real current rule set/readback");

@@ -22,7 +22,9 @@ public final class FoxRulesText {
       new Preset("tromp-taylor", "Fox.rulesPreset.trompTaylor"),
       new Preset("aga", "Fox.rulesPreset.agaBga"),
       new Preset("new-zealand", "Fox.rulesPreset.newZealand"),
-      new Preset("aga-button", "Fox.rulesPreset.agaButton"));
+      new Preset("aga-button", "Fox.rulesPreset.agaButton"),
+      new Preset("goe", "LizzieFrame.currentRules.goe"),
+      new Preset("ancient-territory", "Fox.rulesPreset.ancientTerritory"));
 
   private static final List<Field> FIELDS = List.of(
       new Field(KataGoRules.SCORING, "SetKataRules.lblScoringRule", Map.of(
@@ -41,8 +43,8 @@ public final class FoxRulesText {
           "N-1", "SetKataRules.rdoHandicapKomiN1")),
       new Field(KataGoRules.HAS_BUTTON, "SetKataRules.lblHasButton", Map.of(
           "true", "SetKataRules.rdoButtonGo", "false", "SetKataRules.rdoNoButtonGo")),
-      new Field(KataGoRules.FRIENDLY_PASS_OK, "Fox.rulesFriendlyPassOk", Map.of(
-          "true", "SetKataRules.rdoSuicide", "false", "SetKataRules.rdoNoSuicide")));
+      new Field(KataGoRules.FRIENDLY_PASS_OK, "SetKataRules.lblFriendlyPassOk", Map.of(
+          "true", "SetKataRules.rdoButtonGo", "false", "SetKataRules.rdoNoButtonGo")));
 
   private FoxRulesText() {}
 

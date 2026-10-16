@@ -1325,7 +1325,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
   @Test
   void foxPreparationRequiresCompleteMatchingRulesWithoutChangingOtherParameters() throws Exception {
     KataGoRules custom = KataGoRules.parse("chinese").orElseThrow()
-        .overlayEditor("AREA", "POSITIONAL", true, "ALL", "N-1", false);
+        .overlayEditor("AREA", "POSITIONAL", true, "ALL", "N-1", false, true);
     for (String result : List.of("success", "mismatch", "rejected", "invalid", "visits-rejected")) {
       Leelaz engine = reusableKatagoEngine(false, false);
       ByteArrayOutputStream output = installOutput(engine);

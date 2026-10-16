@@ -28,6 +28,17 @@ JAVA_REQUIRED_TESTS = (
     ("featurecat.lizzie.teacher.ChatGptRuntimeSmokeIT", "oldRuntimeReportsIncompletePackageInsteadOfNetworkFailure"),
 )
 DESKTOP_REQUIRED_TESTS = (
+    ("featurecat.lizzie.gui.RulesDialogLayoutTest", "bothEditorsFitTranslationsAndFontSizes"),
+    ("featurecat.lizzie.gui.SetKataRulesWindowTest",
+     "unchangedTerritoryRulesRoundTripWithoutRewritingHiddenFields"),
+    ("featurecat.lizzie.gui.SetKataRulesWindowTest",
+     "presetButtonsComposeExactPresetsAndTerritoryLocksFriendlyPass"),
+    ("featurecat.lizzie.update.CheckUpdateDialogTest", "restartHintOnlyMarksOptionsEnabledSinceLaunch"),
+    *tuple(
+        ("featurecat.lizzie.update.CheckUpdateDialogTest",
+         f"changingSelectionRevokesHintsImmediatelyAndAfterReopening(boolean)[{case}]")
+        for case in range(1, 3)
+    ),
     *tuple(
         (
             "featurecat.lizzie.gui.FunctionSearchNavigationTest",
@@ -609,7 +620,7 @@ def build_steps(
                     "-Dlizzie.desktop.required=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
-                    "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest,CheckUpdateDialogTest,UpdatePauseRecoveryTest",
+                    "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest,CheckUpdateDialogTest,UpdatePauseRecoveryTest,SetKataRulesWindowTest,RulesDialogLayoutTest",
                     "test",
                 ),
                 group="desktop",

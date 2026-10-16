@@ -1,0 +1,56 @@
+name: Rules and Update UI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rules-update-ui.yml'
+      - 'src/main/java/featurecat/lizzie/update/**'
+      - 'src/main/java/featurecat/lizzie/gui/*Rules*.java'
+      - 'src/main/resources/l10n/**'
+      - 'src/test/java/featurecat/lizzie/gui/*Rules*Test.java'
+      - 'src/test/java/featurecat/lizzie/update/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rules-update-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-layout:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        scale: ['1', '1.25', '1.5', '2']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Exercise native windows, translated text and update authority
+        shell: pwsh
+        run: |
+          mvn -B '-Dfmt.skip=true' '-Djava.awt.headless=false' '-Dlizzie.desktop.required=true' '-Dsun.java2d.uiScale=${{ matrix.scale }}' '-Dtest=RulesDialogLayoutTest,SetKataRulesWindowTest,CheckUpdateDialogTest' test
+          if ($LASTEXITCODE -ne 0) { throw 'Rules/update UI acceptance failed' }
+          foreach ($name in @('featurecat.lizzie.gui.RulesDialogLayoutTest', 'featurecat.lizzie.gui.SetKataRulesWindowTest', 'featurecat.lizzie.update.CheckUpdateDialogTest')) {
+            [xml]$report = Get-Content "target/surefire-reports/TEST-$name.xml"
+            if ([int]$report.testsuite.tests -lt 1 -or [int]$report.testsuite.failures -ne 0 -or [int]$report.testsuite.errors -ne 0 -or [int]$report.testsuite.skipped -ne 0) {
+              throw "Missing, skipped or failed desktop evidence: $name"
+            }
+          }
+      - name: Preserve actual window renders and assertions
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: rules-update-windows-${{ matrix.scale }}
+          path: |
+            target/desktop-smoke/probes/
+            target/surefire-reports/
+          if-no-files-found: error
+          retention-days: 7

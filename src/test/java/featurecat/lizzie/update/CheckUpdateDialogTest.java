@@ -92,6 +92,111 @@ class CheckUpdateDialogTest {
     });
   }
 
+  @Test
+  void restartHintOnlyMarksOptionsEnabledSinceLaunch() throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      var previous = Lizzie.config;
+      CheckUpdateDialog launched = null;
+      CheckUpdateDialog relaunched = null;
+      try {
+        Lizzie.config = ConfigTestHelper.createForTests(directory);
+        Lizzie.config.uiConfig = new JSONObject();
+        launched = new CheckUpdateDialog(null, launchedCoordinator());
+        JCheckBox check = find(launched, JCheckBox.class);
+        JCheckBox download = findDownload(launched, check);
+        String plainCheck = check.getText();
+        String plainDownload = download.getText();
+        check.doClick();
+        download.doClick();
+        assertNotEquals(plainCheck, check.getText());
+        assertNotEquals(plainDownload, download.getText());
+        download.doClick();
+        assertEquals(plainDownload, download.getText());
+        download.doClick();
+
+        relaunched = new CheckUpdateDialog(null, launchedCoordinator());
+        JCheckBox relaunchedCheck = find(relaunched, JCheckBox.class);
+        JCheckBox relaunchedDownload = findDownload(relaunched, relaunchedCheck);
+        assertTrue(relaunchedCheck.isSelected());
+        assertTrue(relaunchedDownload.isSelected());
+        assertEquals(plainCheck, relaunchedCheck.getText());
+        assertEquals(plainDownload, relaunchedDownload.getText());
+        relaunchedCheck.doClick();
+        assertEquals(plainCheck, relaunchedCheck.getText());
+        assertEquals(plainDownload, relaunchedDownload.getText());
+        relaunchedCheck.doClick();
+        relaunchedDownload.doClick();
+        assertNotEquals(plainCheck, relaunchedCheck.getText());
+        assertNotEquals(plainDownload, relaunchedDownload.getText());
+      } finally {
+        if (launched != null) launched.dispose();
+        if (relaunched != null) relaunched.dispose();
+        Lizzie.config = previous;
+      }
+    });
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void changingSelectionRevokesHintsImmediatelyAndAfterReopening(boolean channel) throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      var previous = Lizzie.config;
+      List<JDialog> views = new ArrayList<>();
+      try {
+        Lizzie.config = ConfigTestHelper.createForTests(directory);
+        Lizzie.config.uiConfig = new JSONObject()
+            .put(UpdatePreferences.AUTO_CHECK, true).put(UpdatePreferences.AUTO_DOWNLOAD, true);
+        UpdateChannel.persist(UpdateChannel.STABLE);
+        UpdateSource.persist(UpdateSource.OFFICIAL_SITE);
+        UpdateCheckCoordinator coordinator = launchedCoordinator();
+        CheckUpdateDialog page = new CheckUpdateDialog(null, coordinator);
+        views.add(page);
+        page.setVisible(true);
+        JCheckBox check = find(page, JCheckBox.class);
+        JCheckBox download = findDownload(page, check);
+        String plainCheck = check.getText();
+        String plainDownload = download.getText();
+        button(page, "WindowsUpdate.channel.stable", "Official").doClick();
+        assertEquals(plainCheck, check.getText(), "An unchanged selection is not a revocation");
+        button(page, channel ? "WindowsUpdate.channel.beta" : "WindowsUpdate.source.github",
+            channel ? "Test" : "GitHub").doClick();
+        assertNotEquals(plainCheck, check.getText());
+        assertNotEquals(plainDownload, download.getText());
+        page.validate();
+        assertTrue(check.getWidth() >= check.getPreferredSize().width,
+            "Pending label must fit without a manual window resize");
+        button(page, channel ? "WindowsUpdate.channel.stable" : "WindowsUpdate.source.official",
+            channel ? "Official" : "Official site").doClick();
+        assertNotEquals(plainCheck, check.getText(), "Switching back does not reauthorize startup");
+        page.dispose();
+        CheckUpdateDialog reopened = new CheckUpdateDialog(null, coordinator);
+        views.add(reopened);
+        JCheckBox reopenedCheck = find(reopened, JCheckBox.class);
+        assertEquals(check.getText(), reopenedCheck.getText());
+        assertEquals(download.getText(), findDownload(reopened, reopenedCheck).getText());
+        coordinator.applicationReady();
+      } finally {
+        views.forEach(JDialog::dispose);
+        Lizzie.config = previous;
+      }
+    });
+  }
+
+  private static UpdateCheckCoordinator launchedCoordinator() {
+    UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
+        s -> { throw new AssertionError("No discovery"); },
+        new UpdateCheckCoordinator.OfferHandoff() {
+          public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) { fail("No offer"); }
+          public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) { fail("No offer"); }
+        }, new UpdateCheckCoordinator.Runner() {
+          public void runBackground(Runnable work) { fail("No background work"); }
+          public void runOnEdt(Runnable work) { work.run(); }
+        }, s -> {});
+    coordinator.captureStartupPolicy(UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(),
+        UpdateCheckSelection.of(UpdateChannel.STABLE, UpdateSource.GITHUB, "next-2026-08-01.1"));
+    return coordinator;
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void automaticOfferIsViewOnlyUntilUpdateNowEvenAfterReopening(boolean autoDownload) throws Exception {

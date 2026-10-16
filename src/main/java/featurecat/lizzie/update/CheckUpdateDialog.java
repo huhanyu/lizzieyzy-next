@@ -49,6 +49,8 @@ public final class CheckUpdateDialog extends JDialog {
   private final JFontButton pauseButton = new JFontButton();
   private final JFontButton retryButton = new JFontButton(
       UpdateText.tr("WindowsUpdate.btnResume", "继续", "Resume"));
+  private final JCheckBox autoCheck = new JCheckBox("", UpdatePreferences.autoCheck());
+  private final JCheckBox autoDownload = new JCheckBox("", UpdatePreferences.autoDownload());
   private final UpdateCheckCoordinator coordinator;
   private final Consumer<UpdateCheckCoordinator.State> observer = this::showState;
 
@@ -116,12 +118,12 @@ public final class CheckUpdateDialog extends JDialog {
     group.add(betaButton);
     stableButton.addActionListener(
         e -> {
-          persistSelection(UpdateChannel.STABLE, UpdateSource.current());
+          persistSelection(UpdateChannel.STABLE, UpdateSource.current(), coordinator);
           refreshSourceState();
         });
     betaButton.addActionListener(
         e -> {
-          persistSelection(UpdateChannel.BETA, selectedSource());
+          persistSelection(UpdateChannel.BETA, selectedSource(), coordinator);
           refreshSourceState();
         });
 
@@ -157,9 +159,9 @@ public final class CheckUpdateDialog extends JDialog {
 
     refreshSourceState();
     officialSourceButton.addActionListener(
-        e -> persistSelection(selectedChannel(), UpdateSource.OFFICIAL_SITE));
+        e -> persistSelection(selectedChannel(), UpdateSource.OFFICIAL_SITE, coordinator));
     githubSourceButton.addActionListener(
-        e -> persistSelection(selectedChannel(), UpdateSource.GITHUB));
+        e -> persistSelection(selectedChannel(), UpdateSource.GITHUB, coordinator));
 
     JPanel sourceRow = new JPanel();
     sourceRow.setOpaque(false);
@@ -182,22 +184,21 @@ public final class CheckUpdateDialog extends JDialog {
     constraints.insets = new Insets(0, 0, 14, 0);
     form.add(sourceRow, constraints);
 
-    JCheckBox autoCheck = new JCheckBox(UpdateText.tr(
-        "WindowsUpdate.autoCheck", "启动时自动检查更新（下次启动生效）",
-        "Check for updates at startup (from next launch)"), UpdatePreferences.autoCheck());
     autoCheck.setOpaque(false);
     autoCheck.setFont(stableButton.getFont());
-    JCheckBox autoDownload = new JCheckBox(UpdateText.tr(
-        "WindowsUpdate.autoDownload", "自动下载更新（下次启动生效）",
-        "Download updates automatically (from next launch)"), UpdatePreferences.autoDownload());
     autoDownload.setOpaque(false);
     autoDownload.setFont(stableButton.getFont());
     autoDownload.setEnabled(autoCheck.isSelected());
-    autoDownload.addActionListener(e -> UpdatePreferences.persistAutoDownload(autoDownload.isSelected()));
+    refreshAutoLabels(autoCheck, autoDownload);
+    autoDownload.addActionListener(e -> {
+      UpdatePreferences.persistAutoDownload(autoDownload.isSelected(), coordinator);
+      refreshAutoLabels(autoCheck, autoDownload);
+    });
     autoCheck.addActionListener(e -> {
-      UpdatePreferences.persistAutoCheck(autoCheck.isSelected());
+      UpdatePreferences.persistAutoCheck(autoCheck.isSelected(), coordinator);
       autoDownload.setEnabled(autoCheck.isSelected());
       autoDownload.setSelected(UpdatePreferences.autoDownload());
+      refreshAutoLabels(autoCheck, autoDownload);
     });
     constraints.gridy = 4;
     form.add(autoCheck, constraints);
@@ -215,6 +216,27 @@ public final class CheckUpdateDialog extends JDialog {
     constraints.insets = new Insets(0, 0, 0, 0);
     form.add(resultLabel, constraints);
     return form;
+  }
+
+  /** A checked option lacking this run's authority is pending; disabling takes effect immediately. */
+  private void refreshAutoLabels(JCheckBox autoCheck, JCheckBox autoDownload) {
+    autoCheck.setText(autoCheck.isSelected() && !coordinator.automaticCheckActive()
+        ? UpdateText.tr("WindowsUpdate.autoCheckPending", "启动时自动检查更新（下次启动生效）",
+            "Check for updates at startup (from next launch)")
+        : UpdateText.tr("WindowsUpdate.autoCheck", "启动时自动检查更新",
+            "Check for updates at startup"));
+    autoDownload.setText(autoDownload.isSelected() && !coordinator.automaticDownloadActive()
+        ? UpdateText.tr("WindowsUpdate.autoDownloadPending", "自动下载更新（下次启动生效）",
+            "Download updates automatically (from next launch)")
+        : UpdateText.tr("WindowsUpdate.autoDownload", "自动下载更新",
+            "Download updates automatically"));
+    if (isDisplayable()) {
+      Dimension preferred = getPreferredSize();
+      if (preferred.width > getWidth() || preferred.height > getHeight()) {
+        setSize(Math.max(getWidth(), preferred.width), Math.max(getHeight(), preferred.height));
+      }
+      validate();
+    }
   }
 
   private JPanel buildFooter() {
@@ -238,13 +260,18 @@ public final class CheckUpdateDialog extends JDialog {
   }
 
   static void persistSelection(UpdateChannel channel, UpdateSource source) {
+    persistSelection(channel, source, WindowsUpdateController.coordinator());
+  }
+
+  private static void persistSelection(UpdateChannel channel, UpdateSource source,
+      UpdateCheckCoordinator coordinator) {
     boolean changed = UpdateChannel.current() != channel
         || (channel != UpdateChannel.BETA && UpdateSource.current() != source);
     UpdateChannel.persist(channel);
     if (channel != UpdateChannel.BETA) {
       UpdateSource.persist(source);
     }
-    if (changed) WindowsUpdateController.automaticPolicyChanged();
+    if (changed) coordinator.invalidateAutomatic();
   }
 
   private void startCheck() {
@@ -253,6 +280,7 @@ public final class CheckUpdateDialog extends JDialog {
   }
 
   private void showState(UpdateCheckCoordinator.State state) {
+    refreshAutoLabels(autoCheck, autoDownload);
     checkButton.setEnabled(!coordinator.busy());
     offerButton.setVisible(state.hasOffer() && !state.downloading()
         && state.download().phase() != UpdateCheckCoordinator.DownloadPhase.CANCELLED
