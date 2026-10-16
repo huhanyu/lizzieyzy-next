@@ -8,6 +8,7 @@ import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.util.LocaleFontSupport;
 import java.awt.Component;
 import java.awt.GraphicsEnvironment;
 import java.awt.image.BufferedImage;
@@ -18,6 +19,8 @@ import java.util.Locale;
 import java.util.ResourceBundle;
 import javax.imageio.ImageIO;
 import javax.swing.JDialog;
+import javax.swing.AbstractButton;
+import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,6 +38,7 @@ class RulesDialogLayoutTest {
       var oldBundle = Lizzie.resourceBundle;
       var oldEngine = Lizzie.leelaz;
       int oldFont = Config.frameFontSize;
+      String oldFontName = Config.sysDefaultFontName;
       try {
         Lizzie.config = ConfigTestHelper.createForTests(directory);
         Lizzie.config.analysisSpecificRules = "";
@@ -43,8 +47,11 @@ class RulesDialogLayoutTest {
           @Override public void ponder() { fail("Cancel must not change the main engine"); }
         };
         for (String language : List.of("zh-CN", "zh-TW", "en-US", "ja-JP", "ko", "th-TH")) {
+          Locale locale = Locale.forLanguageTag(language);
           Lizzie.resourceBundle = ResourceBundle.getBundle("l10n.DisplayStrings",
-              Locale.forLanguageTag(language));
+              locale);
+          Config.sysDefaultFontName = LocaleFontSupport.resolveDefaultFontName(
+              Lizzie.resourceBundle.getString("Lizzie.defaultFontName"), locale);
           for (int size : List.of(12, 16, 20)) {
             Config.frameFontSize = size;
             Lizzie.leelaz = size == 12 ? null : pondering;
@@ -73,6 +80,12 @@ class RulesDialogLayoutTest {
                   assertTrue(control.getWidth() >= control.getPreferredSize().width
                       && control.getHeight() >= control.getPreferredSize().height,
                       language + "/" + size + " clipped text: " + control);
+                  String text = control instanceof JLabel label ? label.getText()
+                      : control instanceof AbstractButton button ? button.getText() : null;
+                  if (text != null) {
+                    assertEquals(-1, control.getFont().canDisplayUpTo(text),
+                        language + "/" + size + " missing glyphs: " + text);
+                  }
                 }
               }
               for (Component component : analysis.getContentPane().getComponents()) {
@@ -95,6 +108,7 @@ class RulesDialogLayoutTest {
         Lizzie.resourceBundle = oldBundle;
         Lizzie.leelaz = oldEngine;
         Config.frameFontSize = oldFont;
+        Config.sysDefaultFontName = oldFontName;
       }
     });
   }
