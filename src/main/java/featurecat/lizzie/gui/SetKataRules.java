@@ -3,6 +3,7 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.EngineRulesResult;
+import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -15,6 +16,8 @@ import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
+import java.text.MessageFormat;
+import java.util.OptionalDouble;
 import java.util.ResourceBundle;
 import javax.imageio.ImageIO;
 import javax.swing.ButtonGroup;
@@ -33,6 +36,7 @@ public class SetKataRules extends JDialog {
   JSONObject jo;
   // private JFontLabel lblNewLabel_3;
   private JFontLabel lblStatus;
+  private JFontLabel lblKomiHint;
   private final Leelaz engine;
   private final boolean composeOnly;
   private final KataGoRules composeBaseline;
@@ -84,6 +88,10 @@ public class SetKataRules extends JDialog {
           public void windowClosing(WindowEvent e) {
             closeDialog();
           }
+
+          public void windowActivated(WindowEvent e) {
+            if (!composeOnly) refreshKomiHint();
+          }
         });
     AccessibilitySupport.installEscapeAction(getRootPane(), this, this::closeDialog);
 
@@ -121,14 +129,18 @@ public class SetKataRules extends JDialog {
     if (Lizzie.config.autoLoadKataRules) {
       chkbxAutoLoadRules.setSelected(true);
     }
+    // Size the row for the widest komi KataGo accepts (-400..400) so any real value fits.
+    lblKomiHint = new JFontLabel(formatKomiHint(-400.0, 7.5));
     int width = Math.max(editor.width(), composeOnly ? 0
-        : chkbxAutoLoadRules.getPreferredSize().width + 36);
+        : Math.max(chkbxAutoLoadRules.getPreferredSize().width,
+            lblKomiHint.getPreferredSize().width) + 36);
+    lblKomiHint.setText("");
     int checkHeight = chkbxAutoLoadRules.getPreferredSize().height;
     chkbxAutoLoadRules.setBounds(18, below, width - 36, checkHeight);
     int buttonHeight = Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
     int buttonWidth = Math.max(93, Math.max(btnApply.getPreferredSize().width,
         btnCancel.getPreferredSize().width));
-    int buttonY = below + (composeOnly ? 0 : checkHeight + configuredStatusHeight());
+    int buttonY = below + (composeOnly ? 0 : checkHeight + 2 * configuredStatusHeight());
     btnApply.setBounds(width / 2 - buttonWidth - 6, buttonY, buttonWidth, buttonHeight);
     btnCancel.setBounds(width / 2 + 6, buttonY, buttonWidth, buttonHeight);
     getContentPane().setPreferredSize(new Dimension(width, buttonY + buttonHeight + 16));
@@ -149,13 +161,19 @@ public class SetKataRules extends JDialog {
     lblStatus = new JFontLabel("");
     lblStatus.setBounds(18, below + checkHeight, width - 36, configuredStatusHeight());
     getContentPane().add(lblStatus);
+    lblKomiHint.setBounds(
+        18, below + checkHeight + configuredStatusHeight(), width - 36, configuredStatusHeight());
+    getContentPane().add(lblKomiHint);
     if (composeOnly) {
       chkbxAutoLoadRules.setVisible(false);
       lblStatus.setVisible(false);
+      lblKomiHint.setVisible(false);
       if (initial != null) {
         applyJsonToEditor(initial.toJson());
       }
     } else {
+      editor.onChange(this::refreshKomiHint);
+      refreshKomiHint();
       if (rejectEngineGameInteraction()) return;
       rulesOperation = engine.queryEngineRulesOperation();
       refreshStatus();
@@ -402,6 +420,31 @@ public class SetKataRules extends JDialog {
 
   String statusText() {
     return lblStatus.getText();
+  }
+
+  String komiHintText() {
+    return lblKomiHint.getText();
+  }
+
+  /** Hints when the current game's komi differs from KataGo's default for the edited rules. */
+  private void refreshKomiHint() {
+    lblKomiHint.setText(currentKomiHint());
+  }
+
+  private String currentKomiHint() {
+    if (Lizzie.board == null) return "";
+    GameInfo game = Lizzie.board.getHistory().getGameInfo();
+    if (game.getHandicap() > 0) return "";
+    OptionalDouble conventional = rulesFromEditor().defaultKomi();
+    if (conventional.isEmpty() || conventional.getAsDouble() == game.getKomi()) return "";
+    return formatKomiHint(game.getKomi(), conventional.getAsDouble());
+  }
+
+  private String formatKomiHint(double current, double conventional) {
+    return MessageFormat.format(
+        resourceBundle.getString("SetKataRules.komiConventionHint"),
+        String.valueOf(current),
+        String.valueOf(conventional));
   }
 
   void refreshStatus() {

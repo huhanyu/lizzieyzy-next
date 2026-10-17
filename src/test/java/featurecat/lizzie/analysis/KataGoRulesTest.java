@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class KataGoRulesTest {
@@ -172,5 +173,58 @@ class KataGoRulesTest {
     assertEquals("0", trompTaylor.string("whiteHandicapBonus"));
     assertFalse(trompTaylor.bool("friendlyPassOk"));
     assertTrue(trompTaylor.hasRequiredFields());
+  }
+
+  @Test
+  void defaultKomiMatchesKataGoPresetDefaults() {
+    // Values from KataGo cpp/game/rules.cpp parseRulesHelper.
+    Map<String, Double> expected =
+        Map.ofEntries(
+            Map.entry("tromp-taylor", 7.5),
+            Map.entry("chinese", 7.5),
+            Map.entry("chinese-ogs", 7.5),
+            Map.entry("chinese-kgs", 7.5),
+            Map.entry("japanese", 6.5),
+            Map.entry("korean", 6.5),
+            Map.entry("stone-scoring", 7.5),
+            Map.entry("aga", 7.5),
+            Map.entry("bga", 7.5),
+            Map.entry("new-zealand", 7.0),
+            Map.entry("aga-button", 7.0),
+            Map.entry("goe", 7.5),
+            Map.entry("ancient-territory", 6.5));
+    assertEquals(expected.keySet(), Set.copyOf(KataGoRules.officialPresetNames()));
+    for (Map.Entry<String, Double> entry : expected.entrySet()) {
+      assertEquals(
+          entry.getValue(),
+          KataGoRules.parse(entry.getKey()).orElseThrow().defaultKomi().getAsDouble(),
+          entry.getKey());
+    }
+  }
+
+  @Test
+  void defaultKomiForCustomRulesFollowsScoringAndButton() {
+    KataGoRules areaWithButton =
+        KataGoRules.parse(
+                "{\"ko\":\"SIMPLE\",\"scoring\":\"AREA\",\"tax\":\"NONE\",\"suicide\":false,"
+                    + "\"hasButton\":true,\"whiteHandicapBonus\":\"N\",\"friendlyPassOk\":true}")
+            .orElseThrow();
+    KataGoRules territoryWithButton =
+        KataGoRules.parse(
+                "{\"ko\":\"SIMPLE\",\"scoring\":\"TERRITORY\",\"tax\":\"SEKI\",\"suicide\":false,"
+                    + "\"hasButton\":true,\"whiteHandicapBonus\":\"0\",\"friendlyPassOk\":true}")
+            .orElseThrow();
+    KataGoRules nearNewZealand =
+        KataGoRules.parse(
+                "{\"ko\":\"SITUATIONAL\",\"scoring\":\"AREA\",\"tax\":\"NONE\",\"suicide\":true,"
+                    + "\"hasButton\":false,\"whiteHandicapBonus\":\"N\",\"friendlyPassOk\":true}")
+            .orElseThrow();
+    KataGoRules unknownScoring =
+        KataGoRules.parse("{\"ko\":\"SIMPLE\",\"suicide\":false}").orElseThrow();
+
+    assertEquals(7.0, areaWithButton.defaultKomi().getAsDouble());
+    assertEquals(6.5, territoryWithButton.defaultKomi().getAsDouble());
+    assertEquals(7.5, nearNewZealand.defaultKomi().getAsDouble());
+    assertTrue(unknownScoring.defaultKomi().isEmpty());
   }
 }

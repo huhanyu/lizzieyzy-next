@@ -11,6 +11,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.EngineRulesResult;
 import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
@@ -400,6 +401,54 @@ class SetKataRulesWindowTest {
       assertFalse(fixture.output.toString().contains("kata-set-rules"));
       closeDialog(dialog);
     }
+  }
+
+  @Test
+  void komiHintComparesGameKomiWithEditedRulesAndLeavesKomiAlone() throws Exception {
+    assumeFalse(GraphicsEnvironment.isHeadless());
+    try (Fixture fixture = Fixture.ordinary()) {
+      GameInfo game = Lizzie.board.getHistory().getGameInfo();
+      game.setKomiNoMenu(7.5);
+      SetKataRules dialog = new SetKataRules(fixture.engine);
+      int queryId = commandIdFor(fixture.output.toString(), "kata-get-rules");
+      dispatch(fixture.engine, "=" + queryId + " " + CHINESE);
+      awaitConfirmedReadback(dialog);
+      assertEquals("", dialog.komiHintText());
+
+      SwingUtilities.invokeAndWait(dialog.editor.btnJpnRule::doClick);
+      String hint = dialog.komiHintText();
+      assertTrue(hint.contains("7.5") && hint.contains("6.5"), hint);
+      assertEquals(7.5, game.getKomi());
+
+      game.setKomiNoMenu(6.5);
+      activate(dialog);
+      assertEquals("", dialog.komiHintText(), "komi edited elsewhere refreshes on reactivation");
+
+      game.setKomiNoMenu(0.5);
+      game.setHandicap(2);
+      activate(dialog);
+      assertEquals("", dialog.komiHintText(), "handicap games use their own komi");
+      game.setHandicap(0);
+      game.setKomiNoMenu(7.5);
+
+      SwingUtilities.invokeAndWait(dialog.editor.btnChnRule::doClick);
+      assertEquals("", dialog.komiHintText());
+      closeDialog(dialog);
+
+      SetKataRules compose =
+          new SetKataRules(fixture.engine, true, KataGoRules.parse("japanese").orElseThrow());
+      activate(compose);
+      assertEquals("", compose.komiHintText(), "match-rules composing has no game komi");
+      closeDialog(compose);
+    }
+  }
+
+  private static void activate(SetKataRules dialog) throws Exception {
+    SwingUtilities.invokeAndWait(
+        () ->
+            dialog.dispatchEvent(
+                new java.awt.event.WindowEvent(
+                    dialog, java.awt.event.WindowEvent.WINDOW_ACTIVATED)));
   }
 
   private static KataGoRules composedRules(SetKataRules dialog) throws Exception {
