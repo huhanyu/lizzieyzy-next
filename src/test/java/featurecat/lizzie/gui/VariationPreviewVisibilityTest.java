@@ -7,6 +7,7 @@ import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.rules.Board;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -118,7 +119,10 @@ public class VariationPreviewVisibilityTest {
     assertSame(node, Lizzie.board.getHistory().getCurrentHistoryNode());
     assertArrayEquals(stones, Lizzie.board.getStones());
     ImageIO.write(visible, "png", result.resolveSibling("complete.png").toFile());
-    exerciseFloating(result);
+    exerciseFloating(result, true);
+    exerciseFloating(result, false);
+    assertSame(node, Lizzie.board.getHistory().getCurrentHistoryNode());
+    assertArrayEquals(stones, Lizzie.board.getStones());
   }
 
   private static MoveData move(String coordinate, int visits, int order, String... continuation) {
@@ -146,18 +150,21 @@ public class VariationPreviewVisibilityTest {
   }
 
   private static BufferedImage draw(BoardRenderer renderer) {
-    BufferedImage image = new BufferedImage(2000, 1600, BufferedImage.TYPE_INT_ARGB);
+    Rectangle bounds = renderer.getBoardBounds();
+    BufferedImage image = new BufferedImage(
+        Math.max(1, bounds.x + bounds.width), Math.max(1, bounds.y + bounds.height),
+        BufferedImage.TYPE_INT_ARGB);
     Graphics2D graphics = image.createGraphics();
     renderer.draw(graphics);
     graphics.dispose();
     return image;
   }
-  private static void exerciseFloating(Path result) throws Exception {
+  private static void exerciseFloating(Path result, boolean editMode) throws Exception {
     FloatBoard board = new FloatBoard(30, 30, 500, 500, 0, false);
     Lizzie.frame.floatBoard = board;
     try {
       FloatBoardRenderer renderer = board.boardRenderer;
-      renderer.editMode = true;
+      renderer.editMode = editMode;
       renderer.setLocation(0, 0);
       renderer.setBoardLength(500, 500);
       ArrayDeque<Runnable> work = new ArrayDeque<>();
@@ -167,16 +174,46 @@ public class VariationPreviewVisibilityTest {
       scheduler.set(state, new VariationPreviewScheduler(work::add, Runnable::run));
       board.mouseOverCoordinate = LizzieFrame.outOfBoundCoordinate;
       BufferedImage idle = draw(renderer);
+      int emptyContinuation = sample(idle, renderer, "D16");
       board.mouseOverCoordinate = Board.convertNameToCoordinates("D4");
       renderer.selectNormalVariation();
       BufferedImage pending = draw(renderer);
       assertEquals(sample(idle, renderer, "D4"), sample(pending, renderer, "D4"),
-          "floating edit mode must retain its pending candidate");
+          "floating board must retain its pending candidate");
       assertEquals(sample(idle, renderer, "Q10"), sample(pending, renderer, "Q10"),
-          "floating edit mode must retain low-visit markers");
+          "floating board must retain low-visit markers");
+      assertEquals(emptyContinuation, sample(pending, renderer, "D16"),
+          "floating board must not expose a partial variation");
       finish(work);
-      assertEquals(Color.BLACK.getRGB(), sample(draw(renderer), renderer, "D16"));
-      ImageIO.write(pending, "png", result.resolveSibling("floating-pending.png").toFile());
+      BufferedImage visible = draw(renderer);
+      assertEquals(Color.BLACK.getRGB(), sample(visible, renderer, "D16"));
+
+      board.mouseOverCoordinate = Board.convertNameToCoordinates("Q4");
+      renderer.selectNormalVariation();
+      BufferedImage replacing = draw(renderer);
+      assertEquals(Color.BLACK.getRGB(), sample(replacing, renderer, "D16"),
+          "floating replacement must retain the complete visible variation");
+      assertEquals(sample(visible, renderer, "Q10"), sample(replacing, renderer, "Q10"),
+          "floating replacement must not flash idle candidates");
+      finish(work);
+      assertEquals(Color.WHITE.getRGB(), sample(draw(renderer), renderer, "K10"));
+
+      board.mouseOverCoordinate = Board.convertNameToCoordinates("K16");
+      renderer.selectNormalVariation();
+      assertEquals(emptyContinuation, sample(draw(renderer), renderer, "D16"));
+      board.mouseOverCoordinate = Board.convertNameToCoordinates("D4");
+      renderer.selectNormalVariation();
+      assertEquals(sample(idle, renderer, "D4"), sample(draw(renderer), renderer, "D4"),
+          "floating reentry must retain candidates while waiting");
+      board.mouseOverCoordinate = Board.convertNameToCoordinates("K16");
+      renderer.selectNormalVariation();
+      finish(work);
+      assertEquals(emptyContinuation, sample(draw(renderer), renderer, "D16"),
+          "cancelled floating completion must not restore stones");
+      assertNull(state.selected());
+      assertNull(state.published());
+      ImageIO.write(pending, "png", result.resolveSibling(
+          editMode ? "floating-edit-pending.png" : "floating-browse-pending.png").toFile());
     } finally {
       board.dispose();
       Lizzie.frame.floatBoard = null;
