@@ -1693,6 +1693,100 @@ class EngineManagerEngineGameStateMachineTest {
     assertEquals(EngineManager.EngineGamePhase.ACTIVE, response.transaction.phase());
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "false,false,false", "false,false,true", "false,true,false", "false,true,true",
+    "true,false,false", "true,false,true", "true,true,false", "true,true,true"
+  })
+  void engineGameSoundHonorsExistingSyncPreference(
+      boolean silenceSync, boolean urlSgf, boolean syncBoard) throws Exception {
+    Lizzie.board = recordingBoard();
+    Lizzie.config.playSound = true;
+    Lizzie.config.notPlaySoundInSync = silenceSync;
+    boolean previousUrlSgf = LizzieFrame.urlSgf;
+    LizzieFrame.urlSgf = urlSgf;
+    frame.syncBoard = syncBoard;
+    AtomicInteger sounds = new AtomicInteger();
+    Utils.setStoneSoundForTest(node -> sounds.incrementAndGet());
+    try {
+      assertNotNull(
+          EngineManager.commitEngineGameMove(activeAnalysisMoveResponse(), 3, 3, black, 0));
+      assertEquals(silenceSync && (urlSgf || syncBoard) ? 0 : 1, sounds.get());
+      assertEquals(1, Lizzie.board.getHistory().getMoveNumber());
+    } finally {
+      LizzieFrame.urlSgf = previousUrlSgf;
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"-1,-1", "19,19", "3,3"})
+  void rejectedEngineGameMoveNeverSounds(int x, int y) throws Exception {
+    RecordingBoard board = recordingBoard();
+    Lizzie.board = board;
+    board.getHistory().place(3, 3, Stone.WHITE);
+    BoardHistoryNode parent = board.getHistory().getCurrentHistoryNode();
+    Lizzie.config.playSound = true;
+    AtomicInteger sounds = new AtomicInteger();
+    Utils.setStoneSoundForTest(node -> sounds.incrementAndGet());
+    EngineManager.EngineGameMoveResponseContext response = activeAnalysisMoveResponse();
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> EngineManager.commitEngineGameMove(response, x, y, black, 0));
+
+    assertSame(parent, board.getHistory().getCurrentHistoryNode());
+    assertEquals(0, parent.numberOfChildren());
+    assertEquals(0, sounds.get());
+    assertEquals(EngineManager.EngineGamePhase.FAILED, response.transaction.phase());
+  }
+
+  @Test
+  void historyCanAdvanceWhileCommittedMoveSoundKeepsItsOriginalNode() throws Exception {
+    RecordingBoard board = recordingBoard();
+    Lizzie.board = board;
+    Lizzie.config.playSound = true;
+    EngineManager.EngineGameMoveResponseContext response = activeAnalysisMoveResponse();
+    CountDownLatch soundEntered = new CountDownLatch(1);
+    CountDownLatch releaseSound = new CountDownLatch(1);
+    AtomicReference<BoardHistoryNode> sounded = new AtomicReference<>();
+    Utils.setStoneSoundForTest(
+        node -> {
+          sounded.set(node);
+          soundEntered.countDown();
+          await(releaseSound);
+        });
+    AtomicReference<EngineManager.EngineGamePostMoveToken> result = new AtomicReference<>();
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+    Thread commit =
+        new Thread(
+            () -> {
+              try {
+                result.set(EngineManager.commitEngineGameMove(response, 3, 3, black, 0));
+              } catch (Throwable commitFailure) {
+                failure.set(commitFailure);
+              }
+            },
+            "engine-game-sound-history-race");
+
+    commit.start();
+    try {
+      assertTrue(soundEntered.await(2, TimeUnit.SECONDS));
+      synchronized (board) {
+        board.getHistory().pass(Stone.WHITE);
+      }
+      assertNotSame(sounded.get(), board.getHistory().getCurrentHistoryNode());
+    } finally {
+      releaseSound.countDown();
+      commit.join(2000L);
+    }
+
+    assertFalse(commit.isAlive());
+    assertNull(failure.get());
+    assertNotNull(result.get());
+    assertSame(result.get().boardNode, sounded.get());
+    assertEquals(2, board.getHistory().getMoveNumber());
+  }
+
   private EngineManager.EngineGameMoveResponseContext activeAnalysisMoveResponse()
       throws Exception {
     activeTransaction(installManager(), gameInfo(), black, 0);
@@ -1701,15 +1795,21 @@ class EngineManagerEngineGameStateMachineTest {
     return EngineManager.captureEngineGameAnalysisMoveContext(primary);
   }
 
-  @Test
-  void responseOnFirstPhysicalGenmoveByteFindsInstalledCarrierAndCommitsExactlyOnce()
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void responseOnFirstPhysicalGenmoveByteFindsInstalledCarrierAndCommitsExactlyOnce(boolean pass)
       throws Exception {
     ImmediateGenmoveResponseOutput output = new ImmediateGenmoveResponseOutput();
     black.bindLiveRuntime(output);
-    output.arm(black, "=" + black.nextEngineGameResponseCommandIdForTest() + " D4");
+    String response =
+        "=" + black.nextEngineGameResponseCommandIdForTest() + (pass ? " pass" : " D4");
+    output.arm(black, response);
     RecordingBoard board = recordingBoard();
     Lizzie.board = board;
     Lizzie.config.enginePkPonder = true;
+    Lizzie.config.playSound = true;
+    List<BoardHistoryNode> sounded = new CopyOnWriteArrayList<>();
+    Utils.setStoneSoundForTest(sounded::add);
     EngineGamePlan game = EngineGamePlans.harness(0, 1, true);
     ImmediateUiEngineManager manager = installManager();
     EngineManager.EngineGameOwnerTransaction transaction = activeTransaction(manager, game, black, 0);
@@ -1721,8 +1821,12 @@ class EngineManagerEngineGameStateMachineTest {
     assertEquals(1, board.getHistory().getMoveNumber());
     assertFalse(board.getHistory().isBlacksTurn());
     assertSame(black, Lizzie.leelaz);
-    assertTrue(white.commandText().contains("play B D4"));
+    assertTrue(white.commandText().contains(pass ? "play B pass" : "play B D4"));
     assertTrue(EngineManager.isCurrentEngineGameTransaction(transaction));
+    assertEquals(List.of(board.getHistory().getCurrentHistoryNode()), sounded);
+    black.parseEngineGameLineForTest(response);
+    assertEquals(1, sounded.size());
+    assertEquals(1, board.getHistory().getMoveNumber());
   }
 
   @Test
@@ -2641,6 +2745,9 @@ class EngineManagerEngineGameStateMachineTest {
   void exactAnalysisParticipantsAlternateFourMovesAndRefreshCurrentOutput() {
     EngineManager.EngineGameOwnerTransaction transaction = startExactAnalysisGame();
     startExactAnalyze(black, transaction, "B");
+    Lizzie.config.playSound = true;
+    List<BoardHistoryNode> sounded = new CopyOnWriteArrayList<>();
+    Utils.setStoneSoundForTest(sounded::add);
 
     playExactAnalysisMove(black, "D4", 1);
     playExactAnalysisMove(white, "Q16", 2);
@@ -2649,12 +2756,17 @@ class EngineManagerEngineGameStateMachineTest {
 
     assertEquals(EngineManager.EngineGamePhase.ACTIVE, transaction.phase());
     assertTrue(EngineManager.isCurrentEngineGameTransaction(transaction));
+    assertEquals(
+        List.of(1, 2, 3, 4), sounded.stream().map(node -> node.getData().moveNumber).toList());
   }
 
   @Test
   void exactAnalysisDuplicateOutputAndStaleContextDoNotCommitAgain() {
     EngineManager.EngineGameOwnerTransaction transaction = startExactAnalysisGame();
     startExactAnalyze(black, transaction, "B");
+    Lizzie.config.playSound = true;
+    List<BoardHistoryNode> sounded = new CopyOnWriteArrayList<>();
+    Utils.setStoneSoundForTest(sounded::add);
     EngineManager.EngineGamePrimaryContext firstContext =
         EngineManager.captureEngineGamePrimaryContext(
             black, black.currentEngineIncarnation());
@@ -2674,6 +2786,60 @@ class EngineManagerEngineGameStateMachineTest {
     assertEquals(titleAfterCommit, frame.analysisTitleUpdateRequests.get());
     assertEquals(EngineManager.EngineGamePhase.ACTIVE, transaction.phase());
     assertTrue(EngineManager.isCurrentEngineGameTransaction(transaction));
+    assertEquals(List.of(Lizzie.board.getHistory().getCurrentHistoryNode()), sounded);
+  }
+
+  @Test
+  void exactAnalysisPassSoundsOnceAndRetiredOutputStaysSilent() {
+    EngineManager.EngineGameOwnerTransaction transaction = startExactAnalysisGame();
+    startExactAnalyze(black, transaction, "B");
+    Lizzie.config.playSound = true;
+    List<BoardHistoryNode> sounded = new CopyOnWriteArrayList<>();
+    Utils.setStoneSoundForTest(sounded::add);
+    black.parseAnalysisLineForTest(kataAnalysisInfo("pass"));
+    EngineManager.EngineGamePrimaryContext context =
+        EngineManager.captureEngineGamePrimaryContext(black, black.currentEngineIncarnation());
+
+    black.notifyAutoPkForEngineGameTest(true, context);
+    assertEquals(1, Lizzie.board.getHistory().getMoveNumber());
+    assertTrue(Lizzie.board.getData().isPassNode());
+    assertEquals(List.of(Lizzie.board.getHistory().getCurrentHistoryNode()), sounded);
+
+    black.parseAnalysisLineForTest(kataAnalysisInfo("pass"));
+    black.notifyAutoPkForEngineGameTest(true, context);
+    assertEquals(1, sounded.size());
+    assertEquals(1, Lizzie.board.getHistory().getMoveNumber());
+    assertEquals(EngineManager.EngineGamePhase.ACTIVE, transaction.phase());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void bothEngineGameModesSoundTheCommittedCaptureNode(boolean genmove) throws Exception {
+    RecordingBoard board = recordingBoard();
+    Lizzie.board = board;
+    board.getHistory().place(1, 0, Stone.BLACK);
+    board.getHistory().place(0, 0, Stone.WHITE);
+    BoardHistoryNode parent = board.getHistory().getCurrentHistoryNode();
+    Lizzie.config.playSound = true;
+    List<BoardHistoryNode> sounded = new CopyOnWriteArrayList<>();
+    Utils.setStoneSoundForTest(sounded::add);
+    if (genmove) {
+      ImmediateUiEngineManager manager = installManager();
+      EngineManager.EngineGameOwnerTransaction transaction =
+          activeTransaction(manager, EngineGamePlans.harness(0, 1, true), black, 0);
+      assertTrue(black.genmoveForPk("B", transaction));
+      black.parseEngineGameLineForTest(
+          "=" + commandIdFor(black.commandText(), "genmove B") + " A18");
+    } else {
+      EngineManager.EngineGameOwnerTransaction transaction = startExactAnalysisGame();
+      startExactAnalyze(black, transaction, "B");
+      playExactAnalysisMove(black, "A18", 3);
+    }
+
+    BoardHistoryNode committed = board.getHistory().getCurrentHistoryNode();
+    assertEquals(3, committed.getData().moveNumber);
+    assertEquals(parent.getData().blackCaptures + 1, committed.getData().blackCaptures);
+    assertEquals(List.of(committed), sounded);
   }
 
   @Test
