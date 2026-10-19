@@ -272,6 +272,12 @@ pwsh -NoProfile -File scripts/run_windows_ci_diagnostics.ps1 -OutputDirectory ta
 - 只有 Windows 命令脚本 `.bat`、`.cmd` 在工作区使用 CRLF；PowerShell、Shell、Java、Python、Markdown 和资源文件均使用 LF。
 - `.gitattributes` 是 Git 层面的最终规则，`.editorconfig` 用于让常见编辑器在保存时提前遵守规则。
 - 日常功能 PR 不要运行全仓 `git add --renormalize .`，也不要混入无关的 `fmt:format` 改写。
+
+## Java 格式
+
+- Java 代码统一使用 google-java-format（`fmt-maven-plugin`）。CI 的 java-linux 任务会运行 `fmt:check`，格式不符直接失败。
+- 提交前运行 `mvn -B -q com.spotify.fmt:fmt-maven-plugin:format` 自动格式化；全仓已格式化过一次，所以它只会改动你修改的文件。
+- 全仓格式化的提交记录在 `.git-blame-ignore-revs`。本地执行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs`，`git blame` 就会跳过它；GitHub 的 blame 页面会自动跳过。
 - CI 会运行 `python3 scripts/check_line_endings.py`，发现混合换行或错误行尾时直接失败。
 
 ## 仓库结构速览

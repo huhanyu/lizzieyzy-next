@@ -57,6 +57,14 @@ If you changed Java code, run another build:
 mvn -B -DskipTests package
 ```
 
+Java code uses google-java-format. The java-linux CI job runs `fmt:check` and fails on unformatted code, so format before you push:
+
+```bash
+mvn -B -q com.spotify.fmt:fmt-maven-plugin:format
+```
+
+The whole repository was formatted once, so this only rewrites files you changed. That commit is listed in `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once so local `git blame` skips it (GitHub's blame view skips it automatically).
+
 If you changed packaging, engine paths, first-launch behavior, or the Fox fetch flow, do the relevant manual verification too.
 
 Desktop smoke tests include board editing and SGF import after engine startup failure.
