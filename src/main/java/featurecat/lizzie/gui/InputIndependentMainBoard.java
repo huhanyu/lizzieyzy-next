@@ -119,7 +119,7 @@ public class InputIndependentMainBoard implements KeyListener {
     switch (e.getKeyCode()) {
       case VK_E:
         if (controlIsPressed(e)) {
-          Lizzie.frame.shareSGF();
+          // Ctrl+E shared to the retired lizzieyzy.cn service; it stays unbound.
         } else if (e.isAltDown()) {
           Lizzie.frame.startEngineGameDialog();
         } else if (e.isShiftDown()) {
@@ -456,7 +456,7 @@ public class InputIndependentMainBoard implements KeyListener {
 
       case VK_B:
         if (e.isAltDown()) {
-          Lizzie.frame.shareSGF();
+          // Alt+B shared to the retired lizzieyzy.cn service; it stays unbound.
         } else {
           if (e.isControlDown()) {
             if (e.isShiftDown()) {
