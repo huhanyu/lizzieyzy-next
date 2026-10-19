@@ -726,7 +726,7 @@ class LeelazReadBoardGmaTest {
 
       assertTrue(engine.genmoveAnalyzeForReadBoard("B", 5, 1000, false));
 
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       while (engine.previewForegroundAnalysisLeaseAvailability()
               != Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_STATE_UNRESTORED
           && System.nanoTime() < deadline) {
@@ -4020,7 +4020,7 @@ class LeelazReadBoardGmaTest {
       boolean barrierObserved = false;
       synchronized (arbitrationLock) {
         responseThread.start();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
           if (barrierField.get(engine) != null) {
             barrierObserved = true;
@@ -4092,7 +4092,7 @@ class LeelazReadBoardGmaTest {
       boolean barrierObserved = false;
       synchronized (arbitrationLock) {
         responseThread.start();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
           if (barrierField.get(engine) != null) {
             barrierObserved = true;

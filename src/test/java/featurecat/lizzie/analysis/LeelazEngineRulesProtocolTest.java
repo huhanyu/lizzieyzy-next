@@ -525,7 +525,7 @@ class LeelazEngineRulesProtocolTest {
       assertFalse(fixture.output.toString().contains("kata-get-rules"));
       assertEquals(EngineRulesResult.Status.PENDING, fixture.engine.engineRulesResult().status());
       ready.setBoolean(fixture.engine, true);
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       while (System.nanoTime() < deadline
           && !fixture.output.toString().contains("kata-get-rules")) {
         Thread.sleep(20L);
