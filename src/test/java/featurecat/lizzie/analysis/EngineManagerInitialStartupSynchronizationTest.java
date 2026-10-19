@@ -1100,6 +1100,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(EngineManager.isEmpty);
     }
   }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void defaultStartupRestoresBreadthControlsAfterFinalRelease(boolean selected) throws Exception {
@@ -1119,34 +1120,54 @@ class EngineManagerInitialStartupSynchronizationTest {
       Field checkboxField = Menu.class.getDeclaredField("chkWRN");
       checkboxField.setAccessible(true);
       javax.swing.JCheckBox checkbox = (javax.swing.JCheckBox) checkboxField.get(menu);
-      EngineManager manager = new EngineManager(
-          Lizzie.config, 0, true, new ArrayList<>(List.of(engineData(0, "default", true))),
-          command -> engine);
+      EngineManager manager =
+          new EngineManager(
+              Lizzie.config,
+              0,
+              true,
+              new ArrayList<>(List.of(engineData(0, "default", true))),
+              command -> engine);
       Lizzie.engineManager = manager;
       assertTrue(engine.startCompleted.await(5, TimeUnit.SECONDS));
-      engine.advertiseCommandsForTest(List.of("stop", "boardsize", "komi", "kata-get-rules",
-          "kata-set-rules", "clear_board", "play", "set_position", "kata-analyze"));
-      SwingUtilities.invokeAndWait(() -> {
-        menu.setPdaAndWrn(0, selected ? 0.2 : 0);
-        assertFalse(checkbox.isEnabled());
-        assertFalse(menu.txtWRN.isEnabled());
-      });
+      engine.advertiseCommandsForTest(
+          List.of(
+              "stop",
+              "boardsize",
+              "komi",
+              "kata-get-rules",
+              "kata-set-rules",
+              "clear_board",
+              "play",
+              "set_position",
+              "kata-analyze"));
+      SwingUtilities.invokeAndWait(
+          () -> {
+            menu.setPdaAndWrn(0, selected ? 0.2 : 0);
+            assertFalse(checkbox.isEnabled());
+            assertFalse(menu.txtWRN.isEnabled());
+          });
       CountDownLatch enabled = new CountDownLatch(1);
-      SwingUtilities.invokeAndWait(() -> checkbox.addPropertyChangeListener("enabled", event -> {
-        if (Boolean.TRUE.equals(event.getNewValue())) enabled.countDown();
-      }));
+      SwingUtilities.invokeAndWait(
+          () ->
+              checkbox.addPropertyChangeListener(
+                  "enabled",
+                  event -> {
+                    if (Boolean.TRUE.equals(event.getNewValue())) enabled.countDown();
+                  }));
       engine.publishReady();
-      assertTrue(enabled.await(5, TimeUnit.SECONDS), "startup must refresh breadth without user intervention");
-      SwingUtilities.invokeAndWait(() -> {
-        assertFalse(engine.hasExclusiveGtpWorkInProgress());
-        assertTrue(checkbox.isEnabled());
-        assertEquals(selected, checkbox.isSelected());
-        assertEquals(selected, menu.txtWRN.isEnabled());
-        assertEquals(selected ? "0.2" : "0", menu.txtWRN.getText());
-      });
+      assertTrue(
+          enabled.await(5, TimeUnit.SECONDS),
+          "startup must refresh breadth without user intervention");
+      SwingUtilities.invokeAndWait(
+          () -> {
+            assertFalse(engine.hasExclusiveGtpWorkInProgress());
+            assertTrue(checkbox.isEnabled());
+            assertEquals(selected, checkbox.isSelected());
+            assertEquals(selected, menu.txtWRN.isEnabled());
+            assertEquals(selected ? "0.2" : "0", menu.txtWRN.getText());
+          });
     }
   }
-
 
   @Test
   void nonSelectedInitialPreloadClosesAReaderPublishedBeforeStartThrows() throws Exception {

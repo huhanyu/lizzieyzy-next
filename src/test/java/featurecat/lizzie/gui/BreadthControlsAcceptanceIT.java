@@ -27,9 +27,14 @@ public final class BreadthControlsAcceptanceIT {
   void coldStartAllowsBreadthEditsWithoutOpeningFox(String initial) throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("breadth.smoke"));
     DesktopProbeProcess.requireDisplay();
-    Path result = DesktopProbeProcess.run(BreadthControlsAcceptanceIT.class, "breadth-startup",
-        List.of(), List.of(System.getProperty("breadth.engine"),
-            System.getProperty("breadth.model"), initial), 120);
+    Path result =
+        DesktopProbeProcess.run(
+            BreadthControlsAcceptanceIT.class,
+            "breadth-startup",
+            List.of(),
+            List.of(
+                System.getProperty("breadth.engine"), System.getProperty("breadth.model"), initial),
+            120);
     assertTrue(Files.readString(result).contains("PASS"));
   }
 
@@ -38,77 +43,142 @@ public final class BreadthControlsAcceptanceIT {
     Path result = Path.of(args[4]);
     try {
       Path config = work.resolve("katago.cfg");
-      Files.writeString(config, "rules = chinese\nkomi = 6.5\nnumSearchThreads = 2\n"
-          + "maxVisits = 64\nmaxTime = 1.0\nponderingEnabled = false\n"
-          + "analysisWideRootNoise = " + args[2] + "\nlogAllGTPCommunication = true\nlogSearchInfo = false\nlogDir = "
-          + work.resolve("gtp-log") + "\n");
-      JSONObject entry = new JSONObject().put("name", "Breadth acceptance KataGo")
-          .put("command", quote(args[0]) + " gtp -model " + quote(args[1]) + " -config " + quote(config.toString()))
-          .put("preload", false).put("isDefault", true).put("width", 19).put("height", 19)
-          .put("komi", 6.5).put("useJavaSSH", false);
-      JSONObject settings = new JSONObject()
-          .put("leelaz", new JSONObject().put("engine-settings-list", new JSONArray().put(entry)
-              .put(new JSONObject(entry.toString()).put("name", "Second KataGo").put("isDefault", false))))
-          .put("ui", new JSONObject().put("first-time-load", false).put("use-language", 2)
-              .put("autoload-empty", false).put("autoload-default", true).put("autoload-last", false)
-              .put("default-engine", 0).put("auto-quick-analyze-on-load", false)
-              .put("show-wrn-in-menu", true).put("not-start-pondering", true));
+      Files.writeString(
+          config,
+          "rules = chinese\nkomi = 6.5\nnumSearchThreads = 2\n"
+              + "maxVisits = 64\nmaxTime = 1.0\nponderingEnabled = false\n"
+              + "analysisWideRootNoise = "
+              + args[2]
+              + "\nlogAllGTPCommunication = true\nlogSearchInfo = false\nlogDir = "
+              + work.resolve("gtp-log")
+              + "\n");
+      JSONObject entry =
+          new JSONObject()
+              .put("name", "Breadth acceptance KataGo")
+              .put(
+                  "command",
+                  quote(args[0])
+                      + " gtp -model "
+                      + quote(args[1])
+                      + " -config "
+                      + quote(config.toString()))
+              .put("preload", false)
+              .put("isDefault", true)
+              .put("width", 19)
+              .put("height", 19)
+              .put("komi", 6.5)
+              .put("useJavaSSH", false);
+      JSONObject settings =
+          new JSONObject()
+              .put(
+                  "leelaz",
+                  new JSONObject()
+                      .put(
+                          "engine-settings-list",
+                          new JSONArray()
+                              .put(entry)
+                              .put(
+                                  new JSONObject(entry.toString())
+                                      .put("name", "Second KataGo")
+                                      .put("isDefault", false))))
+              .put(
+                  "ui",
+                  new JSONObject()
+                      .put("first-time-load", false)
+                      .put("use-language", 2)
+                      .put("autoload-empty", false)
+                      .put("autoload-default", true)
+                      .put("autoload-last", false)
+                      .put("default-engine", 0)
+                      .put("auto-quick-analyze-on-load", false)
+                      .put("show-wrn-in-menu", true)
+                      .put("not-start-pondering", true));
       Files.writeString(work.resolve("config.txt"), settings.toString(2));
       System.setProperty("lizzie.work.dir", work.toString());
       Lizzie.main(new String[0]);
       awaitEdt(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), "main window");
-      SwingUtilities.invokeAndWait(() -> {
-        for (Window window : Window.getWindows()) if (window instanceof Dialog) window.dispose();
-      });
-      awaitEdt(() -> Lizzie.leelaz != null && Lizzie.leelaz.isLoaded()
-          && !Lizzie.leelaz.hasExclusiveGtpWorkInProgress() && LizzieFrame.menu.chkWRN.isEnabled(),
+      SwingUtilities.invokeAndWait(
+          () -> {
+            for (Window window : Window.getWindows())
+              if (window instanceof Dialog) window.dispose();
+          });
+      awaitEdt(
+          () ->
+              Lizzie.leelaz != null
+                  && Lizzie.leelaz.isLoaded()
+                  && !Lizzie.leelaz.hasExclusiveGtpWorkInProgress()
+                  && LizzieFrame.menu.chkWRN.isEnabled(),
           "cold-start breadth becomes enabled");
       Leelaz engine = Lizzie.leelaz;
       boolean initiallySelected = Double.parseDouble(args[2]) != 0;
-      awaitEdt(() -> LizzieFrame.menu.chkWRN.isSelected() == initiallySelected
-          && Math.abs(Double.parseDouble(LizzieFrame.menu.txtWRN.getText()) - Double.parseDouble(args[2])) < 0.00001,
+      awaitEdt(
+          () ->
+              LizzieFrame.menu.chkWRN.isSelected() == initiallySelected
+                  && Math.abs(
+                          Double.parseDouble(LizzieFrame.menu.txtWRN.getText())
+                              - Double.parseDouble(args[2]))
+                      < 0.00001,
           "startup parameter readback");
-      SwingUtilities.invokeAndWait(() -> {
-        assertEquals(initiallySelected, LizzieFrame.menu.txtWRN.isEnabled());
-        assertFalse(featurecat.lizzie.fox.FoxLiveSession.ownsEngine());
-        if (!LizzieFrame.menu.chkWRN.isSelected()) LizzieFrame.menu.chkWRN.doClick();
-        assertTrue(LizzieFrame.menu.txtWRN.isEnabled());
-        LizzieFrame.menu.txtWRN.setText("0.35");
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            assertEquals(initiallySelected, LizzieFrame.menu.txtWRN.isEnabled());
+            assertFalse(featurecat.lizzie.fox.FoxLiveSession.ownsEngine());
+            if (!LizzieFrame.menu.chkWRN.isSelected()) LizzieFrame.menu.chkWRN.doClick();
+            assertTrue(LizzieFrame.menu.txtWRN.isEnabled());
+            LizzieFrame.menu.txtWRN.setText("0.35");
+          });
       assertParameter(engine, work, "0.35");
-      SwingUtilities.invokeAndWait(() -> {
-        LizzieFrame.menu.chkWRN.doClick();
-        assertFalse(LizzieFrame.menu.chkWRN.isSelected());
-        assertFalse(LizzieFrame.menu.txtWRN.isEnabled());
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            LizzieFrame.menu.chkWRN.doClick();
+            assertFalse(LizzieFrame.menu.chkWRN.isSelected());
+            assertFalse(LizzieFrame.menu.txtWRN.isEnabled());
+          });
       assertParameter(engine, work, "0");
-      SwingUtilities.invokeAndWait(() -> {
-        LizzieFrame.menu.chkWRN.doClick();
-        assertTrue(LizzieFrame.menu.chkWRN.isSelected());
-        assertTrue(LizzieFrame.menu.txtWRN.isEnabled());
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            LizzieFrame.menu.chkWRN.doClick();
+            assertTrue(LizzieFrame.menu.chkWRN.isSelected());
+            assertTrue(LizzieFrame.menu.txtWRN.isEnabled());
+          });
       assertParameter(engine, work, "0.35");
       SwingUtilities.invokeAndWait(() -> Lizzie.engineManager.reStartEngine());
-      awaitEdt(() -> Lizzie.leelaz.isLoaded() && Lizzie.leelaz.canSetAnalysisWideRootNoise()
-          && LizzieFrame.menu.chkWRN.isEnabled(), "breadth after restart");
-      SwingUtilities.invokeAndWait(() -> {
-        if (!LizzieFrame.menu.chkWRN.isSelected()) LizzieFrame.menu.chkWRN.doClick();
-        LizzieFrame.menu.txtWRN.setText("0.4");
-      });
+      awaitEdt(
+          () ->
+              Lizzie.leelaz.isLoaded()
+                  && Lizzie.leelaz.canSetAnalysisWideRootNoise()
+                  && LizzieFrame.menu.chkWRN.isEnabled(),
+          "breadth after restart");
+      SwingUtilities.invokeAndWait(
+          () -> {
+            if (!LizzieFrame.menu.chkWRN.isSelected()) LizzieFrame.menu.chkWRN.doClick();
+            LizzieFrame.menu.txtWRN.setText("0.4");
+          });
       assertParameter(Lizzie.leelaz, work, "0.4");
-      SwingUtilities.invokeAndWait(() -> assertTrue(Lizzie.engineManager.switchEngineIfAvailable(1, true)));
-      awaitEdt(() -> Lizzie.leelaz != engine && Lizzie.leelaz.isLoaded()
-          && Lizzie.leelaz.canSetAnalysisWideRootNoise() && LizzieFrame.menu.chkWRN.isEnabled(),
+      SwingUtilities.invokeAndWait(
+          () -> assertTrue(Lizzie.engineManager.switchEngineIfAvailable(1, true)));
+      awaitEdt(
+          () ->
+              Lizzie.leelaz != engine
+                  && Lizzie.leelaz.isLoaded()
+                  && Lizzie.leelaz.canSetAnalysisWideRootNoise()
+                  && LizzieFrame.menu.chkWRN.isEnabled(),
           "breadth after engine switch");
-      SwingUtilities.invokeAndWait(() -> {
-        if (!LizzieFrame.menu.chkWRN.isSelected()) LizzieFrame.menu.chkWRN.doClick();
-        LizzieFrame.menu.txtWRN.setText("0.45");
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            if (!LizzieFrame.menu.chkWRN.isSelected()) LizzieFrame.menu.chkWRN.doClick();
+            LizzieFrame.menu.txtWRN.setText("0.45");
+          });
       assertParameter(Lizzie.leelaz, work, "0.45");
-      ImageIO.write(new Robot().createScreenCapture(Lizzie.frame.getBounds()), "png",
+      ImageIO.write(
+          new Robot().createScreenCapture(Lizzie.frame.getBounds()),
+          "png",
           work.resolve("breadth-enabled.png").toFile());
-      Files.writeString(result, "PASS initial=" + args[2]
-          + " checked/edit=0.35 unchecked=0 rechecked=0.35 restart=0.4 switch=0.45\n");
+      Files.writeString(
+          result,
+          "PASS initial="
+              + args[2]
+              + " checked/edit=0.35 unchecked=0 rechecked=0.35 restart=0.4 switch=0.45\n");
       Lizzie.leelaz.sendCommand("quit");
       System.exit(0);
     } catch (Throwable failure) {
@@ -121,9 +191,15 @@ public final class BreadthControlsAcceptanceIT {
   private static void assertParameter(Leelaz engine, Path work, String expected) throws Exception {
     int before = gtp(work).length();
     engine.sendCommand("kata-get-param analysisWideRootNoise");
-    await(() -> gtp(work).substring(before).matches(
-        "(?s).*Controller: kata-get-param analysisWideRootNoise\\R[^\\n]*: = "
-            + java.util.regex.Pattern.quote(expected) + "(?:\\.0+)?\\s.*"), "engine breadth=" + expected);
+    await(
+        () ->
+            gtp(work)
+                .substring(before)
+                .matches(
+                    "(?s).*Controller: kata-get-param analysisWideRootNoise\\R[^\\n]*: = "
+                        + java.util.regex.Pattern.quote(expected)
+                        + "(?:\\.0+)?\\s.*"),
+        "engine breadth=" + expected);
   }
 
   private static String gtp(Path work) {
@@ -137,15 +213,17 @@ public final class BreadthControlsAcceptanceIT {
   }
 
   private static void awaitEdt(BooleanSupplier condition, String label) throws Exception {
-    await(() -> {
-      AtomicBoolean ready = new AtomicBoolean();
-      try {
-        SwingUtilities.invokeAndWait(() -> ready.set(condition.getAsBoolean()));
-      } catch (Exception failure) {
-        throw new IllegalStateException(failure);
-      }
-      return ready.get();
-    }, label);
+    await(
+        () -> {
+          AtomicBoolean ready = new AtomicBoolean();
+          try {
+            SwingUtilities.invokeAndWait(() -> ready.set(condition.getAsBoolean()));
+          } catch (Exception failure) {
+            throw new IllegalStateException(failure);
+          }
+          return ready.get();
+        },
+        label);
   }
 
   private static void await(BooleanSupplier condition, String label) throws Exception {
@@ -154,5 +232,7 @@ public final class BreadthControlsAcceptanceIT {
     assertTrue(condition.getAsBoolean(), label);
   }
 
-  private static String quote(String text) { return "\"" + text + "\""; }
+  private static String quote(String text) {
+    return "\"" + text + "\"";
+  }
 }
