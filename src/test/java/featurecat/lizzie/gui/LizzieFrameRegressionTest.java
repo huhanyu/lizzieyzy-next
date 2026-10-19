@@ -187,13 +187,61 @@ class LizzieFrameRegressionTest {
   }
 
   @Test
+  void refreshFromAnEngineThreadRunsOnceOnTheEventThread() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      RefreshRecordingFrame frame = allocate(RefreshRecordingFrame.class);
+      RefreshRecordingFrame.APPEND_CALLS.set(0);
+      RefreshRecordingFrame.OFF_EVENT_THREAD_APPENDS.set(0);
+      java.util.concurrent.CountDownLatch eventThreadHeld =
+          new java.util.concurrent.CountDownLatch(1);
+      java.util.concurrent.CountDownLatch releaseEventThread =
+          new java.util.concurrent.CountDownLatch(1);
+      SwingUtilities.invokeLater(
+          () -> {
+            eventThreadHeld.countDown();
+            try {
+              releaseEventThread.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+              Thread.currentThread().interrupt();
+            }
+          });
+      assertTrue(eventThreadHeld.await(10, TimeUnit.SECONDS));
+
+      Thread engineReader =
+          new Thread(
+              () -> {
+                for (int i = 0; i < 25; i++) {
+                  frame.refresh();
+                }
+              },
+              "test-engine-reader");
+      engineReader.start();
+      engineReader.join(10_000);
+      assertEquals(
+          0, RefreshRecordingFrame.APPEND_CALLS.get(), "nothing runs on the engine thread");
+
+      releaseEventThread.countDown();
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(
+          1,
+          RefreshRecordingFrame.APPEND_CALLS.get(),
+          "a burst of off-thread refreshes is coalesced");
+      assertEquals(0, RefreshRecordingFrame.OFF_EVENT_THREAD_APPENDS.get());
+      SwingUtilities.invokeAndWait(frame::refresh);
+      assertEquals(
+          2, RefreshRecordingFrame.APPEND_CALLS.get(), "event-thread refresh stays synchronous");
+    }
+  }
+
+  @Test
   void commentSetAndRefreshDoNotTreatAMissingEngineAsLoading() throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       EmptyEngineUiFrame frame = prepareEmptyEngineUiFrame();
 
       assertDoesNotThrow(() -> invokeSetComment(frame, false));
       assertDoesNotThrow(() -> frame.appendComment());
-      assertDoesNotThrow(() -> frame.refresh());
+      assertDoesNotThrow(() -> SwingUtilities.invokeAndWait(frame::refresh));
 
       String comment = String.valueOf(getField(frame, "cachedComment"));
       assertEquals("", comment);
@@ -3753,6 +3801,28 @@ class LizzieFrameRegressionTest {
     Board board = allocate(Board.class);
     board.setHistory(new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE)));
     Lizzie.board = board;
+  }
+
+  private static final class RefreshRecordingFrame extends LizzieFrame {
+    // Static because test frames are allocated without running field initializers.
+    static final java.util.concurrent.atomic.AtomicInteger APPEND_CALLS =
+        new java.util.concurrent.atomic.AtomicInteger();
+    static final java.util.concurrent.atomic.AtomicInteger OFF_EVENT_THREAD_APPENDS =
+        new java.util.concurrent.atomic.AtomicInteger();
+
+    @Override
+    public void appendComment() {
+      APPEND_CALLS.incrementAndGet();
+      if (!SwingUtilities.isEventDispatchThread()) {
+        OFF_EVENT_THREAD_APPENDS.incrementAndGet();
+      }
+    }
+
+    @Override
+    public void requestProblemListRefresh() {}
+
+    @Override
+    public void repaint() {}
   }
 
   private static final class EmptyEngineUiFrame extends LizzieFrame {
