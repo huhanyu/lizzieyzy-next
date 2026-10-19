@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Remove the retired lizzieyzy.cn kifu-sharing features (account login, SGF upload and editing, private and public kifu search). The server no longer resolves, yet function search could still send the saved account to it over raw TCP with a key published in the source; the domain is due to expire on 2026-12-24. Existing configurations drop the plaintext share account and share labels; Ctrl+E and Alt+B stay unbound.
 - Stop retrying permanent snapshot-file preparation failures after SGF imports, keep the imported position available, and explain the failure. Continue retries the full acknowledged synchronization so a direct local engine or repaired directory permissions can recover; script/SSH launchers still cannot read host snapshot paths.
 - Hint in the KataGo rules dialog when the current game's komi differs from KataGo's default for the edited rules (6.5 for territory scoring, 7 for New Zealand and button rules, otherwise 7.5). The hint updates as rules are edited and when the dialog is reactivated, never changes komi, and is not shown for handicap games or when composing engine-game match rules.
 - Keep ordinary candidate markers visible while the first asynchronous variation preview is pending, including reentry after leaving a candidate and floating-board editing. Replace them only when the complete preview is ready; preserve existing previews during direct candidate switches and discard cancelled results.
