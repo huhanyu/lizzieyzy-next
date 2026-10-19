@@ -517,7 +517,12 @@ public class SetKataRules extends JDialog {
                 }
                 EngineRulesResult snapshot = operation.snapshot();
                 EngineRulesResult.Status status = snapshot.status();
-                if (status != lastStatus || snapshot.generation() != lastResultGeneration) {
+                // The engine publishes a settled snapshot just before it completes the operation.
+                // Until then result() is null, so getRules() would fail and this confirmation
+                // would be consumed without closing the editor; look again on the next poll.
+                boolean completionPending = snapshot.isSettled() && !operation.isDone();
+                if (!completionPending
+                    && (status != lastStatus || snapshot.generation() != lastResultGeneration)) {
                   lastStatus = status;
                   lastResultGeneration = snapshot.generation();
                   boolean confirmed = snapshot.isConfirmed();
