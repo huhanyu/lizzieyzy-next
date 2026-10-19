@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Translate the Diagnostics and Logs dialog, the flash-analysis engine reuse messages and the ReadBoard WebSocket notice into Japanese, Korean and Thai, and the flash-analysis and ReadBoard texts into Traditional Chinese (Taiwan and Hong Kong); 320 strings in total were still shown in English. `scripts/list_untranslated_strings.py` lists strings that are still English in a translated bundle, and CI now fails when a change adds new ones.
 - Record everything the app prints to standard error in `logs/app.log` as well. Hundreds of older error paths only call `printStackTrace()`, which a packaged app without a console used to lose, so those failures were missing from exported diagnostic bundles.
 - Analyze pasted or imported setup positions with engines that cannot read local snapshot files, such as KataGo started from a `.bat`/script launcher or over SSH (#627): when the engine advertises KataGo's `set_position`, the position is restored in-band and real moves are replayed, without writing a host file. White-to-play setups without later moves use this path only for engines that are told the side to play in each analysis command; other engines still stop with the existing explanation.
 - Run frame refreshes requested by engine output threads on the Swing event thread, coalescing bursts into one pass, so appending engine winrates to comments and other UI updates no longer race the event thread.
