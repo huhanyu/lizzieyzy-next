@@ -216,19 +216,7 @@ class SetKataRulesWindowTest {
       dialog.editor.rdoNoHandicapKomi.setSelected(true);
       dialog.editor.rdoSimpleKo.setSelected(true);
       dialog.editor.rdoNoSuicide.setSelected(true);
-      SwingUtilities.invokeAndWait(
-          () -> {
-            for (java.awt.Component component : dialog.getContentPane().getComponents()) {
-              if (component instanceof JFontButton button
-                  && button
-                      .getText()
-                      .equals(Lizzie.resourceBundle.getString("SetKataRules.btnApply"))) {
-                button.doClick();
-                return;
-              }
-            }
-            throw new AssertionError("Confirm button missing");
-          });
+      clickApply(dialog);
       assertTrue(dialog.isVisible(), "Keep the editor open until the engine confirms");
       JSONObject saved =
           new JSONObject(Files.readString(Path.of(Lizzie.config.getConfigFilePath())))
@@ -251,6 +239,58 @@ class SetKataRulesWindowTest {
       assertTrue(dialog.getRules());
       assertEquals(original.revision() + 1L, history.captureSessionRules().revision());
       assertFalse(dialog.isVisible(), "Successful confirmation must close the editor");
+      closeDialog(dialog);
+    }
+  }
+
+  @Test
+  void confirmClosesWhenTheOperationCompletesAfterItsConfirmedSnapshot() throws Exception {
+    assumeFalse(GraphicsEnvironment.isHeadless());
+    try (Fixture fixture = Fixture.ordinary()) {
+      SetKataRules dialog = new SetKataRules(fixture.engine);
+      SwingUtilities.invokeAndWait(() -> dialog.setVisible(true));
+      int queryId = commandIdFor(fixture.output.toString(), "kata-get-rules");
+      dispatch(fixture.engine, "=" + queryId + " " + CHINESE);
+      awaitConfirmedReadback(dialog);
+      dialog.editor.rdoTerritory.setSelected(true);
+      dialog.editor.rdoSeKiTax.setSelected(true);
+      dialog.editor.rdoNoHandicapKomi.setSelected(true);
+      dialog.editor.rdoSimpleKo.setSelected(true);
+      dialog.editor.rdoNoSuicide.setSelected(true);
+      clickApply(dialog);
+      dispatch(fixture.engine, "=" + commandIdFor(fixture.output.toString(), "kata-set-rules"));
+      int readbackId = commandIdFor(fixture.output.toString(), "kata-get-rules");
+
+      // Confirmation publishes the operation's terminal snapshot, refreshes the frame and only
+      // then completes the operation. Hold the reader in that window while the status watcher
+      // (50 ms polls) sees the confirmed snapshot whose result() is still null.
+      GatedRefreshFrame.entered = new java.util.concurrent.CountDownLatch(1);
+      GatedRefreshFrame.release = new java.util.concurrent.CountDownLatch(1);
+      Lizzie.frame = allocate(GatedRefreshFrame.class);
+      Thread reader =
+          new Thread(
+              () -> {
+                try {
+                  dispatch(fixture.engine, "=" + readbackId + " " + JAPANESE);
+                } catch (Exception failure) {
+                  throw new AssertionError(failure);
+                }
+              },
+              "set-kata-rules-readback");
+      reader.start();
+      try {
+        assertTrue(GatedRefreshFrame.entered.await(5, TimeUnit.SECONDS));
+        Thread.sleep(300L);
+        SwingUtilities.invokeAndWait(() -> {});
+        assertTrue(dialog.isVisible(), "Not closed before the operation completes");
+      } finally {
+        GatedRefreshFrame.release.countDown();
+        reader.join(5_000L);
+      }
+
+      awaitHidden(dialog);
+      assertFalse(
+          dialog.isVisible(), "Completion after the confirmed snapshot must close the editor");
       closeDialog(dialog);
     }
   }
@@ -469,6 +509,62 @@ class SetKataRulesWindowTest {
       Thread.sleep(20L);
     }
     throw new AssertionError("Confirmed readback did not settle: " + dialog.statusText());
+  }
+
+  private static void clickApply(SetKataRules dialog) throws Exception {
+    SwingUtilities.invokeAndWait(
+        () -> {
+          for (java.awt.Component component : dialog.getContentPane().getComponents()) {
+            if (component instanceof JFontButton button
+                && button
+                    .getText()
+                    .equals(Lizzie.resourceBundle.getString("SetKataRules.btnApply"))) {
+              button.doClick();
+              return;
+            }
+          }
+          throw new AssertionError("Confirm button missing");
+        });
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <T> T allocate(Class<T> type) throws Exception {
+    Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+    field.setAccessible(true);
+    return (T) ((sun.misc.Unsafe) field.get(null)).allocateInstance(type);
+  }
+
+  /** A frame whose refresh() can hold the engine reader; allocated without a constructor. */
+  private static final class GatedRefreshFrame extends LizzieFrame {
+    // Static because allocated frames do not run field initializers.
+    static volatile java.util.concurrent.CountDownLatch entered;
+    static volatile java.util.concurrent.CountDownLatch release;
+
+    @Override
+    public void refresh() {
+      java.util.concurrent.CountDownLatch gate = release;
+      if (gate == null) {
+        return;
+      }
+      entered.countDown();
+      try {
+        gate.await(10, TimeUnit.SECONDS);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+      }
+    }
+
+    @Override
+    public void retireImportedRulesForManualSelection(
+        BoardHistoryList history, BoardHistoryList.SessionRulesTarget target) {}
+
+    @Override
+    public void synchronizeManualRulesAfterSelection(
+        BoardHistoryList history,
+        BoardHistoryList.SessionRulesTarget target,
+        BoardHistoryList.ManualRulesIntent manualIntent,
+        Leelaz primary,
+        long primaryGeneration) {}
   }
 
   private static void awaitHidden(SetKataRules dialog) throws Exception {

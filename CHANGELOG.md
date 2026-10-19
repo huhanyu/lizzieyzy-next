@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Fix the KataGo rules editor sometimes staying open after the engine confirmed the new rules: the status watcher could read the confirmed result a moment before the rules operation completed, then never look again.
 - Format all Java sources once with google-java-format and check formatting in CI (`fmt:check` in the java-linux job). The formatting commit is listed in `.git-blame-ignore-revs`.
 - Restore the toolbar breadth checkbox and value field after ordinary KataGo startup, restart and engine switching, without opening the Fox AI dialog. Breadth no longer requires unrelated flash-analysis commands; exclusive-task, failed-restoration and genmove restrictions remain in force.
 - Move KataGo heat-map (`kata-raw-nn`) parsing out of `Leelaz` into `analysis.gtp.KataRawNnResponse`, the first step of the engine-session refactor, with tests that lock the existing heat-map behaviour; the pass probability is no longer read as a policy row on 2-wide boards.
