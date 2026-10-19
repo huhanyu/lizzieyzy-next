@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Move KataGo heat-map (`kata-raw-nn`) parsing out of `Leelaz` into `analysis.gtp.KataRawNnResponse`, the first step of the engine-session refactor, with tests that lock the existing heat-map behaviour; the pass probability is no longer read as a policy row on 2-wide boards.
 - Drop the unmaintained SwingX 1.6.4 library (2013); its only remaining use was an operating-system check, now `OsPlatform`. This also removes the dead `maven.java.net` repository its parent POM declared, which made every CI build log a PKIX error while resolving dependencies.
 - Make the test suite faster and more deterministic: silent-engine snapshot tests use a 1.5 s instead of 5 s no-response timeout (the exact-snapshot contract tests drop from 46 s to 19 s), JDK classes that cache `os.name` are initialized before tests simulate another platform, and five races that failed on loaded CI runners now wait for the state they assert. An opt-in parallel mode (`-Dsurefire.forkCount=0.5C -Dsurefire.reuseForks=false`) runs one JVM per test class for local use.
 - Translate the Diagnostics and Logs dialog, the flash-analysis engine reuse messages and the ReadBoard WebSocket notice into Japanese, Korean and Thai, and the flash-analysis and ReadBoard texts into Traditional Chinese (Taiwan and Hong Kong); 320 strings in total were still shown in English. `scripts/list_untranslated_strings.py` lists strings that are still English in a translated bundle, and CI now fails when a change adds new ones.
