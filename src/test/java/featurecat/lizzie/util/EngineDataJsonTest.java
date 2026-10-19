@@ -44,6 +44,28 @@ class EngineDataJsonTest {
   }
 
   @Test
+  void sshPasswordIsWrittenAsACredentialStoreReference() {
+    EngineData source = new EngineData();
+    source.useJavaSSH = true;
+    source.ip = "gpu.example";
+    source.userName = "go";
+    source.password = "vault:go@gpu.example:22";
+
+    JSONObject stored = Utils.engineDataToJson(source);
+
+    assertEquals("go@gpu.example:22", stored.getString("passwordRef"));
+    assertEquals("", stored.getString("password"));
+    assertEquals("vault:go@gpu.example:22", Utils.engineDataFromJson(stored, 0).password);
+  }
+
+  @Test
+  void legacySshPasswordIsReadUnchanged() {
+    JSONObject legacy = new JSONObject().put("command", "katago").put("password", "legacy-text");
+    assertEquals("legacy-text", Utils.engineDataFromJson(legacy, 0).password);
+    assertFalse(Utils.engineDataToJson(Utils.engineDataFromJson(legacy, 0)).has("passwordRef"));
+  }
+
+  @Test
   void copiesGtpConfigurationWithoutSharingMutableProfile() {
     EngineData source = new EngineData();
     source.gtpConfigurationProtocol = "zengtp-config";

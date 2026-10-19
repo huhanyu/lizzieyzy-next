@@ -5,6 +5,7 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.gtpconfig.GtpConfigurationProbe;
 import featurecat.lizzie.analysis.gtpconfig.GtpConfigurationSchema;
+import featurecat.lizzie.analysis.remote.SshEnginePasswords;
 import featurecat.lizzie.util.EngineThreadPolicy;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
@@ -930,7 +931,8 @@ public class MoreEngines extends JPanel {
     if (!this.txtUserName.getText().equals(saved.userName)) return true;
     if (this.rdoKeyGen.isSelected() != saved.useKeyGen) return true;
     if (this.rdoKeyGen.isSelected()) return !this.keyGenPath.equals(saved.keyGenPath);
-    return !Utils.doEncrypt(new String(this.txtPassword.getPassword())).equals(saved.password);
+    return !new String(this.txtPassword.getPassword())
+        .equals(SshEnginePasswords.revealForDisplay(saved.password));
   }
 
   private String currentInitialCommand() {
@@ -1229,7 +1231,7 @@ public class MoreEngines extends JPanel {
           this.scanKeygen.setToolTipText(this.keyGenPath);
           this.rdoKeyGen.setToolTipText(this.keyGenPath);
         } else {
-          this.txtPassword.setText(Utils.doDecrypt(engineData.password));
+          this.txtPassword.setText(SshEnginePasswords.revealForDisplay(engineData.password));
         }
       } else {
         this.txtIP.setText("");
@@ -1345,7 +1347,13 @@ public class MoreEngines extends JPanel {
       engineDt.useKeyGen = this.rdoKeyGen.isSelected();
       engineDt.userName = this.txtUserName.getText();
       if (engineDt.useKeyGen) engineDt.keyGenPath = this.keyGenPath;
-      else engineDt.password = Utils.doEncrypt(new String(this.txtPassword.getPassword()));
+      else
+        engineDt.password =
+            SshEnginePasswords.remember(
+                engineDt.ip,
+                engineDt.port,
+                engineDt.userName,
+                new String(this.txtPassword.getPassword()));
     }
     if (engineDt.isDefault) {
       for (EngineData engine : engineData) engine.isDefault = false;

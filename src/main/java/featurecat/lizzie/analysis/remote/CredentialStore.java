@@ -9,7 +9,8 @@ public interface CredentialStore {
     ACCOUNT_TOKEN("account-token"),
     PASSWORD("password"),
     API_KEY("api-key"),
-    CHATGPT_SESSION("chatgpt-session");
+    CHATGPT_SESSION("chatgpt-session"),
+    SSH_ENGINE_PASSWORD("ssh-engine-password");
 
     private final String id;
 
