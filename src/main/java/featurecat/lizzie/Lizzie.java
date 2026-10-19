@@ -23,6 +23,7 @@ import featurecat.lizzie.logging.CrashHandlers;
 import featurecat.lizzie.logging.EdtHangWatchdog;
 import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.StandardErrorCapture;
 import featurecat.lizzie.logging.WorkDirectoryResolution;
 import featurecat.lizzie.logging.WorkDirectoryResolver;
 import featurecat.lizzie.rules.Board;
@@ -363,6 +364,7 @@ public class Lizzie {
       System.setProperty("swing.aatext", "true");
     }
     bootstrapLogging();
+    StandardErrorCapture.install();
     config = new Config();
     LoggingRuntime.current().ifPresent(runtime -> runtime.applySettings(config.loggingSettings));
     logPersistedLoggingSettingsApplied();
