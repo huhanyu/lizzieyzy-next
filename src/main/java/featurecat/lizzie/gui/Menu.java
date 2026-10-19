@@ -9831,14 +9831,41 @@ public class Menu extends JMenuBar {
     // Lizzie.frame.reSetLoc();
   }
 
+  /**
+   * Breadth is a user analysis setting: not while Fox owns the engine, while the engine plays a
+   * genmove game or a game against the user, or while the current engine cannot take it.
+   */
   private boolean breadthAdmissionAvailable() {
+    EngineGameSnapshot game = EngineGamePresentation.current();
+    LizzieFrame frame = Lizzie.frame;
+    Leelaz engine = Lizzie.leelaz;
     return !featurecat.lizzie.fox.FoxLiveSession.ownsEngine()
-        && Lizzie.leelaz != null
-        && Lizzie.leelaz.previewExclusiveGtpLeaseAvailability()
-            == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE;
+        && !(game.startingOrPlaying() && game.view() != null && game.view().genmove())
+        && (frame == null || !frame.isPlayingAgainstLeelaz)
+        && engine != null
+        && engine.canSetAnalysisWideRootNoise();
+  }
+
+  /**
+   * Re-evaluates the breadth controls on the event thread. Engine code calls this at lifecycle
+   * points, possibly while holding engine locks, so the work is always deferred; it reads the
+   * current primary engine when it runs, so a request from a replaced engine cannot enable stale
+   * controls.
+   */
+  public static void requestBreadthAdmissionRefresh() {
+    SwingUtilities.invokeLater(
+        () -> {
+          Menu menu = LizzieFrame.menu;
+          if (menu != null) menu.refreshBreadthAdmission();
+        });
   }
 
   public void refreshBreadthAdmission() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(this::refreshBreadthAdmission);
+      return;
+    }
+    if (chkWRN == null || txtWRN == null) return;
     boolean available = breadthAdmissionAvailable();
     chkWRN.setEnabled(available);
     txtWRN.setEnabled(available && chkWRN.isSelected());

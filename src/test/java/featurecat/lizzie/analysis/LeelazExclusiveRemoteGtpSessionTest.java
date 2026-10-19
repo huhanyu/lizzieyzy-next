@@ -1912,6 +1912,54 @@ class LeelazExclusiveRemoteGtpSessionTest {
       Lizzie.gtpConsole = previousConsole;
     }
   }
+
+  @Test
+  void ordinaryBreadthDoesNotRequireFlashAnalysisCommands() throws Exception {
+    Leelaz engine = reusableKatagoEngine(false, false);
+    installOutput(engine);
+    engine.commandLists.remove("set_position");
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      assertEquals(
+          Leelaz.ExclusiveGtpLeaseAvailability.MISSING_CAPABILITY,
+          engine.previewExclusiveGtpLeaseAvailability());
+      assertBreadthAvailable(true);
+    }
+  }
+
+  @Test
+  void breadthRefreshPreservesHumanGenmoveRestriction() throws Exception {
+    Leelaz engine = reusableKatagoEngine(false, false);
+    installOutput(engine);
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      Lizzie.frame = allocate(LizzieFrame.class);
+      Lizzie.frame.isPlayingAgainstLeelaz = true;
+      assertBreadthAvailable(false);
+      Lizzie.frame.isPlayingAgainstLeelaz = false;
+      assertBreadthAvailable(true);
+    }
+  }
+
+  @Test
+  void breadthNeedsKataGoAndWaitsForExclusiveWork() throws Exception {
+    Leelaz engine = reusableKatagoEngine(false, false);
+    installOutput(engine);
+    try (ForegroundLeaseGlobalState ignored = ForegroundLeaseGlobalState.install(engine)) {
+      assertTrue(engine.canSetAnalysisWideRootNoise());
+      engine.isKatago = false;
+      assertFalse(engine.canSetAnalysisWideRootNoise(), "breadth is a KataGo parameter");
+      engine.isKatago = true;
+      assertEquals(
+          Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE,
+          engine.beginForegroundAnalysisLease(new Object(), line -> {}, () -> {}, () -> {}));
+      try {
+        assertFalse(engine.canSetAnalysisWideRootNoise(), "exclusive work owns the engine");
+        assertBreadthAvailable(false);
+      } finally {
+        engine.endExclusiveGtpSession();
+      }
+    }
+  }
+
   private static void assertBreadthAvailable(boolean expected) throws Exception {
     featurecat.lizzie.gui.Menu menu = allocate(featurecat.lizzie.gui.Menu.class);
     Field checkbox = featurecat.lizzie.gui.Menu.class.getDeclaredField("chkWRN");
