@@ -608,6 +608,9 @@ def build_steps(
                     "-Djacoco.skip=true",
                     "-Djava.awt.headless=false",
                     "-Dlizzie.desktop.required=true",
+                    # Focus-sensitive desktop tests share one display: keep them in one JVM.
+                    "-Dsurefire.forkCount=1",
+                    "-Dsurefire.reuseForks=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
                     "-Dtest=TensorRtRepairAcceptanceTest#englishRepairFlow+chineseRepairFlow",
@@ -629,6 +632,9 @@ def build_steps(
                     "-Dfmt.skip=true",
                     "-Djava.awt.headless=false",
                     "-Dlizzie.desktop.required=true",
+                    # Focus-sensitive desktop tests share one display: keep them in one JVM.
+                    "-Dsurefire.forkCount=1",
+                    "-Dsurefire.reuseForks=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
                     "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest,CheckUpdateDialogTest,UpdatePauseRecoveryTest,SetKataRulesWindowTest,RulesDialogLayoutTest",
@@ -658,6 +664,9 @@ def build_steps(
                     "-Dfmt.skip=true",
                     "-Djava.awt.headless=false",
                     "-Dlizzie.desktop.required=true",
+                    # Focus-sensitive desktop tests share one display: keep them in one JVM.
+                    "-Dsurefire.forkCount=1",
+                    "-Dsurefire.reuseForks=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
                     test_selection,

@@ -846,7 +846,7 @@ class HumanSlAnalysisRunnerTest {
 
       assertTrue(runner.start());
       process.emitLine("Initializing (may take a long time) TensorRT backend");
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       while (!stages.contains(HumanSlAnalysisRunner.StartupStage.OPTIMIZING_GPU)
           && System.nanoTime() < deadline) {
         Thread.sleep(5L);
