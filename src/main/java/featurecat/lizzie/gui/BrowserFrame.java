@@ -41,8 +41,7 @@ import org.json.JSONTokener;
 
 public class BrowserFrame extends JFrame {
   private static final long serialVersionUID = -5570653778104813836L;
-  static final String JCEF_RELEASE_TAG =
-      "jcef-99c2f7a+cef-127.3.1+g6cbb30e+chromium-127.0.6533.100";
+  static final String JCEF_RELEASE_TAG = "jcef-17e805a+cef-152.0.6+g708dc14+chromium-152.0.7977.83";
   static final String JCEF_BUNDLE_DIRECTORY = "jcef-bundle";
   static final String JCEF_BUNDLE_MANIFEST = "lizzieyzy-next-jcef-manifest.txt";
   static final boolean JCEF_WINDOWLESS_RENDERING = false;
@@ -154,6 +153,16 @@ public class BrowserFrame extends JFrame {
                   String request,
                   boolean persistent,
                   CefQueryCallback callback) {
+                if (isYikeQuery(request)
+                    && !isTrustedYikeQuerySource(
+                        isYike,
+                        frame != null && frame.isMain(),
+                        frame == null ? null : frame.getURL())) {
+                  // Only the Yike page this window opened may feed games into the board.
+                  YikeSyncDebugLog.log("BrowserFrame rejected cefQuery from an untrusted frame");
+                  if (callback != null) callback.failure(403, "untrusted frame");
+                  return true;
+                }
                 if (request != null && request.startsWith("yikeUnite:")) {
                   // 立即回调，绝不在 CEF UI 线程里做解析/Swing/IO，否则消息队列堵了会拖死整个进程
                   if (callback != null) callback.success("");
@@ -873,6 +882,35 @@ public class BrowserFrame extends JFrame {
       boolean isYike, boolean yikeBrowserSyncEnabled, String url) {
     return shouldAutoStartYikeSync(isYike, yikeBrowserSyncEnabled)
         && YikeUrlParser.parse(url).isPresent();
+  }
+
+  static boolean isYikeQuery(String request) {
+    return request != null
+        && (request.startsWith("yikeUnite:") || request.startsWith("yikeGeometry:"));
+  }
+
+  /**
+   * Yike bridge messages are accepted only from the main frame of a Yike window showing an
+   * http(s) page on yikeweiqi.com, so other pages and embedded frames cannot inject games.
+   */
+  static boolean isTrustedYikeQuerySource(boolean isYike, boolean mainFrame, String frameUrl) {
+    if (!isYike || !mainFrame || frameUrl == null || frameUrl.isBlank()) {
+      return false;
+    }
+    try {
+      java.net.URI uri = new java.net.URI(frameUrl.trim());
+      String scheme = uri.getScheme();
+      String host = uri.getHost();
+      if (scheme == null || host == null) {
+        return false;
+      }
+      String normalizedScheme = scheme.toLowerCase(java.util.Locale.ROOT);
+      String normalizedHost = host.toLowerCase(java.util.Locale.ROOT);
+      return ("https".equals(normalizedScheme) || "http".equals(normalizedScheme))
+          && ("yikeweiqi.com".equals(normalizedHost) || normalizedHost.endsWith(".yikeweiqi.com"));
+    } catch (java.net.URISyntaxException e) {
+      return false;
+    }
   }
 
   static boolean shouldKeepYikeListenerEnabledOnPage(boolean isYike, String currentUrl) {

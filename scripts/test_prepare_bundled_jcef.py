@@ -21,7 +21,47 @@ JCEF = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(JCEF)
 
 
+def re_jcef_tags(text: str) -> list[str]:
+    import re
+
+    return re.findall(r"jcef-[0-9a-f]{7}\+cef-[0-9.]+\+g[0-9a-f]{7}\+chromium-[0-9.]+", text)
+
+
 class PrepareBundledJcefTest(unittest.TestCase):
+    def test_every_release_pin_matches_the_prepared_bundle(self) -> None:
+        root = SCRIPT_PATH.parent.parent
+        tag = JCEF.JCEF_RELEASE_TAG
+        jcefmaven_version = tag.split("+cef-", 1)[1].split("+", 1)[0]
+        pom = (root / "pom.xml").read_text(encoding="utf-8")
+        self.assertIn(
+            "<artifactId>jcefmaven</artifactId>\n\t\t\t<version>" + jcefmaven_version + "</version>",
+            pom,
+        )
+        pinned_files = [
+            "src/main/java/featurecat/lizzie/gui/BrowserFrame.java",
+            "scripts/package_macos_dmg.sh",
+            "scripts/package_windows_exe.sh",
+            ".github/workflows/build-macos-amd64-release.yml",
+            ".github/workflows/build-macos-arm64-release.yml",
+            ".github/workflows/build-windows-release.yml",
+        ]
+        for relative in pinned_files:
+            text = (root / relative).read_text(encoding="utf-8")
+            self.assertIn(tag, text, relative)
+            for other in set(re_jcef_tags(text)) - {tag}:
+                self.fail(f"{relative} pins a different JCEF release: {other}")
+        pinned_checksums = {
+            "scripts/package_macos_dmg.sh": ["macosx-arm64", "macosx-amd64"],
+            "scripts/package_windows_exe.sh": ["windows-amd64"],
+            ".github/workflows/build-macos-arm64-release.yml": ["macosx-arm64"],
+            ".github/workflows/build-macos-amd64-release.yml": ["macosx-amd64"],
+            ".github/workflows/build-windows-release.yml": ["windows-amd64"],
+        }
+        for relative, platforms in pinned_checksums.items():
+            text = (root / relative).read_text(encoding="utf-8")
+            for platform in platforms:
+                self.assertIn(JCEF.PLATFORM_PACKAGES[platform]["sha256"], text, relative)
+
     def create_bundle(
         self,
         root: Path,
@@ -101,7 +141,7 @@ class PrepareBundledJcefTest(unittest.TestCase):
             JCEF.PLATFORM_PACKAGES["macosx-arm64"]["artifact"],
         )
         self.assertEqual(
-            "1746a503e38614ea3e4fe7986e22443ab48a3a245ba1f4b17575aaccab5e7994",
+            "685b27b3dc7f6899a7d4a3a3d58978c95c36ebd1afd571c7027a66fe6f1252a0",
             JCEF.PLATFORM_PACKAGES["macosx-arm64"]["sha256"],
         )
         self.assertEqual(
@@ -109,7 +149,7 @@ class PrepareBundledJcefTest(unittest.TestCase):
             JCEF.PLATFORM_PACKAGES["macosx-amd64"]["artifact"],
         )
         self.assertEqual(
-            "36ed38af450dff481513c352a92a88aaa73ec34a399edadc7a4a947c7d1ddaed",
+            "0a49f85ebc8f942fae81bc0120950ce83a629696352338f000856ee72580908a",
             JCEF.PLATFORM_PACKAGES["macosx-amd64"]["sha256"],
         )
 

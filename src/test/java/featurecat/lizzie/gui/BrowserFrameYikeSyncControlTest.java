@@ -8,6 +8,37 @@ import org.junit.jupiter.api.Test;
 
 class BrowserFrameYikeSyncControlTest {
   @Test
+  void yikeBridgeMessagesAreAcceptedOnlyFromTheMainYikeFrame() {
+    String room = "https://home.yikeweiqi.com/#/live/new-room/123456";
+    assertTrue(BrowserFrame.isTrustedYikeQuerySource(true, true, room));
+    assertTrue(BrowserFrame.isTrustedYikeQuerySource(true, true, "http://yikeweiqi.com/#/game"));
+    assertTrue(
+        BrowserFrame.isTrustedYikeQuerySource(true, true, "https://WWW.YikeWeiqi.com/#/unite/9"));
+
+    assertFalse(BrowserFrame.isTrustedYikeQuerySource(true, false, room), "embedded frame");
+    assertFalse(BrowserFrame.isTrustedYikeQuerySource(false, true, room), "not a Yike window");
+    assertFalse(
+        BrowserFrame.isTrustedYikeQuerySource(true, true, "https://yikeweiqi.com.evil.example/"));
+    assertFalse(
+        BrowserFrame.isTrustedYikeQuerySource(true, true, "https://evilyikeweiqi.com/#/live"));
+    assertFalse(
+        BrowserFrame.isTrustedYikeQuerySource(
+            true, true, "https://evil.example/?next=https://home.yikeweiqi.com/"));
+    assertFalse(BrowserFrame.isTrustedYikeQuerySource(true, true, "file:///tmp/yikeweiqi.com"));
+    assertFalse(BrowserFrame.isTrustedYikeQuerySource(true, true, "chrome-error://chromewebdata/"));
+    assertFalse(BrowserFrame.isTrustedYikeQuerySource(true, true, ""));
+    assertFalse(BrowserFrame.isTrustedYikeQuerySource(true, true, null));
+  }
+
+  @Test
+  void onlyYikeBridgeRequestsAreSubjectToTheFrameCheck() {
+    assertTrue(BrowserFrame.isYikeQuery("yikeUnite:{}"));
+    assertTrue(BrowserFrame.isYikeQuery("yikeGeometry:{}"));
+    assertFalse(BrowserFrame.isYikeQuery("somethingElse:{}"));
+    assertFalse(BrowserFrame.isYikeQuery(null));
+  }
+
+  @Test
   void yikeAutoSyncRequiresYikeBrowserSyncEnabled() {
     assertFalse(BrowserFrame.shouldAutoStartYikeSync(false, true));
     assertFalse(BrowserFrame.shouldAutoStartYikeSync(true, false));

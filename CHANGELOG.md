@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Update the embedded browser (JCEF) from Chromium 127 (July 2024) to Chromium 152.0.7977.83 (jcefmaven 152.0.6), and accept Yike sync messages only from the main frame of a Yike window on yikeweiqi.com, so other pages or embedded frames cannot inject games. Every JCEF version and checksum pin in the packaging scripts and release workflows is now checked against the bundle helper by a script test.
 - Stop retrying permanent snapshot-file preparation failures after SGF imports, keep the imported position available, and explain the failure. Continue retries the full acknowledged synchronization so a direct local engine or repaired directory permissions can recover; script/SSH launchers still cannot read host snapshot paths.
 - Hint in the KataGo rules dialog when the current game's komi differs from KataGo's default for the edited rules (6.5 for territory scoring, 7 for New Zealand and button rules, otherwise 7.5). The hint updates as rules are edited and when the dialog is reactivated, never changes komi, and is not shown for handicap games or when composing engine-game match rules.
 - Keep ordinary candidate markers visible while the first asynchronous variation preview is pending, including reentry after leaving a candidate and floating-board editing. Replace them only when the complete preview is ready; preserve existing previews during direct candidate switches and discard cancelled results.
