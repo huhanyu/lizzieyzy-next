@@ -2,6 +2,7 @@ package featurecat.lizzie.update;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.util.OsPlatform;
 import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -9,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
-import org.jdesktop.swingx.util.OS;
 
 public final class WindowsUpdatePaths {
   public static final String APP_ROOT_PROPERTY = "lizzie.update.appRoot";
@@ -38,7 +38,7 @@ public final class WindowsUpdatePaths {
   }
 
   public static boolean isWindowsRuntime() {
-    return OS.isWindows() || Boolean.getBoolean("lizzie.update.forceWindowsForTests");
+    return OsPlatform.isWindows() || Boolean.getBoolean("lizzie.update.forceWindowsForTests");
   }
 
   public static WindowsUpdatePaths detect() throws IOException {
