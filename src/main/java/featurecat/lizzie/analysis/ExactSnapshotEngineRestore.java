@@ -218,7 +218,12 @@ public final class ExactSnapshotEngineRestore {
             throw new Failure(FailureCategory.UNSUPPORTED_REMOTE_POSITION,
                 "Engine does not advertise set_free_handicap for exact handicap restore.");
           }
-          if (!target.useRemoteCompute && !plan.initialHandicap && !plan.emptyOrigin) {
+          // Engines that cannot read host files (SSH, scripts, WSL, containers) restore an
+          // arbitrary position in-band with set_position when they advertise it (KataGo does).
+          if (!target.useRemoteCompute
+              && !plan.initialHandicap
+              && !plan.emptyOrigin
+              && !target.supportsSetPositionSnapshotRestore(plan.admission)) {
             throw new Failure(FailureCategory.SNAPSHOT_PREPARATION,
                 UNSUPPORTED_SNAPSHOT_TRANSPORT_DETAIL);
           }
@@ -236,7 +241,8 @@ public final class ExactSnapshotEngineRestore {
           localTargets.get(0).beforeExactSnapshotPreclearForTest();
         }
         if (plan.preclear) {
-          clearCapturedTargets(plan, lifecycle == null ? null : lifecycle.stagedSnapshot);
+          clearCapturedTargets(
+              plan, lifecycle == null ? null : lifecycle.stagedSnapshot, remoteTargets);
         }
         if (!remoteTargets.isEmpty()) {
           restoreRemoteSnapshotInBand(plan, remoteTargets);
@@ -280,10 +286,16 @@ public final class ExactSnapshotEngineRestore {
         || plan.snapshotData.blackToPlay || !plan.tail.isEmpty()) {
       return;
     }
-    throw new Failure(
-        FailureCategory.UNSUPPORTED_REMOTE_POSITION,
-        "Remote exact snapshot restore cannot represent a white-to-play position with an "
-            + "empty real tail.");
+    // set_position leaves Black to play. A white-to-play position without a real tail is only
+    // representable when later analysis and move commands name the side to play explicitly.
+    for (Leelaz target : remoteTargets) {
+      if (!target.namesSideToPlayInCommands()) {
+        throw new Failure(
+            FailureCategory.UNSUPPORTED_REMOTE_POSITION,
+            "Remote exact snapshot restore cannot represent a white-to-play position with an "
+                + "empty real tail.");
+      }
+    }
   }
 
   private static void restoreRemoteSnapshotInBand(RestorePlan plan, List<Leelaz> remoteTargets) {
@@ -388,10 +400,14 @@ public final class ExactSnapshotEngineRestore {
     return Board.coordsAsName(x) + (boardHeight - y);
   }
 
-  private static void clearCapturedTargets(RestorePlan plan, StagedSnapshot stagedSnapshot) {
+  private static void clearCapturedTargets(
+      RestorePlan plan, StagedSnapshot stagedSnapshot, List<Leelaz> inBandTargets) {
     for (Leelaz targetEngine : plan.targetEngines) {
+      // In-band targets never read the staged file, so they have no file access to verify.
       Leelaz.SnapshotFileAccess fileAccess =
-          targetEngine.useRemoteCompute || stagedSnapshot == null
+          targetEngine.useRemoteCompute
+                  || stagedSnapshot == null
+                  || inBandTargets.contains(targetEngine)
               ? null
               : stagedSnapshot.forEngine(targetEngine).fileAccess;
       sendCapturedRestoreCommand(plan, targetEngine, fileAccess, "clear_board", "preclear");

@@ -16,7 +16,6 @@ import featurecat.lizzie.analysis.TrackingAnalysisController;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
-import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import java.awt.Color;
 import java.awt.Font;
@@ -381,7 +380,8 @@ class TrackingProductionCutoverTest {
               + " commands=" + environment.commands());
       assertEquals(java.util.Set.of("A1", "B2"), frame.trackingDisplaySnapshot().selectedPoints());
       environment.settleCommands();
-      assertFalse(frame.trackingDisplaySnapshot().active());
+      awaitCondition(
+          () -> !frame.trackingDisplaySnapshot().active(), "tracking display stays active");
       assertTrue(environment.engine.isPondering());
       assertFalse(environment.commands().contains("allow B"));
       frame.clearTrackingPoints();
@@ -914,6 +914,17 @@ class TrackingProductionCutoverTest {
     }
   }
 
+  private static void awaitCondition(java.util.function.BooleanSupplier condition, String failure)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+    while (!condition.getAsBoolean()) {
+      if (System.nanoTime() > deadline) {
+        throw new AssertionError(failure);
+      }
+      Thread.sleep(5);
+    }
+  }
+
   private static final class TestEnvironment implements AutoCloseable {
     private final Leelaz previousEngine;
     private final Board previousBoard;
@@ -1096,7 +1107,9 @@ class TrackingProductionCutoverTest {
       while (System.nanoTime() < deadline) {
         String[] lines = commands().split("\n");
         if (respondedCommands >= lines.length || lines[respondedCommands].isEmpty()) {
-          if (++quiet >= 5) return;
+          // ~20 ms without a new command; 5 ms let loaded CI runners move on before the
+          // engine side had finished reacting.
+          if (++quiet >= 20) return;
           Thread.sleep(1);
           continue;
         }

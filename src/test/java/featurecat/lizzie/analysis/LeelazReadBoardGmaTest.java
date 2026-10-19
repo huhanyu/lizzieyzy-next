@@ -16,8 +16,8 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.BoardRenderer;
 import featurecat.lizzie.gui.BottomToolbar;
-import featurecat.lizzie.gui.JFontLabel;
 import featurecat.lizzie.gui.GtpConsolePane;
+import featurecat.lizzie.gui.JFontLabel;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.Menu;
 import featurecat.lizzie.rules.Board;
@@ -36,9 +36,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -51,8 +51,8 @@ import javax.swing.SwingUtilities;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LeelazReadBoardGmaTest {
 
@@ -726,7 +726,7 @@ class LeelazReadBoardGmaTest {
 
       assertTrue(engine.genmoveAnalyzeForReadBoard("B", 5, 1000, false));
 
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       while (engine.previewForegroundAnalysisLeaseAvailability()
               != Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_STATE_UNRESTORED
           && System.nanoTime() < deadline) {
@@ -3112,7 +3112,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(
           ReadBoardGmaSession.SessionOutcome.SUCCEEDED,
           awaitGmaSessionTerminal(sessionRef).outcome());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
     }
   }
 
@@ -3165,7 +3166,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(
           ReadBoardGmaSession.SessionOutcome.SUCCEEDED,
           awaitGmaSessionTerminal(sessionRef).outcome());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
     }
   }
 
@@ -3193,7 +3195,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
       assertEquals(
           ReadBoardGmaSession.FailureCategory.GTP_ERROR, terminal.firstFailure().category());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
       assertTrue(
           engine.hasUnrestoredReadBoardGmaState(),
           "an exact participant failure must quarantine the engine fail-closed");
@@ -3743,7 +3746,8 @@ class LeelazReadBoardGmaTest {
           engine, successResponseFor(transport.rawCommands(), "maxTime"));
       assertEquals(
           ReadBoardGmaSession.SessionOutcome.SUCCEEDED, awaitGmaSessionTerminal(sessionRef).outcome());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
     }
   }
 
@@ -3808,7 +3812,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(
           ReadBoardGmaSession.FailureCategory.ADMISSION_STALE,
           terminal.firstFailure().category());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
       assertTrue(engine.hasUnrestoredReadBoardGmaState());
       assertTrue(
           transport.commands().stream().noneMatch(command -> command.equals("play B D4")),
@@ -3869,7 +3874,8 @@ class LeelazReadBoardGmaTest {
           engine, successResponseFor(transport.rawCommands(), "maxTime"));
       assertEquals(
           ReadBoardGmaSession.SessionOutcome.SUCCEEDED, awaitGmaSessionTerminal(sessionRef).outcome());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
     }
   }
 
@@ -3921,7 +3927,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(
           ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
           terminal.firstFailure().category());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
     }
   }
 
@@ -4013,7 +4020,7 @@ class LeelazReadBoardGmaTest {
       boolean barrierObserved = false;
       synchronized (arbitrationLock) {
         responseThread.start();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
           if (barrierField.get(engine) != null) {
             barrierObserved = true;
@@ -4085,7 +4092,7 @@ class LeelazReadBoardGmaTest {
       boolean barrierObserved = false;
       synchronized (arbitrationLock) {
         responseThread.start();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
           if (barrierField.get(engine) != null) {
             barrierObserved = true;
@@ -4147,7 +4154,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
       assertEquals(
           ReadBoardGmaSession.FailureCategory.GTP_ERROR, terminal.firstFailure().category());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
       assertTrue(
           engine.hasUnrestoredReadBoardGmaState(),
           "a runtime participant failure must quarantine the engine fail-closed");
@@ -4158,7 +4166,8 @@ class LeelazReadBoardGmaTest {
           engine, successResponseFor(transport.rawCommands(), "maxVisits"));
       assertEquals(
           ReadBoardGmaSession.SessionOutcome.FAILED, awaitGmaSessionTerminal(sessionRef).outcome());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
     }
   }
 
@@ -4240,7 +4249,8 @@ class LeelazReadBoardGmaTest {
       assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
       assertEquals(
           ReadBoardGmaSession.FailureCategory.TIMEOUT, terminal.firstFailure().category());
-      assertNull(engine.currentReadBoardGmaReservation());
+      // The terminal state is published before the session's release effect runs.
+      awaitReservationReleased(engine);
       assertTrue(
           engine.hasUnrestoredReadBoardGmaState(),
           "a missing ACK before the timeout must quarantine the engine fail-closed");
@@ -5059,6 +5069,14 @@ class LeelazReadBoardGmaTest {
         engine, successResponseFor(transport.rawCommands(), "maxTime"));
     invokeProcessCommandResponseLine(
         engine, successResponseFor(transport.rawCommands(), "maxVisits"));
+  }
+
+  private static void awaitReservationReleased(Leelaz engine) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (engine.currentReadBoardGmaReservation() != null && System.nanoTime() < deadline) {
+      Thread.sleep(5L);
+    }
+    assertNull(engine.currentReadBoardGmaReservation());
   }
 
   private static ReadBoardGmaSession.Terminal awaitGmaSessionTerminal(

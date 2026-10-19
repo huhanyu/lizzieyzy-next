@@ -33,6 +33,7 @@ import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper.TensorRtRepairContext;
 import featurecat.lizzie.util.KataGoRuntimeHelper.TensorRtRuntimeException;
+import featurecat.lizzie.util.OsPlatform;
 import featurecat.lizzie.util.Utils;
 import featurecat.lizzie.util.YikeSyncDebugLog;
 import java.awt.Component;
@@ -81,7 +82,6 @@ import javax.swing.Box;
 import javax.swing.JDialog;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
-import org.jdesktop.swingx.util.OS;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -473,6 +473,8 @@ public class Leelaz {
   private static final long LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS =
       LOAD_SGF_PENDING_RESPONSE_GRACE_TIMEOUT_MILLIS + LOAD_SGF_NO_RESPONSE_EXTRA_TIMEOUT_MILLIS;
   private static final int ENGINE_DIAGNOSTIC_TAIL_LINES = 40;
+  // Per engine so tests can shorten it; production always uses LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS.
+  private volatile long loadSgfNoResponseTimeoutMillis = LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS;
   private static final ScheduledExecutorService LOAD_SGF_CLEANUP_EXECUTOR =
       Executors.newSingleThreadScheduledExecutor(Leelaz::newLoadSgfCleanupThread);
   //	private boolean isSaving = false;
@@ -12227,6 +12229,33 @@ public class Leelaz {
     }
   }
 
+  /**
+   * Whether the current reader advertised KataGo's {@code set_position}, which restores an
+   * arbitrary static position in-band when the engine cannot read host snapshot files.
+   */
+  final boolean supportsSetPositionSnapshotRestore(ExactSnapshotRestoreAdmission admission) {
+    requireExactSnapshotRestoreAdmission(admission);
+    ReaderStreamBinding binding = currentReaderStreamBinding();
+    if (binding.terminated) {
+      throw new ExactSnapshotEngineRestore.Failure(
+          ExactSnapshotEngineRestore.FailureCategory.ADMISSION_STALE,
+          "Exact snapshot restore engine process is no longer current.");
+    }
+    synchronized (engineArbitrationLock()) {
+      return endGetCommandList
+          && commandListBinding == binding
+          && commandLists.contains("set_position");
+    }
+  }
+
+  /**
+   * Whether analysis and move commands name the side to play ({@code kata-analyze W ...}), so a
+   * restored position does not need a move history to tell the engine whose turn it is.
+   */
+  final boolean namesSideToPlayInCommands() {
+    return canAddPlayer && !useRemoteCompute;
+  }
+
   void advertiseCommandsForTest(List<String> commands) {
     synchronized (engineArbitrationLock()) {
       ReaderStreamBinding binding = currentReaderStreamBinding();
@@ -12409,7 +12438,10 @@ public class Leelaz {
       Runnable afterConsumed,
       ExactSnapshotRestoreAdmission admission) {
     LoadSgfDispatch dispatch =
-        new LoadSgfDispatch(afterConsumed, snapshotRestoreResponseDescription(commands, sgfFile));
+        new LoadSgfDispatch(
+            afterConsumed,
+            snapshotRestoreResponseDescription(commands, sgfFile),
+            loadSgfNoResponseTimeoutMillis());
     RuntimeException sendFailure = null;
     for (String command : commands) {
       RuntimeException authoritySendFailure =
@@ -12452,7 +12484,8 @@ public class Leelaz {
       SnapshotFileAccess mirroredFileAccess,
       Runnable afterConsumed,
       ExactSnapshotRestoreAdmission admission) {
-    LoadSgfDispatch dispatch = new LoadSgfDispatch(afterConsumed, "loadsgf");
+    LoadSgfDispatch dispatch =
+        new LoadSgfDispatch(afterConsumed, "loadsgf", loadSgfNoResponseTimeoutMillis());
     RuntimeException sendFailure =
         sendTrackedSnapshotCommand(
             this, "loadsgf " + gtpFileName, sgfFile, fileAccess, dispatch, admission);
@@ -18689,9 +18722,6 @@ public class Leelaz {
   }
 
   private static final class LoadSgfDispatch {
-    private static final long PENDING_RESPONSE_TIMEOUT_NANOS =
-        TimeUnit.MILLISECONDS.toNanos(LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS);
-
     private final Runnable afterConsumed;
     private final String responseDescription;
     private final AtomicInteger pendingConsumers = new AtomicInteger(0);
@@ -18704,9 +18734,13 @@ public class Leelaz {
     private final AtomicReference<RuntimeException> failure = new AtomicReference<>();
     private final CountDownLatch completion = new CountDownLatch(1);
 
-    private LoadSgfDispatch(Runnable afterConsumed, String responseDescription) {
+    private final long noResponseTimeoutMillis;
+
+    private LoadSgfDispatch(
+        Runnable afterConsumed, String responseDescription, long noResponseTimeoutMillis) {
       this.afterConsumed = afterConsumed;
       this.responseDescription = responseDescription;
+      this.noResponseTimeoutMillis = noResponseTimeoutMillis;
     }
 
     private void registerPendingConsumer(TrackedLoadSgfConsumer consumer) {
@@ -18802,12 +18836,12 @@ public class Leelaz {
       if (finishedAtNanos < 0L) {
         return false;
       }
-      return nowNanos - finishedAtNanos >= PENDING_RESPONSE_TIMEOUT_NANOS;
+      return nowNanos - finishedAtNanos >= TimeUnit.MILLISECONDS.toNanos(noResponseTimeoutMillis);
     }
 
     private void awaitCompletion() {
       try {
-        if (completion.await(LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+        if (completion.await(noResponseTimeoutMillis, TimeUnit.MILLISECONDS)) {
           return;
         }
         recordFailureAndCancelPendingConsumers(
@@ -18816,7 +18850,7 @@ public class Leelaz {
                 "Timed out while waiting for "
                     + responseDescription
                     + " response after "
-                    + LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS
+                    + noResponseTimeoutMillis
                     + " ms"));
         completion.await();
       } catch (InterruptedException ex) {
@@ -21190,6 +21224,17 @@ public class Leelaz {
         }
       }
     }
+  }
+
+  private long loadSgfNoResponseTimeoutMillis() {
+    long millis = loadSgfNoResponseTimeoutMillis;
+    // Engines allocated without a constructor (tests) never ran the field initializer.
+    return millis > 0 ? millis : LOAD_SGF_NO_RESPONSE_TIMEOUT_MILLIS;
+  }
+
+  /** Shortens how long snapshot loads wait for a silent engine, so timeout tests run fast. */
+  void setLoadSgfNoResponseTimeoutForTest(long millis) {
+    loadSgfNoResponseTimeoutMillis = millis;
   }
 
   void setRuntimeSearchThreadsTimeoutForTest(long millis) {
@@ -23707,7 +23752,8 @@ public class Leelaz {
     } else {
       message = detail != null && !detail.isBlank() ? detail : fallbackMessage;
     }
-    boolean canUseCmdDiagnostic = OS.isWindows() && !useJavaSSH && !isSSH && !useRemoteCompute;
+    boolean canUseCmdDiagnostic =
+        OsPlatform.isWindows() && !useJavaSSH && !isSSH && !useRemoteCompute;
     EngineFailedMessage.showDialog(
         commands,
         engineCommand != null ? engineCommand : "",
@@ -23814,12 +23860,13 @@ public class Leelaz {
         commands,
         engineCommand,
         message,
-        !useJavaSSH && OS.isWindows(),
+        !useJavaSSH && OsPlatform.isWindows(),
         true,
         false,
         isModal,
         repairContext,
-        dialog -> { engineFailedMessage = dialog;
+        dialog -> {
+          engineFailedMessage = dialog;
           presentedStartupDiagnosticAttempt = diagnosticAttempt;
           if (diagnosticAttempt != null && diagnosticAttempt.snapshot() != null)
             dialog.bindStartupDiagnostic(diagnosticAttempt);
