@@ -12,10 +12,12 @@ user-facing conventions are in [CONTRIBUTING.md](CONTRIBUTING.md); build details
   -Dtest='SomeTest' -Dsurefire.failIfNoSpecifiedTests=false test`.
 - Pass `-Dlizzie.work.dir=<temp dir>` when running tests locally so nothing is written to your real
   work directory.
-- Repository checks: `python3 scripts/check_line_endings.py` and
-  `python3 scripts/check_architecture_budget.py`.
-- Text files are LF (only `.bat`/`.cmd` are CRLF). Format only the code you touch with
-  google-java-format (`fmt-maven-plugin` 2.29); never reformat whole files in a feature change.
+- Repository checks: `python3 scripts/check_line_endings.py`,
+  `python3 scripts/check_architecture_budget.py` and
+  `python3 scripts/list_untranslated_strings.py --check`.
+- Java code is google-java-format clean and CI runs `fmt:check`: run
+  `mvn -B -q com.spotify.fmt:fmt-maven-plugin:format` before committing. Text files are LF (only
+  `.bat`/`.cmd` are CRLF).
 
 ## Architecture rules
 
@@ -27,7 +29,9 @@ Until it lands, every change must keep these numbers from growing:
    files listed in [scripts/architecture_budget.json](scripts/architecture_budget.json) have line
    budgets enforced in CI. Put new behaviour in a new, focused class with its own tests and call it
    from the hot spot. If you shrink a listed file, run
-   `python3 scripts/check_architecture_budget.py --tighten` and commit the lower budget.
+   `python3 scripts/check_architecture_budget.py --tighten` and commit the lower budget. Pure
+   parsers for engine output belong in `featurecat.lizzie.analysis.gtp` (for example
+   `KataRawNnResponse`), tested with recorded engine output.
 2. **No new global mutable state.** Do not add `public static` mutable fields, and do not add new
    references to `Lizzie.config`, `Lizzie.frame`, `Lizzie.board`, `Lizzie.leelaz` or
    `Lizzie.engineManager` in new code: pass what the class needs through its constructor. The
@@ -57,6 +61,12 @@ Until it lands, every change must keep these numbers from growing:
 - The embedded browser only trusts Yike bridge messages from the main frame on yikeweiqi.com
   (`BrowserFrame.isTrustedYikeQuerySource`). New bridges need the same kind of origin check.
 
+## Logging
+
+- Log through SLF4J (`LoggerFactory.getLogger(...)`) so failures reach `logs/app.log` and the
+  diagnostic bundle. Do not add new `printStackTrace()` calls; the stderr copy into app.log
+  (`StandardErrorCapture`) is only a safety net for old code.
+
 ## Tests
 
 - Every behaviour change ships with a test that fails without it.
@@ -74,6 +84,8 @@ Until it lands, every change must keep these numbers from growing:
   every key to all bundles at the same position with the same placeholders;
   `LocalizationResourceParityTest` enforces it. `MessageFormat` patterns must not contain a bare
   apostrophe.
+- Translate new strings in the same change: `python3 scripts/list_untranslated_strings.py --check`
+  fails when a bundle gains English text (brand and protocol names are allow-listed in the script).
 
 ## Pull requests
 
