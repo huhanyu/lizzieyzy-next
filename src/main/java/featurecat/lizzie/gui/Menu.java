@@ -9832,13 +9832,19 @@ public class Menu extends JMenuBar {
   }
 
   private boolean breadthAdmissionAvailable() {
+    EngineGameSnapshot game = EngineGamePresentation.current();
     return !featurecat.lizzie.fox.FoxLiveSession.ownsEngine()
-        && Lizzie.leelaz != null
-        && Lizzie.leelaz.previewExclusiveGtpLeaseAvailability()
-            == Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE;
+        && !(game.startingOrPlaying() && game.view() != null && game.view().genmove())
+        && (Lizzie.frame == null || !Lizzie.frame.isPlayingAgainstLeelaz)
+        && Lizzie.leelaz != null && Lizzie.leelaz.canSetAnalysisWideRootNoise();
   }
 
   public void refreshBreadthAdmission() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      SwingUtilities.invokeLater(this::refreshBreadthAdmission);
+      return;
+    }
+    if (chkWRN == null || txtWRN == null) return;
     boolean available = breadthAdmissionAvailable();
     chkWRN.setEnabled(available);
     txtWRN.setEnabled(available && chkWRN.isSelected());

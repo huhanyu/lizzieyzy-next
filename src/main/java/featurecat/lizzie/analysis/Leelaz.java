@@ -14787,6 +14787,7 @@ public class Leelaz {
     session.wasPondering = !(owner instanceof FoxEngineSession) && isPondering();
     session.readerBinding = readerStreamBinding;
     exclusiveGtpSession = session;
+    refreshBreadthAdmissionLater();
     return session;
   }
 
@@ -14985,6 +14986,27 @@ public class Leelaz {
       return intrinsicExclusiveGtpLeaseAvailability();
     }
   }
+  /** Ordinary analysis breadth does not require the flash-analysis command set. */
+  public boolean canSetAnalysisWideRootNoise() {
+    synchronized (engineArbitrationLock()) {
+      return hasGtpCapability() && isKatago && isLoaded() && isStarted() && outputStream != null
+          && !engineStateUnrestored && readBoardGmaReservation == null
+          && exclusiveGtpSession == null && !foregroundRestoreInProgress
+          && !exclusiveGtpLifecycleTransition && !hasLifecycleCompletionLocked();
+    }
+  }
+
+  private void refreshBreadthAdmissionLater() {
+    if (Lizzie.leelaz != this) return;
+    // Always defer: callers may still hold the endpoint lock. Recompute on EDT, never publish
+    // a captured enabled flag that could outlive this engine's ownership or reader.
+    SwingUtilities.invokeLater(() -> {
+      if (Lizzie.leelaz == this && LizzieFrame.menu != null) {
+        LizzieFrame.menu.refreshBreadthAdmission();
+      }
+    });
+  }
+
 
   public boolean sendExclusiveGtpCommand(String command) {
     ExclusiveGtpSession session;
@@ -15035,6 +15057,7 @@ public class Leelaz {
       exclusiveGtpSession = null;
       engineArbitrationLock().notifyAll();
     }
+    refreshBreadthAdmissionLater();
     if (advanceOrdinaryQueue) {
       try {
         trySendCommandFromQueue();
@@ -15346,6 +15369,7 @@ public class Leelaz {
       }
     }
     if (ended) {
+      refreshBreadthAdmissionLater();
       trySendCommandFromQueue();
     }
   }
@@ -16576,6 +16600,7 @@ public class Leelaz {
     synchronized (engineArbitrationLock()) {
       finishForegroundRestoreLifecycleLocked();
     }
+    refreshBreadthAdmissionLater();
   }
 
   private void finishForegroundRestoreLifecycleLocked() {
@@ -18624,6 +18649,7 @@ public class Leelaz {
       if (!endpointsReleased.compareAndSet(false, true)) {
         return;
       }
+      authority.refreshBreadthAdmissionLater();
       List<Runnable> callbacks;
       synchronized (this) {
         callbacks = new ArrayList<>(afterEndpointRelease);

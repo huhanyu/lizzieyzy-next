@@ -11230,6 +11230,7 @@ public class EngineManager {
     }
     if (LizzieFrame.menu != null) {
       LizzieFrame.menu.applyEngineSwitchUiState(snapshot);
+      LizzieFrame.menu.refreshBreadthAdmission();
     }
   }
 
