@@ -15,9 +15,9 @@ import featurecat.lizzie.analysis.AnalysisEngine;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.ExactSnapshotRestoreProtocolFixture;
 import featurecat.lizzie.analysis.KataGoRules;
-import featurecat.lizzie.enginegame.EngineGameRecordContext;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
+import featurecat.lizzie.enginegame.EngineGameRecordContext;
 import featurecat.lizzie.gui.BoardRenderer;
 import featurecat.lizzie.gui.Input;
 import featurecat.lizzie.gui.LizzieFrame;
@@ -125,11 +125,7 @@ class BoardNodeKindHistoryPipelineTest {
       estimateRefresh.estimateArray = List.of(9.0);
       secondary.pda = 0;
       estimateRefresh.tryToSetBestMoves2FromEngine(
-          new ArrayList<>(List.of(move)),
-          "secondary-estimate",
-          secondary,
-          100,
-          List.of(1.0, 2.0));
+          new ArrayList<>(List.of(move)), "secondary-estimate", secondary, 100, List.of(1.0, 2.0));
 
       assertEquals("secondary-estimate", estimateRefresh.engineName2);
       assertEquals(List.of(9.0), estimateRefresh.estimateArray);
@@ -648,8 +644,7 @@ class BoardNodeKindHistoryPipelineTest {
       Lizzie.config.loadSgfLast = true;
       engine.recordedCommands().clear();
 
-      assertTrue(
-          SGFParser.loadFromString("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc];B[bb])", false));
+      assertTrue(SGFParser.loadFromString("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc];B[bb])", false));
 
       assertEquals(3, Lizzie.board.getHistory().getData().moveNumber);
       assertTrue(
@@ -723,8 +718,7 @@ class BoardNodeKindHistoryPipelineTest {
 
       Path missing =
           Path.of(
-              System.getProperty("java.io.tmpdir"),
-              "lizzie-missing-" + System.nanoTime() + ".sgf");
+              System.getProperty("java.io.tmpdir"), "lizzie-missing-" + System.nanoTime() + ".sgf");
       assertFalse(SGFParser.load(missing.toString(), false, false));
       assertSame(previous, Lizzie.board.getHistory());
       assertSame(previousNode, Lizzie.board.getHistory().getCurrentHistoryNode());
@@ -1437,7 +1431,7 @@ class BoardNodeKindHistoryPipelineTest {
       assertFalse(
           (boolean)
               requireMethod(Leelaz.class, "shouldApplyInitialEngineKomiToCurrentGame")
-              .invoke(leelaz),
+                  .invoke(leelaz),
           "engine startup must not overwrite a loaded handicap SGF komi after parsing.");
 
       leelaz.boardSizeForEngine(3, 3);
@@ -4148,8 +4142,7 @@ class BoardNodeKindHistoryPipelineTest {
   }
 
   @Test
-  void downKeyRepaintsSnapshotBeforeDelayedRestoreAndSerializesQueuedNavigation()
-      throws Exception {
+  void downKeyRepaintsSnapshotBeforeDelayedRestoreAndSerializesQueuedNavigation() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     BoardRenderer previousRenderer = LizzieFrame.boardRenderer;
     TrackingLeelaz leelaz = (TrackingLeelaz) Lizzie.leelaz;
@@ -4352,7 +4345,16 @@ class BoardNodeKindHistoryPipelineTest {
           SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc];B[bb])", false);
       while (history.previous().isPresent()) {}
       BoardHistoryNode target =
-          history.getStart().next().orElseThrow().next().orElseThrow().next().orElseThrow().next().orElseThrow();
+          history
+              .getStart()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow();
       Lizzie.board.setHistory(history);
       assertTrue(Lizzie.board.nextMove(false));
       assertTrue(Lizzie.board.nextMove(false));
@@ -4369,7 +4371,10 @@ class BoardNodeKindHistoryPipelineTest {
       assertSame(target, Lizzie.board.getHistory().getCurrentHistoryNode());
       assertEquals(List.of(BoardNodeKind.SNAPSHOT, BoardNodeKind.MOVE), frame.refreshedNodeKinds());
       assertTrue(
-          leelaz.recordedCommands().subList(commandStart, leelaz.recordedCommands().size()).isEmpty(),
+          leelaz
+              .recordedCommands()
+              .subList(commandStart, leelaz.recordedCommands().size())
+              .isEmpty(),
           "a placeholder engine must not receive GTP during local history navigation.");
       assertFalse(
           frame.failureHandlingWasRequested(),
@@ -4393,7 +4398,16 @@ class BoardNodeKindHistoryPipelineTest {
           SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc];B[bb])", false);
       while (history.previous().isPresent()) {}
       BoardHistoryNode target =
-          history.getStart().next().orElseThrow().next().orElseThrow().next().orElseThrow().next().orElseThrow();
+          history
+              .getStart()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow();
       Lizzie.board.setHistory(history);
       LizzieFrame.boardRenderer = new BoardRenderer(false);
       frame.clearRefreshedNodeKinds();
@@ -4426,7 +4440,8 @@ class BoardNodeKindHistoryPipelineTest {
       assertArrayEquals(target.getData().stones, leelaz.copyStones());
       assertEquals(target.getData().blackToPlay, leelaz.isBlackToPlay());
       List<String> navigationCommands =
-          new ArrayList<>(leelaz.recordedCommands().subList(commandStart, leelaz.recordedCommands().size()));
+          new ArrayList<>(
+              leelaz.recordedCommands().subList(commandStart, leelaz.recordedCommands().size()));
       int clearIndex = navigationCommands.indexOf("clear_board");
       int loadIndex = -1;
       for (int index = 0; index < navigationCommands.size(); index++) {
@@ -4448,6 +4463,7 @@ class BoardNodeKindHistoryPipelineTest {
       env.close();
     }
   }
+
   @Test
   void queuedLinearThenTreeNavigationUsesLogicalQueueEndpoint() throws Exception {
     assertQueuedTreeNavigationUsesLogicalQueueEndpoint(false);
@@ -4465,8 +4481,7 @@ class BoardNodeKindHistoryPipelineTest {
     try {
       activatePrimaryEngine(leelaz);
       BoardHistoryList history =
-          SGFParser.parseSgf(
-              "(;SZ[3];B[aa];W[ba]AE[aa]AB[cc](;B[bb])(;B[cb]))", false);
+          SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc](;B[bb])(;B[cb]))", false);
       while (history.previous().isPresent()) {}
       BoardHistoryNode snapshot =
           history.getStart().next().orElseThrow().next().orElseThrow().next().orElseThrow();
@@ -4501,6 +4516,7 @@ class BoardNodeKindHistoryPipelineTest {
       env.close();
     }
   }
+
   @Test
   void stalePrimaryIsRejectedBeforeRestorePrecommandsOrGtp() throws Exception {
     TestEnvironment env = TestEnvironment.open();
@@ -4513,7 +4529,16 @@ class BoardNodeKindHistoryPipelineTest {
           SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc];B[bb])", false);
       while (history.previous().isPresent()) {}
       BoardHistoryNode target =
-          history.getStart().next().orElseThrow().next().orElseThrow().next().orElseThrow().next().orElseThrow();
+          history
+              .getStart()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow();
       Lizzie.board.setHistory(history);
       assertTrue(Lizzie.board.nextMove(false));
       assertTrue(Lizzie.board.nextMove(false));
@@ -4531,7 +4556,9 @@ class BoardNodeKindHistoryPipelineTest {
       awaitHistoryNavigationIdle(Lizzie.board);
       List<String> staleCommands =
           new ArrayList<>(
-              original.recordedCommands().subList(commandStart, original.recordedCommands().size()));
+              original
+                  .recordedCommands()
+                  .subList(commandStart, original.recordedCommands().size()));
       assertTrue(
           staleCommands.isEmpty(),
           "a primary replacement before restore execution must send no commands to the old engine: "
@@ -4549,6 +4576,7 @@ class BoardNodeKindHistoryPipelineTest {
       env.close();
     }
   }
+
   @Test
   void backwardNavigationRestoresEarlierSnapshotAnchorAndTail() throws Exception {
     TestEnvironment env = TestEnvironment.open();
@@ -4587,6 +4615,7 @@ class BoardNodeKindHistoryPipelineTest {
       env.close();
     }
   }
+
   @Test
   void forwardSnapshotExactRestoreSkipsIncrementalExtraStones() throws Exception {
     TestEnvironment env = TestEnvironment.open();
@@ -4629,10 +4658,6 @@ class BoardNodeKindHistoryPipelineTest {
     }
   }
 
-
-
-
-
   @Test
   void variationTreeClickBeyondSnapshotWithPlaceholderEngineLandsLocally() throws Exception {
     TestEnvironment env = TestEnvironment.open();
@@ -4645,7 +4670,16 @@ class BoardNodeKindHistoryPipelineTest {
           SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc];B[bb])", false);
       while (history.previous().isPresent()) {}
       BoardHistoryNode target =
-          history.getStart().next().orElseThrow().next().orElseThrow().next().orElseThrow().next().orElseThrow();
+          history
+              .getStart()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow()
+              .next()
+              .orElseThrow();
       Lizzie.board.setHistory(history);
       LizzieFrame.boardRenderer = new BoardRenderer(false);
       frame.clearRefreshedNodeKinds();
@@ -4664,7 +4698,10 @@ class BoardNodeKindHistoryPipelineTest {
           List.of(BoardNodeKind.MOVE, BoardNodeKind.SNAPSHOT, BoardNodeKind.MOVE),
           frame.refreshedNodeKinds());
       assertTrue(
-          leelaz.recordedCommands().subList(commandStart, leelaz.recordedCommands().size()).isEmpty(),
+          leelaz
+              .recordedCommands()
+              .subList(commandStart, leelaz.recordedCommands().size())
+              .isEmpty(),
           "a placeholder engine must not receive GTP from the large variation tree.");
       assertFalse(frame.failureHandlingWasRequested());
     } finally {
@@ -4684,8 +4721,8 @@ class BoardNodeKindHistoryPipelineTest {
     assertHistoryReplacementKeepsFirstDownForTheNewTree(true);
   }
 
-  private void assertHistoryReplacementKeepsFirstDownForTheNewTree(
-      boolean failOldHistoryRestore) throws Exception {
+  private void assertHistoryReplacementKeepsFirstDownForTheNewTree(boolean failOldHistoryRestore)
+      throws Exception {
     TestEnvironment env = TestEnvironment.open();
     BoardRenderer previousRenderer = LizzieFrame.boardRenderer;
     TrackingLeelaz leelaz = (TrackingLeelaz) Lizzie.leelaz;
@@ -4709,12 +4746,10 @@ class BoardNodeKindHistoryPipelineTest {
       Input input = new Input();
       JPanel keySource = new JPanel();
 
-      SwingUtilities.invokeLater(
-          () -> input.keyPressed(keyPressed(keySource, KeyEvent.VK_DOWN)));
+      SwingUtilities.invokeLater(() -> input.keyPressed(keyPressed(keySource, KeyEvent.VK_DOWN)));
       assertTrue(leelaz.awaitBlockedLoadSgf());
 
-      BoardHistoryList replacement =
-          SGFParser.parseSgf("(;SZ[3]AB[cc]AW[ba]PL[B];B[bb])", false);
+      BoardHistoryList replacement = SGFParser.parseSgf("(;SZ[3]AB[cc]AW[ba]PL[B];B[bb])", false);
       while (replacement.previous().isPresent()) {}
       SwingUtilities.invokeAndWait(() -> Lizzie.board.setHistory(replacement));
       CountDownLatch replacementDownReturned = new CountDownLatch(1);
@@ -4737,8 +4772,7 @@ class BoardNodeKindHistoryPipelineTest {
 
       assertSame(replacement, Lizzie.board.getHistory());
       assertTrue(replacement.getData().isMoveNode());
-      assertEquals(
-          List.of(BoardNodeKind.SNAPSHOT, BoardNodeKind.MOVE), frame.refreshedNodeKinds());
+      assertEquals(List.of(BoardNodeKind.SNAPSHOT, BoardNodeKind.MOVE), frame.refreshedNodeKinds());
       assertEquals(
           0,
           leelaz.ponderCallCount(),
@@ -4766,8 +4800,7 @@ class BoardNodeKindHistoryPipelineTest {
       activatePrimaryEngine(primary);
       Lizzie.config.extraMode = ExtraMode.Double_Engine;
       Lizzie.leelaz2 = mirror;
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc])", false);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc])", false);
       while (history.previous().isPresent()) {}
       Lizzie.board.setHistory(history);
       assertTrue(Lizzie.board.nextMove(false));
@@ -4805,6 +4838,7 @@ class BoardNodeKindHistoryPipelineTest {
       env.close();
     }
   }
+
   @Test
   void rootFallbackStopsOldPrimaryBeforeTailAfterReplacement() throws Exception {
     TestEnvironment env = TestEnvironment.open();
@@ -4813,8 +4847,7 @@ class BoardNodeKindHistoryPipelineTest {
     TrackingBoard board = (TrackingBoard) Lizzie.board;
     try {
       activatePrimaryEngine(primary);
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc])", false);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc])", false);
       while (history.previous().isPresent()) {}
       Lizzie.board.setHistory(history);
       assertTrue(Lizzie.board.nextMove(false));
@@ -4842,15 +4875,13 @@ class BoardNodeKindHistoryPipelineTest {
     }
   }
 
-
   @Test
   void rootFallbackFreezesCommandsBeforeBoardSizeChanges() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     TrackingLeelaz primary = (TrackingLeelaz) Lizzie.leelaz;
     try {
       activatePrimaryEngine(primary);
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[19];B[aa];W[bb]AE[aa]AB[cc])", false);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[19];B[aa];W[bb]AE[aa]AB[cc])", false);
       while (history.previous().isPresent()) {}
       Lizzie.board.setHistory(history);
       assertTrue(Lizzie.board.nextMove(false));
@@ -4894,8 +4925,7 @@ class BoardNodeKindHistoryPipelineTest {
     Thread adoption = null;
     try {
       activatePrimaryEngine(primary);
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc])", false);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3];B[aa];W[ba]AE[aa]AB[cc])", false);
       while (history.previous().isPresent()) {}
       Lizzie.board.setHistory(history);
       assertTrue(Lizzie.board.nextMove(false));
@@ -4952,13 +4982,7 @@ class BoardNodeKindHistoryPipelineTest {
   }
 
   private static KeyEvent keyPressed(JPanel source, int keyCode) {
-    return new KeyEvent(
-        source,
-        KeyEvent.KEY_PRESSED,
-        0L,
-        0,
-        keyCode,
-        KeyEvent.CHAR_UNDEFINED);
+    return new KeyEvent(source, KeyEvent.KEY_PRESSED, 0L, 0, keyCode, KeyEvent.CHAR_UNDEFINED);
   }
 
   private static MouseWheelEvent mouseWheel(JPanel source, long when, int rotation) {
@@ -5608,13 +5632,13 @@ class BoardNodeKindHistoryPipelineTest {
     constructor.setAccessible(true);
     return constructor.newInstance(sgf);
   }
+
   private static void setField(Class<?> type, Object target, String fieldName, Object value)
       throws NoSuchFieldException, IllegalAccessException {
     Field field = type.getDeclaredField(fieldName);
     field.setAccessible(true);
     field.set(target, value);
   }
-
 
   private static Method requireMethod(Class<?> type, String name, Class<?>... parameterTypes) {
     try {
@@ -5973,6 +5997,7 @@ class BoardNodeKindHistoryPipelineTest {
     private TrackingBoard() {
       super();
     }
+
     private volatile CountDownLatch blockedHistoryNavigationRestoreExecutionStarted;
     private volatile CountDownLatch blockedHistoryNavigationRestoreExecutionRelease;
     private volatile String blockedHistoryNavigationRootReplayCommand;
@@ -6279,6 +6304,7 @@ class BoardNodeKindHistoryPipelineTest {
       }
       super.ponder();
     }
+
     private volatile CountDownLatch blockedPonderStarted;
     private volatile CountDownLatch blockedPonderRelease;
 
@@ -6310,6 +6336,7 @@ class BoardNodeKindHistoryPipelineTest {
       }
       restoreSnapshotSgf(sgfFile);
     }
+
     @Override
     public void sendCommandNoLeelaz2(String command) {
       if ("clear_board".equals(command)) {
@@ -6380,6 +6407,7 @@ class BoardNodeKindHistoryPipelineTest {
     private int ponderCallCount() {
       return ponderCallCount;
     }
+
     private int notPonderingCallCount() {
       return notPonderingCallCount;
     }
@@ -6422,6 +6450,7 @@ class BoardNodeKindHistoryPipelineTest {
         }
       }
     }
+
     private void blockNextNotPondering() {
       blockedNotPonderingStarted = new CountDownLatch(1);
       blockedNotPonderingRelease = new CountDownLatch(1);
@@ -6461,8 +6490,6 @@ class BoardNodeKindHistoryPipelineTest {
         }
       }
     }
-
-
 
     private void blockNextFrozenClearBoard() {
       blockedFrozenClearStarted = new CountDownLatch(1);

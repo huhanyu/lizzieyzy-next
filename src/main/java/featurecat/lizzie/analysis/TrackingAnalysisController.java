@@ -5,9 +5,9 @@ import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import java.util.Collections;
-import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -233,8 +233,13 @@ public final class TrackingAnalysisController {
     private final Map<String, Integer> visits;
     private final boolean cancellationPending;
 
-    private DisplaySnapshot(Context context, long generation, Set<String> selectedPoints,
-        Set<String> activePoints, Map<String, Integer> visits, boolean cancellationPending) {
+    private DisplaySnapshot(
+        Context context,
+        long generation,
+        Set<String> selectedPoints,
+        Set<String> activePoints,
+        Map<String, Integer> visits,
+        boolean cancellationPending) {
       this.context = context;
       this.generation = generation;
       this.selectedPoints = Collections.unmodifiableSet(new LinkedHashSet<>(selectedPoints));
@@ -243,14 +248,37 @@ public final class TrackingAnalysisController {
       this.cancellationPending = cancellationPending;
     }
 
-    public Context context() { return context; }
-    public long generation() { return generation; }
-    public Set<String> selectedPoints() { return selectedPoints; }
-    public Set<String> activePoints() { return activePoints; }
-    public Map<String, Integer> visits() { return visits; }
-    public int targetVisits() { return context == null ? 0 : context.parameters.targetVisits(); }
-    public boolean active() { return !activePoints.isEmpty() || cancellationPending; }
-    public boolean cancellationPending() { return cancellationPending; }
+    public Context context() {
+      return context;
+    }
+
+    public long generation() {
+      return generation;
+    }
+
+    public Set<String> selectedPoints() {
+      return selectedPoints;
+    }
+
+    public Set<String> activePoints() {
+      return activePoints;
+    }
+
+    public Map<String, Integer> visits() {
+      return visits;
+    }
+
+    public int targetVisits() {
+      return context == null ? 0 : context.parameters.targetVisits();
+    }
+
+    public boolean active() {
+      return !activePoints.isEmpty() || cancellationPending;
+    }
+
+    public boolean cancellationPending() {
+      return cancellationPending;
+    }
   }
 
   private final TimeoutScheduler timeoutScheduler;
@@ -289,8 +317,8 @@ public final class TrackingAnalysisController {
     return addPoint(coordinate, requestedContext, null);
   }
 
-  synchronized AddResult addPoint(String coordinate, Context requestedContext,
-      java.util.function.BooleanSupplier validator) {
+  synchronized AddResult addPoint(
+      String coordinate, Context requestedContext, java.util.function.BooleanSupplier validator) {
     Objects.requireNonNull(requestedContext, "requestedContext");
     String point = normalizeCoordinate(coordinate, requestedContext);
     if (point == null) return AddResult.ILLEGAL;
@@ -299,9 +327,13 @@ public final class TrackingAnalysisController {
     if (!requestedContext.engine.canStartMoveFocus()) return AddResult.LEASE_UNAVAILABLE;
     if (!isAvailablePoint(point, requestedContext)) return AddResult.ILLEGAL;
     Context acceptedContext = context == null ? requestedContext : context;
-    List<MoveData> live = acceptedContext.engine.beginMoveFocus(this, acceptedContext,
-        () -> isAvailablePoint(point, acceptedContext)
-            && (validator == null || validator.getAsBoolean()));
+    List<MoveData> live =
+        acceptedContext.engine.beginMoveFocus(
+            this,
+            acceptedContext,
+            () ->
+                isAvailablePoint(point, acceptedContext)
+                    && (validator == null || validator.getAsBoolean()));
     if (live == null) return AddResult.LEASE_UNAVAILABLE;
     if (context == null) {
       context = acceptedContext;
@@ -351,7 +383,9 @@ public final class TrackingAnalysisController {
     retired.engine.retireMoveFocus(this, retired);
   }
 
-  public DisplaySnapshot snapshot() { return snapshot; }
+  public DisplaySnapshot snapshot() {
+    return snapshot;
+  }
 
   synchronized void onFocusAnalysis(Context source, List<MoveData> moves) {
     if (context != source) return;
@@ -414,8 +448,9 @@ public final class TrackingAnalysisController {
     long revision = ++updateRevision;
     cancellationPending = cancellationPending || !activePoints.containsAll(installedPoints);
     publishSnapshot();
-    boolean accepted = target.engine.updateMoveFocus(
-        this, target, Set.copyOf(activePoints), revision, retireUnconsumed);
+    boolean accepted =
+        target.engine.updateMoveFocus(
+            this, target, Set.copyOf(activePoints), revision, retireUnconsumed);
     if (!accepted && context == target) {
       activePoints.clear();
       cancelTimeouts();
@@ -431,12 +466,14 @@ public final class TrackingAnalysisController {
     long token = ++timeoutSequence;
     timeoutTokens.put(point, token);
     Context source = context;
-    timeouts.put(point, timeoutScheduler.schedule(PROGRESS_TIMEOUT_MILLIS,
-        () -> onTimeout(source, point, token)));
+    timeouts.put(
+        point,
+        timeoutScheduler.schedule(PROGRESS_TIMEOUT_MILLIS, () -> onTimeout(source, point, token)));
   }
 
   private synchronized void onTimeout(Context source, String point, long token) {
-    if (context != source || !Objects.equals(timeoutTokens.get(point), token)
+    if (context != source
+        || !Objects.equals(timeoutTokens.get(point), token)
         || !activePoints.remove(point)) return;
     cancelTimeout(point);
     sendUpdate(true);
@@ -468,9 +505,11 @@ public final class TrackingAnalysisController {
   }
 
   private void publishSnapshot() {
-    snapshot = context == null ? DisplaySnapshot.EMPTY
-        : new DisplaySnapshot(context, generation, selectedPoints, activePoints, visits,
-            cancellationPending);
+    snapshot =
+        context == null
+            ? DisplaySnapshot.EMPTY
+            : new DisplaySnapshot(
+                context, generation, selectedPoints, activePoints, visits, cancellationPending);
     displayChanged.run();
   }
 
@@ -520,7 +559,6 @@ public final class TrackingAnalysisController {
     }
     return normalized;
   }
-
 
   private static final class DaemonTimeoutScheduler implements TimeoutScheduler {
     private final Timer timer = new Timer("lizzie-tracking-analysis-progress-timeout", true);

@@ -14,9 +14,9 @@ import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.training.OpponentPreset;
 import featurecat.lizzie.training.TrainingMode;
 import featurecat.lizzie.util.AnalysisEngineCommandHelper;
-import featurecat.lizzie.util.KataGoRuntimeHelper.TensorRtRepairContext;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.DownloadCancelledException;
+import featurecat.lizzie.util.KataGoRuntimeHelper.TensorRtRepairContext;
 import featurecat.lizzie.util.Utils;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -247,7 +247,9 @@ public final class NewHumanSlGameDialog extends JDialog {
     card.add(field(text("HumanSlTraining.mode", "Training mode"), trainingModeBox), constraints);
     constraints.gridx = 1;
     constraints.weightx = 0.34;
-    card.add(field(text("HumanSlTraining.opponent", "AI opponent"), buildOpponentControl()), constraints);
+    card.add(
+        field(text("HumanSlTraining.opponent", "AI opponent"), buildOpponentControl()),
+        constraints);
     constraints.gridx = 2;
     constraints.weightx = 0.16;
     card.add(field(text("HumanSlTraining.color", "Your color"), colorBox), constraints);
@@ -534,7 +536,8 @@ public final class NewHumanSlGameDialog extends JDialog {
 
   private void updateRankModel(boolean dan) {
     int current = ((Number) rankSpinner.getValue()).intValue();
-    rankSpinner.setModel(new SpinnerNumberModel(Math.min(current, dan ? 9 : 20), 1, dan ? 9 : 20, 1));
+    rankSpinner.setModel(
+        new SpinnerNumberModel(Math.min(current, dan ? 9 : 20), 1, dan ? 9 : 20, 1));
     refreshSegmentStyle(kyuButton);
     refreshSegmentStyle(danButton);
   }
@@ -786,8 +789,7 @@ public final class NewHumanSlGameDialog extends JDialog {
     if (downloadPaused) {
       startButton.setText(text("HumanSlTraining.download.resume", "Resume download and start"));
       HumanSlTrainingStyle.stylePrimary(startButton);
-      setStatusText(
-          text("HumanSlTraining.download.paused", "Download paused; progress is kept."));
+      setStatusText(text("HumanSlTraining.download.paused", "Download paused; progress is kept."));
     } else if (cancelledByUser) {
       setStatusText(text("HumanSlTraining.download.cancelled", "Download cancelled."));
     } else {
@@ -850,8 +852,7 @@ public final class NewHumanSlGameDialog extends JDialog {
                         pauseSettled);
                 dispatchRunnerPreparationCompletion(
                     () ->
-                        completeRunnerPreparation(
-                            preparedRunner, config, advancedVisible, outcome),
+                        completeRunnerPreparation(preparedRunner, config, advancedVisible, outcome),
                     dispatchFailure ->
                         completeRunnerPreparation(
                             preparedRunner,
@@ -1045,9 +1046,7 @@ public final class NewHumanSlGameDialog extends JDialog {
   }
 
   private static void dispatchLifecycleCompletion(
-      Consumer<Throwable> completion,
-      Throwable failure,
-      TaskDispatcher completionDispatcher) {
+      Consumer<Throwable> completion, Throwable failure, TaskDispatcher completionDispatcher) {
     try {
       completionDispatcher.dispatch(() -> runLifecycleCompletion(completion, failure));
     } catch (RuntimeException | Error dispatchFailure) {
@@ -1057,13 +1056,11 @@ public final class NewHumanSlGameDialog extends JDialog {
     }
   }
 
-  private static void runLifecycleCompletion(
-      Consumer<Throwable> completion, Throwable failure) {
+  private static void runLifecycleCompletion(Consumer<Throwable> completion, Throwable failure) {
     try {
       completion.accept(failure);
     } catch (RuntimeException | Error completionFailure) {
-      logLifecycleFailure(
-          "runner cleanup completion", appendFailure(failure, completionFailure));
+      logLifecycleFailure("runner cleanup completion", appendFailure(failure, completionFailure));
     }
   }
 
@@ -1146,8 +1143,7 @@ public final class NewHumanSlGameDialog extends JDialog {
     }
   }
 
-  private void rememberLastStartedSettings(
-      HumanSlTrainingConfig config, boolean advancedVisible) {
+  private void rememberLastStartedSettings(HumanSlTrainingConfig config, boolean advancedVisible) {
     if (Lizzie.config == null || Lizzie.config.uiConfig == null) {
       return;
     }
@@ -1555,8 +1551,7 @@ public final class NewHumanSlGameDialog extends JDialog {
             throw failure;
           }
         });
-    logLifecycleFailure(
-        "runner preparation cancellation dialog restore", dialogRestoreFailure[0]);
+    logLifecycleFailure("runner preparation cancellation dialog restore", dialogRestoreFailure[0]);
   }
 
   private void presentPreparationFailure(
@@ -1719,7 +1714,9 @@ public final class NewHumanSlGameDialog extends JDialog {
         break;
       case CACHE_READY:
         startupStageText =
-            text("HumanSlTraining.preparing.cacheReady", "GPU cache is ready; verifying the model...");
+            text(
+                "HumanSlTraining.preparing.cacheReady",
+                "GPU cache is ready; verifying the model...");
         break;
       case READY:
         startupStageText = text("HumanSlTraining.preparing.ready", "AI coach is ready.");
@@ -1803,7 +1800,10 @@ public final class NewHumanSlGameDialog extends JDialog {
     if (rankPresetButton.isSelected()) {
       preset = OpponentPreset.RANK;
     } else {
-      preset = proStyleBox.getSelectedIndex() == 1 ? OpponentPreset.ONLINE_9D : OpponentPreset.MODERN_PRO;
+      preset =
+          proStyleBox.getSelectedIndex() == 1
+              ? OpponentPreset.ONLINE_9D
+              : OpponentPreset.MODERN_PRO;
     }
     HumanSlTrainingConfig.PlayerColor color;
     if (colorBox.getSelectedIndex() == 1) {
@@ -1813,7 +1813,12 @@ public final class NewHumanSlGameDialog extends JDialog {
     } else {
       color = HumanSlTrainingConfig.PlayerColor.RANDOM;
     }
-    int time = timeBox.getSelectedIndex() == 0 ? 10 : timeBox.getSelectedIndex() == 1 ? 30 : timeBox.getSelectedIndex() == 2 ? 60 : 24 * 60 * 60;
+    int time =
+        timeBox.getSelectedIndex() == 0
+            ? 10
+            : timeBox.getSelectedIndex() == 1
+                ? 30
+                : timeBox.getSelectedIndex() == 2 ? 60 : 24 * 60 * 60;
     int handicap = selectedHandicap();
     double komi = Utils.parseTextToDouble(komiField, handicap >= 2 ? 0.0 : 7.5);
     return HumanSlTrainingConfig.builder()
@@ -1884,8 +1889,7 @@ public final class NewHumanSlGameDialog extends JDialog {
   private void setModelStatusText(String value) {
     modelStatusLabel.setText(value);
     modelStatusLabel.setFont(
-        HumanSlTrainingStyle.fontForText(
-            value, Font.BOLD, Math.max(12, Config.frameFontSize - 1)));
+        HumanSlTrainingStyle.fontForText(value, Font.BOLD, Math.max(12, Config.frameFontSize - 1)));
   }
 
   private void setStatusText(String value) {
@@ -1902,9 +1906,7 @@ public final class NewHumanSlGameDialog extends JDialog {
             : "";
     component.setFont(
         HumanSlTrainingStyle.fontForText(
-            value == null ? "" : value.toString(),
-            Font.PLAIN,
-            Math.max(12, Config.frameFontSize)));
+            value == null ? "" : value.toString(), Font.PLAIN, Math.max(12, Config.frameFontSize)));
   }
 
   private AnalysisEngineCommandHelper.Result resolveAnalysisCommand() {
@@ -1930,8 +1932,7 @@ public final class NewHumanSlGameDialog extends JDialog {
       return;
     }
     if (postCleanupRecoveryPending) {
-      postCleanupRecoveryFailure =
-          appendFailure(postCleanupRecoveryFailure, cancellationFailure);
+      postCleanupRecoveryFailure = appendFailure(postCleanupRecoveryFailure, cancellationFailure);
       retryPostCleanupRecovery();
       return;
     }

@@ -97,15 +97,26 @@ class EngineStartupDialogPolicyTest {
       Method diagnostic =
           Leelaz.class.getDeclaredMethod(
               "showDiagnosticOnEventDispatchThread",
-              String.class, boolean.class, long.class, boolean.class, Object.class, boolean.class,
+              String.class,
+              boolean.class,
+              long.class,
+              boolean.class,
+              Object.class,
+              boolean.class,
               EngineStartupDiagnostics.Attempt.class);
       diagnostic.setAccessible(true);
       SwingUtilities.invokeAndWait(
           () -> {
             try {
               diagnostic.invoke(
-                  oldPrimary, "old startup failure", false, capturedGeneration, true,
-                  capturedIncarnation, true, null);
+                  oldPrimary,
+                  "old startup failure",
+                  false,
+                  capturedGeneration,
+                  true,
+                  capturedIncarnation,
+                  true,
+                  null);
             } catch (ReflectiveOperationException failure) {
               throw new AssertionError(failure);
             }
@@ -203,9 +214,7 @@ class EngineStartupDialogPolicyTest {
       Lizzie.engineStartupStatus.failed("failed", "Failed", "new owner failure");
 
       invokeBundledStartupStatus(
-          engine,
-          "BundledEngineStartup.status.checking",
-          "stale startup must be ignored");
+          engine, "BundledEngineStartup.status.checking", "stale startup must be ignored");
       Lizzie.initializeAfterVersionCheck(false, engine, false, staleGeneration);
 
       assertEquals(
@@ -255,8 +264,7 @@ class EngineStartupDialogPolicyTest {
             false,
             false));
     assertFalse(
-        Leelaz.hasMissingLocalStartupAsset(
-            List.of(executable.toString(), "gtp"), true, false));
+        Leelaz.hasMissingLocalStartupAsset(List.of(executable.toString(), "gtp"), true, false));
   }
 
   private static void invokeBundledStartupStage(Leelaz engine) throws Exception {
@@ -283,8 +291,7 @@ class EngineStartupDialogPolicyTest {
   private static void invokeBundledStartupStatus(
       Leelaz engine, String statusKey, String statusFallback) throws Exception {
     Method method =
-        Leelaz.class.getDeclaredMethod(
-            "publishBundledStartupStatus", String.class, String.class);
+        Leelaz.class.getDeclaredMethod("publishBundledStartupStatus", String.class, String.class);
     method.setAccessible(true);
     method.invoke(engine, statusKey, statusFallback);
   }
@@ -302,5 +309,4 @@ class EngineStartupDialogPolicyTest {
     field.setBoolean(null, value);
     return previous;
   }
-
 }

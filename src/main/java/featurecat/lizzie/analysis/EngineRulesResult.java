@@ -33,8 +33,7 @@ public final class EngineRulesResult {
   }
 
   private static final EngineRulesResult IDLE =
-      new EngineRulesResult(
-          0L, Status.IDLE, Reason.NONE, null, null, false, false, false, -1, -1);
+      new EngineRulesResult(0L, Status.IDLE, Reason.NONE, null, null, false, false, false, -1, -1);
 
   private final long generation;
   private final Status status;

@@ -42,8 +42,7 @@ class AnalysisCandidateValidatorTest {
 
     assertTrue(AnalysisCandidateValidator.allCandidatesOnEmptyPoints(candidates, position));
     assertSame(
-        candidates,
-        AnalysisCandidateValidator.withoutOccupiedCandidates(candidates, position));
+        candidates, AnalysisCandidateValidator.withoutOccupiedCandidates(candidates, position));
   }
 
   private static BoardData positionWithStone(String coordinate) {

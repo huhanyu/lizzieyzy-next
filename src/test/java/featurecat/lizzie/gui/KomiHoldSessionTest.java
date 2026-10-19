@@ -199,22 +199,19 @@ class KomiHoldSessionTest {
   @Test
   void showingChangeDuringHoldStopsAndUnbindsGlobalFocusListener() throws Exception {
     assertHierarchyMutationStops(
-        "hide",
-        (button, originalParent, replacementParent) -> button.setVisible(false));
+        "hide", (button, originalParent, replacementParent) -> button.setVisible(false));
   }
 
   @Test
   void removalDuringHoldStopsAndUnbindsGlobalFocusListener() throws Exception {
     assertHierarchyMutationStops(
-        "remove",
-        (button, originalParent, replacementParent) -> originalParent.remove(button));
+        "remove", (button, originalParent, replacementParent) -> originalParent.remove(button));
   }
 
   @Test
   void reparentDuringHoldStopsAndUnbindsGlobalFocusListener() throws Exception {
     assertHierarchyMutationStops(
-        "reparent",
-        (button, originalParent, replacementParent) -> replacementParent.add(button));
+        "reparent", (button, originalParent, replacementParent) -> replacementParent.add(button));
   }
 
   @Test
@@ -222,12 +219,11 @@ class KomiHoldSessionTest {
     assertHierarchyMutationStops(
         "displayability change",
         (button, originalParent, replacementParent) ->
-            fireHierarchyChange(
-                button, originalParent, HierarchyEvent.DISPLAYABILITY_CHANGED));
+            fireHierarchyChange(button, originalParent, HierarchyEvent.DISPLAYABILITY_CHANGED));
   }
 
-  private static void assertHierarchyMutationStops(
-      String reason, HierarchyMutation mutation) throws Exception {
+  private static void assertHierarchyMutationStops(String reason, HierarchyMutation mutation)
+      throws Exception {
     AtomicInteger holdSteps = new AtomicInteger();
     JButton button = new JButton();
     JPanel originalParent = new JPanel();
@@ -242,38 +238,27 @@ class KomiHoldSessionTest {
     assertTrue(session.isHolding(), "hold must be active before " + reason);
     assertTrue(session.isFocusManagerBound(), "active hold must bind the focus manager");
 
-    SwingUtilities.invokeAndWait(
-        () -> mutation.apply(button, originalParent, replacementParent));
+    SwingUtilities.invokeAndWait(() -> mutation.apply(button, originalParent, replacementParent));
     flushEdt();
     int frozen = holdSteps.get();
     assertFalse(session.isHolding(), reason + " must stop the hold immediately");
-    assertFalse(
-        session.isFocusManagerBound(), reason + " must unbind the global focus listener");
+    assertFalse(session.isFocusManagerBound(), reason + " must unbind the global focus listener");
 
     Thread.sleep(REPEAT_DELAY_MS * 4L);
     flushEdt();
     assertEquals(frozen, holdSteps.get(), reason + " must leave no repeating timer behind");
   }
 
-  private static KomiHoldSession attachForHeadlessTest(
-      JButton button, AtomicInteger holdSteps) {
+  private static KomiHoldSession attachForHeadlessTest(JButton button, AtomicInteger holdSteps) {
     return KomiHoldSession.attachForTesting(
-        button,
-        holdSteps::incrementAndGet,
-        INITIAL_DELAY_MS,
-        REPEAT_DELAY_MS,
-        () -> true);
+        button, holdSteps::incrementAndGet, INITIAL_DELAY_MS, REPEAT_DELAY_MS, () -> true);
   }
 
   private static void fireHierarchyChange(
       JButton button, Container changedParent, long changeFlags) {
     HierarchyEvent event =
         new HierarchyEvent(
-            button,
-            HierarchyEvent.HIERARCHY_CHANGED,
-            button,
-            changedParent,
-            changeFlags);
+            button, HierarchyEvent.HIERARCHY_CHANGED, button, changedParent, changeFlags);
     for (HierarchyListener listener : button.getHierarchyListeners()) {
       listener.hierarchyChanged(event);
     }

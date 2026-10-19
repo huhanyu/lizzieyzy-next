@@ -57,7 +57,6 @@ final class InFrameLeftoverDragHandles {
         || variationList.isRequestFocusEnabled();
   }
 
-
   void update(InFrameLayout layout, int contentWidth, int chromeY, boolean active) {
     this.chromeY = chromeY;
     if (dragging) {
@@ -74,14 +73,11 @@ final class InFrameLeftoverDragHandles {
     boardX = layout.board.x;
     boardWidth = layout.board.width;
     commentSplitBottom = layout.comment.y + layout.comment.height;
-    commentSplitH =
-        layout.comment.height > 0 ? commentSplitBottom - layout.captured.y : 0;
+    commentSplitH = layout.comment.height > 0 ? commentSplitBottom - layout.captured.y : 0;
     commentSeamY = layout.comment.y;
     variationContainerH = layout.variationGraph.height + layout.candidateTable.height;
     variationTop =
-        layout.variationGraph.height > 0
-            ? layout.variationGraph.y
-            : layout.candidateTable.y;
+        layout.variationGraph.height > 0 ? layout.variationGraph.y : layout.candidateTable.y;
     variationSeamY = layout.candidateTable.y;
     place(left, layout.boardLeftDivider, layout.board, layout.leftColumn, true, chromeY);
     place(right, layout.boardRightDivider, layout.board, layout.rightColumn, false, chromeY);
@@ -190,9 +186,7 @@ final class InFrameLeftoverDragHandles {
             }
             int layoutX = Utils.zoomOut(handle.getX() + e.getX());
             int nextBoardX =
-                draggingLeft
-                    ? layoutX - grabOffset
-                    : layoutX - grabOffset - boardWidth;
+                draggingLeft ? layoutX - grabOffset : layoutX - grabOffset - boardWidth;
             frame.applyLeftoverShare(nextBoardX / (double) leftoverWidth);
           }
 
@@ -245,14 +239,12 @@ final class InFrameLeftoverDragHandles {
               if (commentSplitH <= 0) {
                 return;
               }
-              frame.applyCommentHeightShare(
-                  (commentSplitBottom - seamY) / (double) commentSplitH);
+              frame.applyCommentHeightShare((commentSplitBottom - seamY) / (double) commentSplitH);
             } else if (draggingVariation) {
               if (variationContainerH <= 0) {
                 return;
               }
-              frame.applyVariationGraphShare(
-                  (seamY - variationTop) / (double) variationContainerH);
+              frame.applyVariationGraphShare((seamY - variationTop) / (double) variationContainerH);
             }
           }
 

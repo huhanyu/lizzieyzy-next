@@ -289,9 +289,10 @@ public class ContributeStartupDesktopTest {
         StandardOpenOption.APPEND);
     switch (mode) {
       case "modal-reject", "modal-replace", "modal-clean" -> {
-        System.out.println(mode.equals("modal-clean")
-            ? "All cleaned up, quitting"
-            : "2026-10-15 12:00:00+0000: KataGo v1.10.0");
+        System.out.println(
+            mode.equals("modal-clean")
+                ? "All cleaned up, quitting"
+                : "2026-10-15 12:00:00+0000: KataGo v1.10.0");
         System.out.flush();
         waitFile(run.resolve("release"));
         if (mode.equals("modal-reject")) System.err.println(REJECTION);

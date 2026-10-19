@@ -28,9 +28,7 @@ public class AllMovelist {
   public void playNode() {
     AllMovelist node = this;
     if (node.ispass)
-      Lizzie.board
-          .getHistory()
-          .pass(node.isblack ? Stone.BLACK : Stone.WHITE, false, false);
+      Lizzie.board.getHistory().pass(node.isblack ? Stone.BLACK : Stone.WHITE, false, false);
     else Lizzie.board.getHistory().place(node.x, node.y, node.isblack ? Stone.BLACK : Stone.WHITE);
   }
 }

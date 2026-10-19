@@ -105,7 +105,6 @@ public class TensorRtRepairabilityStateTest {
         });
   }
 
-
   @Test
   void gpuEligibilityBlocksMissingAndOldHardwareWithoutBlockingModernOrUnknownNvidia()
       throws Exception {
@@ -138,8 +137,7 @@ public class TensorRtRepairabilityStateTest {
                         TensorRtRecommendation.UNKNOWN,
                         UNKNOWN_TEXT);
                 TensorRtInstallStatus unknownCompute =
-                    KataGoRuntimeHelper.inspectTensorRtInstall(
-                        snapshot, unknownComputeDetection);
+                    KataGoRuntimeHelper.inspectTensorRtInstall(snapshot, unknownComputeDetection);
                 DetectionResult oldGpuDetection =
                     detection(
                         new GpuInfo("NVIDIA GeForce GTX 1080", 6, 1, "570.65", 8192L, "test"),
@@ -152,8 +150,10 @@ public class TensorRtRepairabilityStateTest {
                 assertFalse(pending.gpuRecommendationText.isBlank());
                 assertEquals(NOT_RECOMMENDED_TEXT, notRecommended.gpuRecommendationText);
                 assertEquals(UNKNOWN_TEXT, unknownCompute.gpuRecommendationText);
-                assertNotEquals(pending.gpuRecommendationText, notRecommended.gpuRecommendationText);
-                assertNotEquals(pending.gpuRecommendationText, unknownCompute.gpuRecommendationText);
+                assertNotEquals(
+                    pending.gpuRecommendationText, notRecommended.gpuRecommendationText);
+                assertNotEquals(
+                    pending.gpuRecommendationText, unknownCompute.gpuRecommendationText);
 
                 assertFalse(pending.gpuDetectionComplete);
                 assertFalse(pending.gpuDetected);
@@ -176,22 +176,18 @@ public class TensorRtRepairabilityStateTest {
                 assertTrue(oldGpu.gpuDetected);
                 assertFalse(oldGpu.hardwareEligible);
 
-                assertFalse(
-                    KataGoRuntimeHelper.canRepairTensorRt(snapshot, noGpuDetection, null));
+                assertFalse(KataGoRuntimeHelper.canRepairTensorRt(snapshot, noGpuDetection, null));
                 assertTrue(
                     KataGoRuntimeHelper.canRepairTensorRt(
                         snapshot,
                         detection(
-                            new GpuInfo(
-                                "NVIDIA GeForce RTX 4090", 8, 9, "570.65", 24576L, "test"),
+                            new GpuInfo("NVIDIA GeForce RTX 4090", 8, 9, "570.65", 24576L, "test"),
                             TensorRtRecommendation.NOT_RECOMMENDED,
                             NOT_RECOMMENDED_TEXT),
                         null));
                 assertTrue(
-                    KataGoRuntimeHelper.canRepairTensorRt(
-                        snapshot, unknownComputeDetection, null));
-                assertFalse(
-                    KataGoRuntimeHelper.canRepairTensorRt(snapshot, oldGpuDetection, null));
+                    KataGoRuntimeHelper.canRepairTensorRt(snapshot, unknownComputeDetection, null));
+                assertFalse(KataGoRuntimeHelper.canRepairTensorRt(snapshot, oldGpuDetection, null));
                 assertFalse(pending.applicable);
                 assertFalse(KataGoRuntimeHelper.canInstallTensorRt(snapshot));
               });
@@ -238,8 +234,7 @@ public class TensorRtRepairabilityStateTest {
                     companionMissing.activationMissingItems.contains(
                         TensorRtInstallStatus.MISSING_RUNTIME));
 
-                Files.deleteIfExists(
-                    tensorRtEngineDir(runtimeWorkDirectory).resolve("katago.exe"));
+                Files.deleteIfExists(tensorRtEngineDir(runtimeWorkDirectory).resolve("katago.exe"));
                 TensorRtInstallStatus engineMissing =
                     KataGoRuntimeHelper.inspectTensorRtInstall(snapshot, gpu);
                 assertTrue(engineMissing.runtimeReady);
@@ -267,7 +262,8 @@ public class TensorRtRepairabilityStateTest {
                 writeCurrentTensorRtEngineManifest(tensorRtEngineDir(runtimeWorkDirectory));
                 TensorRtInstallStatus installedInactive =
                     KataGoRuntimeHelper.inspectTensorRtInstall(snapshot, gpu);
-                assertIndependentFlags(installedInactive, true, true, true, true, false, true, true);
+                assertIndependentFlags(
+                    installedInactive, true, true, true, true, false, true, true);
                 assertTrue(installedInactive.installed);
                 assertFalse(installedInactive.active);
                 assertTrue(installedInactive.activationMissingItems.isEmpty());
@@ -282,8 +278,7 @@ public class TensorRtRepairabilityStateTest {
                         snapshot.activeWeightPath);
                 TensorRtInstallStatus installedActive =
                     KataGoRuntimeHelper.inspectTensorRtInstall(tensorRtSnapshot, gpu);
-                assertIndependentFlags(
-                    installedActive, true, true, true, true, true, true, true);
+                assertIndependentFlags(installedActive, true, true, true, true, true, true, true);
                 assertTrue(installedActive.installed);
                 assertTrue(installedActive.active);
                 assertTrue(installedActive.applicable);
@@ -453,7 +448,8 @@ public class TensorRtRepairabilityStateTest {
     Path workingDir = Files.createDirectories(tempRoot.resolve("working"));
     Path appRoot = Files.createDirectories(tempRoot.resolve("app"));
     Path engineDir =
-        Files.createDirectories(appRoot.resolve("engines").resolve("katago").resolve(engineDirName));
+        Files.createDirectories(
+            appRoot.resolve("engines").resolve("katago").resolve(engineDirName));
     Path enginePath = touch(engineDir.resolve("katago.exe"));
     Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), backendMarker);
     Path configDir =
@@ -479,13 +475,7 @@ public class TensorRtRepairabilityStateTest {
     constructor.setAccessible(true);
     List<Path> weights = weightPath == null ? List.of() : Arrays.asList(weightPath);
     return constructor.newInstance(
-        workingDir,
-        appRoot,
-        enginePath,
-        gtpConfigPath,
-        analysisConfigPath,
-        weightPath,
-        weights);
+        workingDir, appRoot, enginePath, gtpConfigPath, analysisConfigPath, weightPath, weights);
   }
 
   private static Path tensorRtEngineDir(Path runtimeWorkDirectory) {

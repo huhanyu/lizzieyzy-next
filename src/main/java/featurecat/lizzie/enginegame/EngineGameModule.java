@@ -36,7 +36,8 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
   private MatchRulesSnapshot matchRulesSnapshot;
   private EngineGameKomiState komiState;
   private MatchRulesAdmission.ConsentKey grantedMatchRulesConsent;
-  private MatchRulesConsent matchRulesConsent = featurecat.lizzie.gui.SwingMatchRulesConsent.INSTANCE;
+  private MatchRulesConsent matchRulesConsent =
+      featurecat.lizzie.gui.SwingMatchRulesConsent.INSTANCE;
 
   @Override
   public Acceptance accept(EngineGameBatchSpec spec, StartObserver observer) {
@@ -294,9 +295,7 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
     }
   }
 
-  /**
-   * One-shot immutable save input for the exact current history. Does not update batch totals.
-   */
+  /** One-shot immutable save input for the exact current history. Does not update batch totals. */
   public EngineGameSaveSnapshot captureSaveSnapshot() {
     synchronized (lock) {
       GameInfo info = currentGameInfo();
@@ -330,8 +329,8 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
   }
 
   /**
-   * Routes a normal per-game outcome. Duplicate or stale owner tokens are inert. This is not
-   * {@link #stop()}.
+   * Routes a normal per-game outcome. Duplicate or stale owner tokens are inert. This is not {@link
+   * #stop()}.
    */
   public boolean complete(GameOutcome outcome, Object ownerToken, int participantIndex) {
     Objects.requireNonNull(outcome, "outcome");
@@ -353,8 +352,7 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
         if (batch != null && batch.shouldCreateSuccessor()) {
           pendingSuccessor = true;
           publishLocked(
-              new EngineGameSnapshot.BatchActive(
-                  batch.summary(), new GameActivity.BetweenGames()));
+              new EngineGameSnapshot.BatchActive(batch.summary(), new GameActivity.BetweenGames()));
           chromeKind = EngineGameChromeTransition.Kind.BETWEEN_GAMES;
         } else {
           pendingSuccessor = false;
@@ -374,9 +372,7 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
     int index = participantIndex;
     if (index < 0 && outcome instanceof GameOutcome.Resign resign && product != null) {
       ParticipantBinding binding =
-          resign.side() == EngineGameSide.BLACK
-              ? product.blackBinding()
-              : product.whiteBinding();
+          resign.side() == EngineGameSide.BLACK ? product.blackBinding() : product.whiteBinding();
       if (binding != null) {
         index = binding.catalogIndex();
       }

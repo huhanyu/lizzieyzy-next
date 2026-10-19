@@ -39,8 +39,7 @@ class MatchRulesTextsTest {
     ResourceBundle bundle = Lizzie.resourceBundle;
     assertEquals(
         MatchRulesTexts.failureMessage("mismatch", bundle),
-        MatchRulesTexts.startFailureMessage(
-            new StartFailure.MatchRulesFailed("mismatch"), bundle));
+        MatchRulesTexts.startFailureMessage(new StartFailure.MatchRulesFailed("mismatch"), bundle));
     assertEquals(
         MatchRulesTexts.failureMessage("unverified-consent-refused", bundle),
         MatchRulesTexts.startFailureMessage(
@@ -142,10 +141,7 @@ class MatchRulesTextsTest {
     ResourceBundle bundle = Lizzie.resourceBundle;
     MatchRulesAdmission.Decision decision =
         MatchRulesAdmission.decide(
-            CHINESE,
-            unsupported(BLACK, true, false),
-            unsupported(WHITE, true, false),
-            null);
+            CHINESE, unsupported(BLACK, true, false), unsupported(WHITE, true, false), null);
     String message = MatchRulesTexts.consentMessage(decision, bundle);
     assertTrue(message.contains("BlackEngine"));
     assertTrue(message.contains("WhiteEngine"));

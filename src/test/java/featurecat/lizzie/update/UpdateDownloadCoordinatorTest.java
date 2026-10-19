@@ -9,10 +9,11 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class UpdateDownloadCoordinatorTest {
-  private final UpdateCheckSelection selection = UpdateCheckSelection.of(
-      UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-08-01.1");
-  private final UpdateCheckResult offer = UpdateCheckResult.offerPackage(
-      new PackageUpdatePlan(null, null, "v", "linux", "x64", "cpu"));
+  private final UpdateCheckSelection selection =
+      UpdateCheckSelection.of(
+          UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-08-01.1");
+  private final UpdateCheckResult offer =
+      UpdateCheckResult.offerPackage(new PackageUpdatePlan(null, null, "v", "linux", "x64", "cpu"));
 
   @Test
   void automaticDownloadIsAppOwnedAndOnlyExplicitReadyActionApplies() {
@@ -99,7 +100,8 @@ class UpdateDownloadCoordinatorTest {
     f.coordinator.startDownload(offer, false);
     assertEquals(1, f.prepares);
     f.runner.deliver();
-    assertEquals(UpdateCheckCoordinator.DownloadPhase.CANCELLED, f.coordinator.state().download().phase());
+    assertEquals(
+        UpdateCheckCoordinator.DownloadPhase.CANCELLED, f.coordinator.state().download().phase());
     assertEquals(0, f.reminders);
     assertEquals(0, f.applies);
     f.coordinator.startDownload(offer, false);
@@ -134,7 +136,8 @@ class UpdateDownloadCoordinatorTest {
       automatic.runner.work();
       automatic.coordinator.disableAutomaticDownload();
       automatic.runner.deliver();
-      assertEquals(UpdateCheckCoordinator.DownloadPhase.CANCELLED,
+      assertEquals(
+          UpdateCheckCoordinator.DownloadPhase.CANCELLED,
           automatic.coordinator.state().download().phase());
       assertNull(automatic.coordinator.state().download().error());
       assertEquals(0, automatic.reminders);
@@ -160,7 +163,8 @@ class UpdateDownloadCoordinatorTest {
     f.start();
     f.runner.work();
     f.runner.deliver();
-    assertEquals(UpdateCheckCoordinator.DownloadPhase.FAILED, f.coordinator.state().download().phase());
+    assertEquals(
+        UpdateCheckCoordinator.DownloadPhase.FAILED, f.coordinator.state().download().phase());
     assertEquals(0, f.applies);
     assertEquals(0, f.reminders);
     f.fail = false;
@@ -225,13 +229,15 @@ class UpdateDownloadCoordinatorTest {
       assertEquals(0, f.applies);
       assertEquals(0, f.reminders);
       if (invalidate) assertNull(f.coordinator.state().result());
-      else assertEquals(UpdateCheckCoordinator.DownloadPhase.CANCELLED,
-          f.coordinator.state().download().phase());
+      else
+        assertEquals(
+            UpdateCheckCoordinator.DownloadPhase.CANCELLED,
+            f.coordinator.state().download().phase());
     }
   }
 
-  private final class Fixture implements UpdateCheckCoordinator.DownloadService,
-      UpdateCheckCoordinator.OfferHandoff {
+  private final class Fixture
+      implements UpdateCheckCoordinator.DownloadService, UpdateCheckCoordinator.OfferHandoff {
     final QueueRunner runner = new QueueRunner();
     int prepares;
     int applies;
@@ -239,8 +245,8 @@ class UpdateDownloadCoordinatorTest {
     int handoffs;
     boolean fail;
     boolean failApply;
-    final UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(
-        s -> offer, this, runner, s -> reminders++, this);
+    final UpdateCheckCoordinator coordinator =
+        new UpdateCheckCoordinator(s -> offer, this, runner, s -> reminders++, this);
 
     void start() {
       coordinator.captureStartupPolicy(true, true, selection);
@@ -249,26 +255,48 @@ class UpdateDownloadCoordinatorTest {
       runner.deliver();
     }
 
-    public Path prepare(UpdateCheckResult result, ResumableDownloader.Control control,
-        ResumableDownloader.ProgressListener listener) throws Exception {
+    public Path prepare(
+        UpdateCheckResult result,
+        ResumableDownloader.Control control,
+        ResumableDownloader.ProgressListener listener)
+        throws Exception {
       prepares++;
       if (fail) throw new java.io.IOException("integrity failure");
       return Path.of("verified");
     }
+
     public void apply(UpdateCheckResult result, Path path) throws Exception {
       applies++;
       if (failApply) throw new java.io.IOException("helper unavailable");
     }
-    public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) { handoffs++; }
-    public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) { handoffs++; }
+
+    public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) {
+      handoffs++;
+    }
+
+    public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) {
+      handoffs++;
+    }
   }
 
   private static final class QueueRunner implements UpdateCheckCoordinator.Runner {
     final ArrayDeque<Runnable> background = new ArrayDeque<>();
     final ArrayDeque<Runnable> edt = new ArrayDeque<>();
-    public void runBackground(Runnable work) { background.add(work); }
-    public void runOnEdt(Runnable work) { edt.add(work); }
-    void work() { background.remove().run(); }
-    void deliver() { while (!edt.isEmpty()) edt.remove().run(); }
+
+    public void runBackground(Runnable work) {
+      background.add(work);
+    }
+
+    public void runOnEdt(Runnable work) {
+      edt.add(work);
+    }
+
+    void work() {
+      background.remove().run();
+    }
+
+    void deliver() {
+      while (!edt.isEmpty()) edt.remove().run();
+    }
   }
 }

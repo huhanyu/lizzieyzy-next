@@ -301,7 +301,9 @@ public final class ConfigDialog2NavigationTest {
 
   private static void moveReadOnlyLabelCarets(Container parent) {
     for (Component child : parent.getComponents()) {
-      if (child instanceof javax.swing.JTextArea text && !text.isEditable() && !text.isFocusable()) {
+      if (child instanceof javax.swing.JTextArea text
+          && !text.isEditable()
+          && !text.isFocusable()) {
         text.setCaretPosition(0);
         text.setCaretPosition(text.getDocument().getLength());
       } else if (child instanceof Container container) {

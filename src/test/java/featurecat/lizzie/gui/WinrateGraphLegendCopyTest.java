@@ -27,8 +27,7 @@ class WinrateGraphLegendCopyTest {
     assertEquals(List.of("Black winrate"), labels);
     labels.forEach(WinrateGraphLegendCopyTest::assertNoHan);
     assertEquals(
-        List.of(WINRATE_COLOR),
-        WinrateGraph.lineLegendColors(metrics, WINRATE_COLOR, SCORE_COLOR));
+        List.of(WINRATE_COLOR), WinrateGraph.lineLegendColors(metrics, WINRATE_COLOR, SCORE_COLOR));
   }
 
   @Test

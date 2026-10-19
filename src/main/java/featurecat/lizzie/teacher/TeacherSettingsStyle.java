@@ -248,7 +248,8 @@ final class TeacherSettingsStyle {
               width += button.getIcon().getIconWidth() + button.getIconTextGap();
             // Sidebar selection changes weight, not the room reserved for its label.
             size.width =
-                Math.max(size.width, width + button.getInsets().left + button.getInsets().right + 4);
+                Math.max(
+                    size.width, width + button.getInsets().left + button.getInsets().right + 4);
             return size;
           }
 

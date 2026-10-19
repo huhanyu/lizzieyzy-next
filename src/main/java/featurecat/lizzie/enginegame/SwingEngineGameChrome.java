@@ -121,7 +121,9 @@ public class SwingEngineGameChrome implements EngineGameChrome {
       return;
     }
     toolbar.btnEnginePkStop.setText(
-        paused ? text("BottomToolbar.detail.continue", "继续") : text("BottomToolbar.detail.pause", "暂停"));
+        paused
+            ? text("BottomToolbar.detail.continue", "继续")
+            : text("BottomToolbar.detail.pause", "暂停"));
   }
 
   private static String text(String key, String fallback) {

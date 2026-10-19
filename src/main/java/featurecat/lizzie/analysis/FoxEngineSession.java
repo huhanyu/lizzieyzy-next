@@ -15,22 +15,29 @@ import java.util.function.Consumer;
 /** Long-lived Fox owner; all physical GTP I/O remains owned and reader-fenced by Leelaz. */
 public final class FoxEngineSession {
   public record SearchIdentity(long connection, long game, long revision, long search) {}
+
   public record Candidates(SearchIdentity identity, String info) {}
+
   public record Selection(SearchIdentity identity, String vertex, long completedNanos) {}
+
   public record Limits(double maxTime, long maxVisits) {
     public Limits {
-      if (!Double.isFinite(maxTime) || maxTime <= 0 || maxTime > 1e20
-          || maxVisits <= 0 || maxVisits > 1125899906842624L)
+      if (!Double.isFinite(maxTime)
+          || maxTime <= 0
+          || maxTime > 1e20
+          || maxVisits <= 0
+          || maxVisits > 1125899906842624L)
         throw new IllegalArgumentException("Invalid Fox search limits");
     }
+
     /** Ordinary KataGo limit controls use zero to mean unlimited. */
     public static Limits parse(String time, String visits) {
       double seconds = Double.parseDouble(time.trim());
       long count = Long.parseLong(visits.trim());
-      return new Limits(seconds == 0 ? 1e20 : seconds,
-          count == 0 ? 1125899906842624L : count);
+      return new Limits(seconds == 0 ? 1e20 : seconds, count == 0 ? 1125899906842624L : count);
     }
   }
+
   private static final AtomicInteger COMMAND = new AtomicInteger(700000000);
   private final Leelaz engine;
   private final Object readerIdentity;
@@ -52,9 +59,17 @@ public final class FoxEngineSession {
   private volatile double desiredPda;
   private volatile double confirmedPda;
 
-  public String pdaUnavailableReason() { return engine.foxPdaUnavailableReason(); }
-  public double desiredPda() { return desiredPda; }
-  public double confirmedPda() { return confirmedPda; }
+  public String pdaUnavailableReason() {
+    return engine.foxPdaUnavailableReason();
+  }
+
+  public double desiredPda() {
+    return desiredPda;
+  }
+
+  public double confirmedPda() {
+    return confirmedPda;
+  }
 
   public void desirePda(double value) {
     if (!Double.isFinite(value) || value < -3 || value > 3)
@@ -70,7 +85,9 @@ public final class FoxEngineSession {
       do {
         double target = desiredPda;
         request("kata-set-param playoutDoublingAdvantage " + target, null, 5000);
-        double actual = Double.parseDouble(request("kata-get-param playoutDoublingAdvantage", null, 5000).trim());
+        double actual =
+            Double.parseDouble(
+                request("kata-get-param playoutDoublingAdvantage", null, 5000).trim());
         if (Double.compare(actual, target) != 0)
           throw new IllegalStateException("Fox PDA readback differs from target");
         confirmedPda = actual;
@@ -88,7 +105,9 @@ public final class FoxEngineSession {
     if (id == 0) return;
     try {
       awaitResponse(id, "stop", null, 5000);
-      synchronized (searchLock) { if (pendingStop == id) pendingStop = 0; }
+      synchronized (searchLock) {
+        if (pendingStop == id) pendingStop = 0;
+      }
     } catch (Exception failure) {
       commandFailed = true;
       throw failure;
@@ -97,13 +116,18 @@ public final class FoxEngineSession {
 
   public boolean claimSubmission(Selection selection, java.util.function.BooleanSupplier claim) {
     synchronized (searchLock) {
-      return !closing && selection.identity.search == search.get() && Lizzie.leelaz == engine
+      return !closing
+          && selection.identity.search == search.get()
+          && Lizzie.leelaz == engine
           && engine.claimFoxSubmission(owner, claim);
     }
   }
 
-  public FoxEngineSession(Leelaz engine, Object readerIdentity,
-      Consumer<Candidates> candidates, Consumer<String> failure) {
+  public FoxEngineSession(
+      Leelaz engine,
+      Object readerIdentity,
+      Consumer<Candidates> candidates,
+      Consumer<String> failure) {
     this.engine = engine;
     this.readerIdentity = readerIdentity;
     this.loggingEngineId = EngineObservation.identityFor(engine);
@@ -111,16 +135,26 @@ public final class FoxEngineSession {
     this.failure = failure;
   }
 
-  public void beginTranscript(long connection) { transcript.begin(connection); }
-  public String drainTranscript() { return transcript.drain(); }
+  public void beginTranscript(long connection) {
+    transcript.begin(connection);
+  }
+
+  public String drainTranscript() {
+    return transcript.drain();
+  }
 
   public Leelaz.ExclusiveGtpLeaseAvailability acquire(Runnable ready) {
     if (!engine.isCurrentEngineIncarnationToken(readerIdentity))
       return Leelaz.ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY;
-    return engine.beginForegroundAnalysisLease(owner,
+    return engine.beginForegroundAnalysisLease(
+        owner,
         line -> {
           if (!lines.offer(line)) failure.accept("Fox.engineError");
-        }, ready, () -> { if (!closing) failure.accept("Fox.engineError"); });
+        },
+        ready,
+        () -> {
+          if (!closing) failure.accept("Fox.engineError");
+        });
   }
 
   public void invalidate() {
@@ -134,24 +168,39 @@ public final class FoxEngineSession {
   }
 
   public boolean isCurrent(Candidates value) {
-    return !closing && value.identity().search() == search.get() && Lizzie.leelaz == engine
+    return !closing
+        && value.identity().search() == search.get()
+        && Lizzie.leelaz == engine
         && engine.claimFoxSubmission(owner, () -> true);
   }
 
   /** Runs on the adapter worker, never on EDT or Leelaz's reader. */
   public void prepare(String selectedRules, Limits requestedLimits) throws Exception {
-    KataGoRules requested = KataGoRules.parse(selectedRules)
-        .filter(KataGoRules::hasRequiredFields)
-        .orElseThrow(() -> new IllegalArgumentException("Incomplete current application rules"));
+    KataGoRules requested =
+        KataGoRules.parse(selectedRules)
+            .filter(KataGoRules::hasRequiredFields)
+            .orElseThrow(
+                () -> new IllegalArgumentException("Incomplete current application rules"));
     String commands = request("list_commands", null, 5000);
-    for (String required : List.of("kata-search_analyze_cancellable", "kata-get-rules",
-        "kata-set-rules", "kata-get-param", "kata-set-param", "kgs-time_settings",
-        "kata-time_settings", "kata-list_time_settings", "set_free_handicap", "time_left", "stop")) {
+    for (String required :
+        List.of(
+            "kata-search_analyze_cancellable",
+            "kata-get-rules",
+            "kata-set-rules",
+            "kata-get-param",
+            "kata-set-param",
+            "kgs-time_settings",
+            "kata-time_settings",
+            "kata-list_time_settings",
+            "set_free_handicap",
+            "time_left",
+            "stop")) {
       if (!List.of(commands.split("\\s+")).contains(required)) {
         throw new IllegalStateException("Unsupported Fox engine capability: " + required);
       }
     }
-    if (!List.of(request("kata-list_time_settings", null, 5000).trim().split("\\s+")).contains("none")) {
+    if (!List.of(request("kata-list_time_settings", null, 5000).trim().split("\\s+"))
+        .contains("none")) {
       throw new IllegalStateException("Fox requires no-clock handback capability");
     }
     String rules = request("kata-get-rules", null, 5000).trim();
@@ -162,15 +211,17 @@ public final class FoxEngineSession {
       throw new IllegalStateException("Fox owner lost before runtime capture");
     }
     request("kata-set-rules " + requested.toGtpArgument(), null, 5000);
-    KataGoRules actual = KataGoRules.parse(request("kata-get-rules", null, 5000))
-        .filter(KataGoRules::hasRequiredFields)
-        .orElseThrow(() -> new IllegalStateException("Invalid Fox rules readback"));
+    KataGoRules actual =
+        KataGoRules.parse(request("kata-get-rules", null, 5000))
+            .filter(KataGoRules::hasRequiredFields)
+            .orElseThrow(() -> new IllegalStateException("Invalid Fox rules readback"));
     if (!requested.semanticallyEquals(actual)) {
       throw new IllegalStateException("Fox rules readback differs from current application rules");
     }
     limits = requestedLimits == null ? original : requestedLimits;
     request("kata-set-param maxVisits " + limits.maxVisits(), null, 5000);
-    confirmedPda = Double.parseDouble(request("kata-get-param playoutDoublingAdvantage", null, 5000).trim());
+    confirmedPda =
+        Double.parseDouble(request("kata-get-param playoutDoublingAdvantage", null, 5000).trim());
     if (!Double.isFinite(confirmedPda)) throw new IllegalStateException("Invalid Fox PDA readback");
     desiredPda = confirmedPda;
     engine.confirmFoxPda(confirmedPda);
@@ -180,7 +231,8 @@ public final class FoxEngineSession {
   public Selection analyze(FoxGameState.Snapshot state) throws Exception {
     if (closing || !prepared || !state.searchable()) return null;
     long generation = search.incrementAndGet();
-    SearchIdentity identity = new SearchIdentity(state.connection(), state.game(), state.revision(), generation);
+    SearchIdentity identity =
+        new SearchIdentity(state.connection(), state.game(), state.revision(), generation);
     FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "synchronizing", 0);
     request("boardsize " + state.rules().size(), null, 5000);
     request("clear_board", null, 5000);
@@ -197,9 +249,17 @@ public final class FoxEngineSession {
       request("play " + action.color() + " " + action.vertex(state.rules().size()), null, 5000);
     }
     if (search.get() != generation || closing) return null;
-    request("kgs-time_settings byoyomi " + state.rules().mainSeconds() + " "
-        + state.rules().byoSeconds() + " " + state.rules().periods(), null, 5000);
-    double seconds = state.clock().mainSeconds() > 0 ? state.clock().mainSeconds() : state.clock().byoSeconds();
+    request(
+        "kgs-time_settings byoyomi "
+            + state.rules().mainSeconds()
+            + " "
+            + state.rules().byoSeconds()
+            + " "
+            + state.rules().periods(),
+        null,
+        5000);
+    double seconds =
+        state.clock().mainSeconds() > 0 ? state.clock().mainSeconds() : state.clock().byoSeconds();
     int periods = state.clock().mainSeconds() > 0 ? 0 : state.clock().periods();
     if (state.ownTurn()) {
       if (!state.clockRefreshed()) return null;
@@ -217,18 +277,24 @@ public final class FoxEngineSession {
       searching = true;
     }
     try {
-      long timeout = state.ownTurn()
-          ? (long) (remainingSeconds(state) * 1000) : 7000;
+      long timeout = state.ownTurn() ? (long) (remainingSeconds(state) * 1000) : 7000;
       if (timeout <= 0) throw new IllegalStateException("Fox turn budget exhausted in queue");
-      FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "started",
-          searchLimit);
-      String result = request("kata-search_analyze_cancellable " + state.toPlay() + " 10",
-          line -> {
-            if (!closing && search.get() == generation && Lizzie.leelaz == engine
-                && engine.claimFoxSubmission(owner, () -> true)) {
-              candidates.accept(new Candidates(identity, line));
-            }
-          }, timeout, generation).trim();
+      FoxObservation.search(
+          loggingEngineId, readerIdentity, identity, state, "started", searchLimit);
+      String result =
+          request(
+                  "kata-search_analyze_cancellable " + state.toPlay() + " 10",
+                  line -> {
+                    if (!closing
+                        && search.get() == generation
+                        && Lizzie.leelaz == engine
+                        && engine.claimFoxSubmission(owner, () -> true)) {
+                      candidates.accept(new Candidates(identity, line));
+                    }
+                  },
+                  timeout,
+                  generation)
+              .trim();
       if (search.get() != generation || closing || result.equals("cancelled")) return null;
       String vertex = result.startsWith("play ") ? result.substring(5).trim() : result;
       if (vertex.equals("cancelled")) return null;
@@ -240,9 +306,11 @@ public final class FoxEngineSession {
       FoxObservation.selection(loggingEngineId, identity, vertex, completed);
       return new Selection(identity, vertex, completed);
     } finally {
-      synchronized (searchLock) { searching = false; }
-      FoxObservation.search(loggingEngineId, readerIdentity, identity, state, "finished",
-          searchLimit);
+      synchronized (searchLock) {
+        searching = false;
+      }
+      FoxObservation.search(
+          loggingEngineId, readerIdentity, identity, state, "finished", searchLimit);
     }
   }
 
@@ -258,17 +326,23 @@ public final class FoxEngineSession {
     return budget - margin;
   }
 
-  void useClockForTest(java.util.function.LongSupplier clock) { nanoTime = clock; }
+  void useClockForTest(java.util.function.LongSupplier clock) {
+    nanoTime = clock;
+  }
 
   private String request(String command, Consumer<String> info, long timeout) throws Exception {
     return request(command, info, timeout, -1);
   }
 
-  private String request(String command, Consumer<String> info, long timeout, long generation) throws Exception {
+  private String request(String command, Consumer<String> info, long timeout, long generation)
+      throws Exception {
     drainStop();
     int id = COMMAND.getAndIncrement();
     synchronized (searchLock) {
-      if (closing || commandFailed || Lizzie.leelaz != engine || !engine.isCurrentEngineIncarnationToken(readerIdentity)
+      if (closing
+          || commandFailed
+          || Lizzie.leelaz != engine
+          || !engine.isCurrentEngineIncarnationToken(readerIdentity)
           || (generation >= 0 && generation != search.get())
           || !engine.sendExclusiveGtpCommand(owner, id + " " + command)) {
         throw new IllegalStateException("Fox engine ownership unavailable");
@@ -282,7 +356,8 @@ public final class FoxEngineSession {
     }
   }
 
-  private String awaitResponse(int id, String command, Consumer<String> info, long timeout) throws Exception {
+  private String awaitResponse(int id, String command, Consumer<String> info, long timeout)
+      throws Exception {
     long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeout);
     boolean response = false;
     boolean error = false;
@@ -316,7 +391,9 @@ public final class FoxEngineSession {
     throw new IllegalStateException("Fox GTP response timeout: " + command);
   }
 
-  /** Caller invalidates display candidates before calling this. Completion is confirmed handback. */
+  /**
+   * Caller invalidates display candidates before calling this. Completion is confirmed handback.
+   */
   public void release(Runnable restored, Runnable unrestored) {
     invalidate();
     closing = true;

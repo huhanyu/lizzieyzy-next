@@ -285,8 +285,8 @@ public final class ReadBoardGmaSession {
 
   /**
    * One-shot capability bound to the exact snapshot restore participant; only valid while the state
-   * is {@link RestoringExact}. Issued for an isolation terminal or a deferred authoritative restore;
-   * never revoked by helper retirement.
+   * is {@link RestoringExact}. Issued for an isolation terminal or a deferred authoritative
+   * restore; never revoked by helper retirement.
    */
   public static final class ExactParticipantCapability {
     private final ReadBoardGmaSession session;
@@ -623,8 +623,7 @@ public final class ReadBoardGmaSession {
    * helper retirement. In-flight updates have no physical effect until the terminal is consumed;
    * updates during restoration defer another exact participant. Never reauthorizes a GMA move.
    */
-  public boolean updateRestoreIntent(
-      GmaTerminalCapability capability, Object restoreIntent) {
+  public boolean updateRestoreIntent(GmaTerminalCapability capability, Object restoreIntent) {
     Objects.requireNonNull(capability, "capability");
     Objects.requireNonNull(restoreIntent, "restoreIntent");
     synchronized (lock) {

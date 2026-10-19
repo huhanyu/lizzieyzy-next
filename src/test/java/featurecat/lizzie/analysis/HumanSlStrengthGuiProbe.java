@@ -115,7 +115,8 @@ public final class HumanSlStrengthGuiProbe {
         .put(
             "analysis-engine-command",
             HumanSlStrengthReuseSession.quoteCommandArgument(
-                    System.getProperty("lizzie.strength.humansl40.engine", "/opt/homebrew/bin/katago"))
+                    System.getProperty(
+                        "lizzie.strength.humansl40.engine", "/opt/homebrew/bin/katago"))
                 + " analysis");
     config.save();
     Thread monitor =

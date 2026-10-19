@@ -10,8 +10,11 @@ final class UpdateDownloadService implements UpdateCheckCoordinator.DownloadServ
   private final PlatformUpdateService packages = new PlatformUpdateService();
 
   @Override
-  public Path prepare(UpdateCheckResult result, ResumableDownloader.Control control,
-      ResumableDownloader.ProgressListener progress) throws IOException {
+  public Path prepare(
+      UpdateCheckResult result,
+      ResumableDownloader.Control control,
+      ResumableDownloader.ProgressListener progress)
+      throws IOException {
     return result.windowsPlan != null
         ? windows.downloadAndPrepare(result.windowsPlan, control, progress)
         : packages.download(result.packagePlan, control, progress);

@@ -261,10 +261,7 @@ public class Config {
     private final boolean transformerDefault;
 
     private BundledKataGoConfig(
-        Path appRoot,
-        String engineCommand,
-        String analysisCommand,
-        boolean transformerDefault) {
+        Path appRoot, String engineCommand, String analysisCommand, boolean transformerDefault) {
       this.appRoot = appRoot;
       this.engineCommand = engineCommand;
       this.analysisCommand = analysisCommand;
@@ -412,8 +409,7 @@ public class Config {
       return commandAppRoot.isPresent();
     }
     if (commandAppRoot.isPresent()
-        && isDefaultOrLegacyBundledWeight(
-            commandAppRoot.get(), workingDirectory, modelToken)) {
+        && isDefaultOrLegacyBundledWeight(commandAppRoot.get(), workingDirectory, modelToken)) {
       return true;
     }
     return activeAppRoot != null
@@ -629,8 +625,8 @@ public class Config {
 
   private static String rebindManagedBundledCommand(String command, Path currentRoot) {
     List<String> parts = Utils.splitCommand(command);
-    if (parts.size() < 2
-        || !("gtp".equals(parts.get(1)) || "analysis".equals(parts.get(1)))) return command;
+    if (parts.size() < 2 || !("gtp".equals(parts.get(1)) || "analysis".equals(parts.get(1))))
+      return command;
     Path executable = Path.of(parts.get(0));
     Path platform = executable.getParent();
     Path katago = platform == null ? null : platform.getParent();
@@ -643,9 +639,8 @@ public class Config {
 
     // Auto Setup quotes these paths. Replace only whole path tokens, retaining all other options.
     for (int i = 0; i < parts.size(); i++) {
-      if (i != 0
-          && !"-model".equals(parts.get(i - 1))
-          && !"-config".equals(parts.get(i - 1))) continue;
+      if (i != 0 && !"-model".equals(parts.get(i - 1)) && !"-config".equals(parts.get(i - 1)))
+        continue;
       Path original = Path.of(parts.get(i));
       if (!original.isAbsolute() || !original.startsWith(previousRoot)) continue;
       Path relocated = currentRoot.resolve(previousRoot.relativize(original));
@@ -681,7 +676,8 @@ public class Config {
       if (BundledKataGoProfile.isManaged(entry)) {
         // Weight selection can create several owned entries; relocate all of them before
         // discovery chooses the default, even when the old portable directory still exists.
-        entry.put("command",
+        entry.put(
+            "command",
             rebindManagedBundledCommand(entry.optString("command"), bundledConfig.appRoot));
         BundledKataGoProfile.claim(entry);
         if (bundledIndex < 0) bundledIndex = i;
@@ -735,29 +731,29 @@ public class Config {
     }
     bundledEngine.put("command", bundledCommand);
     BundledKataGoProfile.claim(bundledEngine);
-      if (!newProfile) {
-        boolean analysisCustomized =
-            AnalysisEngineCommandHelper.isAnalysisCommandCustomized(
-                ui.has("analysis-engine-command-customized"),
-                ui.optBoolean("analysis-engine-command-customized", false),
-                ui.optString("analysis-engine-command", ""));
-        String analysisCommand = ui.optString("analysis-engine-command", "");
-        boolean brokenAnalysisLauncher = isClearlyBrokenJavaJarCommand(analysisCommand);
-        if ((!analysisCustomized
-                && !analysisCommandUsesJavaSsh(leelaz)
-                && isManagedBundledDefaultCommand(analysisCommand, bundledConfig.appRoot))
-            || brokenAnalysisLauncher) {
-          ui.put(
-              "analysis-engine-command",
-              managedBundledProfile && !brokenAnalysisLauncher && !analysisCommand.isBlank()
-                  ? rebindManagedBundledCommand(analysisCommand, bundledConfig.appRoot)
-                  : bundledConfig.analysisCommand);
-          ui.put("analysis-engine-command-customized", false);
-        }
-        if (bundledConfig.transformerDefault) {
-          ui.put(DEFAULT_TRANSFORMER_MIGRATION_KEY, true);
-        }
+    if (!newProfile) {
+      boolean analysisCustomized =
+          AnalysisEngineCommandHelper.isAnalysisCommandCustomized(
+              ui.has("analysis-engine-command-customized"),
+              ui.optBoolean("analysis-engine-command-customized", false),
+              ui.optString("analysis-engine-command", ""));
+      String analysisCommand = ui.optString("analysis-engine-command", "");
+      boolean brokenAnalysisLauncher = isClearlyBrokenJavaJarCommand(analysisCommand);
+      if ((!analysisCustomized
+              && !analysisCommandUsesJavaSsh(leelaz)
+              && isManagedBundledDefaultCommand(analysisCommand, bundledConfig.appRoot))
+          || brokenAnalysisLauncher) {
+        ui.put(
+            "analysis-engine-command",
+            managedBundledProfile && !brokenAnalysisLauncher && !analysisCommand.isBlank()
+                ? rebindManagedBundledCommand(analysisCommand, bundledConfig.appRoot)
+                : bundledConfig.analysisCommand);
+        ui.put("analysis-engine-command-customized", false);
       }
+      if (bundledConfig.transformerDefault) {
+        ui.put(DEFAULT_TRANSFORMER_MIGRATION_KEY, true);
+      }
+    }
     if (createdBundledEngine) {
       bundledEngine.put("preload", false);
       bundledEngine.put("komi", 7.5);
@@ -898,7 +894,6 @@ public class Config {
   public String autoLoadTxtKataEngineWRN = "";
   public boolean autoLoadKataEngineWRN = false;
 
-
   public boolean showWRNInMenu = true;
   public boolean showPDAInMenu = true;
 
@@ -919,7 +914,6 @@ public class Config {
   public boolean allowDoubleClick = true;
   public boolean allowDrag = false;
   public boolean noRefreshOnSub = true;
-
 
   public int anaGameResignStartMove = 150;
   public int anaGameResignMove = 2;
@@ -970,7 +964,6 @@ public class Config {
   public boolean anaFrameShowNext = true;
   public boolean anaFrameUseMouseMove = false;
   public boolean userKnownX = false;
-
 
   public boolean showDoubleMenu = true;
   public boolean showDoubleMenuVar = true;
@@ -1621,7 +1614,6 @@ public class Config {
     showSuggestionOrder = uiConfig.optBoolean("show-suggestion-order", true);
     showSuggestionMaxRed = uiConfig.optBoolean("show-suggestion-maxred", false);
 
-
     showKataGoEstimateNormal = uiConfig.optBoolean("show-katago-estimate-normal", false);
     showKataGoEstimateBySize = uiConfig.optBoolean("show-katago-estimate-by-size", false);
     showKataGoEstimateBigBelow = uiConfig.optBoolean("show-katago-estimate-big-below", false);
@@ -1995,7 +1987,6 @@ public class Config {
     txtKataEngineWRN = uiConfig.optString("txt-kata-engine-wrn", "");
     autoLoadKataEngineWRN = uiConfig.optBoolean("autoload-kata-engine-wrn", false);
 
-
     showWRNInMenu = uiConfig.optBoolean("show-wrn-in-menu", true);
     showPDAInMenu = uiConfig.optBoolean("show-pda-in-menu", true);
     disableWRNInGame = uiConfig.optBoolean("disable-wrn-in-game", true);
@@ -2119,7 +2110,6 @@ public class Config {
     // commented default of true: chkEngineSgfStart = uiConfig.optBoolean("engine-sgf-start", true).
     // chkEngineSgfStart is loaded in loadNewGameDialogSettings().
     engineSgfStartRandom = uiConfig.optBoolean("engine-sgf-random", true);
-
 
     deleteMove = uiConfig.optBoolean("deleteMove", true);
     // showlcbwinrate = config.getJSONObject("leelaz").optBoolean("show-lcb-winrate", false);
@@ -3390,7 +3380,6 @@ public class Config {
     toolbarParameter.put(LizzieFrame.toolbar.rightMode);
     persistedUi.put("toolbar-parameter", toolbarParameter);
 
-
     dropPersistedWinrateGraphMode();
 
     if (Lizzie.frame.independentSubBoard != null) {
@@ -3975,8 +3964,7 @@ public class Config {
               ? EnumSet.noneOf(DiagnosticModule.class)
               : EnumSet.copyOf(loggingSettings.diagnosticModules());
       modules.add(DiagnosticModule.GTP_SUMMARY);
-      loggingSettings =
-          loggingSettings.withDiagnosticsEnabled(true).withDiagnosticModules(modules);
+      loggingSettings = loggingSettings.withDiagnosticsEnabled(true).withDiagnosticModules(modules);
       if (config != null) {
         config.put(LoggingSettings.CONFIG_KEY, loggingSettings.toJson());
       }

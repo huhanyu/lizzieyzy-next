@@ -17,9 +17,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the KataGo info-line parsing and the memory shape of its results: variation/pvVisits must
- * be compact ArrayLists, not subList views that pin the whole tokenized line (hundreds of tokens
- * with ownership data) for as long as the MoveData lives in the game tree.
+ * Pins the KataGo info-line parsing and the memory shape of its results: variation/pvVisits must be
+ * compact ArrayLists, not subList views that pin the whole tokenized line (hundreds of tokens with
+ * ownership data) for as long as the MoveData lives in the game tree.
  */
 class MoveDataParseTest {
   private static Config previousConfig;
@@ -137,8 +137,7 @@ class MoveDataParseTest {
     assertThrows(
         NumberFormatException.class,
         () ->
-            MoveData.fromInfoKatago(
-                "move Q16 visits 999999999999999999999999999999999999 pv Q16"));
+            MoveData.fromInfoKatago("move Q16 visits 999999999999999999999999999999999999 pv Q16"));
 
     MoveData positive =
         MoveData.fromInfoKatago(
@@ -169,11 +168,12 @@ class MoveDataParseTest {
 
   @Test
   void missingEdgePreservesLegacySymmetricCandidatePercentages() {
-    KataGoAnalysisPayload payload = KataGoAnalysisPayload.parse(
-        "info move D4 visits 10 pv D4 info move F6 visits 10 isSymmetryOf D4 pv F6");
+    KataGoAnalysisPayload payload =
+        KataGoAnalysisPayload.parse(
+            "info move D4 visits 10 pv D4 info move F6 visits 10 isSymmetryOf D4 pv F6");
     assertEquals(10, payload.totalVisits());
-    assertEquals(0.5,
-        payload.moves.get(0).allocationRatio(MoveData.getAllocationVisits(payload.moves)));
+    assertEquals(
+        0.5, payload.moves.get(0).allocationRatio(MoveData.getAllocationVisits(payload.moves)));
   }
 
   @Test
@@ -186,7 +186,11 @@ class MoveDataParseTest {
     assertEquals(100, payload.rootVisits);
     assertEquals(100, payload.totalVisits());
     assertEquals(848, MoveData.getPlayouts(payload.moves));
-    MoveData c3 = payload.moves.stream().filter(move -> move.coordinate.equals("C3")).findFirst().orElseThrow();
+    MoveData c3 =
+        payload.moves.stream()
+            .filter(move -> move.coordinate.equals("C3"))
+            .findFirst()
+            .orElseThrow();
     assertEquals(368, c3.playouts);
     assertEquals(0, c3.edgeVisits);
     assertEquals(10, c3.order);
@@ -201,10 +205,11 @@ class MoveDataParseTest {
 
   @Test
   void frameSeparatesOwnershipAndPvArrays() {
-    KataGoAnalysisPayload payload = KataGoAnalysisPayload.parse(
-        "info move C3 visits 8 pv C3 D4 pvVisits 5 3 pvEdgeVisits 2 1"
-            + " movesOwnership 0.5 -0.5 rootInfo visits 4 winrate 0.6"
-            + " ownership 0.25 -0.25 ownershipStdev 0.1 0.2");
+    KataGoAnalysisPayload payload =
+        KataGoAnalysisPayload.parse(
+            "info move C3 visits 8 pv C3 D4 pvVisits 5 3 pvEdgeVisits 2 1"
+                + " movesOwnership 0.5 -0.5 rootInfo visits 4 winrate 0.6"
+                + " ownership 0.25 -0.25 ownershipStdev 0.1 0.2");
     assertEquals(4, payload.totalVisits());
     assertEquals(List.of(0.25, -0.25), payload.ownership);
     assertEquals(List.of(0.5, -0.5), payload.moves.get(0).movesEstimateArray);

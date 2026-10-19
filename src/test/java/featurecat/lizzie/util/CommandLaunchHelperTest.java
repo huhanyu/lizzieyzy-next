@@ -242,8 +242,7 @@ public class CommandLaunchHelperTest {
 
   @Test
   void classifyCommandRecognizesSupportedKataGoBenchmarkNames() {
-    assertEquals(
-        CommandLaunchHelper.EngineCommandPurpose.BENCHMARK, classify("katago benchmark"));
+    assertEquals(CommandLaunchHelper.EngineCommandPurpose.BENCHMARK, classify("katago benchmark"));
     assertEquals(
         CommandLaunchHelper.EngineCommandPurpose.BENCHMARK, classify("katago.exe benchmark"));
     assertEquals(
@@ -265,10 +264,8 @@ public class CommandLaunchHelperTest {
   void classifyCommandKeepsGtpAndRejectsWrappersAndCaseVariants() {
     assertEquals(CommandLaunchHelper.EngineCommandPurpose.GTP, classify("katago gtp"));
     assertEquals(
-        CommandLaunchHelper.EngineCommandPurpose.GTP,
-        classify("katago.exe gtp -model net.bin.gz"));
-    assertEquals(
-        CommandLaunchHelper.EngineCommandPurpose.GTP, classify("leelaz.exe benchmark"));
+        CommandLaunchHelper.EngineCommandPurpose.GTP, classify("katago.exe gtp -model net.bin.gz"));
+    assertEquals(CommandLaunchHelper.EngineCommandPurpose.GTP, classify("leelaz.exe benchmark"));
     assertEquals(
         CommandLaunchHelper.EngineCommandPurpose.GTP, classify("wine katago.exe benchmark"));
     assertEquals(

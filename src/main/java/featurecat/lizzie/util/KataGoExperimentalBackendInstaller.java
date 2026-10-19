@@ -86,11 +86,7 @@ public final class KataGoExperimentalBackendInstaller {
     private final String fallbackName;
 
     Backend(
-        String assetId,
-        String installDir,
-        String marker,
-        String resourceKey,
-        String fallbackName) {
+        String assetId, String installDir, String marker, String resourceKey, String fallbackName) {
       this.assetId = assetId;
       this.installDir = installDir;
       this.marker = marker;
@@ -134,10 +130,7 @@ public final class KataGoExperimentalBackendInstaller {
   }
 
   public static SetupResult installAndApply(
-      SetupSnapshot snapshot,
-      Backend backend,
-      ProgressListener listener,
-      DownloadSession session)
+      SetupSnapshot snapshot, Backend backend, ProgressListener listener, DownloadSession session)
       throws IOException {
     requireWindows();
     if (snapshot == null || !snapshot.hasConfigs() || !snapshot.hasWeight()) {
@@ -163,7 +156,8 @@ public final class KataGoExperimentalBackendInstaller {
         deleteFileQuietly(archive);
       }
       if (listener != null) {
-        listener.onProgress(backend.displayName(), backend.asset().sizeBytes(), backend.asset().sizeBytes());
+        listener.onProgress(
+            backend.displayName(), backend.asset().sizeBytes(), backend.asset().sizeBytes());
       }
       return KataGoAutoSetupHelper.applyEngineProfile(
           snapshot.withEnginePath(engine), "KataGo " + backend.displayName(), true);
@@ -232,8 +226,7 @@ public final class KataGoExperimentalBackendInstaller {
     while (true) {
       session.throwIfCancelled();
       HttpURLConnection connection =
-          (HttpURLConnection)
-              NetworkProxy.openConnection(URI.create(assetUrl(asset)).toURL());
+          (HttpURLConnection) NetworkProxy.openConnection(URI.create(assetUrl(asset)).toURL());
       session.attach(connection);
       try {
         connection.setInstanceFollowRedirects(true);

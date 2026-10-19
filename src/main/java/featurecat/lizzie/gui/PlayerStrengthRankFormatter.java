@@ -25,18 +25,15 @@ final class PlayerStrengthRankFormatter {
           value, resources, "PlayerStrengthEstimate.rank.scale.topPro", "Top professional");
     }
     if (value >= 10.0) {
-      return specialRank(
-          value, resources, "PlayerStrengthEstimate.rank.scale.pro", "Professional");
+      return specialRank(value, resources, "PlayerStrengthEstimate.rank.scale.pro", "Professional");
     }
     if (value >= 1.0) {
-      return amateurRank(
-          value, resources, "PlayerStrengthEstimate.rank.danSingle", "%s dan");
+      return amateurRank(value, resources, "PlayerStrengthEstimate.rank.danSingle", "%s dan");
     }
 
     // Go ranks have no 0 dan: the point immediately below 1 dan is 1 kyu.
     double kyuValue = Math.max(1.0, 2.0 - value);
-    return amateurRank(
-        kyuValue, resources, "PlayerStrengthEstimate.rank.kyuSingle", "%s kyu");
+    return amateurRank(kyuValue, resources, "PlayerStrengthEstimate.rank.kyuSingle", "%s kyu");
   }
 
   private static String specialRank(

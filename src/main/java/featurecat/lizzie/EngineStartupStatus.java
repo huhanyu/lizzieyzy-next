@@ -48,8 +48,8 @@ public final class EngineStartupStatus {
   }
 
   /**
-   * A state publication whose logical commit has already happened, but whose observer callbacks
-   * are intentionally deferred until the caller has released lifecycle/engine locks.
+   * A state publication whose logical commit has already happened, but whose observer callbacks are
+   * intentionally deferred until the caller has released lifecycle/engine locks.
    */
   public static final class PreparedNotification implements Runnable {
     private final EngineStartupStatus owner;
@@ -76,11 +76,9 @@ public final class EngineStartupStatus {
     }
   }
 
-  private final CopyOnWriteArrayList<Consumer<Snapshot>> listeners =
-      new CopyOnWriteArrayList<>();
+  private final CopyOnWriteArrayList<Consumer<Snapshot>> listeners = new CopyOnWriteArrayList<>();
   private final AtomicLong revisions = new AtomicLong();
-  private volatile Snapshot snapshot =
-      new Snapshot(this, 0L, State.READY, "", "", "");
+  private volatile Snapshot snapshot = new Snapshot(this, 0L, State.READY, "", "", "");
 
   public Snapshot snapshot() {
     return snapshot;
@@ -125,8 +123,8 @@ public final class EngineStartupStatus {
 
   /**
    * Atomically installs a failed state only while {@code expected} is still current, but defers
-   * listener callbacks to the returned action. Callers may therefore perform the identity check
-   * and state commit under their own lock, then invoke the returned action after releasing it.
+   * listener callbacks to the returned action. Callers may therefore perform the identity check and
+   * state commit under their own lock, then invoke the returned action after releasing it.
    */
   public PreparedNotification prepareFailedIfCurrent(
       Snapshot expected, String messageKey, String fallback, String detail) {
@@ -165,8 +163,7 @@ public final class EngineStartupStatus {
     notifyListeners(next);
   }
 
-  private Snapshot newSnapshot(
-      State state, String messageKey, String fallback, String detail) {
+  private Snapshot newSnapshot(State state, String messageKey, String fallback, String detail) {
     return new Snapshot(this, revisions.incrementAndGet(), state, messageKey, fallback, detail);
   }
 

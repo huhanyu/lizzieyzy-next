@@ -1,30 +1,30 @@
 package featurecat.lizzie.analysis;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.gui.OnlineDialog;
 import featurecat.lizzie.logging.DiagnosticModule;
 import featurecat.lizzie.logging.LogStream;
-import featurecat.lizzie.logging.ReadBoardObservation;
 import featurecat.lizzie.logging.LoggingLimits;
 import featurecat.lizzie.logging.LoggingRuntime;
-import java.io.IOException;
-import java.lang.reflect.Field;
 import featurecat.lizzie.logging.LoggingSettings;
+import featurecat.lizzie.logging.ReadBoardObservation;
 import featurecat.lizzie.logging.TraceScope;
-import featurecat.lizzie.gui.OnlineDialog;
 import featurecat.lizzie.logging.WorkDirectoryResolution;
+import featurecat.lizzie.util.YikeSyncDebugLog;
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.lang.reflect.Constructor;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import featurecat.lizzie.util.YikeSyncDebugLog;
-import java.util.List;
 import javax.swing.JTextField;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -110,8 +110,7 @@ class ReadBoardYikeLoggingTest {
     assertTrue(app.contains("geometryReady=true"), app);
     int yikeEvent = app.indexOf("readboard event=yike-session");
     String yikeLine =
-        app.substring(
-            Math.max(0, yikeEvent - 180), Math.min(app.length(), yikeEvent + 280));
+        app.substring(Math.max(0, yikeEvent - 180), Math.min(app.length(), yikeEvent + 280));
     assertTrue(yikeLine.contains("yike=live-room:186538"), yikeLine);
     assertFalse(yikeLine.contains("yike=live-room:later"), yikeLine);
     assertFalse(app.contains("lastYikeDebugEventSummary"), app);
@@ -168,10 +167,7 @@ class ReadBoardYikeLoggingTest {
         .recordProtocolEvent(SyncProtocolDiagnosticEvent.of(2L, RAW_HELPER, "ReadBoard"));
     SyncDiagnosticsRecorder.getDefault()
         .updateLatestDecision(
-            SyncDecisionTrace.builder("HOLD", "conflict_repeat")
-                .epoch(8)
-                .platform("yike")
-                .build());
+            SyncDecisionTrace.builder("HOLD", "conflict_repeat").epoch(8).platform("yike").build());
     awaitLogs(runtime);
     runtime.stopFullTrace();
     awaitLogs(runtime);
@@ -321,8 +317,7 @@ class ReadBoardYikeLoggingTest {
         "markYikeGeometryReady",
         new Class<?>[] {String.class, geometryClass()},
         new Object[] {"live-room:186538", newGeometry()});
-    ((JTextField) field(dialog, "txtUrl"))
-        .setText("https://home.yikeweiqi.com/#/unite/66304678");
+    ((JTextField) field(dialog, "txtUrl")).setText("https://home.yikeweiqi.com/#/unite/66304678");
     invoke(
         dialog,
         "markYikeSyncReady",
@@ -351,8 +346,7 @@ class ReadBoardYikeLoggingTest {
         "markYikeSyncReady",
         new Class<?>[] {String.class, int.class},
         new Object[] {"live-room:186538", 19});
-    ((JTextField) field(dialog, "txtUrl"))
-        .setText("https://home.yikeweiqi.com/#/unite/66304678");
+    ((JTextField) field(dialog, "txtUrl")).setText("https://home.yikeweiqi.com/#/unite/66304678");
     invoke(dialog, "invalidateYikePlacementGeometry");
     awaitLogs(runtime);
 
@@ -378,8 +372,7 @@ class ReadBoardYikeLoggingTest {
         "markYikeSyncReady",
         new Class<?>[] {String.class, int.class},
         new Object[] {"live-room:186538", 19});
-    ((JTextField) field(dialog, "txtUrl"))
-        .setText("https://home.yikeweiqi.com/#/unite/66304678");
+    ((JTextField) field(dialog, "txtUrl")).setText("https://home.yikeweiqi.com/#/unite/66304678");
     invoke(dialog, "resetYikeSessions");
     awaitLogs(runtime);
 
@@ -398,8 +391,7 @@ class ReadBoardYikeLoggingTest {
         OnlineDialog.class.getDeclaredMethod(
             "recordYikeFailure", String.class, String.class, Throwable.class);
     method.setAccessible(true);
-    method.invoke(
-        dialog, "yike-fetch", "live-room:186538", new IOException("fetch failed"));
+    method.invoke(dialog, "yike-fetch", "live-room:186538", new IOException("fetch failed"));
     awaitLogs(runtime);
     String line = lineContaining(readApp(), "reason=yike-fetch");
     assertTrue(line.contains("yike=live-room:186538"), line);

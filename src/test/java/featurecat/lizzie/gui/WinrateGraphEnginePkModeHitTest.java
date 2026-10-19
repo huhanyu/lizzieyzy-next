@@ -70,16 +70,9 @@ class WinrateGraphEnginePkModeHitTest {
       int[] params = (int[]) getField(fixture.graph, "params");
       double maxScoreLead = (double) getField(fixture.graph, "maxScoreLead");
       int x = graphPointX(fixture.graph, fixture.current.getData().moveNumber);
-      int y =
-          params[1]
-              + params[3] / 2
-              - (int) (4.0 * params[3] / 2 / Math.max(1.0, maxScoreLead));
+      int y = params[1] + params[3] / 2 - (int) (4.0 * params[3] / 2 / Math.max(1.0, maxScoreLead));
 
-      assertColorNear(
-          layers.winrate,
-          new int[] {x, y},
-          CURRENT_SCORE_MARKER_COLOR,
-          2);
+      assertColorNear(layers.winrate, new int[] {x, y}, CURRENT_SCORE_MARKER_COLOR, 2);
     } finally {
       env.close();
     }
@@ -114,8 +107,7 @@ class WinrateGraphEnginePkModeHitTest {
   }
 
   @Test
-  void pendingCurrentMoveUsesItsOwnColumnWithoutVerticalGuide()
-      throws Exception {
+  void pendingCurrentMoveUsesItsOwnColumnWithoutVerticalGuide() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
       RenderFixture fixture = modeOneFixture();
@@ -198,7 +190,6 @@ class WinrateGraphEnginePkModeHitTest {
       env.close();
     }
   }
-
 
   @Test
   void engineGameSnapshotGapBoundaryUsesRealColumnsAndConsistentHit() throws Exception {
@@ -360,7 +351,6 @@ class WinrateGraphEnginePkModeHitTest {
       env.close();
     }
   }
-
 
   @Test
   void engineGameInterleavedWinrateLinesDoNotUseSingleCurveAreaFill() throws Exception {
@@ -891,10 +881,7 @@ class WinrateGraphEnginePkModeHitTest {
   }
 
   private static RenderFixture setupGraph(
-      TrackingBoard board,
-      BoardHistoryNode current,
-      BoardHistoryNode target,
-      double targetWinrate)
+      TrackingBoard board, BoardHistoryNode current, BoardHistoryNode target, double targetWinrate)
       throws Exception {
     WinrateGraph graph = new WinrateGraph();
     TrackingFrame frame = allocate(TrackingFrame.class);
@@ -921,7 +908,6 @@ class WinrateGraphEnginePkModeHitTest {
     int expectedY = graphCenterY(params, targetWinrate);
     return renderedGraphPointMatchingY(graph, target, expectedY);
   }
-
 
   @SuppressWarnings("unchecked")
   private static int[] renderedGraphPointMatchingY(
@@ -971,9 +957,7 @@ class WinrateGraphEnginePkModeHitTest {
     method.setAccessible(true);
     Object point =
         method.invoke(
-            graph,
-            (java.util.List<Object>) getField(graph, "renderedGraphPoints"),
-            currentNode);
+            graph, (java.util.List<Object>) getField(graph, "renderedGraphPoints"), currentNode);
     if (point == null) {
       return null;
     }
@@ -1314,8 +1298,7 @@ class WinrateGraphEnginePkModeHitTest {
     assertFalse(
         hasColorInYRange(layers.winrate, CURRENT_SCORE_MARKER_COLOR, 0, midline),
         "black-perspective white lead marker should not sit above the 0 line.");
-    assertEquals(
-        expectedLabel, WinrateGraph.formatScoreLead(mean, AppLocale.ENGLISH.loadBundle()));
+    assertEquals(expectedLabel, WinrateGraph.formatScoreLead(mean, AppLocale.ENGLISH.loadBundle()));
   }
 
   private static boolean hasColorInYRange(

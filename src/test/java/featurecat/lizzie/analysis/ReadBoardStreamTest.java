@@ -325,9 +325,7 @@ class ReadBoardStreamTest {
         return -1;
       }
       int chunk =
-          chunkSizes.length == 0
-              ? length
-              : chunkSizes[Math.min(chunkIndex, chunkSizes.length - 1)];
+          chunkSizes.length == 0 ? length : chunkSizes[Math.min(chunkIndex, chunkSizes.length - 1)];
       if (chunkIndex < chunkSizes.length) {
         chunkIndex++;
       }

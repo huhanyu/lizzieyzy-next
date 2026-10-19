@@ -17,10 +17,8 @@ class HumanSlTrainingConfigTest {
 
   @Test
   void rankProfilesStayWithinOfficialTwentyKyuToNineDanRange() {
-    HumanSlTrainingConfig weakest =
-        HumanSlTrainingConfig.builder().rank(99, false).build();
-    HumanSlTrainingConfig strongest =
-        HumanSlTrainingConfig.builder().rank(99, true).build();
+    HumanSlTrainingConfig weakest = HumanSlTrainingConfig.builder().rank(99, false).build();
+    HumanSlTrainingConfig strongest = HumanSlTrainingConfig.builder().rank(99, true).build();
 
     assertEquals("rank_20k", weakest.humanSlProfile());
     assertEquals("rank_9d", strongest.humanSlProfile());

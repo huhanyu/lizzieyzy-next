@@ -319,8 +319,7 @@ public class Lizzie {
   private static final String SMOKE_OPEN_YIKE_WEB_PROPERTY = "lizzie.smoke.openYikeWeb";
   private static final String SMOKE_OPEN_YIKE_WEB_DELAY_MS_PROPERTY =
       "lizzie.smoke.openYikeWebDelayMs";
-  private static final String SMOKE_OPEN_REMOTE_COMPUTE_PROPERTY =
-      "lizzie.smoke.openRemoteCompute";
+  private static final String SMOKE_OPEN_REMOTE_COMPUTE_PROPERTY = "lizzie.smoke.openRemoteCompute";
   private static final String SMOKE_OPEN_REMOTE_COMPUTE_DELAY_MS_PROPERTY =
       "lizzie.smoke.openRemoteComputeDelayMs";
   private static final String UNKNOWN_HOST_NAME = "unknown-host";
@@ -1038,9 +1037,7 @@ public class Lizzie {
             } catch (Exception e) {
               e.printStackTrace();
               engineStartupStatus.failed(
-                  "EngineStartup.failed",
-                  "AI failed to start - click to repair",
-                  e.getMessage());
+                  "EngineStartup.failed", "AI failed to start - click to repair", e.getMessage());
               try {
                 new EngineManager(Lizzie.config, -1, false);
               } catch (JSONException e1) {
@@ -1196,13 +1193,9 @@ public class Lizzie {
   }
 
   public static void initializeAfterVersionCheck(
-      boolean isEngineGame,
-      Leelaz engine,
-      boolean startPondering,
-      long primaryGeneration) {
+      boolean isEngineGame, Leelaz engine, boolean startPondering, long primaryGeneration) {
     PreparedEngineReadyPublication publication =
-        prepareInitializeAfterVersionCheck(
-            isEngineGame, engine, startPondering, primaryGeneration);
+        prepareInitializeAfterVersionCheck(isEngineGame, engine, startPondering, primaryGeneration);
     if (publication == null) {
       return;
     }
@@ -1212,9 +1205,7 @@ public class Lizzie {
     final EngineStartupStatus.PreparedNotification[] notification =
         new EngineStartupStatus.PreparedNotification[1];
     if (runIfPrimaryEngine(
-        engine,
-        primaryGeneration,
-        () -> notification[0] = publication.prepareReadyStatus())) {
+        engine, primaryGeneration, () -> notification[0] = publication.prepareReadyStatus())) {
       publication.publishForPrimary(notification[0]);
     }
   }
@@ -1225,18 +1216,15 @@ public class Lizzie {
    * settlement can finish before the terminal READY publication becomes observable.
    */
   public static PreparedEngineReadyPublication prepareInitializeAfterVersionCheck(
-      boolean isEngineGame,
-      Leelaz engine,
-      boolean startPondering,
-      long primaryGeneration) {
+      boolean isEngineGame, Leelaz engine, boolean startPondering, long primaryGeneration) {
     return prepareInitializeAfterVersionCheck(
         isEngineGame, engine, startPondering, primaryGeneration, false);
   }
 
   /**
-   * Prepares engine readiness while optionally deferring PDA presentation until the lifecycle
-   * owner has closed successfully. Ordinary engine switches use this form so a late detach failure
-   * cannot leave UI belonging to a rolled-back target.
+   * Prepares engine readiness while optionally deferring PDA presentation until the lifecycle owner
+   * has closed successfully. Ordinary engine switches use this form so a late detach failure cannot
+   * leave UI belonging to a rolled-back target.
    */
   public static PreparedEngineReadyPublication prepareInitializeAfterVersionCheck(
       boolean isEngineGame,
@@ -1335,8 +1323,7 @@ public class Lizzie {
         || second >= manager.engineList.size()) {
       return null;
     }
-    return manager.engineList.get(first).isKataGoPda
-        || manager.engineList.get(second).isKataGoPda;
+    return manager.engineList.get(first).isKataGoPda || manager.engineList.get(second).isKataGoPda;
   }
 
   public static final class PreparedEngineReadyPublication {
@@ -1436,15 +1423,18 @@ public class Lizzie {
         return;
       }
       runDeferredPdaPresentation();
-      runReadyPresentationStep(() -> {
-        if (menu != null) menu.updateMenuStatusForEngine();
-      });
-      runReadyPresentationStep(() -> {
-        if (frame != null && !frame.syncBoard) frame.reSetLoc();
-      });
-      runReadyPresentationStep(() -> {
-        if (toolbar != null) toolbar.reSetButtonLocation();
-      });
+      runReadyPresentationStep(
+          () -> {
+            if (menu != null) menu.updateMenuStatusForEngine();
+          });
+      runReadyPresentationStep(
+          () -> {
+            if (frame != null && !frame.syncBoard) frame.reSetLoc();
+          });
+      runReadyPresentationStep(
+          () -> {
+            if (toolbar != null) toolbar.reSetButtonLocation();
+          });
       runReadyPresentationStep(
           () -> {
             if (!engineGame && frame != null && frame.resetMovelistFrameandAnalysisFrame()) {
@@ -1454,8 +1444,7 @@ public class Lizzie {
     }
 
     private void runDeferredPdaPresentation() {
-      if (deferredPdaPresentation != null
-          && pdaPresentationPublished.compareAndSet(false, true)) {
+      if (deferredPdaPresentation != null && pdaPresentationPublished.compareAndSet(false, true)) {
         runReadyPresentationStep(deferredPdaPresentation);
       }
     }

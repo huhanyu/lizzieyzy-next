@@ -63,7 +63,8 @@ class BlunderListPanelLayoutTest {
     Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
     field.setAccessible(true);
     LizzieFrame previousFrame = Lizzie.frame;
-    Lizzie.frame = (LizzieFrame) ((sun.misc.Unsafe) field.get(null)).allocateInstance(LizzieFrame.class);
+    Lizzie.frame =
+        (LizzieFrame) ((sun.misc.Unsafe) field.get(null)).allocateInstance(LizzieFrame.class);
     try {
       edt(
           () -> {
@@ -583,7 +584,6 @@ class BlunderListPanelLayoutTest {
         });
   }
 
-
   @Test
   void opaqueCustomThemesKeepTextAndKeyboardMarkersReadableAfterHighlighting() throws Exception {
     edt(
@@ -646,43 +646,55 @@ class BlunderListPanelLayoutTest {
 
   private static Color[] readableThemeSurfaces() {
     return new Color[] {
-        new Color(30, 33, 38),
-        new Color(247, 249, 248),
-        new Color(139, 139, 139),
-        new Color(140, 140, 140),
-        new Color(116, 116, 116),
-        new Color(118, 118, 118),
-        new Color(0, 150, 130),
-        new Color(170, 80, 170),
-        new Color(225, 50, 50)
+      new Color(30, 33, 38),
+      new Color(247, 249, 248),
+      new Color(139, 139, 139),
+      new Color(140, 140, 140),
+      new Color(116, 116, 116),
+      new Color(118, 118, 118),
+      new Color(0, 150, 130),
+      new Color(170, 80, 170),
+      new Color(225, 50, 50)
     };
   }
 
   private static void assertPaintedRowsReadable(Color fill, Color underlay) {
     List<Integer> navigation = new ArrayList<>();
     BlunderListPanel panel =
-        new BlunderListPanel(entry -> navigation.add(entry.moveNumber), () -> ProblemListSideFilter.BLACK);
+        new BlunderListPanel(
+            entry -> navigation.add(entry.moveNumber), () -> ProblemListSideFilter.BLACK);
     panel.updateSnapshot(
-        snapshot(new ProblemMoveEntry(true, 17, "D4", 32.8, 12.1, true, 18000, false, 5)),
-        null);
+        snapshot(new ProblemMoveEntry(true, 17, "D4", 32.8, 12.1, true, 18000, false, 5)), null);
     prepareList(panel, 360, 400);
     JList<ProblemMoveEntry> list = panel.reviewList();
     for (int state = 0; state < 4; state++) {
-      // Exercise the row's actual hover handler; native BasicListUI needs a display in headless mode.
+      // Exercise the row's actual hover handler; native BasicListUI needs a display in headless
+      // mode.
       MouseEvent hover =
-          new MouseEvent(list, MouseEvent.MOUSE_MOVED, System.currentTimeMillis(), 0,
-              state == 1 ? 50 : -1, state == 1 ? 10 : -1, 0, false);
+          new MouseEvent(
+              list,
+              MouseEvent.MOUSE_MOVED,
+              System.currentTimeMillis(),
+              0,
+              state == 1 ? 50 : -1,
+              state == 1 ? 10 : -1,
+              0,
+              false);
       for (MouseMotionListener listener : list.getMouseMotionListeners()) {
-        if (listener.getClass().getEnclosingClass() == BlunderListPanel.class) listener.mouseMoved(hover);
+        if (listener.getClass().getEnclosingClass() == BlunderListPanel.class)
+          listener.mouseMoved(hover);
       }
       boolean selected = state >= 2;
       boolean focused = state == 3;
-      JPanel cell = (JPanel) list.getCellRenderer().getListCellRendererComponent(
-          list, list.getModel().getElementAt(0), 0, selected, focused);
+      JPanel cell =
+          (JPanel)
+              list.getCellRenderer()
+                  .getListCellRendererComponent(
+                      list, list.getModel().getElementAt(0), 0, selected, focused);
       cell.setSize(cell.getPreferredSize());
       cell.doLayout();
-      BufferedImage image = new BufferedImage(
-          cell.getWidth(), cell.getHeight(), BufferedImage.TYPE_INT_RGB);
+      BufferedImage image =
+          new BufferedImage(cell.getWidth(), cell.getHeight(), BufferedImage.TYPE_INT_RGB);
       Graphics2D graphics = image.createGraphics();
       try {
         graphics.setColor(underlay);
@@ -696,19 +708,27 @@ class BlunderListPanelLayoutTest {
       Color paintedSurface = new Color(image.getRGB(5, 3));
       for (Component text : cell.getComponents()) {
         if (text.getWidth() > 0) {
-          assertTrue(contrastRatio(text.getForeground(), paintedSurface) >= 4.5,
-              fill + " state=" + state + " foreground=" + text.getForeground()
-                  + " painted=" + paintedSurface);
+          assertTrue(
+              contrastRatio(text.getForeground(), paintedSurface) >= 4.5,
+              fill
+                  + " state="
+                  + state
+                  + " foreground="
+                  + text.getForeground()
+                  + " painted="
+                  + paintedSurface);
         }
       }
       if (selected) {
         Color marker = new Color(image.getRGB(0, 7));
-        assertTrue(contrastRatio(marker, paintedSurface) >= 3.0,
+        assertTrue(
+            contrastRatio(marker, paintedSurface) >= 3.0,
             "Selected-row marker must remain visible after tinting");
       }
       if (focused) {
         Color focus = new Color(image.getRGB(5, 1));
-        assertTrue(contrastRatio(focus, paintedSurface) >= 3.0,
+        assertTrue(
+            contrastRatio(focus, paintedSurface) >= 3.0,
             "Keyboard focus must remain visible after tinting");
       }
     }

@@ -290,9 +290,7 @@ public class YikeLiveDialog extends JFrame {
     if (!canStartSync(game)) {
       activeSyncUrl = "";
       statusLabel.setText(
-          text("YikeLiveDialog.syncNoSgf", "No SGF is available yet.")
-              + " "
-              + game.getGameName());
+          text("YikeLiveDialog.syncNoSgf", "No SGF is available yet.") + " " + game.getGameName());
       return;
     }
     activeSyncUrl = game.toRoomUrl();

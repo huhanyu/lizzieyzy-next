@@ -39,12 +39,15 @@ class UpdateChannelSourceTest {
     assertFalse(UpdatePreferences.autoCheck());
     UpdatePreferences.persistAutoCheck(true);
     Lizzie.config = ConfigTestHelper.createForTests(directory);
-    Lizzie.config.config = new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")));
+    Lizzie.config.config =
+        new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")));
     Lizzie.config.uiConfig = Lizzie.config.config.getJSONObject("ui");
     assertEquals(true, UpdatePreferences.autoCheck());
     UpdatePreferences.persistAutoCheck(false);
-    assertFalse(new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")))
-        .getJSONObject("ui").getBoolean(UpdatePreferences.AUTO_CHECK));
+    assertFalse(
+        new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")))
+            .getJSONObject("ui")
+            .getBoolean(UpdatePreferences.AUTO_CHECK));
   }
 
   @Test
@@ -61,7 +64,8 @@ class UpdateChannelSourceTest {
     assertFalse(UpdatePreferences.autoDownload());
     UpdatePreferences.persistAutoCheck(true);
     UpdatePreferences.persistAutoDownload(true);
-    Lizzie.config.config = new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")));
+    Lizzie.config.config =
+        new JSONObject(java.nio.file.Files.readString(directory.resolve("config.txt")));
     Lizzie.config.uiConfig = Lizzie.config.config.getJSONObject("ui");
     assertEquals(true, UpdatePreferences.autoDownload());
     UpdatePreferences.persistAutoCheck(false);

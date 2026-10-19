@@ -11,11 +11,13 @@ import javax.swing.SwingUtilities;
 /** One application worker, FIFO host turns, and one replaceable pending request per host. */
 final class VariationPreviewScheduler {
   private static final class Shared {
-    static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
-      Thread thread = new Thread(runnable, "variation-preview");
-      thread.setDaemon(true);
-      return thread;
-    });
+    static final ExecutorService WORKER =
+        Executors.newSingleThreadExecutor(
+            runnable -> {
+              Thread thread = new Thread(runnable, "variation-preview");
+              thread.setDaemon(true);
+              return thread;
+            });
     static final VariationPreviewScheduler INSTANCE =
         new VariationPreviewScheduler(WORKER, SwingUtilities::invokeLater);
   }
@@ -40,8 +42,11 @@ final class VariationPreviewScheduler {
     this.completion = completion;
   }
 
-  synchronized void submit(Object host, Branch.Input input,
-      VariationPreviewGenerator.Geometry geometry, VariationPreviewGenerator.Style style,
+  synchronized void submit(
+      Object host,
+      Branch.Input input,
+      VariationPreviewGenerator.Geometry geometry,
+      VariationPreviewGenerator.Style style,
       Consumer<VariationPreviewGenerator.Result> publish) {
     if (closed) return;
     pending.put(host, new Work(host, input, geometry, style, publish));
@@ -113,8 +118,12 @@ final class VariationPreviewScheduler {
     Consumer<VariationPreviewGenerator.Result> publish;
     volatile boolean cancelled;
 
-    Work(Object host, Branch.Input input, VariationPreviewGenerator.Geometry geometry,
-        VariationPreviewGenerator.Style style, Consumer<VariationPreviewGenerator.Result> publish) {
+    Work(
+        Object host,
+        Branch.Input input,
+        VariationPreviewGenerator.Geometry geometry,
+        VariationPreviewGenerator.Style style,
+        Consumer<VariationPreviewGenerator.Result> publish) {
       this.host = host;
       this.input = input;
       this.geometry = geometry;

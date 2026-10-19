@@ -24,7 +24,6 @@ public class GameInfo {
   private EngineGameRecord engineGameRecord;
   private EngineGameSaveSnapshot engineGameSaveSnapshot;
 
-
   public String getResult() {
     return result;
   }

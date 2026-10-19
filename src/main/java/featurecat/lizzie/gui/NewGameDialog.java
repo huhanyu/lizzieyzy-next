@@ -703,8 +703,7 @@ public class NewGameDialog extends JDialog {
     gbc_4.gridx = 0;
     gbc_4.gridy = 10;
     JPanel engineOwnedPanel = new JPanel();
-    chkEngineOwned =
-        new JFontCheckBox(resourceBundle.getString("NewGameDialog.engineOwnedTime"));
+    chkEngineOwned = new JFontCheckBox(resourceBundle.getString("NewGameDialog.engineOwnedTime"));
     engineOwnedPanel.add(chkEngineOwned);
     contentPanel.add(engineOwnedPanel, gbc_4);
     chkEngineOwned.addActionListener(

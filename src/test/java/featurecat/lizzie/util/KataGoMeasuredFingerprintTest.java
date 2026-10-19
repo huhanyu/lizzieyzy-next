@@ -116,7 +116,8 @@ class KataGoMeasuredFingerprintTest {
       var changed = new java.util.ArrayList<>(command);
       changed.add("-override-config");
       changed.add(change);
-      assertFalse(first.similar(KataGoMeasuredFingerprint.capture(snapshot, gpu(), changed)), change);
+      assertFalse(
+          first.similar(KataGoMeasuredFingerprint.capture(snapshot, gpu(), changed)), change);
     }
   }
 

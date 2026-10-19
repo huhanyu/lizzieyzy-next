@@ -117,10 +117,7 @@ final class ForegroundAnalysisPause {
   }
 
   static ForegroundAnalysisPause acquire(
-      BooleanSupplier currentTarget,
-      BooleanSupplier pondering,
-      Runnable pause,
-      Runnable resume) {
+      BooleanSupplier currentTarget, BooleanSupplier pondering, Runnable pause, Runnable resume) {
     PauseAttempt attempt = acquireAttempt(currentTarget, pondering, pause, resume);
     if (attempt.failure != null) {
       Throwable restoreFailure = attempt.pause.restoreBestEffort(2);
@@ -133,10 +130,7 @@ final class ForegroundAnalysisPause {
   }
 
   static PauseAttempt acquireAttempt(
-      BooleanSupplier currentTarget,
-      BooleanSupplier pondering,
-      Runnable pause,
-      Runnable resume) {
+      BooleanSupplier currentTarget, BooleanSupplier pondering, Runnable pause, Runnable resume) {
     Objects.requireNonNull(currentTarget, "currentTarget");
     Objects.requireNonNull(pondering, "pondering");
     Objects.requireNonNull(pause, "pause");
@@ -145,8 +139,7 @@ final class ForegroundAnalysisPause {
       return new PauseAttempt(inactive(), null);
     }
     ForegroundAnalysisPause acquired =
-        new ForegroundAnalysisPause(
-            new RestoreLease(currentTarget, pondering, resume, true), true);
+        new ForegroundAnalysisPause(new RestoreLease(currentTarget, pondering, resume, true), true);
     try {
       pause.run();
       return new PauseAttempt(acquired, null);

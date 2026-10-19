@@ -10,8 +10,7 @@ public final class WindowTitleDecorator {
   private WindowTitleDecorator() {}
 
   public static String decorate(String title) {
-    boolean active =
-        LoggingRuntime.current().map(LoggingRuntime::fullTraceActive).orElse(false);
+    boolean active = LoggingRuntime.current().map(LoggingRuntime::fullTraceActive).orElse(false);
     return decorate(title, active, localizedSuffix());
   }
 

@@ -79,7 +79,8 @@ public final class SyncDiagnosticsExporter {
       throws IOException {
     String prefix = entryPrefix == null ? "" : entryPrefix;
     writeEntry(out, prefix + "summary.txt", renderSummary(snapshot, sanitizer));
-    writeEntry(out, prefix + "sync-context.json", renderSyncContext(snapshot.getReport(), sanitizer));
+    writeEntry(
+        out, prefix + "sync-context.json", renderSyncContext(snapshot.getReport(), sanitizer));
     writeEntry(
         out,
         prefix + "yike-session.json",
@@ -87,7 +88,8 @@ public final class SyncDiagnosticsExporter {
     writeEntry(out, prefix + "recent-decisions.jsonl", renderDecisions(snapshot, sanitizer));
     writeEntry(out, prefix + "readboard-protocol.log", renderProtocolLog(snapshot, sanitizer));
     writeEntry(out, prefix + "yike-events.jsonl", renderYikeEvents(snapshot, sanitizer));
-    writeEntry(out, prefix + "environment.txt", renderEnvironment(snapshot.getEnvironment(), sanitizer));
+    writeEntry(
+        out, prefix + "environment.txt", renderEnvironment(snapshot.getEnvironment(), sanitizer));
   }
 
   private static Path defaultWorkDirectory() {

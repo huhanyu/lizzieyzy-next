@@ -27,8 +27,11 @@ public final class FoxProtocol {
 
   public static String decode(byte[] frame) {
     int n = frame.length;
-    if (n < 7 || frame[0] != '$' || frame[n - 2] != '\r'
-        || frame[n - 1] != '\n' || frame[n - 5] != '*') {
+    if (n < 7
+        || frame[0] != '$'
+        || frame[n - 2] != '\r'
+        || frame[n - 1] != '\n'
+        || frame[n - 5] != '*') {
       throw new IllegalArgumentException("Invalid Fox frame boundary");
     }
     int xor = 0;

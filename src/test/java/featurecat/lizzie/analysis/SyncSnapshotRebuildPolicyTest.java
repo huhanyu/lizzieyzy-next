@@ -218,22 +218,33 @@ public class SyncSnapshotRebuildPolicyTest {
       BoardHistoryNode previous =
           createMoveHistoryNode(
               stones(placement(1, 1, previousColor)),
-              new int[] {1, 1}, previousColor, color == Stone.BLACK, 1);
+              new int[] {1, 1},
+              previousColor,
+              color == Stone.BLACK,
+              1);
       BoardHistoryNode current =
           previous.add(
               createMoveHistoryNode(
                   stones(placement(1, 1, previousColor), placement(0, 0, color)),
-                  new int[] {0, 0}, color, color == Stone.WHITE, 2));
+                  new int[] {0, 0},
+                  color,
+                  color == Stone.WHITE,
+                  2));
       int[] marked =
-          snapshot(current.getData().stones, Optional.of(new int[] {0, 0}), color == Stone.BLACK ? 3 : 4);
+          snapshot(
+              current.getData().stones,
+              Optional.of(new int[] {0, 0}),
+              color == Stone.BLACK ? 3 : 4);
 
       assertFalse(
-          policy.findMatchingNodeInMainlineWindow(current, current, marked, foxLiveContext(1, "room"))
+          policy
+              .findMatchingNodeInMainlineWindow(current, current, marked, foxLiveContext(1, "room"))
               .isPresent(),
           "a lagging title must not match an ancestor missing the marked stone");
       assertSame(
           current,
-          policy.findMatchingNodeInMainlineWindow(current, current, marked, foxLiveContext(2, "room"))
+          policy
+              .findMatchingNodeInMainlineWindow(current, current, marked, foxLiveContext(2, "room"))
               .orElseThrow());
     }
   }

@@ -456,8 +456,7 @@ public class MoreEngines extends JPanel {
     Dimension sourceLabelSize = threadSourceLabel.getPreferredSize();
     sourceLabelSize.height = Math.max(28, sourceLabelSize.height);
     threadSourceLabel.setPreferredSize(sourceLabelSize);
-    AccessibilitySupport.labelFor(
-        threadSourceLabel, threadPolicyCfg, threadSourceLabel.getText());
+    AccessibilitySupport.labelFor(threadSourceLabel, threadPolicyCfg, threadSourceLabel.getText());
     FlowLayout threadSourceLayout = new FlowLayout(FlowLayout.LEADING, 0, 0);
     threadSourceLayout.setAlignOnBaseline(true);
     threadPolicyControls = new JPanel(threadSourceLayout);
@@ -992,8 +991,7 @@ public class MoreEngines extends JPanel {
             && !remote
             && EngineThreadPolicy.isLocalKataGoCommand(
                 command.getText(), chkRemoteEngine.isSelected());
-    boolean unknown =
-        curIndex >= 0 && isUnknownThreadTarget(command.getText(), remote, local);
+    boolean unknown = curIndex >= 0 && isUnknownThreadTarget(command.getText(), remote, local);
     boolean lockedCfg = curIndex >= 0 && !remote && (unknown || command.getText().isBlank());
     threadPolicyPanel.setVisible(remote || local || lockedCfg);
     remoteManagedThreads.setVisible(remote);
@@ -1011,7 +1009,9 @@ public class MoreEngines extends JPanel {
         benchmarkSelectedEngine.setText(
             resourceBundle.getString("EngineThreadPolicy.startBenchmark"));
         AccessibilitySupport.button(
-            benchmarkSelectedEngine, benchmarkSelectedEngine.getText(), benchmarkSelectedEngine.getText());
+            benchmarkSelectedEngine,
+            benchmarkSelectedEngine.getText(),
+            benchmarkSelectedEngine.getText());
         benchmarkSelectedEngine.setToolTipText(null);
       }
       layoutThreadPolicyDetails();
@@ -1391,27 +1391,28 @@ public class MoreEngines extends JPanel {
 
   private void applyThreadPolicyOffEdt(String entryId) {
     if (entryId == null || entryId.isBlank()) return;
-    SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
-      @Override
-      protected Void doInBackground() {
-        EngineData saved = EngineThreadPolicy.findSavedEntry(entryId);
-        if (saved == null
-            || Lizzie.engineManager == null
-            || Lizzie.engineManager.engineList == null) {
-          return null;
-        }
-        for (Leelaz engine : Lizzie.engineManager.engineList) {
-          if (entryId.equals(engine.savedEntryId)) engine.applySavedThreadPolicy(saved);
-        }
-        return null;
-      }
+    SwingWorker<Void, Void> worker =
+        new SwingWorker<Void, Void>() {
+          @Override
+          protected Void doInBackground() {
+            EngineData saved = EngineThreadPolicy.findSavedEntry(entryId);
+            if (saved == null
+                || Lizzie.engineManager == null
+                || Lizzie.engineManager.engineList == null) {
+              return null;
+            }
+            for (Leelaz engine : Lizzie.engineManager.engineList) {
+              if (entryId.equals(engine.savedEntryId)) engine.applySavedThreadPolicy(saved);
+            }
+            return null;
+          }
 
-      @Override
-      protected void done() {
-        updateThreadPolicyDetails();
-        scheduleThreadPolicyStatusRefresh(entryId);
-      }
-    };
+          @Override
+          protected void done() {
+            updateThreadPolicyDetails();
+            scheduleThreadPolicyStatusRefresh(entryId);
+          }
+        };
     executeThreadPolicyWorker(worker);
   }
 
@@ -1500,8 +1501,7 @@ public class MoreEngines extends JPanel {
             return;
           }
           Optional<JSONObject> profile =
-              GtpEngineConfigDialog.showDialog(
-                  MoreEngines.this, inspection.schema(), savedProfile);
+              GtpEngineConfigDialog.showDialog(MoreEngines.this, inspection.schema(), savedProfile);
           profile.ifPresent(
               value ->
                   applyGtpConfiguration(

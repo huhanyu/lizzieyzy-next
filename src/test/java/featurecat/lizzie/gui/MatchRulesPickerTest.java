@@ -188,7 +188,8 @@ class MatchRulesPickerTest {
         }
       }
       EngineGameMatchRulesSelection.persist(config, picker.selected());
-      assertTrue(EngineGameMatchRulesSelection.stored(config).orElseThrow().semanticallyEquals(ancient));
+      assertTrue(
+          EngineGameMatchRulesSelection.stored(config).orElseThrow().semanticallyEquals(ancient));
       assertEquals(ancientLabel, new MatchRulesPicker().component().getSelectedItem().toString());
     }
   }

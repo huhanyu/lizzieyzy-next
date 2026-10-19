@@ -76,8 +76,10 @@ public class AnalysisTable {
               LizzieFrame.toolbar.stopAutoAna(true, true);
             } else {
               Lizzie.frame.openOrdinaryBatchAnalysis(
-                  new ArrayList<>(Lizzie.frame.Batchfiles.subList(
-                      Lizzie.frame.BatchAnaNum, Lizzie.frame.Batchfiles.size())), false);
+                  new ArrayList<>(
+                      Lizzie.frame.Batchfiles.subList(
+                          Lizzie.frame.BatchAnaNum, Lizzie.frame.Batchfiles.size())),
+                  false);
             }
           }
         });
@@ -245,8 +247,7 @@ public class AnalysisTable {
   }
 
   protected void verifyCurrentKifu() {
-    if (Lizzie.frame.deferKifuOpenUntilAutomaticQuickAnalysisRestored(
-        this::verifyCurrentKifu)) {
+    if (Lizzie.frame.deferKifuOpenUntilAutomaticQuickAnalysisRestored(this::verifyCurrentKifu)) {
       return;
     }
     // TODO Auto-generated method stub

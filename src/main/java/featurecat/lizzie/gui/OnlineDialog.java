@@ -514,8 +514,7 @@ public class OnlineDialog extends JDialog {
   private void beginPendingYikeSession(String sourceUrl) {
     String sessionKey = yikeSessionKey(sourceUrl);
     if (Utils.isBlank(sessionKey)) {
-      String clearedSessionKey =
-          pendingYikeSession == null ? "" : pendingYikeSession.sessionKey;
+      String clearedSessionKey = pendingYikeSession == null ? "" : pendingYikeSession.sessionKey;
       pendingYikeSession = YikeSessionState.empty();
       publishYikeSessionSwitchDiagnostics("begin-pending-cleared", clearedSessionKey);
       return;
@@ -894,7 +893,13 @@ public class OnlineDialog extends JDialog {
         break;
       case 6:
         reqNewYikeRoom(
-            false, syncAjaxUrl, syncRoomId, syncRefreshTime, syncSourceUrl, syncType, syncSessionId);
+            false,
+            syncAjaxUrl,
+            syncRoomId,
+            syncRefreshTime,
+            syncSourceUrl,
+            syncType,
+            syncSessionId);
         break;
       case 7:
         startYikeUnitePolling(syncRoomId, syncRefreshTime, syncAjaxUrl);
@@ -1548,8 +1553,7 @@ public class OnlineDialog extends JDialog {
                       + " sgfLen="
                       + (detail.getSgf() == null ? -1 : detail.getSgf().length()));
               if (Utils.isBlank(detail.getSgf())) {
-                String noSgfStatus =
-                    text("YikeLiveDialog.syncNoSgf", "No SGF is available yet.");
+                String noSgfStatus = text("YikeLiveDialog.syncNoSgf", "No SGF is available yet.");
                 updateYikeSyncStatus(sourceUrl, noSgfStatus);
                 Lizzie.frame.revealYikeLiveSyncStatus(sourceUrl, noSgfStatus);
                 if (detail.getStatus() >= 3
@@ -1593,8 +1597,7 @@ public class OnlineDialog extends JDialog {
             } catch (IOException | JSONException e) {
               YikeSyncDebugLog.log("OnlineDialog.reqNewYikeRoom error: " + e.toString());
               recordYikeFailure("yike-fetch", yikeSessionKey(sourceUrl), e);
-              if (e instanceof IOException
-                  && showNetworkProxyConfigWarning((IOException) e)) {
+              if (e instanceof IOException && showNetworkProxyConfigWarning((IOException) e)) {
                 invalidProxyConfig.set(true);
               }
               SwingUtilities.invokeLater(

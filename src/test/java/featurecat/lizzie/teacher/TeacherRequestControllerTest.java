@@ -50,10 +50,7 @@ class TeacherRequestControllerTest {
   void forwardsCurrentRequestTextInOrderAndCompletesOnce() throws Exception {
     server.createContext(
         "/v1/chat/completions",
-        exchange ->
-            respondSse(
-                exchange,
-                sseDelta("Hello ") + sseDelta("Go") + "data: [DONE]\n\n"));
+        exchange -> respondSse(exchange, sseDelta("Hello ") + sseDelta("Go") + "data: [DONE]\n\n"));
     server.start();
 
     RecordingListener listener = new RecordingListener();

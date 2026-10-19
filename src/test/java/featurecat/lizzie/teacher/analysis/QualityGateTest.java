@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.teacher.TeachingEvidenceBuilder;
-
 import org.junit.jupiter.api.Test;
 
 class QualityGateTest {

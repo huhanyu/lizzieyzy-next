@@ -2,8 +2,8 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.KataGoRules;
-import java.awt.Container;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Insets;
 import java.util.ArrayList;
@@ -112,9 +112,13 @@ final class KataRulesEditor {
     layoutForContent();
   }
 
-  int bottom() { return bottom; }
+  int bottom() {
+    return bottom;
+  }
 
-  int width() { return width; }
+  int width() {
+    return width;
+  }
 
   /** Runs after any rule choice changes, including preset buttons and programmatic readbacks. */
   void onChange(Runnable listener) {
@@ -240,7 +244,9 @@ final class KataRulesEditor {
   private String ko() {
     return rdoSimpleKo.isSelected()
         ? "SIMPLE"
-        : rdoPositionKo.isSelected() ? "POSITIONAL" : rdoSituationalKo.isSelected() ? "SITUATIONAL" : "";
+        : rdoPositionKo.isSelected()
+            ? "POSITIONAL"
+            : rdoSituationalKo.isSelected() ? "SITUATIONAL" : "";
   }
 
   private String tax() {

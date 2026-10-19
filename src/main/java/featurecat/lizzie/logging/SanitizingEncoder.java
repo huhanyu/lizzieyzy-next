@@ -13,8 +13,7 @@ final class SanitizingEncoder extends EncoderBase<ILoggingEvent> {
   private final PatternLayout layout = new PatternLayout();
   private PersistenceSanitizer sanitizer = new PersistenceSanitizer();
   private LogStream stream = LogStream.APP;
-  private String pattern =
-      "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger] %corr %msg%n%ex";
+  private String pattern = "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger] %corr %msg%n%ex";
 
   void setPattern(String pattern) {
     this.pattern = pattern;
@@ -65,19 +64,14 @@ final class SanitizingEncoder extends EncoderBase<ILoggingEvent> {
       if (encoded.length <= LoggingLimits.MAX_PERSISTED_EVENT_BYTES) {
         return encoded;
       }
-      int prefixLength =
-          LoggingLimits.MAX_PERSISTED_EVENT_BYTES - TRUNCATION_MARKER_BYTES.length;
+      int prefixLength = LoggingLimits.MAX_PERSISTED_EVENT_BYTES - TRUNCATION_MARKER_BYTES.length;
       while (prefixLength > 0 && (encoded[prefixLength] & 0xc0) == 0x80) {
         prefixLength--;
       }
       byte[] bounded = new byte[prefixLength + TRUNCATION_MARKER_BYTES.length];
       System.arraycopy(encoded, 0, bounded, 0, prefixLength);
       System.arraycopy(
-          TRUNCATION_MARKER_BYTES,
-          0,
-          bounded,
-          prefixLength,
-          TRUNCATION_MARKER_BYTES.length);
+          TRUNCATION_MARKER_BYTES, 0, bounded, prefixLength, TRUNCATION_MARKER_BYTES.length);
       return bounded;
     } catch (RuntimeException e) {
       addError("encoder redaction failed", e);

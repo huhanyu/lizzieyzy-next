@@ -138,8 +138,7 @@ public class EngineFollowController {
 
   private static String localizedSnapshotPreparationDetail(String detail) {
     if (ExactSnapshotEngineRestore.NO_WRITABLE_SNAPSHOT_LOCATION_DETAIL.equals(detail)) {
-      return Lizzie.resourceBundle.getString(
-          "EngineFollow.snapshotPreparation.noWritableLocation");
+      return Lizzie.resourceBundle.getString("EngineFollow.snapshotPreparation.noWritableLocation");
     }
     if (ExactSnapshotEngineRestore.UNSUPPORTED_SNAPSHOT_TRANSPORT_DETAIL.equals(detail)) {
       return Lizzie.resourceBundle.getString(

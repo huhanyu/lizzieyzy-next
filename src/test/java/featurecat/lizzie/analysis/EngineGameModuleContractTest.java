@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
@@ -17,16 +17,16 @@ import featurecat.lizzie.enginegame.EngineGameBatchSpec;
 import featurecat.lizzie.enginegame.EngineGameBatchSpecFactory;
 import featurecat.lizzie.enginegame.EngineGameChrome;
 import featurecat.lizzie.enginegame.EngineGameChromeTransition;
+import featurecat.lizzie.enginegame.EngineGameKomiState;
 import featurecat.lizzie.enginegame.EngineGameParsedStart;
 import featurecat.lizzie.enginegame.EngineGamePlan;
 import featurecat.lizzie.enginegame.EngineGamePlans;
 import featurecat.lizzie.enginegame.EngineGamePlayMode;
+import featurecat.lizzie.enginegame.EngineGamePresentation;
 import featurecat.lizzie.enginegame.EngineGameRecord;
 import featurecat.lizzie.enginegame.EngineGameRecordContext;
 import featurecat.lizzie.enginegame.EngineGameResignPolicy;
 import featurecat.lizzie.enginegame.EngineGameSaveSnapshot;
-import featurecat.lizzie.enginegame.EngineGamePresentation;
-import featurecat.lizzie.enginegame.EngineGameKomiState;
 import featurecat.lizzie.enginegame.EngineGameSide;
 import featurecat.lizzie.enginegame.EngineGameSnapshot;
 import featurecat.lizzie.enginegame.EngineGameTransaction;
@@ -44,18 +44,17 @@ import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.JFontMenu;
 import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.Menu;
-import featurecat.lizzie.gui.WinrateGraph;
 import featurecat.lizzie.gui.SgfWinLossList;
+import featurecat.lizzie.gui.WinrateGraph;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.SGFParser;
-
 import java.io.ByteArrayOutputStream;
-import java.util.concurrent.TimeUnit;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import javax.swing.SwingUtilities;
 import org.json.JSONObject;
 import org.junit.jupiter.api.AfterEach;
@@ -166,8 +165,7 @@ class EngineGameModuleContractTest {
 
     assertInstanceOf(Acceptance.Rejected.class, acceptance);
     assertInstanceOf(
-        Rejection.InvalidParticipantCombination.class,
-        ((Acceptance.Rejected) acceptance).reason());
+        Rejection.InvalidParticipantCombination.class, ((Acceptance.Rejected) acceptance).reason());
     assertInstanceOf(EngineGameSnapshot.Idle.class, Lizzie.engineGame.current());
     assertNull(Lizzie.engineGame.firstPlan());
 
@@ -300,8 +298,6 @@ class EngineGameModuleContractTest {
     assertInstanceOf(EngineGameSnapshot.Idle.class, Lizzie.engineGame.current());
     assertTrue(EngineManager.hasActiveEngineGameTransaction());
   }
-
-
 
   @Test
   void pauseResumeAndReviseBatchLimitUpdateProductStateWithoutPlaceholders() {
@@ -648,7 +644,6 @@ class EngineGameModuleContractTest {
     assertEquals("frozen", current.comment);
   }
 
-
   @Test
   void previousHistoryKeepsPreviousRecordAfterNextGameStarts() {
     playAccepted(genmoveBatchSpec(2, true));
@@ -704,8 +699,7 @@ class EngineGameModuleContractTest {
     assertInstanceOf(EngineGameSnapshot.Idle.class, Lizzie.engineGame.current());
     assertFalse(Lizzie.engineGame.current().startingOrPlaying());
 
-    assertInstanceOf(
-        Acceptance.Accepted.class, Lizzie.engineGame.accept(analysisSpec(), observer));
+    assertInstanceOf(Acceptance.Accepted.class, Lizzie.engineGame.accept(analysisSpec(), observer));
     EngineGameSnapshot starting = Lizzie.engineGame.current();
     assertTrue(starting.starting());
     assertTrue(starting.startingOrPlaying());
@@ -752,14 +746,13 @@ class EngineGameModuleContractTest {
     assertFalse(Lizzie.engineGame.current().startingOrPlaying());
   }
 
-
-
   @Test
   void recordingChromePublishesStartingPlayingPauseResumeAndUserStopInOrder() {
     RecordingChrome chrome = new RecordingChrome();
     Lizzie.engineGame.replaceChromeForTest(chrome);
     try {
-      assertInstanceOf(Acceptance.Accepted.class, Lizzie.engineGame.accept(analysisSpec(), observer));
+      assertInstanceOf(
+          Acceptance.Accepted.class, Lizzie.engineGame.accept(analysisSpec(), observer));
       Lizzie.engineGame.onOwnerPlaying();
       Lizzie.engineGame.pause();
       Lizzie.engineGame.resume();
@@ -775,7 +768,8 @@ class EngineGameModuleContractTest {
       assertInstanceOf(GameActivity.Starting.class, activity(chrome.events.get(0).snapshot()));
       assertInstanceOf(GameActivity.Playing.class, activity(chrome.events.get(1).snapshot()));
       assertEquals(
-          RunState.PAUSED, ((GameActivity.Playing) activity(chrome.events.get(2).snapshot())).runState());
+          RunState.PAUSED,
+          ((GameActivity.Playing) activity(chrome.events.get(2).snapshot())).runState());
       assertEquals(
           RunState.RUNNING,
           ((GameActivity.Playing) activity(chrome.events.get(3).snapshot())).runState());
@@ -807,7 +801,8 @@ class EngineGameModuleContractTest {
     RecordingChrome chrome = new RecordingChrome();
     Lizzie.engineGame.replaceChromeForTest(chrome);
     try {
-      assertInstanceOf(Acceptance.Accepted.class, Lizzie.engineGame.accept(genmoveSpec(), observer));
+      assertInstanceOf(
+          Acceptance.Accepted.class, Lizzie.engineGame.accept(genmoveSpec(), observer));
       Lizzie.engineGame.onOwnerStartFailed(new IllegalStateException("start"));
       assertEquals(
           List.of(
@@ -881,7 +876,8 @@ class EngineGameModuleContractTest {
     Lizzie.engineGame.resume();
     assertFalse(Lizzie.engineGame.current().paused());
     assertEquals(
-        RunState.RUNNING, ((GameActivity.Playing) activity(Lizzie.engineGame.current())).runState());
+        RunState.RUNNING,
+        ((GameActivity.Playing) activity(Lizzie.engineGame.current())).runState());
     assertFalse(txn.paused());
 
     Lizzie.engineGame.pause();
@@ -1034,6 +1030,7 @@ class EngineGameModuleContractTest {
     assertNotNull(Lizzie.board.getHistory().getGameInfo().engineGameRecordContext());
     assertSame(secondTxn, Lizzie.engineGame.transaction());
   }
+
   @Test
   void inFlightGenmoveCompletesBeforeKomiUpdateApplies() throws Exception {
     manager.manualActivation = true;
@@ -1116,7 +1113,6 @@ class EngineGameModuleContractTest {
             .build());
   }
 
-
   private static EngineGameBatchSpec genmoveSpec() {
     return EngineGameBatchSpecFactory.from(
         EngineGameParsedStart.builder()
@@ -1159,17 +1155,14 @@ class EngineGameModuleContractTest {
     assertTrue(EngineManager.transitionEngineGameToDispatched(owner));
     assertTrue(
         EngineManager.activateEngineGameTransaction(
-            owner,
-            black,
-            0,
-            black.currentEngineIncarnation(),
-            white.currentEngineIncarnation()));
+            owner, black, 0, black.currentEngineIncarnation(), white.currentEngineIncarnation()));
   }
 
   private void awaitKomiCommands(String target) throws InterruptedException {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
     while ((!black.commandText().contains("komi " + target)
-        || !white.commandText().contains("komi " + target)) && System.nanoTime() < deadline) {
+            || !white.commandText().contains("komi " + target))
+        && System.nanoTime() < deadline) {
       for (OccupancyLeelaz engine : List.of(black, white)) {
         for (String line : engine.commandText().split("\\R")) {
           if (line.matches("\\d+ name")) {
@@ -1466,7 +1459,6 @@ class EngineGameModuleContractTest {
     @Override
     public void changeicon(int index) {}
   }
-
 
   private static final class SilentBoard extends Board {
     @Override

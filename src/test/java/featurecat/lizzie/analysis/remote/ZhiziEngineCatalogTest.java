@@ -68,8 +68,7 @@ class ZhiziEngineCatalogTest {
     ZhiziEngineCatalog catalog = ZhiziEngineCatalog.fallback();
 
     assertEquals("10b512t", catalog.defaultWeight());
-    assertEquals(
-        List.of("20b", "10b384t", "10b512t", "11b768t"), names(catalog));
+    assertEquals(List.of("20b", "10b384t", "10b512t", "11b768t"), names(catalog));
     assertFalse(catalog.containsWeight("28bnbt"));
     assertFalse(catalog.containsWeight("fdx"));
     assertEquals(ZhiziEngineCatalog.DiscoverySource.BUILT_IN_CURRENT, source(catalog, "10b512t"));
@@ -132,13 +131,10 @@ class ZhiziEngineCatalogTest {
 
     ZhiziEngineCatalog completed = oldCache.withDocumentedWeights();
 
-    assertEquals(
-        List.of("20b", "10b384t", "10b512t", "11b768t"),
-        names(completed));
+    assertEquals(List.of("20b", "10b384t", "10b512t", "11b768t"), names(completed));
     assertEquals("10b512t", completed.defaultWeight());
     assertEquals("legacy handicap network", description(completed, "20b"));
-    assertEquals(
-        ZhiziEngineCatalog.DiscoverySource.BUILT_IN_CURRENT, source(completed, "10b512t"));
+    assertEquals(ZhiziEngineCatalog.DiscoverySource.BUILT_IN_CURRENT, source(completed, "10b512t"));
     assertEquals(ZhiziEngineCatalog.DiscoverySource.BUILT_IN_CURRENT, source(completed, "20b"));
     assertFalse(completed.containsWeight("28bnbt"));
     assertFalse(completed.containsWeight("40b"));
@@ -156,8 +152,7 @@ class ZhiziEngineCatalogTest {
     assertFalse(migrated.containsWeight("40b"));
 
     ZhiziEngineCatalog restored = ZhiziEngineCatalog.fromJson(migrated.toJson());
-    assertEquals(
-        ZhiziEngineCatalog.DiscoverySource.BUILT_IN_CURRENT, source(restored, "10b512t"));
+    assertEquals(ZhiziEngineCatalog.DiscoverySource.BUILT_IN_CURRENT, source(restored, "10b512t"));
   }
 
   @Test

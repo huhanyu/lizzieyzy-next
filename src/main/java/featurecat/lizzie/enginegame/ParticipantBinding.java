@@ -29,7 +29,6 @@ public final class ParticipantBinding {
     this.maxMoves = maxMoves;
   }
 
-
   public static ParticipantBinding of(
       EngineGameTransaction transaction,
       EngineGameSide side,
@@ -37,9 +36,9 @@ public final class ParticipantBinding {
       EngineGameSideLimits limits,
       EngineGamePlayMode playMode,
       int maxMoves) {
-    return new ParticipantBinding(
-        transaction, side, catalogIndex, limits, playMode, maxMoves);
+    return new ParticipantBinding(transaction, side, catalogIndex, limits, playMode, maxMoves);
   }
+
   public EngineGameTransaction transaction() {
     return transaction;
   }

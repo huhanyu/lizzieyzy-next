@@ -18,8 +18,8 @@ import org.json.JSONObject;
 
 /**
  * Test-only project-built TensorRT install whose HumanSL CUDA companion shares the TensorRT engine
- * manifest. Main engine and companion have different contents and digests, and no zlib DLL exists in
- * any preflight search directory.
+ * manifest. Main engine and companion have different contents and digests, and no zlib DLL exists
+ * in any preflight search directory.
  */
 public final class TensorRtCompanionFixture {
   public static final String COMPANION = KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME;
@@ -42,7 +42,9 @@ public final class TensorRtCompanionFixture {
   public enum Layout {
     /** Full package: engine and NVIDIA runtime under the app directory, here one with a space. */
     FULL_PACKAGE,
-    /** In-app install: managed engine directory with the runtime in the shared runtime directory. */
+    /**
+     * In-app install: managed engine directory with the runtime in the shared runtime directory.
+     */
     ONLINE_INSTALL_WITH_SHARED_RUNTIME
   }
 

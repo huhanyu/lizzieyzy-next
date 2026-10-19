@@ -72,7 +72,9 @@ public final class EngineThreadPolicy {
     }
   }
 
-  /** Zero means CFG, remote-managed, or an explicit launch override; never consults global values. */
+  /**
+   * Zero means CFG, remote-managed, or an explicit launch override; never consults global values.
+   */
   public static int threadsForLaunch(EngineData entry, List<String> command) {
     if (entry == null
         || isRemoteManaged(entry.commands, entry.useJavaSSH)

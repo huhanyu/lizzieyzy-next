@@ -357,13 +357,17 @@ final class AutomaticQuickAnalysisEngineAdapter implements AutomaticQuickAnalysi
                 engine.clearRequestCallbacks();
               }
               engine.returnAutomaticQuickAnalysisUse(
-                  restore -> onEdt(
-                      () -> {
-                        if (owner == this) owner = null;
-                        finished.accept(requestRestore == ForegroundRestoreResult.FAILED
-                            || restore == ForegroundRestoreResult.NOT_REQUIRED ? requestRestore : restore);
-                        if (!transfer) ensureWorker();
-                      }));
+                  restore ->
+                      onEdt(
+                          () -> {
+                            if (owner == this) owner = null;
+                            finished.accept(
+                                requestRestore == ForegroundRestoreResult.FAILED
+                                        || restore == ForegroundRestoreResult.NOT_REQUIRED
+                                    ? requestRestore
+                                    : restore);
+                            if (!transfer) ensureWorker();
+                          }));
             });
         return;
       }

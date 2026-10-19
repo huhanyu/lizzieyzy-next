@@ -41,7 +41,8 @@ class LeelazRuntimeSearchThreadsTest {
       assertEquals(10, set.get(2, TimeUnit.SECONDS));
       assertEquals(10, target.lastConfirmedValue());
       assertEquals(Leelaz.RuntimeThreadOverrideState.ON, target.overrideState());
-      assertEquals(Leelaz.RuntimeThreadOverrideState.ON,
+      assertEquals(
+          Leelaz.RuntimeThreadOverrideState.ON,
           env.engine.captureRuntimeSearchThreads().overrideState());
       assertEquals("", env.otherOutput.toString(StandardCharsets.UTF_8));
     }
@@ -52,13 +53,16 @@ class LeelazRuntimeSearchThreadsTest {
     try (Environment env = new Environment()) {
       Leelaz.RuntimeSearchThreads target = env.engine.captureRuntimeSearchThreads();
       CompletableFuture<Integer> first = target.apply(8);
-      env.engine.processCommandResponseLineForTest("=" + env.awaitCommand("kata-set-param numSearchThreads 8"));
+      env.engine.processCommandResponseLineForTest(
+          "=" + env.awaitCommand("kata-set-param numSearchThreads 8"));
       assertEquals(8, first.get(2, TimeUnit.SECONDS));
       CompletableFuture<Integer> malformed = target.query();
-      env.engine.processCommandResponseLineForTest("=" + env.awaitCommand("kata-get-param numSearchThreads") + " 8.0");
+      env.engine.processCommandResponseLineForTest(
+          "=" + env.awaitCommand("kata-get-param numSearchThreads") + " 8.0");
       assertThrows(ExecutionException.class, () -> malformed.get(2, TimeUnit.SECONDS));
       CompletableFuture<Integer> rejected = target.apply(9);
-      env.engine.processCommandResponseLineForTest("?" + env.awaitCommand("kata-set-param numSearchThreads 9") + " unknown parameter");
+      env.engine.processCommandResponseLineForTest(
+          "?" + env.awaitCommand("kata-set-param numSearchThreads 9") + " unknown parameter");
       assertThrows(ExecutionException.class, () -> rejected.get(2, TimeUnit.SECONDS));
       assertEquals(Leelaz.RuntimeThreadOverrideState.ON, target.overrideState());
       assertEquals(8, target.lastConfirmedValue());
@@ -93,11 +97,13 @@ class LeelazRuntimeSearchThreadsTest {
     try (Environment env = new Environment("ssh host katago gtp")) {
       Leelaz.RuntimeSearchThreads original = env.engine.captureRuntimeSearchThreads();
       CompletableFuture<Integer> set = original.apply(10);
-      env.engine.processCommandResponseLineForTest("=" + env.awaitCommand("kata-set-param numSearchThreads 10"));
+      env.engine.processCommandResponseLineForTest(
+          "=" + env.awaitCommand("kata-set-param numSearchThreads 10"));
       assertEquals(10, set.get(2, TimeUnit.SECONDS));
       env.engine.installFreshCommandOutputForTest(new ByteArrayOutputStream());
       assertEquals(Leelaz.RuntimeThreadOverrideState.UNKNOWN, original.overrideState());
-      assertEquals(Leelaz.RuntimeThreadOverrideState.UNKNOWN,
+      assertEquals(
+          Leelaz.RuntimeThreadOverrideState.UNKNOWN,
           env.engine.captureRuntimeSearchThreads().overrideState());
     }
   }
@@ -202,18 +208,21 @@ class LeelazRuntimeSearchThreadsTest {
     try (Environment env = new Environment()) {
       Leelaz.RuntimeSearchThreads target = env.engine.captureRuntimeSearchThreads();
       CompletableFuture<Integer> query = target.query();
-      env.engine.processCommandResponseLineForTest("=" + env.awaitCommand("kata-get-param numSearchThreads") + " 10");
+      env.engine.processCommandResponseLineForTest(
+          "=" + env.awaitCommand("kata-get-param numSearchThreads") + " 10");
       assertEquals(10, query.get(2, TimeUnit.SECONDS));
       assertEquals(Leelaz.RuntimeThreadOverrideState.OFF, target.overrideState());
       CompletableFuture<Integer> set = target.apply(10);
-      env.engine.processCommandResponseLineForTest("=" + env.awaitCommand("kata-set-param numSearchThreads 10"));
+      env.engine.processCommandResponseLineForTest(
+          "=" + env.awaitCommand("kata-set-param numSearchThreads 10"));
       assertEquals(10, set.get(2, TimeUnit.SECONDS));
       assertEquals(Leelaz.RuntimeThreadOverrideState.ON, target.overrideState());
       Lizzie.setPrimaryEngine(env.other);
       assertThrows(IllegalStateException.class, target::prepareRestore);
       assertEquals(Leelaz.RuntimeThreadOverrideState.UNKNOWN, target.overrideState());
       Lizzie.setPrimaryEngine(env.engine);
-      assertEquals(Leelaz.RuntimeThreadOverrideState.ON,
+      assertEquals(
+          Leelaz.RuntimeThreadOverrideState.ON,
           env.engine.captureRuntimeSearchThreads().overrideState());
     }
   }
@@ -224,18 +233,23 @@ class LeelazRuntimeSearchThreadsTest {
       try (Environment env = new Environment()) {
         var flushing = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
-        env.engine.installFreshCommandOutputForTest(new java.io.OutputStream() {
-          @Override public void write(int value) {}
-          @Override public void flush() throws java.io.IOException {
-            flushing.countDown();
-            try {
-              if (!release.await(5, TimeUnit.SECONDS)) throw new java.io.IOException("test flush deadline");
-            } catch (InterruptedException interrupted) {
-              Thread.currentThread().interrupt();
-              throw new java.io.IOException(interrupted);
-            }
-          }
-        });
+        env.engine.installFreshCommandOutputForTest(
+            new java.io.OutputStream() {
+              @Override
+              public void write(int value) {}
+
+              @Override
+              public void flush() throws java.io.IOException {
+                flushing.countDown();
+                try {
+                  if (!release.await(5, TimeUnit.SECONDS))
+                    throw new java.io.IOException("test flush deadline");
+                } catch (InterruptedException interrupted) {
+                  Thread.currentThread().interrupt();
+                  throw new java.io.IOException(interrupted);
+                }
+              }
+            });
         env.engine.setRuntimeSearchThreadsTimeoutForTest(100);
         Leelaz.RuntimeSearchThreads target = env.engine.captureRuntimeSearchThreads();
         CompletableFuture<Integer> operation = setting ? target.apply(10) : target.query();
@@ -243,11 +257,12 @@ class LeelazRuntimeSearchThreadsTest {
         try {
           assertTrue(flushing.await(2, TimeUnit.SECONDS));
           assertThrows(ExecutionException.class, () -> operation.get(2, TimeUnit.SECONDS));
-          javax.swing.SwingUtilities.invokeLater(() -> {
-            boolean current = target.isCurrent();
-            Lizzie.setPrimaryEngine(env.other);
-            ui.complete(current && !target.isCurrent());
-          });
+          javax.swing.SwingUtilities.invokeLater(
+              () -> {
+                boolean current = target.isCurrent();
+                Lizzie.setPrimaryEngine(env.other);
+                ui.complete(current && !target.isCurrent());
+              });
           assertTrue(ui.get(1, TimeUnit.SECONDS));
           assertNull(target.lastConfirmedValue());
           assertEquals("", env.otherOutput.toString(StandardCharsets.UTF_8));
@@ -262,24 +277,32 @@ class LeelazRuntimeSearchThreadsTest {
   @Test
   void restoreUsesCurrentSavedSourceAndRejectsChangesAfterConfirmation() throws Exception {
     try (Environment env = new Environment()) {
-      org.json.JSONObject policy = new org.json.JSONObject()
-          .put("source", "BENCHMARK").put("katago-benchmark-threads", 6);
-      org.json.JSONObject entry = new org.json.JSONObject()
-          .put("id", "runtime-source").put("command", "katago gtp").put("threadPolicy", policy);
+      org.json.JSONObject policy =
+          new org.json.JSONObject().put("source", "BENCHMARK").put("katago-benchmark-threads", 6);
+      org.json.JSONObject entry =
+          new org.json.JSONObject()
+              .put("id", "runtime-source")
+              .put("command", "katago gtp")
+              .put("threadPolicy", policy);
       Lizzie.config.uiConfig.put("engine-thread-policy-migrated", true);
       Lizzie.config.leelazConfig.put("engine-settings-list", new org.json.JSONArray().put(entry));
       env.engine.savedEntryId = "runtime-source";
       Leelaz.RuntimeSearchThreads target = env.engine.captureRuntimeSearchThreads();
       var set = target.apply(10);
-      env.engine.processCommandResponseLineForTest("=" + env.awaitCommand("kata-set-param numSearchThreads 10"));
+      env.engine.processCommandResponseLineForTest(
+          "=" + env.awaitCommand("kata-set-param numSearchThreads 10"));
       assertEquals(10, set.get(2, TimeUnit.SECONDS));
       policy.put("katago-benchmark-threads", 8);
       var restore = target.prepareRestore();
       assertEquals(Leelaz.RuntimeThreadSource.BENCHMARK, restore.source());
       assertEquals(8, restore.recommendedThreads());
       policy.put("source", "CFG");
-      assertThrows(ExecutionException.class,
-          () -> restore.execute(successor -> CompletableFuture.completedFuture(null)).get(2, TimeUnit.SECONDS));
+      assertThrows(
+          ExecutionException.class,
+          () ->
+              restore
+                  .execute(successor -> CompletableFuture.completedFuture(null))
+                  .get(2, TimeUnit.SECONDS));
       assertTrue(target.isCurrent());
       assertEquals(Leelaz.RuntimeThreadOverrideState.ON, target.overrideState());
       assertEquals(Leelaz.RuntimeThreadSource.CFG, target.prepareRestore().source());
@@ -356,12 +379,19 @@ class LeelazRuntimeSearchThreadsTest {
   }
 
   private static final class QuietConsole extends GtpConsolePane {
-    private QuietConsole() { super(null); }
-    @Override public void addLine(String line) {}
+    private QuietConsole() {
+      super(null);
+    }
+
+    @Override
+    public void addLine(String line) {}
   }
 
   private static final class QuietFrame extends featurecat.lizzie.gui.LizzieFrame {
-    @Override public void refresh() {}
-    @Override public void resetTitle() {}
+    @Override
+    public void refresh() {}
+
+    @Override
+    public void resetTitle() {}
   }
 }

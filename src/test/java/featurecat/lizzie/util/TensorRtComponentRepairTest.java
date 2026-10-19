@@ -192,8 +192,7 @@ public class TensorRtComponentRepairTest {
                       () -> {
                         seedDirectMlProfiles(snapshot);
                         System.setProperty(
-                            "lizzie.tensorrt.companion.url",
-                            wrongCompanionZip.toUri().toString());
+                            "lizzie.tensorrt.companion.url", wrongCompanionZip.toUri().toString());
                         System.setProperty(
                             "lizzie.tensorrt.companion.sha256", sha256(wrongCompanionZip));
                         System.setProperty(
@@ -226,7 +225,8 @@ public class TensorRtComponentRepairTest {
                         KataGoRuntimeHelper.repairTensorRtComponents(
                             snapshot, null, new DownloadSession());
                         try (CountingFixtureServer server =
-                            CountingFixtureServer.start(Files.readAllBytes(fixtures.companionZip))) {
+                            CountingFixtureServer.start(
+                                Files.readAllBytes(fixtures.companionZip))) {
                           System.setProperty("lizzie.tensorrt.companion.url", server.url());
                           System.setProperty(
                               "lizzie.tensorrt.companion.sha256", fixtures.companionSha256);
@@ -298,8 +298,7 @@ public class TensorRtComponentRepairTest {
   }
 
   @Test
-  void partialRuntimeStaysIncompleteUntilALaterRepairAndCompletedFilesAreReused()
-      throws Exception {
+  void partialRuntimeStaysIncompleteUntilALaterRepairAndCompletedFilesAreReused() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
         () -> {
@@ -366,8 +365,7 @@ public class TensorRtComponentRepairTest {
                         seedDirectMlProfiles(snapshot);
                         KataGoRuntimeHelper.repairTensorRtComponents(
                             snapshot, null, new DownloadSession());
-                        Path engine =
-                            tensorRtEngineDir(runtimeWorkDirectory).resolve("katago.exe");
+                        Path engine = tensorRtEngineDir(runtimeWorkDirectory).resolve("katago.exe");
                         String engineBefore = Files.readString(engine);
 
                         Path lockPath =
@@ -376,9 +374,7 @@ public class TensorRtComponentRepairTest {
                                 .resolve("tensorrt-install.lock");
                         try (FileChannel lockChannel =
                                 FileChannel.open(
-                                    lockPath,
-                                    StandardOpenOption.CREATE,
-                                    StandardOpenOption.WRITE);
+                                    lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
                             var ignored = lockChannel.lock()) {
                           IOException locked =
                               assertThrows(
@@ -398,8 +394,7 @@ public class TensorRtComponentRepairTest {
                                 "no-engine");
                         System.setProperty(
                             "lizzie.tensorrt.katago.url", emptyEngineZip.toUri().toString());
-                        System.setProperty(
-                            "lizzie.tensorrt.katago.sha256", sha256(emptyEngineZip));
+                        System.setProperty("lizzie.tensorrt.katago.sha256", sha256(emptyEngineZip));
                         System.setProperty(
                             "lizzie.tensorrt.katago.size",
                             Long.toString(Files.size(emptyEngineZip)));
@@ -522,8 +517,7 @@ public class TensorRtComponentRepairTest {
   }
 
   @Test
-  void failedRestoreMoveAndCopyFallbackKeepsLastKnownGoodBackupAndPartialTarget()
-      throws Exception {
+  void failedRestoreMoveAndCopyFallbackKeepsLastKnownGoodBackupAndPartialTarget() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
         () -> {
@@ -584,8 +578,7 @@ public class TensorRtComponentRepairTest {
                           KataGoRuntimeHelper.setTensorRtDirectoryCopyForTests(null);
                         }
 
-                        assertEquals(
-                            "injected TensorRT promotion failure", failure.getMessage());
+                        assertEquals("injected TensorRT promotion failure", failure.getMessage());
                         boolean sawRestore = false;
                         boolean sawCopy = false;
                         for (Throwable suppressed : failure.getSuppressed()) {
@@ -671,9 +664,7 @@ public class TensorRtComponentRepairTest {
                         Files.writeString(engine, "last-known-good-engine");
                         Files.writeString(
                             engineDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"),
-                            "KataGo release: v1.0.0\nAsset SHA-256: "
-                                + EMPTY_FILE_SHA256
-                                + "\n");
+                            "KataGo release: v1.0.0\nAsset SHA-256: " + EMPTY_FILE_SHA256 + "\n");
 
                         KataGoRuntimeHelper.setTensorRtDirectoryMoveForTests(
                             (source, target) -> {

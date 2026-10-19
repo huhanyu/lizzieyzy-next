@@ -157,7 +157,8 @@ class ReadBoardSyncDecisionTest {
     try (SyncHarness harness = SyncHarness.create(false, emptyHistory())) {
       harness.leelaz.beforeNextClearBoard(
           () -> {
-            BoardData rebuiltSnapshot = harness.board.getHistory().getCurrentHistoryNode().getData();
+            BoardData rebuiltSnapshot =
+                harness.board.getHistory().getCurrentHistoryNode().getData();
             rebuiltSnapshot.stones[stoneIndex(0, 0)] = Stone.EMPTY;
           });
       harness.readBoard.parseLine("lastMoveSource foxCornerFlip");
@@ -188,7 +189,6 @@ class ReadBoardSyncDecisionTest {
           "rebuild exact restore must freeze the current history GameInfo komi in the SGF");
     }
   }
-
 
   @Test
   void foxLiveRollbackReusesExactMainTrunkAncestorEvenWithRepeatedStones() throws Exception {
@@ -469,7 +469,8 @@ class ReadBoardSyncDecisionTest {
     Stone[] target = stones(placement(0, 0, Stone.WHITE));
     SyncSnapshotClassifier.SnapshotDelta snapshotDelta =
         new SyncSnapshotClassifier(BOARD_SIZE, BOARD_SIZE)
-            .summarizeDelta(syncStartNode.getData().stones, snapshot(target, Optional.empty(), Stone.EMPTY));
+            .summarizeDelta(
+                syncStartNode.getData().stones, snapshot(target, Optional.empty(), Stone.EMPTY));
     ReadBoard readBoard = allocate(ReadBoard.class);
 
     assertTrue(
@@ -682,7 +683,9 @@ class ReadBoardSyncDecisionTest {
       setField(
           harness.readBoard, "outputStream", new BufferedOutputStream(new ByteArrayOutputStream()));
       setField(
-          harness.readBoard, "placeCommandDispatcher", (java.util.concurrent.Executor) Runnable::run);
+          harness.readBoard,
+          "placeCommandDispatcher",
+          (java.util.concurrent.Executor) Runnable::run);
       harness.readBoard.sendCommand("place 2 2");
       assertTrue(harness.readBoard.isPendingLocalMoveAwaitingReadBoard());
       harness.sync(snapshot(accepted.getData().stones, accepted.getData().lastMove, Stone.BLACK));
@@ -1197,8 +1200,7 @@ class ReadBoardSyncDecisionTest {
   }
 
   @Test
-  void sameBoardMarkerlessFoxMetadataDoesNotOverrideRiskySnapshotSideToPlay()
-      throws Exception {
+  void sameBoardMarkerlessFoxMetadataDoesNotOverrideRiskySnapshotSideToPlay() throws Exception {
     Stone[] target =
         stones(
             placement(0, 0, Stone.WHITE),
@@ -1208,7 +1210,8 @@ class ReadBoardSyncDecisionTest {
     try (SyncHarness harness =
         SyncHarness.create(
             false,
-            rootHistory(target, Optional.empty(), Stone.EMPTY, false, 57, BoardNodeKind.SNAPSHOT))) {
+            rootHistory(
+                target, Optional.empty(), Stone.EMPTY, false, 57, BoardNodeKind.SNAPSHOT))) {
       BoardHistoryNode originalMainEnd = harness.board.getHistory().getMainEnd();
 
       armFoxMoveNumber(harness.readBoard, 58);
@@ -2963,7 +2966,10 @@ class ReadBoardSyncDecisionTest {
           if (batches != 2) {
             assertEquals(
                 "HOLD",
-                SyncDiagnosticsRecorder.getDefault().snapshot().getLatestDecisionTrace().getResult(),
+                SyncDiagnosticsRecorder.getDefault()
+                    .snapshot()
+                    .getLatestDecisionTrace()
+                    .getResult(),
                 "A, correct, A, B, A must not accumulate nonconsecutive confirmation");
           }
         } else {
@@ -3127,9 +3133,12 @@ class ReadBoardSyncDecisionTest {
         assertClearBoardCommandCount(
             harness.leelaz, 1, fileName + ": snapshot rebuild must clear the engine board once.");
         assertLoadSgfCommandCount(
-            harness.leelaz, 1, fileName + ": snapshot rebuild must load the position via loadsgf once.");
+            harness.leelaz,
+            1,
+            fileName + ": snapshot rebuild must load the position via loadsgf once.");
       } else {
-        assertLoadSgfCommandCount(harness.leelaz, 0, fileName + ": unavailable engine must not restore.");
+        assertLoadSgfCommandCount(
+            harness.leelaz, 0, fileName + ": unavailable engine must not restore.");
         assertTrue(harness.leelaz.playedMoves.isEmpty());
         assertEquals(
             0,
@@ -3193,7 +3202,6 @@ class ReadBoardSyncDecisionTest {
       }
     }
   }
-
 
   private static void armFoxMoveNumber(ReadBoard readBoard, int moveNumber) {
     readBoard.parseLine("syncPlatform fox");
@@ -3570,7 +3578,8 @@ class ReadBoardSyncDecisionTest {
     return (SyncRemoteContext) getField(readBoard, "pendingRemoteContext");
   }
 
-  private static void setPendingSnapshot(ReadBoard readBoard, int[] snapshotCodes) throws Exception {
+  private static void setPendingSnapshot(ReadBoard readBoard, int[] snapshotCodes)
+      throws Exception {
     ArrayList<Integer> counts = new ArrayList<>(snapshotCodes.length);
     for (int code : snapshotCodes) {
       counts.add(code);
@@ -3772,12 +3781,12 @@ class ReadBoardSyncDecisionTest {
       } catch (Exception failure) {
         throw new AssertionError("sync worker did not finish before fixture teardown", failure);
       } finally {
-      Board.boardWidth = previousBoardWidth;
-      Board.boardHeight = previousBoardHeight;
-      Lizzie.config = previousConfig;
-      Lizzie.board = previousBoard;
-      Lizzie.leelaz = previousLeelaz;
-      Lizzie.frame = previousFrame;
+        Board.boardWidth = previousBoardWidth;
+        Board.boardHeight = previousBoardHeight;
+        Lizzie.config = previousConfig;
+        Lizzie.board = previousBoard;
+        Lizzie.leelaz = previousLeelaz;
+        Lizzie.frame = previousFrame;
       }
     }
   }

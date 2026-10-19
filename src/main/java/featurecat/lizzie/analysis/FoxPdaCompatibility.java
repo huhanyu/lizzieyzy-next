@@ -15,12 +15,21 @@ final class FoxPdaCompatibility {
 
   static String inspect(List<String> command, Path directory) {
     try {
-      if (command.size() < 2 || !command.get(1).equals("gtp")
+      if (command.size() < 2
+          || !command.get(1).equals("gtp")
           || CommandLaunchHelper.isIndirectLauncher(command.get(0))) return "Fox.pdaUnknown";
       boolean configSeen = false;
       boolean dynamic = KataGoCommandSpec.parse(command).effectiveOverrides().containsKey(DYNAMIC);
-      Set<String> valued = Set.of("-model", "--model", "-weights", "--weights", "-config", "--config",
-          "-override-config", "--override-config");
+      Set<String> valued =
+          Set.of(
+              "-model",
+              "--model",
+              "-weights",
+              "--weights",
+              "-config",
+              "--config",
+              "-override-config",
+              "--override-config");
       for (int i = 2; i < command.size(); i++) {
         String option = command.get(i);
         if (option.equals("-quit-without-waiting")) continue;

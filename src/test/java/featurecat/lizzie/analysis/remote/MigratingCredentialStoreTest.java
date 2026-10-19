@@ -20,11 +20,8 @@ class MigratingCredentialStoreTest {
     legacy.write(CredentialStore.Kind.PASSWORD, "user", "old-secret");
     CredentialStore migrating = new MigratingCredentialStore(primary, List.of(legacy));
 
-    assertEquals(
-        "old-secret",
-        migrating.read(CredentialStore.Kind.PASSWORD, "user").orElseThrow());
-    assertEquals(
-        "old-secret", primary.read(CredentialStore.Kind.PASSWORD, "user").orElseThrow());
+    assertEquals("old-secret", migrating.read(CredentialStore.Kind.PASSWORD, "user").orElseThrow());
+    assertEquals("old-secret", primary.read(CredentialStore.Kind.PASSWORD, "user").orElseThrow());
     assertTrue(legacy.read(CredentialStore.Kind.PASSWORD, "user").isEmpty());
   }
 
@@ -37,8 +34,7 @@ class MigratingCredentialStoreTest {
     CredentialStore migrating = new MigratingCredentialStore(primary, List.of(legacy));
 
     assertEquals(
-        "old-token",
-        migrating.read(CredentialStore.Kind.ACCOUNT_TOKEN, "user").orElseThrow());
+        "old-token", migrating.read(CredentialStore.Kind.ACCOUNT_TOKEN, "user").orElseThrow());
     assertEquals(
         "old-token", legacy.read(CredentialStore.Kind.ACCOUNT_TOKEN, "user").orElseThrow());
   }

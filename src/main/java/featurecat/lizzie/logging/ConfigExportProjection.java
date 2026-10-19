@@ -10,11 +10,7 @@ import org.json.JSONObject;
 
 public final class ConfigExportProjection {
   private static final Set<String> UI_BOOLEAN_KEYS =
-      Set.of(
-          "show-coordinates",
-          "show-winrate-overview",
-          "is-apple-style",
-          "autoload-default");
+      Set.of("show-coordinates", "show-winrate-overview", "is-apple-style", "autoload-default");
   private static final Set<String> UI_INTEGER_KEYS =
       Set.of("board-size", "analysis-max-visits", "max-game-thinking-time-seconds");
   private static final Set<Integer> EXTRA_MODE_VALUES = Set.of(0, 1, 2, 3, 7, 8);
@@ -100,8 +96,7 @@ public final class ConfigExportProjection {
       projected.put(LoggingSettings.DIAGNOSTIC_MODULES_KEY, modules);
     }
 
-    JSONArray scopeNames =
-        logging.optJSONArray(LoggingSettings.PREFERRED_FULL_TRACE_SCOPES_KEY);
+    JSONArray scopeNames = logging.optJSONArray(LoggingSettings.PREFERRED_FULL_TRACE_SCOPES_KEY);
     if (scopeNames != null) {
       JSONArray scopes = new JSONArray();
       for (int i = 0; i < scopeNames.length(); i++) {

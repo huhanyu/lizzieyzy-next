@@ -20,8 +20,7 @@ class BottomToolbarAutoAnalyzeStopTest {
   @Test
   void manualStopNeverLooksLikeSuccessfulCompletion() {
     assertNotEquals(
-        BottomToolbar.autoAnalyzeStatusKey(true),
-        BottomToolbar.autoAnalyzeStatusKey(false));
+        BottomToolbar.autoAnalyzeStatusKey(true), BottomToolbar.autoAnalyzeStatusKey(false));
     assertNotEquals(
         BottomToolbar.autoAnalyzeSavedStatusKey(true),
         BottomToolbar.autoAnalyzeSavedStatusKey(false));
@@ -78,8 +77,7 @@ class BottomToolbarAutoAnalyzeStopTest {
         BottomToolbar.resolveAutoAnalyzeOutput(
             null, workDirectory.toFile(), "analyzed", "20260831143000");
 
-    assertEquals(
-        workDirectory.resolve("AnalyzedGames").resolve("20260831143000.sgf"), output);
+    assertEquals(workDirectory.resolve("AnalyzedGames").resolve("20260831143000.sgf"), output);
     assertTrue(Files.isDirectory(output.getParent()));
   }
 

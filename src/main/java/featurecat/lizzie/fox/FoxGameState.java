@@ -12,25 +12,73 @@ public final class FoxGameState {
       return "ABCDEFGHJKLMNOPQRSTUVWXYZ".charAt(x) + Integer.toString(size - y);
     }
   }
-  public record Rules(int size, int mainSeconds, int byoSeconds, int periods,
-      double komi, List<Placement> setup) {}
+
+  public record Rules(
+      int size, int mainSeconds, int byoSeconds, int periods, double komi, List<Placement> setup) {}
+
   public record Clock(int mainSeconds, int byoSeconds, int periods, long receivedNanos) {}
+
   public record Action(Placement placement, char color, int afterPlacement) {
-    public boolean isPass() { return placement == null; }
-    public String vertex(int size) { return isPass() ? "pass" : placement.vertex(size); }
+    public boolean isPass() {
+      return placement == null;
+    }
+
+    public String vertex(int size) {
+      return isPass() ? "pass" : placement.vertex(size);
+    }
   }
-  public enum SubmissionOutcome { PENDING, CONFIRMED, FAILED, CANCELLED }
-  public record Submission(long connection, long game, long revision, long search,
-      Action action, String body, long preparedNanos, long deadlineNanos) {}
-  public record SubmissionFact(Submission submission, SubmissionOutcome outcome,
-      long writtenNanos, long resolvedNanos, String reason) {}
-  public record Snapshot(long connection, long game, long revision, Rules rules,
-      Clock clock, char ai, Character toPlay, List<Placement> placements,
-      List<Action> actions, boolean initialized, boolean complete, boolean active,
-      String statusKey, boolean clockRefreshed, long submitDeadlineNanos, Submission pending,
-      boolean automationBlocked, long turnStartedNanos, long foxDeadlineNanos) {
-    public boolean searchable() { return initialized && complete && active && !automationBlocked; }
-    public boolean ownTurn() { return toPlay != null && toPlay == ai; }
+
+  public enum SubmissionOutcome {
+    PENDING,
+    CONFIRMED,
+    FAILED,
+    CANCELLED
+  }
+
+  public record Submission(
+      long connection,
+      long game,
+      long revision,
+      long search,
+      Action action,
+      String body,
+      long preparedNanos,
+      long deadlineNanos) {}
+
+  public record SubmissionFact(
+      Submission submission,
+      SubmissionOutcome outcome,
+      long writtenNanos,
+      long resolvedNanos,
+      String reason) {}
+
+  public record Snapshot(
+      long connection,
+      long game,
+      long revision,
+      Rules rules,
+      Clock clock,
+      char ai,
+      Character toPlay,
+      List<Placement> placements,
+      List<Action> actions,
+      boolean initialized,
+      boolean complete,
+      boolean active,
+      String statusKey,
+      boolean clockRefreshed,
+      long submitDeadlineNanos,
+      Submission pending,
+      boolean automationBlocked,
+      long turnStartedNanos,
+      long foxDeadlineNanos) {
+    public boolean searchable() {
+      return initialized && complete && active && !automationBlocked;
+    }
+
+    public boolean ownTurn() {
+      return toPlay != null && toPlay == ai;
+    }
   }
 
   private long connection;
@@ -62,10 +110,11 @@ public final class FoxGameState {
     if (toPlay == null || toPlay != ai) return submitDeadlineNanos;
     double nanos = directMaxTime * 1e9;
     long duration = nanos >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) nanos;
-    long directDeadline = turnStartedNanos > Long.MAX_VALUE - duration
-        ? Long.MAX_VALUE : turnStartedNanos + duration;
+    long directDeadline =
+        turnStartedNanos > Long.MAX_VALUE - duration ? Long.MAX_VALUE : turnStartedNanos + duration;
     return Math.min(submitDeadlineNanos, directDeadline);
   }
+
   private long refreshStartedNanos;
   private boolean refreshRequested;
   private boolean clockRefreshed;
@@ -78,7 +127,9 @@ public final class FoxGameState {
   private String recoveryFailure = "Fox.noCheckpoint";
   private boolean recoveryContradiction;
 
-  public synchronized boolean hasCheckpoint() { return checkpoint != null; }
+  public synchronized boolean hasCheckpoint() {
+    return checkpoint != null;
+  }
 
   public synchronized String recoveryStatus() {
     if (!snapshot().initialized() || !active) return "Fox.syncing";
@@ -90,10 +141,11 @@ public final class FoxGameState {
     int oldSize = checkpoint.placements().size();
     if (placements.size() != oldSize + 1
         || !placements.subList(0, oldSize).equals(checkpoint.placements())
-        || checkpoint.actions().isEmpty() || checkpoint.toPlay() == ai
+        || checkpoint.actions().isEmpty()
+        || checkpoint.toPlay() == ai
         || checkpoint.actions().get(checkpoint.actions().size() - 1).color() != ai
-        || placements.get(oldSize).color() != opposite(ai) || toPlay != ai)
-      return "Fox.recoveryMismatch";
+        || placements.get(oldSize).color() != opposite(ai)
+        || toPlay != ai) return "Fox.recoveryMismatch";
     return "Fox.restoring";
   }
 
@@ -106,8 +158,7 @@ public final class FoxGameState {
       turnStartedNanos = retained.turnStartedNanos();
       submitDeadlineNanos = Math.min(submitDeadlineNanos, retained.foxDeadlineNanos());
     }
-    if (clockNanos(clock) <= 1_000_000_000L
-        || (toPlay == ai && now >= effectiveDeadlineNanos())) {
+    if (clockNanos(clock) <= 1_000_000_000L || (toPlay == ai && now >= effectiveDeadlineNanos())) {
       revokeRecovery("Fox.clockRisk");
       return false;
     }
@@ -131,7 +182,10 @@ public final class FoxGameState {
     recoveryFailure = reason;
   }
 
-  public synchronized List<SubmissionFact> submissions() { return List.copyOf(submissions); }
+  public synchronized List<SubmissionFact> submissions() {
+    return List.copyOf(submissions);
+  }
+
   public synchronized SubmissionFact latestSubmission() {
     return submissions.isEmpty() ? null : submissions.get(submissions.size() - 1);
   }
@@ -139,17 +193,25 @@ public final class FoxGameState {
   /** One refresh per authoritative turn; queuing and query latency belong to that turn. */
   public synchronized boolean beginClockRefresh(long now) {
     Snapshot state = snapshot();
-    if (!state.searchable() || !state.ownTurn() || refreshRequested || automationBlocked) return false;
+    if (!state.searchable() || !state.ownTurn() || refreshRequested || automationBlocked)
+      return false;
     refreshRequested = true;
     refreshStartedNanos = now;
     return true;
   }
 
-  public synchronized Submission prepareSubmission(Snapshot expected, long search, String vertex, long now) {
+  public synchronized Submission prepareSubmission(
+      Snapshot expected, long search, String vertex, long now) {
     Snapshot current = snapshot();
-    if (expected.connection != connection || expected.game != game || expected.revision != revision
-        || !current.searchable() || !current.ownTurn() || !clockRefreshed || automationBlocked
-        || pending != null || now >= effectiveDeadlineNanos()) return null;
+    if (expected.connection != connection
+        || expected.game != game
+        || expected.revision != revision
+        || !current.searchable()
+        || !current.ownTurn()
+        || !clockRefreshed
+        || automationBlocked
+        || pending != null
+        || now >= effectiveDeadlineNanos()) return null;
     Placement move = null;
     if (!vertex.equalsIgnoreCase("pass")) {
       require(vertex.matches("[A-HJ-Z][0-9]{1,2}"));
@@ -159,23 +221,37 @@ public final class FoxGameState {
       move = new Placement(placements.size() + 1, x, y, ai);
     }
     Action action = new Action(move, ai, move == null ? placements.size() : move.number);
-    String body = move == null ? "AFSKIP," + ai
-        : "AFPLAY," + ai + "," + move.number + "^" + move.x + "^" + move.y + "^" + ai;
-    pending = new Submission(connection, game, revision, search, action, body, now, effectiveDeadlineNanos());
+    String body =
+        move == null
+            ? "AFSKIP," + ai
+            : "AFPLAY," + ai + "," + move.number + "^" + move.x + "^" + move.y + "^" + ai;
+    pending =
+        new Submission(
+            connection, game, revision, search, action, body, now, effectiveDeadlineNanos());
     written = false;
     submissions.add(new SubmissionFact(pending, SubmissionOutcome.PENDING, 0, 0, ""));
     statusKey = "Fox.pending";
     return pending;
   }
 
-  /** Called only at the transport's write-start boundary. It consumes permission, not acceptance. */
+  /**
+   * Called only at the transport's write-start boundary. It consumes permission, not acceptance.
+   */
   public synchronized boolean claimSubmission(Submission expected, long now) {
-    if (pending != expected || written || automationBlocked || !active || !complete
-        || expected.connection != connection || expected.game != game || expected.revision != revision
-        || toPlay == null || toPlay != ai || now >= Math.min(expected.deadlineNanos, effectiveDeadlineNanos())) return false;
+    if (pending != expected
+        || written
+        || automationBlocked
+        || !active
+        || !complete
+        || expected.connection != connection
+        || expected.game != game
+        || expected.revision != revision
+        || toPlay == null
+        || toPlay != ai
+        || now >= Math.min(expected.deadlineNanos, effectiveDeadlineNanos())) return false;
     written = true;
-    submissions.set(submissions.size() - 1,
-        new SubmissionFact(pending, SubmissionOutcome.PENDING, now, 0, ""));
+    submissions.set(
+        submissions.size() - 1, new SubmissionFact(pending, SubmissionOutcome.PENDING, now, 0, ""));
     return true;
   }
 
@@ -198,28 +274,34 @@ public final class FoxGameState {
   private void resolveSubmission(SubmissionOutcome outcome, String reason, long now) {
     if (pending == null) return;
     SubmissionFact old = submissions.get(submissions.size() - 1);
-    submissions.set(submissions.size() - 1,
+    submissions.set(
+        submissions.size() - 1,
         new SubmissionFact(pending, outcome, old.writtenNanos, now, reason));
     pending = null;
   }
 
   private void confirm(Action action, long now) {
     if (pending == null) return;
-    if (written && pending.action.equals(action)) resolveSubmission(SubmissionOutcome.CONFIRMED, "", now);
-    else { stopAutomation("Fox.confirmationFailed", now); gap(); }
+    if (written && pending.action.equals(action))
+      resolveSubmission(SubmissionOutcome.CONFIRMED, "", now);
+    else {
+      stopAutomation("Fox.confirmationFailed", now);
+      gap();
+    }
   }
 
   private long remainingMainNanos = Long.MAX_VALUE;
 
   private void endTurn(long now) {
     if (toPlay != null && toPlay == ai && clock != null && clock.mainSeconds > 0) {
-      remainingMainNanos = Math.min(remainingMainNanos,
-          Math.max(0, submitDeadlineNanos + 1_000_000_000L - now));
+      remainingMainNanos =
+          Math.min(remainingMainNanos, Math.max(0, submitDeadlineNanos + 1_000_000_000L - now));
     }
   }
 
   private long clockNanos(Clock value) {
-    int seconds = value.mainSeconds > 0 ? value.mainSeconds : value.periods > 0 ? value.byoSeconds : 0;
+    int seconds =
+        value.mainSeconds > 0 ? value.mainSeconds : value.periods > 0 ? value.byoSeconds : 0;
     long nanos = seconds * 1_000_000_000L;
     return value.mainSeconds > 0 ? Math.min(nanos, remainingMainNanos) : nanos;
   }
@@ -238,8 +320,13 @@ public final class FoxGameState {
 
   public synchronized void disconnected() {
     Snapshot retained = snapshot();
-    boolean unresolved = submissions.stream().anyMatch(f -> f.submission().game() == game
-        && f.outcome() != SubmissionOutcome.CONFIRMED && f.outcome() != SubmissionOutcome.CANCELLED);
+    boolean unresolved =
+        submissions.stream()
+            .anyMatch(
+                f ->
+                    f.submission().game() == game
+                        && f.outcome() != SubmissionOutcome.CONFIRMED
+                        && f.outcome() != SubmissionOutcome.CANCELLED);
     if (retained.searchable() && !unresolved) {
       checkpoint = retained;
       recoveryFailure = "Fox.noCheckpoint";
@@ -274,10 +361,26 @@ public final class FoxGameState {
   }
 
   public synchronized Snapshot snapshot() {
-    return new Snapshot(connection, game, revision, rules, clock, ai, toPlay,
-        placements, List.copyOf(actions), rules != null && statusSeen && clock != null
-        && toPlay != null, complete, active, active && automationBlocked ? automationStopReason : statusKey,
-        clockRefreshed, effectiveDeadlineNanos(), pending, automationBlocked, turnStartedNanos, submitDeadlineNanos);
+    return new Snapshot(
+        connection,
+        game,
+        revision,
+        rules,
+        clock,
+        ai,
+        toPlay,
+        placements,
+        List.copyOf(actions),
+        rules != null && statusSeen && clock != null && toPlay != null,
+        complete,
+        active,
+        active && automationBlocked ? automationStopReason : statusKey,
+        clockRefreshed,
+        effectiveDeadlineNanos(),
+        pending,
+        automationBlocked,
+        turnStartedNanos,
+        submitDeadlineNanos);
   }
 
   public synchronized void reject() {
@@ -339,13 +442,18 @@ public final class FoxGameState {
         List<Placement> incoming = new ArrayList<>();
         for (int i = 3; i < f.length; i++) {
           Placement p = placement(f[i], rules.size, false);
-          if (p == null) { require(f.length == 4); break; }
+          if (p == null) {
+            require(f.length == 4);
+            break;
+          }
           require(p.number == incoming.size() + 1);
           incoming.add(p);
         }
         if (!statusSeen) complete = incoming.isEmpty() && !disconnectedGame;
         if (statusSeen && !incoming.equals(placements)) {
-          if (pending != null && written && !pending.action.isPass()
+          if (pending != null
+              && written
+              && !pending.action.isPass()
               && incoming.size() == placements.size() + 1
               && incoming.subList(0, placements.size()).equals(placements)
               && incoming.get(incoming.size() - 1).equals(pending.action.placement)) {
@@ -362,7 +470,9 @@ public final class FoxGameState {
         ai = color;
         statusSeen = active = true;
         if (!complete) statusKey = "Fox.incomplete";
-        else if (toPlay != null && !automationBlocked) statusKey = pending != null ? "Fox.pending" : toPlay == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
+        else if (toPlay != null && !automationBlocked)
+          statusKey =
+              pending != null ? "Fox.pending" : toPlay == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
       }
       case "FAMOVE", "FASKIP" -> {
         boolean pass = f[0].equals("FASKIP");
@@ -374,7 +484,8 @@ public final class FoxGameState {
           if (toPlay != null) {
             char passer = opposite(next);
             Action action = new Action(null, passer, placements.size());
-            if (toPlay == next && !actions.isEmpty()
+            if (toPlay == next
+                && !actions.isEmpty()
                 && actions.get(actions.size() - 1).equals(action)) return;
             require(toPlay != next);
             actions.add(action);
@@ -406,24 +517,39 @@ public final class FoxGameState {
           }
         }
         boolean changedTurn = toPlay == null || toPlay != next;
-        if (changedTurn) { revision++; endTurn(now); }
+        if (changedTurn) {
+          revision++;
+          endTurn(now);
+        }
         toPlay = next;
         if (changedTurn) startTurn(now);
-        if (complete && !automationBlocked) statusKey = pending != null ? "Fox.pending" : next == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
+        if (complete && !automationBlocked)
+          statusKey =
+              pending != null ? "Fox.pending" : next == ai ? "Fox.ourTurn" : "Fox.opponentTurn";
       }
       case "FATIMELEFT" -> {
         require(f.length == 4 && rules != null);
-        Clock next = new Clock(integer(f[1], 0, Integer.MAX_VALUE),
-            integer(f[2], 0, Integer.MAX_VALUE), integer(f[3], 0, Integer.MAX_VALUE), now);
-        require(next.byoSeconds <= rules.byoSeconds && next.periods <= rules.periods
-            && next.mainSeconds <= rules.mainSeconds);
-        require(clock == null || (next.periods <= clock.periods && next.mainSeconds <= clock.mainSeconds));
+        Clock next =
+            new Clock(
+                integer(f[1], 0, Integer.MAX_VALUE),
+                integer(f[2], 0, Integer.MAX_VALUE),
+                integer(f[3], 0, Integer.MAX_VALUE),
+                now);
+        require(
+            next.byoSeconds <= rules.byoSeconds
+                && next.periods <= rules.periods
+                && next.mainSeconds <= rules.mainSeconds);
+        require(
+            clock == null
+                || (next.periods <= clock.periods && next.mainSeconds <= clock.mainSeconds));
         remainingMainNanos = Math.min(remainingMainNanos, next.mainSeconds * 1_000_000_000L);
         if (toPlay != null && toPlay == ai) {
           long anchor = refreshRequested && !clockRefreshed ? refreshStartedNanos : now;
           long deadline = anchor + clockNanos(next) - 1_000_000_000L;
-          submitDeadlineNanos = clock == null ? turnStartedNanos + clockNanos(next) - 1_000_000_000L
-              : Math.min(submitDeadlineNanos, deadline);
+          submitDeadlineNanos =
+              clock == null
+                  ? turnStartedNanos + clockNanos(next) - 1_000_000_000L
+                  : Math.min(submitDeadlineNanos, deadline);
           if (refreshRequested) clockRefreshed = true;
         }
         clock = next;
@@ -453,24 +579,34 @@ public final class FoxGameState {
     revision++;
     statusKey = "Fox.incomplete";
   }
-  private static char opposite(char color) { return color == 'B' ? 'W' : 'B'; }
+
+  private static char opposite(char color) {
+    return color == 'B' ? 'W' : 'B';
+  }
+
   private static char color(String value) {
     require(value.equals("B") || value.equals("W"));
     return value.charAt(0);
   }
+
   private static int integer(String value, int min, int max) {
     require(value.matches("-?[0-9]+"));
     int result = Integer.parseInt(value);
     require(result >= min && result <= max);
     return result;
   }
+
   private static Placement placement(String value, int size, boolean setup) {
     if (!setup && value.equals("0^0^0^N")) return null;
     String[] p = value.split("\\^", -1);
     require(p.length == 4);
-    return new Placement(integer(p[0], setup ? 0 : 1, Integer.MAX_VALUE),
-        integer(p[1], 0, size - 1), integer(p[2], 0, size - 1), color(p[3]));
+    return new Placement(
+        integer(p[0], setup ? 0 : 1, Integer.MAX_VALUE),
+        integer(p[1], 0, size - 1),
+        integer(p[2], 0, size - 1),
+        color(p[3]));
   }
+
   private static void require(boolean condition) {
     if (!condition) throw new IllegalArgumentException("Invalid Fox message parameters");
   }

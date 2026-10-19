@@ -7,11 +7,11 @@ import static java.lang.Math.min;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.enginegame.EngineGamePresentation;
+import featurecat.lizzie.enginegame.EngineGameSnapshot;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.NodeInfo;
-import featurecat.lizzie.enginegame.EngineGamePresentation;
-import featurecat.lizzie.enginegame.EngineGameSnapshot;
 import featurecat.lizzie.util.Utils;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -307,9 +307,8 @@ public class MoveListFrame extends JFrame {
           || Lizzie.leelaz.isSai
           || Lizzie.board.isContainsKataData()
           || (Lizzie.board.isPkBoard
-              && (engineGameKata
-                  || Lizzie.board.isPkBoardKataB
-                  || Lizzie.board.isPkBoardKataW))) isKatago = true;
+              && (engineGameKata || Lizzie.board.isPkBoardKataB || Lizzie.board.isPkBoardKataW)))
+        isKatago = true;
     } else {
       if (Lizzie.leelaz2 != null && (Lizzie.leelaz2.isKatago || Lizzie.leelaz2.isSai)
           || Lizzie.board.isContainsKataData2()) isKatago = true;

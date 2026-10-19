@@ -39,9 +39,7 @@ class WindowMenuStripTest {
     assertEquals("AI 解说", mirroredButton.getText());
     assertEquals("aiCommentaryToolbarButton", mirroredButton.getName());
     assertEquals("AI 解说", mirroredButton.getAccessibleContext().getAccessibleName());
-    assertEquals(
-        "生成当前棋局解说",
-        mirroredButton.getAccessibleContext().getAccessibleDescription());
+    assertEquals("生成当前棋局解说", mirroredButton.getAccessibleContext().getAccessibleDescription());
 
     mirroredButton.doClick(0);
 

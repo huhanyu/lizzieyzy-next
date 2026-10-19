@@ -15,17 +15,8 @@ class AppleSiliconTuningPlannerTest {
 
     assertEquals(
         List.of(
-            "G-b1",
-            "G-b2",
-            "G-b4",
-            "GG-b2",
-            "GG-b4",
-            "GA-b2",
-            "GA-b4",
-            "GGA-b3",
-            "GGA-b6",
-            "GGAA-b4",
-            "GGAA-b8"),
+            "G-b1", "G-b2", "G-b4", "GG-b2", "GG-b4", "GA-b2", "GA-b4", "GGA-b3", "GGA-b6",
+            "GGAA-b4", "GGAA-b8"),
         ids(candidates));
     assertFalse(
         candidates.stream().anyMatch(candidate -> candidate.mixed() && candidate.batch() == 1));
@@ -44,16 +35,7 @@ class AppleSiliconTuningPlannerTest {
   @Test
   void mediumMemoryAddsGgaButNotFourLaneMux() {
     assertEquals(
-        List.of(
-            "G-b1",
-            "G-b2",
-            "G-b4",
-            "GG-b2",
-            "GG-b4",
-            "GA-b2",
-            "GA-b4",
-            "GGA-b3",
-            "GGA-b6"),
+        List.of("G-b1", "G-b2", "G-b4", "GG-b2", "GG-b4", "GA-b2", "GA-b4", "GGA-b3", "GGA-b6"),
         ids(AppleSiliconTuningPlanner.candidates(hardwareWithMemory(14L << 30), 100L << 20)));
   }
 

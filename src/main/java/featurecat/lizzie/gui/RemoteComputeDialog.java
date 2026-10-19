@@ -1552,9 +1552,7 @@ public class RemoteComputeDialog extends JDialog {
       Desktop.getDesktop().browse(URI.create(url));
       updateStatus(openedStatus, true);
     } catch (Exception e) {
-      Toolkit.getDefaultToolkit()
-          .getSystemClipboard()
-          .setContents(new StringSelection(url), null);
+      Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(url), null);
       updateStatus(copiedStatus, false);
       JOptionPane.showMessageDialog(
           this, copiedMessage, copiedTitle, JOptionPane.INFORMATION_MESSAGE);
@@ -1768,9 +1766,7 @@ public class RemoteComputeDialog extends JDialog {
     Runnable submit =
         () -> {
           EngineManager manager = Lizzie.engineManager;
-          if (manager == null
-              || engineIndex < 0
-              || engineIndex >= manager.engineList.size()) {
+          if (manager == null || engineIndex < 0 || engineIndex >= manager.engineList.size()) {
             finishEngineSwitch(false, failureMessage, null);
             return;
           }
@@ -1815,8 +1811,7 @@ public class RemoteComputeDialog extends JDialog {
                 finishEngineSwitch(false, failureMessage, null);
                 return;
               }
-              EngineManager.EngineSwitchUiSnapshot snapshot =
-                  manager.engineSwitchUiSnapshot(true);
+              EngineManager.EngineSwitchUiSnapshot snapshot = manager.engineSwitchUiSnapshot(true);
               if (snapshot.token() != token) {
                 finishEngineSwitch(false, failureMessage, null);
                 return;
@@ -1827,9 +1822,7 @@ public class RemoteComputeDialog extends JDialog {
               } else if (snapshot.phase() == EngineManager.EngineSwitchUiPhase.FAILED) {
                 String detail = snapshot.failureDetail().trim();
                 finishEngineSwitch(
-                    false,
-                    detail.isEmpty() ? failureMessage : failureMessage + " " + detail,
-                    null);
+                    false, detail.isEmpty() ? failureMessage : failureMessage + " " + detail, null);
               }
             });
     engineSwitchMonitor.setInitialDelay(0);

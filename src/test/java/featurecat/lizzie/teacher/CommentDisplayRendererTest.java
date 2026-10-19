@@ -56,9 +56,7 @@ class CommentDisplayRendererTest {
   void rendersMarkdownTablesWithoutAllowingEmbeddedHtml() {
     String stored =
         TeacherCommentCodec.upsert(
-            "",
-            "| Move | Review |\n| --- | --- |\n| D4 | **Good** & <img src=x> |",
-            "test-model");
+            "", "| Move | Review |\n| --- | --- |\n| D4 | **Good** & <img src=x> |", "test-model");
 
     String html = CommentDisplayRenderer.render(stored);
 
@@ -71,8 +69,7 @@ class CommentDisplayRendererTest {
   void separatesEnglishPersonalCommentaryFromMatchInfoWithDivider() {
     String html =
         renderWithBundle(
-            AppLocale.ENGLISH.loadBundle(),
-            "Looks like a fight.\n\n" + ENGLISH_KATA_MATCH_INFO);
+            AppLocale.ENGLISH.loadBundle(), "Looks like a fight.\n\n" + ENGLISH_KATA_MATCH_INFO);
 
     int personalAt = html.indexOf("Looks like a fight.");
     int dividerAt = html.indexOf("match-info-divider");
@@ -89,8 +86,7 @@ class CommentDisplayRendererTest {
   void separatesChinesePersonalCommentaryFromMatchInfoWithDivider() {
     String html =
         renderWithBundle(
-            AppLocale.SIMPLIFIED_CHINESE.loadBundle(),
-            "这手可以。\n\n" + CHINESE_KATA_MATCH_INFO);
+            AppLocale.SIMPLIFIED_CHINESE.loadBundle(), "这手可以。\n\n" + CHINESE_KATA_MATCH_INFO);
 
     int personalAt = html.indexOf("这手可以。");
     int dividerAt = html.indexOf("match-info-divider");

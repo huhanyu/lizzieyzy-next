@@ -388,7 +388,10 @@ public class HumanSlTensorRtDirectedRepairTest {
   private static Path installLegacyCudaEngine(Path runtimeWorkDirectory) throws IOException {
     Path targetDir =
         Files.createDirectories(
-            runtimeWorkDirectory.resolve("engines").resolve("katago").resolve("windows-x64-nvidia"));
+            runtimeWorkDirectory
+                .resolve("engines")
+                .resolve("katago")
+                .resolve("windows-x64-nvidia"));
     Path enginePath = touch(targetDir.resolve("katago.exe"));
     Files.writeString(targetDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia\n");
     Files.writeString(
@@ -424,8 +427,7 @@ public class HumanSlTensorRtDirectedRepairTest {
               + "\nAsset SHA-256: "
               + "0000000000000000000000000000000000000000000000000000000000000000\n";
     }
-    Files.writeString(
-        targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"), manifestText);
+    Files.writeString(targetDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"), manifestText);
     if (companion) {
       touch(targetDir.resolve(KataGoRuntimeHelper.HUMAN_SL_CUDA_COMPANION_NAME));
       Files.writeString(

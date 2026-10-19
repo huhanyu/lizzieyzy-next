@@ -29,6 +29,7 @@ public class PersistenceSanitizer {
     return EXACT_CREDENTIAL_NAME.matcher(name).matches()
         || EXACT_SENSITIVE_HEADER_NAME.matcher(name).matches();
   }
+
   // Utils.splitCommand separates arguments on literal spaces; tabs can belong to a password.
   // Keep command values whole instead of applying JSON/query-string punctuation boundaries.
   private static final Pattern COMMAND_CREDENTIAL_PARAMETER =
@@ -70,8 +71,7 @@ public class PersistenceSanitizer {
   private static final Pattern URI_USERINFO =
       Pattern.compile("(?i)(\\b[a-z][a-z0-9+.-]*://)[^/@\\s]+@");
   private static final Pattern STANDALONE_BEARER =
-      Pattern.compile(
-          "(?i)(?<![A-Za-z0-9_-])(bearer\\s+)[^\\s,;\\\"'<>}\\]]+");
+      Pattern.compile("(?i)(?<![A-Za-z0-9_-])(bearer\\s+)[^\\s,;\\\"'<>}\\]]+");
   private static final Pattern STANDALONE_BASIC =
       Pattern.compile("(?i)(?<![A-Za-z0-9_-])(basic\\s+)[A-Za-z0-9+/=_-]+");
 
@@ -98,14 +98,12 @@ public class PersistenceSanitizer {
     String safe = COMMAND_CREDENTIAL_PARAMETER.matcher(text).replaceAll("$1<redacted>");
     safe = redactPercentEncodedCredentials(safe);
     safe = SENSITIVE_HEADER.matcher(safe).replaceAll("$1<redacted>");
-    safe =
-        QUOTED_ASSIGNMENT_CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1$2<redacted>$3");
+    safe = QUOTED_ASSIGNMENT_CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1$2<redacted>$3");
     safe =
         COMMA_CREDENTIAL_PARAMETER
             .matcher(safe)
             .replaceAll(mr -> (mr.group(1) != null ? mr.group(1) : mr.group(2)) + "<redacted>");
-    safe =
-        QUOTED_CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1$2<redacted>$2");
+    safe = QUOTED_CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1$2<redacted>$2");
     safe = CREDENTIAL_PARAMETER.matcher(safe).replaceAll("$1<redacted>");
     safe = URL_SECRET.matcher(safe).replaceAll("$1<redacted>");
     safe = URI_USERINFO.matcher(safe).replaceAll("$1<redacted>@");
@@ -157,9 +155,7 @@ public class PersistenceSanitizer {
       copiedThrough = valueEnd;
       index = valueEnd;
     }
-    return redacted == null
-        ? text
-        : redacted.append(text, copiedThrough, text.length()).toString();
+    return redacted == null ? text : redacted.append(text, copiedThrough, text.length()).toString();
   }
 
   private static PercentCredentialPrefix percentCredentialPrefixAt(String text, int start) {
@@ -374,8 +370,7 @@ public class PersistenceSanitizer {
   }
 
   private static final class PercentCredentialPrefix {
-    static final PercentCredentialPrefix FAIL_CLOSED =
-        new PercentCredentialPrefix(-1, false, true);
+    static final PercentCredentialPrefix FAIL_CLOSED = new PercentCredentialPrefix(-1, false, true);
 
     final int end;
     final boolean header;
@@ -407,8 +402,7 @@ public class PersistenceSanitizer {
   }
 
   private static final class DecodedCharacter {
-    static final DecodedCharacter END =
-        new DecodedCharacter((char) 0, -1, false, false, false);
+    static final DecodedCharacter END = new DecodedCharacter((char) 0, -1, false, false, false);
     static final DecodedCharacter SCAN_LIMIT_EXCEEDED =
         new DecodedCharacter((char) 0, -1, true, true, true);
 
@@ -497,21 +491,21 @@ public class PersistenceSanitizer {
       }
       value = value * 16 + digit;
     }
-    char structural = switch (value) {
-      case 0x0009, 0x000a, 0x000d, 0x0020 -> ' ';
-      case 0x0022 -> '\"';
-      case 0x0027 -> '\'';
-      case 0x003a -> ':';
-      case 0x003d -> '=';
-      case 0x005c -> '\\';
-      default -> 0;
-    };
+    char structural =
+        switch (value) {
+          case 0x0009, 0x000a, 0x000d, 0x0020 -> ' ';
+          case 0x0022 -> '\"';
+          case 0x0027 -> '\'';
+          case 0x003a -> ':';
+          case 0x003d -> '=';
+          case 0x005c -> '\\';
+          default -> 0;
+        };
     if (structural != 0) {
       return structural;
     }
     char decoded = (char) value;
-    return value <= 0x7f
-            && (Character.isLetterOrDigit(decoded) || decoded == '_' || decoded == '-')
+    return value <= 0x7f && (Character.isLetterOrDigit(decoded) || decoded == '_' || decoded == '-')
         ? decoded
         : 0;
   }

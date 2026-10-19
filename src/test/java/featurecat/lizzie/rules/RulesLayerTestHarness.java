@@ -197,6 +197,7 @@ final class RulesLayerTestHarness implements AutoCloseable {
 
   static final class TrackingFrame extends LizzieFrame {
     int resultPublications;
+
     @Override
     public void refresh() {}
 

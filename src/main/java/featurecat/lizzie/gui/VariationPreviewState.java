@@ -3,16 +3,11 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.analysis.Branch;
 import java.util.Objects;
 
-/**
- * Selection truth and whole preview result publication on the EDT.
- */
+/** Selection truth and whole preview result publication on the EDT. */
 final class VariationPreviewState {
 
   record Selection(
-      BranchInputCapture source,
-      String coordinate,
-      Branch.Input input,
-      int displayedLength) {
+      BranchInputCapture source, String coordinate, Branch.Input input, int displayedLength) {
     Selection {
       Objects.requireNonNull(input, "input");
     }
@@ -21,9 +16,17 @@ final class VariationPreviewState {
       if (input.removeDeadChains == removeDeadChains && input.recordPvVisits == recordPvVisits) {
         return this;
       }
-      return new Selection(source, coordinate,
-          new Branch.Input(input.position, input.variation, input.pvVisits, input.maxLength,
-              removeDeadChains, recordPvVisits), displayedLength);
+      return new Selection(
+          source,
+          coordinate,
+          new Branch.Input(
+              input.position,
+              input.variation,
+              input.pvVisits,
+              input.maxLength,
+              removeDeadChains,
+              recordPvVisits),
+          displayedLength);
     }
   }
 
@@ -38,8 +41,11 @@ final class VariationPreviewState {
 
   record Mode(featurecat.lizzie.ExtraMode mode, boolean frozen, boolean autoReplay) {}
 
-  private record Request(Selection selection, VariationPreviewGenerator.Geometry geometry,
-      VariationPreviewGenerator.Style style, Mode mode) {
+  private record Request(
+      Selection selection,
+      VariationPreviewGenerator.Geometry geometry,
+      VariationPreviewGenerator.Style style,
+      Mode mode) {
     boolean sameContext(Request other) {
       Branch.Input input = selection.input();
       Branch.Input prior = other.selection.input();
@@ -47,25 +53,33 @@ final class VariationPreviewState {
       BranchInputCapture oldSource = other.selection.source();
       return Objects.equals(selection.coordinate(), other.selection.coordinate())
           && selection.displayedLength() == other.selection.displayedLength()
-          && (source == oldSource || source != null && oldSource != null
-              && source.sourceData == oldSource.sourceData
-              && source.analysisData == oldSource.analysisData && oldSource.isCurrent())
+          && (source == oldSource
+              || source != null
+                  && oldSource != null
+                  && source.sourceData == oldSource.sourceData
+                  && source.analysisData == oldSource.analysisData
+                  && oldSource.isCurrent())
           && input.maxLength == prior.maxLength
           && input.removeDeadChains == prior.removeDeadChains
           && input.recordPvVisits == prior.recordPvVisits
-          && geometry.equals(other.geometry) && style.sameRendering(other.style)
+          && geometry.equals(other.geometry)
+          && style.sameRendering(other.style)
           && mode.equals(other.mode);
     }
 
     boolean sameSurface(Request other) {
       BranchInputCapture source = selection.source();
       BranchInputCapture prior = other.selection.source();
-      return (source == prior || source != null && prior != null
-              && source.sourceData == prior.sourceData && source.analysisData == prior.analysisData
-              && prior.isCurrent())
+      return (source == prior
+              || source != null
+                  && prior != null
+                  && source.sourceData == prior.sourceData
+                  && source.analysisData == prior.analysisData
+                  && prior.isCurrent())
           && selection.input().removeDeadChains == other.selection.input().removeDeadChains
           && selection.input().recordPvVisits == other.selection.input().recordPvVisits
-          && geometry.sameSurface(other.geometry) && style.sameSurface(other.style)
+          && geometry.sameSurface(other.geometry)
+          && style.sameSurface(other.style)
           && mode.equals(other.mode);
     }
 
@@ -83,8 +97,13 @@ final class VariationPreviewState {
   }
 
   /** Capture/validation may acquire Board and must never run under this monitor. */
-  void request(long capturedGeneration, Selection next, VariationPreviewGenerator.Geometry geometry,
-      VariationPreviewGenerator.Style style, Mode mode, Runnable validate,
+  void request(
+      long capturedGeneration,
+      Selection next,
+      VariationPreviewGenerator.Geometry geometry,
+      VariationPreviewGenerator.Style style,
+      Mode mode,
+      Runnable validate,
       java.util.function.Consumer<VariationPreviewGenerator.Result> onPublished) {
     Request priorRequest;
     Request priorPublished;
@@ -109,19 +128,24 @@ final class VariationPreviewState {
       target = scheduler;
     }
     // Submission can use an inline executor in tests; it must not capture Board under our lock.
-    target.submit(this, next.input(), geometry, style, result -> {
-      synchronized (this) {
-        if (generation != expectedGeneration || selection == null) return;
-      }
-      validate.run();
-      if (next.source() != null && !next.source().isCurrent()) return;
-      synchronized (this) {
-        if (generation != expectedGeneration || !publish(selection, next, result)) return;
-        publishedRequest = request;
-        // Only install immutable renderer fields/repaint here: no Board/engine/Swing waits.
-        onPublished.accept(result);
-      }
-    });
+    target.submit(
+        this,
+        next.input(),
+        geometry,
+        style,
+        result -> {
+          synchronized (this) {
+            if (generation != expectedGeneration || selection == null) return;
+          }
+          validate.run();
+          if (next.source() != null && !next.source().isCurrent()) return;
+          synchronized (this) {
+            if (generation != expectedGeneration || !publish(selection, next, result)) return;
+            publishedRequest = request;
+            // Only install immutable renderer fields/repaint here: no Board/engine/Swing waits.
+            onPublished.accept(result);
+          }
+        });
     synchronized (this) {
       // A clear can retire this request before submit reaches the scheduler.
       if (generation != expectedGeneration && requested == null) target.cancel(this);
@@ -143,7 +167,8 @@ final class VariationPreviewState {
   /** Commit an EDT capture only if no engine clear or explicit step crossed it. */
   synchronized long selectIfCurrent(long capturedGeneration, Selection next) {
     if (generation != capturedGeneration) return -1;
-    if (selection == null || !Objects.equals(selection.coordinate(), next.coordinate())) select(next);
+    if (selection == null || !Objects.equals(selection.coordinate(), next.coordinate()))
+      select(next);
     return generation;
   }
 
@@ -193,9 +218,7 @@ final class VariationPreviewState {
   }
 
   synchronized boolean publish(
-      Selection expected,
-      Selection replacement,
-      VariationPreviewGenerator.Result result) {
+      Selection expected, Selection replacement, VariationPreviewGenerator.Result result) {
     Objects.requireNonNull(replacement, "replacement");
     Objects.requireNonNull(result, "result");
     if (this.selection == null || this.selection != expected) {
@@ -220,8 +243,7 @@ final class VariationPreviewState {
             n > 0 ? n : 199,
             oldInput.removeDeadChains,
             oldInput.recordPvVisits);
-    this.selection =
-        new Selection(selection.source(), selection.coordinate(), newInput, n);
+    this.selection = new Selection(selection.source(), selection.coordinate(), newInput, n);
     retireWork();
     return true;
   }

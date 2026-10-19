@@ -236,7 +236,9 @@ final class TeacherSettingsDialog extends JDialog {
         new Dimension(
             Math.max(
                 96,
-                cancelButton.getFontMetrics(cancelButton.getFont()).stringWidth(cancelButton.getText())
+                cancelButton
+                        .getFontMetrics(cancelButton.getFont())
+                        .stringWidth(cancelButton.getText())
                     + cancelButton.getInsets().left
                     + cancelButton.getInsets().right
                     + 8),

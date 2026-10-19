@@ -33,10 +33,7 @@ public final class DesktopTimeControl {
   }
 
   static boolean rejectsHumanGame(Leelaz engine, Mode mode, boolean noClock) {
-    return !noClock
-        && mode != Mode.ENGINE_OWNED
-        && mode != Mode.FIXED
-        && isWebSocket(engine);
+    return !noClock && mode != Mode.ENGINE_OWNED && mode != Mode.FIXED && isWebSocket(engine);
   }
 
   public static boolean rejectsEngineGame(
@@ -102,8 +99,7 @@ public final class DesktopTimeControl {
   public static void commitEngineGameSelection(Config config, SideMode black, SideMode white) {
     config.uiConfig.put("pk-black-time-mode", black.name());
     config.uiConfig.put("pk-white-time-mode", white.name());
-    config.pkAdvanceTimeSettings =
-        black == SideMode.RAW_ADVANCED && white == SideMode.RAW_ADVANCED;
+    config.pkAdvanceTimeSettings = black == SideMode.RAW_ADVANCED && white == SideMode.RAW_ADVANCED;
     config.uiConfig.put("pk-advance-time-settings", config.pkAdvanceTimeSettings);
   }
 

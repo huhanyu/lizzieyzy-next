@@ -20,12 +20,7 @@ class WinrateGraphAreaFillTest {
     assertEquals(1, shapes.size());
     WinrateGraph.BaselineFillShape shape = shapes.get(0);
     assertTrue(shape.aboveBaseline);
-    assertVertices(
-        shape.vertices,
-        point(10, 20),
-        point(50, 30),
-        point(50, 80),
-        point(10, 80));
+    assertVertices(shape.vertices, point(10, 20), point(50, 30), point(50, 80), point(10, 80));
     assertVerticesStayOnOrAboveBaseline(shape, 80);
   }
 
@@ -37,12 +32,7 @@ class WinrateGraphAreaFillTest {
     assertEquals(1, shapes.size());
     WinrateGraph.BaselineFillShape shape = shapes.get(0);
     assertFalse(shape.aboveBaseline);
-    assertVertices(
-        shape.vertices,
-        point(12, 90),
-        point(48, 110),
-        point(48, 60),
-        point(12, 60));
+    assertVertices(shape.vertices, point(12, 90), point(48, 110), point(48, 60), point(12, 60));
     assertVerticesStayOnOrBelowBaseline(shape, 60);
   }
 

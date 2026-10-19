@@ -39,9 +39,7 @@ public final class CommentDisplayRenderer {
       }
       body.append("<div class='ai-commentary'>")
           .append("<div class='ai-commentary-title'><strong>")
-          .append(
-              SafeMarkdownRenderer.escape(
-                  TeacherStrings.get("Teacher.title", "AI Commentary")))
+          .append(SafeMarkdownRenderer.escape(TeacherStrings.get("Teacher.title", "AI Commentary")))
           .append("</strong></div>")
           .append(SafeMarkdownRenderer.toBodyHtml(aiCommentary.get()))
           .append("</div>");

@@ -34,8 +34,10 @@ public class MoveFocusNativeAcceptanceIT {
     DesktopProbeProcess.requireDisplay();
     Path engine = Path.of(System.getProperty("lizzie.focus.engine")).toAbsolutePath();
     Path model = Path.of(System.getProperty("lizzie.focus.model")).toAbsolutePath();
-    Path receiptPath = Path.of(System.getProperty("lizzie.focus.receipt",
-        engine.resolveSibling("source-package.json").toString()));
+    Path receiptPath =
+        Path.of(
+            System.getProperty(
+                "lizzie.focus.receipt", engine.resolveSibling("source-package.json").toString()));
     JSONObject receipt = new JSONObject(Files.readString(receiptPath));
     assertEquals(SOURCE, receipt.getString("sourceCommit"));
     assertEquals("PASS", receipt.getString("packagingStatus"));
@@ -43,8 +45,13 @@ public class MoveFocusNativeAcceptanceIT {
     String engineHash = sha256(engine);
     assertEquals(engineHash, receipt.getJSONObject("executable").getString("sha256"));
     assertTrue(Files.isRegularFile(model));
-    Path marker = DesktopProbeProcess.run(MoveFocusNativeAcceptanceIT.class, "native-focus",
-        List.of(), List.of(engine.toString(), model.toString(), engineHash, sha256(model)), 240);
+    Path marker =
+        DesktopProbeProcess.run(
+            MoveFocusNativeAcceptanceIT.class,
+            "native-focus",
+            List.of(),
+            List.of(engine.toString(), model.toString(), engineHash, sha256(model)),
+            240);
     JSONObject result = new JSONObject(Files.readString(marker));
     assertEquals("PASS", result.getString("status"));
     assertEquals(engineHash, result.getString("engineSha256"));
@@ -72,7 +79,8 @@ public class MoveFocusNativeAcceptanceIT {
     task.get(15, TimeUnit.SECONDS);
   }
 
-  private static void await(BooleanSupplier condition, int seconds, String detail) throws Exception {
+  private static void await(BooleanSupplier condition, int seconds, String detail)
+      throws Exception {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
     while (System.nanoTime() < deadline) {
       if (condition.getAsBoolean()) return;
@@ -92,70 +100,136 @@ public class MoveFocusNativeAcceptanceIT {
   }
 
   private static void screenshot(Path output, String name) throws Exception {
-    ImageIO.write(new Robot().createScreenCapture(Lizzie.frame.getBounds()), "png",
+    ImageIO.write(
+        new Robot().createScreenCapture(Lizzie.frame.getBounds()),
+        "png",
         output.resolveSibling(name + ".png").toFile());
   }
 
   public static void main(String[] args) throws Exception {
-    if (args.length != 6) throw new IllegalArgumentException("engine, model, hashes, work, result required");
+    if (args.length != 6)
+      throw new IllegalArgumentException("engine, model, hashes, work, result required");
     Path engine = Path.of(args[0]);
     Path model = Path.of(args[1]);
     Path work = Path.of(args[4]);
     Path output = Path.of(args[5]);
-    JSONObject result = new JSONObject().put("status", "FAIL").put("sourceCommit", SOURCE)
-        .put("engineSha256", args[2]).put("modelSha256", args[3]);
+    JSONObject result =
+        new JSONObject()
+            .put("status", "FAIL")
+            .put("sourceCommit", SOURCE)
+            .put("engineSha256", args[2])
+            .put("modelSha256", args[3]);
     int exit = 1;
     try {
       assertEquals(args[2], sha256(engine));
       assertEquals(args[3], sha256(model));
       System.setProperty("lizzie.work.dir", work.toString());
       Path config = work.resolve("gtp.cfg");
-      Files.writeString(config, "rules = chinese\nnumSearchThreads = 2\nnnMaxBatchSize = 2\nponderingEnabled = false\nlogToStderr = true\nlogAllGTPCommunication = true\nlogSearchInfo = true\n");
+      Files.writeString(
+          config,
+          "rules = chinese\nnumSearchThreads = 2\nnnMaxBatchSize = 2\nponderingEnabled = false\nlogToStderr = true\nlogAllGTPCommunication = true\nlogSearchInfo = true\n");
       String command = quote(engine) + " gtp -model " + quote(model) + " -config " + quote(config);
-      JSONObject entry = new JSONObject().put("command", command).put("name", "Same-tree acceptance")
-          .put("isDefault", true).put("width", 19).put("height", 19).put("komi", 7.5);
-      JSONObject ui = new JSONObject().put("autoload-default", true).put("first-time-load", false)
-          .put("use-language", 1).put("auto-quick-analyze-on-load", false)
-          .put("quick-analysis-lightweight-model-enabled", false)
-          .put("tracking-analysis-max-visits", 1000000).put("confirm-exit", false);
-      Files.writeString(work.resolve("config.txt"), new JSONObject()
-          .put("leelaz", new JSONObject().put("engine-settings-list", new JSONArray().put(entry)))
-          .put("ui", ui).toString(2));
+      JSONObject entry =
+          new JSONObject()
+              .put("command", command)
+              .put("name", "Same-tree acceptance")
+              .put("isDefault", true)
+              .put("width", 19)
+              .put("height", 19)
+              .put("komi", 7.5);
+      JSONObject ui =
+          new JSONObject()
+              .put("autoload-default", true)
+              .put("first-time-load", false)
+              .put("use-language", 1)
+              .put("auto-quick-analyze-on-load", false)
+              .put("quick-analysis-lightweight-model-enabled", false)
+              .put("tracking-analysis-max-visits", 1000000)
+              .put("confirm-exit", false);
+      Files.writeString(
+          work.resolve("config.txt"),
+          new JSONObject()
+              .put(
+                  "leelaz",
+                  new JSONObject().put("engine-settings-list", new JSONArray().put(entry)))
+              .put("ui", ui)
+              .toString(2));
       Path sgf = work.resolve("game.sgf");
       Files.writeString(sgf, "(;FF[4]GM[1]SZ[19]KM[7.5];B[dd];W[pd])");
       phase(output, result, "startup");
       Lizzie.main(new String[0]);
-      await(() -> Lizzie.frame != null && Lizzie.frame.isShowing() && Lizzie.leelaz != null
-          && Lizzie.leelaz.isLoaded(), 120, "production startup");
-      await(() -> Lizzie.leelaz.moveFocusCapability() == Leelaz.MoveFocusCapability.SUPPORTED,
-          30, "real focus capability");
+      await(
+          () ->
+              Lizzie.frame != null
+                  && Lizzie.frame.isShowing()
+                  && Lizzie.leelaz != null
+                  && Lizzie.leelaz.isLoaded(),
+          120,
+          "production startup");
+      await(
+          () -> Lizzie.leelaz.moveFocusCapability() == Leelaz.MoveFocusCapability.SUPPORTED,
+          30,
+          "real focus capability");
       phase(output, result, "load-game");
       edt(() -> assertTrue(Lizzie.frame.loadFile(sgf.toFile(), false, true)));
-      await(() -> Lizzie.frame.canStartTrackingAnalysis() && Lizzie.leelaz.isPondering()
-          && Lizzie.frame.getDisplayNode().getData().rootVisits > 0, 30, "ordinary result");
+      await(
+          () ->
+              Lizzie.frame.canStartTrackingAnalysis()
+                  && Lizzie.leelaz.isPondering()
+                  && Lizzie.frame.getDisplayNode().getData().rootVisits > 0,
+          30,
+          "ordinary result");
       phase(output, result, "single-point");
-      edt(() -> assertEquals(TrackingAnalysisController.AddResult.ADDED, Lizzie.frame.addTrackingPoint("Q4")));
-      await(() -> Lizzie.frame.trackingDisplaySnapshot().visits().getOrDefault("Q4", 0) > 0, 20, "Q4 visits");
+      edt(
+          () ->
+              assertEquals(
+                  TrackingAnalysisController.AddResult.ADDED, Lizzie.frame.addTrackingPoint("Q4")));
+      await(
+          () -> Lizzie.frame.trackingDisplaySnapshot().visits().getOrDefault("Q4", 0) > 0,
+          20,
+          "Q4 visits");
       phase(output, result, "multiple-points");
-      edt(() -> assertEquals(TrackingAnalysisController.AddResult.ADDED, Lizzie.frame.addTrackingPoint("D16")));
-      await(() -> Lizzie.frame.trackingDisplaySnapshot().visits().getOrDefault("D16", 0) > 0, 20, "D16 visits");
+      edt(
+          () ->
+              assertEquals(
+                  TrackingAnalysisController.AddResult.ADDED,
+                  Lizzie.frame.addTrackingPoint("D16")));
+      await(
+          () -> Lizzie.frame.trackingDisplaySnapshot().visits().getOrDefault("D16", 0) > 0,
+          20,
+          "D16 visits");
       assertEquals(2, Lizzie.frame.trackingDisplaySnapshot().selectedPoints().size());
       screenshot(output, "multiple-points");
       phase(output, result, "remove-clear");
       edt(() -> assertTrue(Lizzie.frame.removeTrackingPoint("Q4")));
       assertTrue(!Lizzie.frame.isTrackingPoint("Q4") && Lizzie.frame.isTrackingPoint("D16"));
       edt(() -> Lizzie.frame.clearTrackingPoints());
-      await(() -> !Lizzie.frame.hasTrackingPoints()
-          && !Lizzie.frame.trackingDisplaySnapshot().cancellationPending()
-          && Lizzie.leelaz.isPondering(), 20, "clear settled");
+      await(
+          () ->
+              !Lizzie.frame.hasTrackingPoints()
+                  && !Lizzie.frame.trackingDisplaySnapshot().cancellationPending()
+                  && Lizzie.leelaz.isPondering(),
+          20,
+          "clear settled");
       phase(output, result, "pause-resume");
       edt(() -> Lizzie.frame.togglePonderMannul());
       await(() -> Lizzie.frame.isUserAnalysisPaused() && !Lizzie.leelaz.isPondering(), 20, "pause");
       edt(() -> Lizzie.frame.togglePonderMannul());
-      await(() -> !Lizzie.frame.isUserAnalysisPaused() && Lizzie.leelaz.isPondering()
-          && Lizzie.frame.canStartTrackingAnalysis(), 20, "resume");
-      edt(() -> assertEquals(TrackingAnalysisController.AddResult.ADDED, Lizzie.frame.addTrackingPoint("Q4")));
-      await(() -> Lizzie.frame.trackingDisplaySnapshot().visits().getOrDefault("Q4", 0) > 0, 20, "fresh visits");
+      await(
+          () ->
+              !Lizzie.frame.isUserAnalysisPaused()
+                  && Lizzie.leelaz.isPondering()
+                  && Lizzie.frame.canStartTrackingAnalysis(),
+          20,
+          "resume");
+      edt(
+          () ->
+              assertEquals(
+                  TrackingAnalysisController.AddResult.ADDED, Lizzie.frame.addTrackingPoint("Q4")));
+      await(
+          () -> Lizzie.frame.trackingDisplaySnapshot().visits().getOrDefault("Q4", 0) > 0,
+          20,
+          "fresh visits");
       phase(output, result, "save-results");
       FutureTask<String> save = new FutureTask<>(() -> SGFParser.saveToString(false));
       SwingUtilities.invokeLater(save);

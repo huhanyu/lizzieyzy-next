@@ -59,10 +59,13 @@ public final class HumanSlGameController {
   private volatile Leelaz temporaryLiveAnalysisEngine;
   private volatile ForegroundAnalysisPause.RestoreLease foregroundAnalysisRestoreLease =
       ForegroundAnalysisPause.RestoreLease.inactive();
+
   /** Stops coaching work immediately without claiming that resource teardown has completed. */
   private volatile boolean finished;
+
   /** Published only after close, exact replay, foreground restore, and UI cleanup all succeed. */
   private volatile boolean teardownComplete;
+
   private volatile boolean aiThinking;
   private volatile boolean aiFailed;
   private volatile boolean exitInProgress;
@@ -131,9 +134,7 @@ public final class HumanSlGameController {
       } finally {
         LizzieFrame.curFile = currentFile;
         LizzieFrame.fileNameTitle = fileNameTitle;
-        if (readBoard != null
-            && Lizzie.frame != null
-            && Lizzie.frame.readBoard == readBoard) {
+        if (readBoard != null && Lizzie.frame != null && Lizzie.frame.readBoard == readBoard) {
           readBoard.firstSync = readBoardFirstSync;
         }
         if (foregroundEngine != null && Lizzie.leelaz == foregroundEngine) {
@@ -217,10 +218,7 @@ public final class HumanSlGameController {
       BooleanSupplier resync,
       Runnable successCompletionOverride) {
     setExitLifecyclePreparationForTesting(
-        backgroundDispatcher,
-        completionDispatcher,
-        () -> resync,
-        successCompletionOverride);
+        backgroundDispatcher, completionDispatcher, () -> resync, successCompletionOverride);
   }
 
   void setExitLifecyclePreparationForTesting(
@@ -309,9 +307,7 @@ public final class HumanSlGameController {
       ForegroundAnalysisPause.RestoreLease restoreLease, boolean externalFailureCleanup) {
     failedStartPrimaryResync = null;
     foregroundAnalysisRestoreLease =
-        restoreLease == null
-            ? ForegroundAnalysisPause.RestoreLease.inactive()
-            : restoreLease;
+        restoreLease == null ? ForegroundAnalysisPause.RestoreLease.inactive() : restoreLease;
     HumanSlTrainingSession.State previousSessionState = trainingSession.state();
     StartBoardSnapshot boardSnapshot = null;
     try {
@@ -767,8 +763,8 @@ public final class HumanSlGameController {
   }
 
   /**
-   * Stops AI Coach and runs {@code continuation} only after the teardown transaction succeeds.
-   * The first caller owns the same retryable teardown; later clicks cannot start additional modes
+   * Stops AI Coach and runs {@code continuation} only after the teardown transaction succeeds. The
+   * first caller owns the same retryable teardown; later clicks cannot start additional modes
    * beside it or beside a still-running companion process.
    */
   public void abortAndThen(Runnable continuation) {
@@ -822,9 +818,7 @@ public final class HumanSlGameController {
     BooleanSupplier immutableResync = preparedResync;
     Throwable immutablePreparationFailure = preparationFailure;
     NewHumanSlGameDialog.closeRunnerBeforeCompletion(
-        () ->
-            closeCompanionThenResyncPrimary(
-                immutableResync, immutablePreparationFailure),
+        () -> closeCompanionThenResyncPrimary(immutableResync, immutablePreparationFailure),
         null,
         this::completeExitLifecycle,
         task -> exitBackgroundDispatcher.accept(task),
@@ -878,8 +872,7 @@ public final class HumanSlGameController {
       return () -> false;
     }
     PrimaryEngineResyncAttempt first = new FrozenPrimaryEngineResyncAttempt(frozen.get());
-    return () ->
-        executeStablePrimaryEngineResync(first, PRIMARY_RESYNC_STABILITY_ATTEMPTS);
+    return () -> executeStablePrimaryEngineResync(first, PRIMARY_RESYNC_STABILITY_ATTEMPTS);
   }
 
   interface PrimaryEngineResyncAttempt {
@@ -1330,8 +1323,7 @@ public final class HumanSlGameController {
   }
 
   private String rankLabel(int rank, boolean danRank) {
-    String key =
-        danRank ? "HumanSlTraining.rank.danValue" : "HumanSlTraining.rank.kyuValue";
+    String key = danRank ? "HumanSlTraining.rank.danValue" : "HumanSlTraining.rank.kyuValue";
     String fallback = danRank ? "{0} dan" : "{0} kyu";
     return MessageFormat.format(text(key, fallback), rank);
   }
@@ -1346,11 +1338,7 @@ public final class HumanSlGameController {
   }
 
   private static HumanSlTrainingConfig legacyConfig(
-      String profile,
-      boolean humanIsBlack,
-      int handicap,
-      double komi,
-      int moveTimeoutSeconds) {
+      String profile, boolean humanIsBlack, int handicap, double komi, int moveTimeoutSeconds) {
     String normalized = profile == null ? "rank_3k" : profile.toLowerCase(java.util.Locale.ROOT);
     boolean dan = normalized.endsWith("d");
     int rank = 3;
@@ -1373,5 +1361,4 @@ public final class HumanSlGameController {
         .komi(komi)
         .build();
   }
-
 }

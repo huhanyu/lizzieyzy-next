@@ -49,7 +49,8 @@ public class HumanSlTensorRtCompanionLaunchTest {
           layout + ": component checks must agree with the companion launch preflight");
       assertFalse(runner.start(), layout.toString());
       assertNotNull(launched.get(), layout + ": " + runner.getUnavailableReason());
-      assertEquals(fixture.companion.toString(), launched.get().command().get(0), layout.toString());
+      assertEquals(
+          fixture.companion.toString(), launched.get().command().get(0), layout.toString());
       assertNull(runner.getTensorRtRepairContext());
     }
   }

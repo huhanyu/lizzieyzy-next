@@ -25,7 +25,11 @@ class KataGoAssetCatalogTest {
           .getJSONObject(id)
           .put(
               "assetName",
-              "katago-source-" + root.getString("katagoSourceCommit").substring(0, 12) + "-" + id + ".zip");
+              "katago-source-"
+                  + root.getString("katagoSourceCommit").substring(0, 12)
+                  + "-"
+                  + id
+                  + ".zip");
     }
     return root;
   }
@@ -36,8 +40,10 @@ class KataGoAssetCatalogTest {
     assertTrue(
         catalog
             .assetDownloadUrl(catalog.asset("windows-tensorrt"))
-            .startsWith("https://github.com/wimi321/lizzieyzy-next/releases/download/next-2026-09-17.1/"));
-    assertTrue(catalog.modelDownloadUrl(catalog.model("b10-balanced")).contains("lightvector/KataGo"));
+            .startsWith(
+                "https://github.com/wimi321/lizzieyzy-next/releases/download/next-2026-09-17.1/"));
+    assertTrue(
+        catalog.modelDownloadUrl(catalog.model("b10-balanced")).contains("lightvector/KataGo"));
   }
 
   @Test
@@ -77,8 +83,7 @@ class KataGoAssetCatalogTest {
     assertEquals("kata1-tf3-b11c768-s12002M-d6304M.bin.gz", model.fileName());
     assertEquals(262_017_809L, model.sizeBytes());
     assertEquals(
-        "4a6312e80faadee7b7dd28689a2e87a1efb4640c10132f16290da7a17b4c6d9e",
-        model.sha256());
+        "4a6312e80faadee7b7dd28689a2e87a1efb4640c10132f16290da7a17b4c6d9e", model.sha256());
     assertTrue(model.bundled());
     assertFalse(catalog.model("b10-balanced").bundled());
     assertEquals("2026-09-25", model.publishedAt());
@@ -115,10 +120,7 @@ class KataGoAssetCatalogTest {
     assertThrows(IllegalStateException.class, () -> new KataGoAssetCatalog(missing));
 
     JSONObject widened = sourceCatalogJson();
-    widened
-        .getJSONObject("assets")
-        .getJSONObject("windows-cpu")
-        .put("zlibLinkage", "static");
+    widened.getJSONObject("assets").getJSONObject("windows-cpu").put("zlibLinkage", "static");
     assertThrows(IllegalStateException.class, () -> new KataGoAssetCatalog(widened));
   }
 

@@ -144,8 +144,7 @@ public class ConfigBundledKataGoDefaultsTest {
     Path currentRoot = Files.createDirectories(parent.resolve("current"));
     Files.writeString(currentRoot.resolve(".lizzie-portable"), "portable");
     Path workDir =
-        Config.prepareWindowsPortableWorkDirWithSourcesForTests(
-            currentRoot, olderData, newerData);
+        Config.prepareWindowsPortableWorkDirWithSourcesForTests(currentRoot, olderData, newerData);
 
     JSONObject migrated = new JSONObject(Files.readString(workDir.resolve("config.txt")));
     assertEquals(
@@ -155,8 +154,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .getJSONObject(RemoteComputeConfig.CONFIG_KEY)
             .getString("zhizi-identifier"));
     assertFalse(Files.exists(workDir.resolve("secure-credentials")));
-    List<Path> legacyCredentials =
-        Config.windowsPortableCredentialDirectoriesForTests(currentRoot);
+    List<Path> legacyCredentials = Config.windowsPortableCredentialDirectoriesForTests(currentRoot);
     assertTrue(legacyCredentials.contains(olderCredentials.toAbsolutePath().normalize()));
     assertTrue(legacyCredentials.contains(newerCredentials.toAbsolutePath().normalize()));
   }
@@ -174,8 +172,7 @@ public class ConfigBundledKataGoDefaultsTest {
     Config.prepareWindowsPortableWorkDirWithSourcesForTests(currentRoot, previousData);
 
     assertEquals(
-        "{broken-json",
-        Files.readString(currentData.resolve("config.txt.unreadable-backup")));
+        "{broken-json", Files.readString(currentData.resolve("config.txt.unreadable-backup")));
     JSONObject recovered = new JSONObject(Files.readString(currentData.resolve("config.txt")));
     assertEquals(
         2, recovered.getJSONObject("leelaz").getJSONArray("engine-settings-list").length());
@@ -222,8 +219,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .put("ui", new JSONObject().put("show-status", true))
             .put("leelaz", new JSONObject().put("default-added", true));
 
-    JSONObject merged =
-        (JSONObject) method.invoke(config, defaults, configFile.toString(), false);
+    JSONObject merged = (JSONObject) method.invoke(config, defaults, configFile.toString(), false);
 
     assertFalse(merged.getJSONObject("ui").getBoolean("first-time-load"));
     assertTrue(merged.getJSONObject("ui").getBoolean("show-status"));
@@ -932,7 +928,6 @@ public class ConfigBundledKataGoDefaultsTest {
     assertTrue(ui.getBoolean("autoload-empty"));
   }
 
-
   @Test
   void customCommandInDefaultSlotSurvivesRestart() throws Exception {
     Path tempRoot = Files.createTempDirectory("lizzie-bundled-katago-custom");
@@ -1080,8 +1075,7 @@ public class ConfigBundledKataGoDefaultsTest {
 
     assertEquals(0, ui.getInt("default-engine"));
     assertEquals(
-        command,
-        leelaz.getJSONArray("engine-settings-list").getJSONObject(0).getString("command"));
+        command, leelaz.getJSONArray("engine-settings-list").getJSONObject(0).getString("command"));
     assertEquals(command, ui.getString("analysis-engine-command"));
   }
 
@@ -1208,8 +1202,7 @@ public class ConfigBundledKataGoDefaultsTest {
             .put("name", "KataGo Auto Setup")
             .put("command", command)
             .put("isDefault", true);
-    JSONObject leelaz =
-        new JSONObject().put("engine-settings-list", new JSONArray().put(engine));
+    JSONObject leelaz = new JSONObject().put("engine-settings-list", new JSONArray().put(engine));
     config.config = new JSONObject().put("ui", ui).put("leelaz", leelaz);
 
     withUserDir(root, () -> applyBundledKataGoDefaults(config));

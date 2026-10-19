@@ -12,8 +12,12 @@ public final class KataGoAnalysisPayload {
   public final double rootScoreMean;
   public final List<Double> ownership;
 
-  private KataGoAnalysisPayload(List<MoveData> moves, int rootVisits,
-      double rootWinrate, double rootScoreMean, List<Double> ownership) {
+  private KataGoAnalysisPayload(
+      List<MoveData> moves,
+      int rootVisits,
+      double rootWinrate,
+      double rootScoreMean,
+      List<Double> ownership) {
     this.moves = moves;
     this.rootVisits = rootVisits;
     this.rootWinrate = rootWinrate;

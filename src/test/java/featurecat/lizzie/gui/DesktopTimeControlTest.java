@@ -83,8 +83,7 @@ class DesktopTimeControlTest {
     Config config =
         ConfigTestHelper.createForTests(Files.createTempDirectory("lizzie-time-rejected"));
     config.uiConfig = new JSONObject();
-    RecordingLeelaz websocket =
-        new RecordingLeelaz(RemoteComputeConfig.COMMAND_CUSTOM_WS);
+    RecordingLeelaz websocket = new RecordingLeelaz(RemoteComputeConfig.COMMAND_CUSTOM_WS);
     AtomicInteger warnings = new AtomicInteger();
 
     boolean accepted =
@@ -155,8 +154,7 @@ class DesktopTimeControlTest {
   @Test
   void engineOwnedModeWinsOverOtherHumanClockFlags() {
     assertEquals(
-        DesktopTimeControl.Mode.ENGINE_OWNED,
-        DesktopTimeControl.selectedMode(true, true, true));
+        DesktopTimeControl.Mode.ENGINE_OWNED, DesktopTimeControl.selectedMode(true, true, true));
     assertEquals(
         DesktopTimeControl.Mode.FIXED, DesktopTimeControl.selectedMode(false, false, false));
   }
@@ -240,9 +238,7 @@ class DesktopTimeControlTest {
         DesktopTimeControl.loadEngineGameSideMode(config, false));
 
     DesktopTimeControl.commitEngineGameSelection(
-        config,
-        DesktopTimeControl.SideMode.ENGINE_OWNED,
-        DesktopTimeControl.SideMode.FIXED);
+        config, DesktopTimeControl.SideMode.ENGINE_OWNED, DesktopTimeControl.SideMode.FIXED);
 
     assertEquals(
         DesktopTimeControl.SideMode.ENGINE_OWNED,
@@ -284,8 +280,7 @@ class DesktopTimeControlTest {
 
     config.pkAdvanceTimeSettings = false;
     assertEquals(
-        DesktopTimeControl.SideMode.FIXED,
-        DesktopTimeControl.loadEngineGameSideMode(config, true));
+        DesktopTimeControl.SideMode.FIXED, DesktopTimeControl.loadEngineGameSideMode(config, true));
   }
 
   @Test
@@ -333,8 +328,7 @@ class DesktopTimeControlTest {
         -1,
         DesktopTimeControl.fixedSecondsForToolbar(DesktopTimeControl.SideMode.FIXED, false, 10));
     assertEquals(
-        10,
-        DesktopTimeControl.fixedSecondsForToolbar(DesktopTimeControl.SideMode.FIXED, true, 10));
+        10, DesktopTimeControl.fixedSecondsForToolbar(DesktopTimeControl.SideMode.FIXED, true, 10));
   }
 
   @Test
@@ -342,10 +336,7 @@ class DesktopTimeControlTest {
     RecordingLeelaz white = new RecordingLeelaz("katago gtp");
 
     DesktopTimeControl.applyEngineGameTime(
-        white,
-        DesktopTimeControl.SideMode.RAW_ADVANCED,
-        10,
-        "time_settings 30 5 1");
+        white, DesktopTimeControl.SideMode.RAW_ADVANCED, 10, "time_settings 30 5 1");
 
     assertEquals(List.of("time_settings 30 5 1"), white.commands);
   }
@@ -355,10 +346,7 @@ class DesktopTimeControlTest {
     RecordingLeelaz white = new RecordingLeelaz("katago gtp");
 
     DesktopTimeControl.applyEngineGameTime(
-        white,
-        DesktopTimeControl.SideMode.RAW_ADVANCED,
-        10,
-        "time_settings 30 5 1");
+        white, DesktopTimeControl.SideMode.RAW_ADVANCED, 10, "time_settings 30 5 1");
 
     assertEquals(List.of("time_settings 30 5 1"), white.commands);
   }
@@ -372,9 +360,6 @@ class DesktopTimeControlTest {
 
     assertEquals(List.of(), black.commands);
   }
-
-
-
 
   private static final class RecordingLeelaz extends Leelaz {
     private final List<String> commands = new ArrayList<>();

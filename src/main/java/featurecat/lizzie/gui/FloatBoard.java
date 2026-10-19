@@ -542,7 +542,6 @@ public class FloatBoard extends JDialog {
     super.dispose();
   }
 
-
   private void paintMianPanel(Graphics g) {
     if (posWidth <= 40 || posHeight <= 40) return;
     cachedImage = new BufferedImage(posWidth, posHeight, TYPE_INT_ARGB);
@@ -658,7 +657,6 @@ public class FloatBoard extends JDialog {
         Board.convertNameToCoordinates(
             Lizzie.board.getHistory().getData().bestMoves.get(index).coordinate);
   }
-
 
   public boolean isMouseOverSuggestions() {
     return boardRenderer.hasSelectedVariation();

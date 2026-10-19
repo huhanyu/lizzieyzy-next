@@ -88,7 +88,8 @@ public final class MatchRulesTexts {
         + bundle.getString("MatchRules.sgf.end");
   }
 
-  public static String replaceSgfComment(String comment, MatchRulesSnapshot snapshot, ResourceBundle bundle) {
+  public static String replaceSgfComment(
+      String comment, MatchRulesSnapshot snapshot, ResourceBundle bundle) {
     Objects.requireNonNull(bundle, "bundle");
     String section = sgfComment(snapshot, bundle);
     if (section.isEmpty()) {
@@ -159,14 +160,14 @@ public final class MatchRulesTexts {
       text.append('\n')
           .append(
               MessageFormat.format(
-                  bundle.getString("MatchRules.details.actual"), namedFields(side.observed(), bundle)));
+                  bundle.getString("MatchRules.details.actual"),
+                  namedFields(side.observed(), bundle)));
       return;
     }
     text.append('\n')
         .append(
             MessageFormat.format(
-                bundle.getString("MatchRules.details.unavailable"),
-                reasonOrStatus(side, bundle)));
+                bundle.getString("MatchRules.details.unavailable"), reasonOrStatus(side, bundle)));
     if (failedOperation(side) && side.observed() != null) {
       text.append('\n')
           .append(

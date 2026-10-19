@@ -197,8 +197,7 @@ class LoggingRuntimeTest {
     assertTrue(read("logs/app.log").contains("app-while-trace-blocked"));
     assertTrue(runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow().droppedCount() > 0);
     assertEquals(
-        "queue saturation",
-        runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow().reason());
+        "queue saturation", runtime.status().stream(LogStream.ENGINE_TRACE).orElseThrow().reason());
   }
 
   @Test
@@ -223,12 +222,7 @@ class LoggingRuntimeTest {
       assertTrue(inFlight <= 1, "inFlight=" + inFlight);
       assertTrue(
           bookkeeping <= queued + inFlight,
-          "bookkeeping="
-              + bookkeeping
-              + " queued="
-              + queued
-              + " inFlight="
-              + inFlight);
+          "bookkeeping=" + bookkeeping + " queued=" + queued + " inFlight=" + inFlight);
     } finally {
       gate.countDown();
     }
@@ -606,7 +600,8 @@ class LoggingRuntimeTest {
     long started = System.nanoTime();
     ShutdownReport report = runtime.shutdown();
     long elapsed = System.nanoTime() - started;
-    assertEquals(1L, report.unwritten(LogStream.APP), "unwritten=" + report.unwritten(LogStream.APP));
+    assertEquals(
+        1L, report.unwritten(LogStream.APP), "unwritten=" + report.unwritten(LogStream.APP));
     assertTrue(elapsed <= LoggingLimits.SHUTDOWN_BUDGET_NANOS + TimeUnit.MILLISECONDS.toNanos(100));
     assertFalse(runtime.isWorkerAliveForTests(LogStream.APP));
     Path appLog = tempDir.resolve("logs/app.log");
@@ -684,7 +679,9 @@ class LoggingRuntimeTest {
     runtime.awaitIdle();
     LoggingStatus.StreamStatus app = runtime.status().stream(LogStream.APP).orElseThrow();
     assertNotNull(app.reason());
-    assertTrue(app.reason().toLowerCase().contains("encoder") || app.reason().contains("redaction"), app.reason());
+    assertTrue(
+        app.reason().toLowerCase().contains("encoder") || app.reason().contains("redaction"),
+        app.reason());
     assertFalse(app.recovered());
     assertFalse(runtime.status().persistenceEnabled());
     String scanned = scanLogFiles();

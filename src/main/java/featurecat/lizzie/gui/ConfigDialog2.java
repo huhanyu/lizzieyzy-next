@@ -463,7 +463,6 @@ public class ConfigDialog2 extends JDialog {
     nf.setGroupingUsed(false);
     ButtonGroup showMoveGroup = new ButtonGroup();
 
-
     uiTab = new SettingsContentPanel(SettingsContentPanel.Mode.UI);
     tabbedPane.addTab(
         configText("ConfigDialog2.modern.nav.display", "棋盘与显示"),
@@ -627,11 +626,13 @@ public class ConfigDialog2 extends JDialog {
     uiTab.add(chkShowVariationGraph);
 
     JLabel lblShowComment = new JLabel(resourceBundle.getString("LizzieConfig.title.showComment"));
-    lblShowComment.setToolTipText(resourceBundle.getString("LizzieConfig.title.showComment.tooltip"));
+    lblShowComment.setToolTipText(
+        resourceBundle.getString("LizzieConfig.title.showComment.tooltip"));
     lblShowComment.setBounds(312, 78, 214, 16);
     uiTab.add(lblShowComment);
     chkShowComment = new JCheckBox("");
-    chkShowComment.setToolTipText(resourceBundle.getString("LizzieConfig.title.showComment.tooltip"));
+    chkShowComment.setToolTipText(
+        resourceBundle.getString("LizzieConfig.title.showComment.tooltip"));
     chkShowComment.addChangeListener(
         new ChangeListener() {
           public void stateChanged(ChangeEvent e) {
@@ -769,7 +770,6 @@ public class ConfigDialog2 extends JDialog {
     chkShowBlunderBar = new JCheckBox("");
     chkShowBlunderBar.setBounds(837, 233, 26, 23);
     uiTab.add(chkShowBlunderBar);
-
 
     JLabel lblShowWhiteSuggestionWhite =
         new JLabel(
@@ -1491,8 +1491,7 @@ public class ConfigDialog2 extends JDialog {
     } else {
       rdoRightClickBack.setSelected(true);
     }
-    comboShowMoveRect =
-        comboFromRadios(rdoShowMoveRect, rdoShowMoveRectOnPlay, rdoNoShowMoveRect);
+    comboShowMoveRect = comboFromRadios(rdoShowMoveRect, rdoShowMoveRectOnPlay, rdoNoShowMoveRect);
     comboRightClick = comboFromRadios(rdoRightClickMenu, rdoRightClickBack);
 
     JLabel lblKifuLoadLast =
@@ -1515,7 +1514,6 @@ public class ConfigDialog2 extends JDialog {
     chkAutoQuickAnalyzeOnLoad.setBounds(532, 758, 26, 23);
     uiTab.add(chkAutoQuickAnalyzeOnLoad);
 
-
     JLabel lblTrackingMaxVisits =
         new JLabel(resourceBundle.getString("LizzieConfig.lblTrackingMaxVisits"));
     lblTrackingMaxVisits.setBounds(10, 727, 290, 15);
@@ -1523,8 +1521,7 @@ public class ConfigDialog2 extends JDialog {
 
     txtTrackingAnalysisMaxVisits = new JTextField();
     txtTrackingAnalysisMaxVisits.setBounds(312, 724, 60, 23);
-    txtTrackingAnalysisMaxVisits.setText(
-        String.valueOf(Lizzie.config.trackingAnalysisMaxVisits));
+    txtTrackingAnalysisMaxVisits.setText(String.valueOf(Lizzie.config.trackingAnalysisMaxVisits));
     uiTab.add(txtTrackingAnalysisMaxVisits);
 
     chkShowTrackingPointOutline = new JCheckBox();
@@ -1968,7 +1965,6 @@ public class ConfigDialog2 extends JDialog {
         && Lizzie.frame.analysisFrame.isVisible()) chkShowIndependentMoveList.setSelected(true);
     else chkShowIndependentMoveList.setSelected(false);
 
-
     if (Lizzie.config.loadSgfLast) {
       chkSgfLoadLast.setSelected(true);
     }
@@ -2096,8 +2092,7 @@ public class ConfigDialog2 extends JDialog {
     if (pendingSettingTargetId == null || disposed) return;
     String targetId = pendingSettingTargetId;
     long generation = settingsNavigationGeneration;
-    SwingUtilities.invokeLater(
-        () -> applySettingNavigation(targetId, generation, layoutSettled));
+    SwingUtilities.invokeLater(() -> applySettingNavigation(targetId, generation, layoutSettled));
   }
 
   private void applySettingNavigation(String targetId, long generation, boolean layoutSettled) {
@@ -2247,7 +2242,8 @@ public class ConfigDialog2 extends JDialog {
     for (JComponent row : rows) {
       Object id = row.getClientProperty(CLIENT_SETTINGS_TARGET_ID);
       if (!(id instanceof String) || !remaining.remove(id)) {
-        throw new IllegalStateException("Unknown, duplicate or unbound setting row in " + section + ": " + id);
+        throw new IllegalStateException(
+            "Unknown, duplicate or unbound setting row in " + section + ": " + id);
       }
     }
     if (!remaining.isEmpty()) {
@@ -2614,22 +2610,19 @@ public class ConfigDialog2 extends JDialog {
         createUserAboutCard(
             configText("ConfigDialog2.modern.about.kifuTitle", "找棋谱更省心"),
             configText(
-                "ConfigDialog2.modern.about.kifuDescription",
-                "支持野狐、腾讯棋谱等常用入口，少复制、少切窗口，打开后直接复盘。"),
+                "ConfigDialog2.modern.about.kifuDescription", "支持野狐、腾讯棋谱等常用入口，少复制、少切窗口，打开后直接复盘。"),
             "/assets/ui/about_card_kifu.png"));
     cards.add(
         createUserAboutCard(
             configText("ConfigDialog2.modern.about.katagoTitle", "KataGo 更好上手"),
             configText(
-                "ConfigDialog2.modern.about.katagoDescription",
-                "一键设置整理权重、引擎和测速，尽量把复杂配置变成看得懂的流程。"),
+                "ConfigDialog2.modern.about.katagoDescription", "一键设置整理权重、引擎和测速，尽量把复杂配置变成看得懂的流程。"),
             "/assets/ui/about_card_katago.png"));
     cards.add(
         createUserAboutCard(
             configText("ConfigDialog2.modern.about.reviewTitle", "复盘更专注"),
             configText(
-                "ConfigDialog2.modern.about.reviewDescription",
-                "保留胜率曲线、候选点和整局快速分析，把重点放在棋局本身。"),
+                "ConfigDialog2.modern.about.reviewDescription", "保留胜率曲线、候选点和整局快速分析，把重点放在棋局本身。"),
             "/assets/ui/about_card_review.png"));
     page.add(cards, BorderLayout.CENTER);
     page.add(createUnifiedAboutCommunity(), BorderLayout.SOUTH);
@@ -3386,7 +3379,8 @@ public class ConfigDialog2 extends JDialog {
     return card;
   }
 
-  private void addToggleRow(JPanel card, String targetId, String title, String subtitle, JCheckBox toggle) {
+  private void addToggleRow(
+      JPanel card, String targetId, String title, String subtitle, JCheckBox toggle) {
     JPanel row = createDesignRow(targetId, title, subtitle);
     AccessibilitySupport.button(toggle, title, subtitle);
     addDesignRowControl(row, prepareDesignSwitch(toggle));
@@ -3395,7 +3389,12 @@ public class ConfigDialog2 extends JDialog {
   }
 
   private void addInputRow(
-      JPanel card, String targetId, String title, String subtitle, JTextField field, String suffixText) {
+      JPanel card,
+      String targetId,
+      String title,
+      String subtitle,
+      JTextField field,
+      String suffixText) {
     JPanel row = createDesignRow(targetId, title, subtitle);
     JPanel input = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
     input.setOpaque(false);
@@ -3451,7 +3450,8 @@ public class ConfigDialog2 extends JDialog {
   private void initNetworkProxyControls() {
     JSONObject ui = Lizzie.config.uiConfig;
     initialNetworkProxyMode =
-        normalizeNetworkProxyMode(ui.optString(NetworkProxy.KEY_PROXY_MODE, NetworkProxy.DEFAULT_MODE));
+        normalizeNetworkProxyMode(
+            ui.optString(NetworkProxy.KEY_PROXY_MODE, NetworkProxy.DEFAULT_MODE));
 
     comboNetworkProxyMode = new JComboBox<>(networkProxyModeLabels());
     setSelectedNetworkProxyMode(initialNetworkProxyMode);
@@ -3507,20 +3507,18 @@ public class ConfigDialog2 extends JDialog {
     proxyMode.add(lblNetworkProxyRestartHint);
     addComponentRow(
         card,
-        "config.proxy.mode", configText("ConfigDialog2.modern.proxy.title", "网络代理"),
-        configText(
-            "ConfigDialog2.modern.proxy.subtitle", "控制程序自身 Java 网络请求使用的代理策略"),
+        "config.proxy.mode",
+        configText("ConfigDialog2.modern.proxy.title", "网络代理"),
+        configText("ConfigDialog2.modern.proxy.subtitle", "控制程序自身 Java 网络请求使用的代理策略"),
         proxyMode);
 
     JPanel manualProxy = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
     manualProxy.setOpaque(false);
-    JLabel hostLabel =
-        proxyFieldLabel(configText("ConfigDialog2.modern.proxy.host", "代理主机"));
+    JLabel hostLabel = proxyFieldLabel(configText("ConfigDialog2.modern.proxy.host", "代理主机"));
     manualProxy.add(hostLabel);
     txtNetworkProxyHost.setPreferredSize(new Dimension(150, 30));
     manualProxy.add(detachComponent(txtNetworkProxyHost));
-    JLabel portLabel =
-        proxyFieldLabel(configText("ConfigDialog2.modern.proxy.port", "代理端口"));
+    JLabel portLabel = proxyFieldLabel(configText("ConfigDialog2.modern.proxy.port", "代理端口"));
     manualProxy.add(portLabel);
     txtNetworkProxyPort.setPreferredSize(new Dimension(70, 30));
     manualProxy.add(detachComponent(txtNetworkProxyPort));
@@ -3528,7 +3526,8 @@ public class ConfigDialog2 extends JDialog {
     AccessibilitySupport.labelFor(portLabel, txtNetworkProxyPort, portLabel.getText());
     addComponentRow(
         card,
-        "config.proxy.manual-address", configText("ConfigDialog2.modern.proxy.manual", "手动代理地址"),
+        "config.proxy.manual-address",
+        configText("ConfigDialog2.modern.proxy.manual", "手动代理地址"),
         "",
         manualProxy);
   }
@@ -3590,9 +3589,7 @@ public class ConfigDialog2 extends JDialog {
       return true;
     }
     if (txtNetworkProxyHost.getText().trim().isEmpty()) {
-      showNetworkProxyWarning(
-          configText(
-              "ConfigDialog2.modern.proxy.hostRequired", "手动代理主机不能为空。"));
+      showNetworkProxyWarning(configText("ConfigDialog2.modern.proxy.hostRequired", "手动代理主机不能为空。"));
       txtNetworkProxyHost.requestFocusInWindow();
       return false;
     }
@@ -3600,8 +3597,7 @@ public class ConfigDialog2 extends JDialog {
       parseNetworkProxyPort();
     } catch (NumberFormatException e) {
       showNetworkProxyWarning(
-          configText(
-              "ConfigDialog2.modern.proxy.invalidPort", "代理端口必须是 1 到 65535 的整数。"));
+          configText("ConfigDialog2.modern.proxy.invalidPort", "代理端口必须是 1 到 65535 的整数。"));
       txtNetworkProxyPort.requestFocusInWindow();
       txtNetworkProxyPort.selectAll();
       return false;
@@ -3916,7 +3912,12 @@ public class ConfigDialog2 extends JDialog {
             rdoStoneIndicatorSolid,
             rdoStoneIndicatorNo));
     addToggleInputRow(
-        colors, "config.theme.comment-node-color", configText("ConfigDialog2.modern.theme.commentNode", "显示评论节点颜色"), configText("ConfigDialog2.modern.theme.commentNodeSub", "开启后使用自定义评论节点颜色"), chkShowCommentNodeColor, lblCommentNodeColor);
+        colors,
+        "config.theme.comment-node-color",
+        configText("ConfigDialog2.modern.theme.commentNode", "显示评论节点颜色"),
+        configText("ConfigDialog2.modern.theme.commentNodeSub", "开启后使用自定义评论节点颜色"),
+        chkShowCommentNodeColor,
+        lblCommentNodeColor);
     content.add(colors);
     content.add(javax.swing.Box.createVerticalStrut(12));
 
@@ -3924,35 +3925,41 @@ public class ConfigDialog2 extends JDialog {
         createDesignSettingsCard(
             configText("ConfigDialog2.modern.trackingAppearance.title", "选点评估关注外框"),
             configText(
-                "ConfigDialog2.modern.trackingAppearance.subtitle",
-                "质量外框随当前普通候选更新；计算进度独立显示。"));
+                "ConfigDialog2.modern.trackingAppearance.subtitle", "质量外框随当前普通候选更新；计算进度独立显示。"));
     addToggleRow(
         trackingAppearance,
-        "config.tracking.outline", configText("ConfigDialog2.modern.trackingAppearance.outline", "显示选点评估关注外框"),
-        configText(
-            "ConfigDialog2.modern.trackingAppearance.outlineSub",
-            "只控制质量外框；不会清除关注或改变分析。"),
+        "config.tracking.outline",
+        configText("ConfigDialog2.modern.trackingAppearance.outline", "显示选点评估关注外框"),
+        configText("ConfigDialog2.modern.trackingAppearance.outlineSub", "只控制质量外框；不会清除关注或改变分析。"),
         chkShowTrackingPointOutline);
     addComponentRow(
         trackingAppearance,
-        "config.tracking.outline-opacity", configText("ConfigDialog2.modern.trackingAppearance.outlineOpacity", "外框不透明度"),
-        configText(
-            "ConfigDialog2.modern.trackingAppearance.outlineOpacitySub",
-            "调整动态质量外框的不透明程度"),
+        "config.tracking.outline-opacity",
+        configText("ConfigDialog2.modern.trackingAppearance.outlineOpacity", "外框不透明度"),
+        configText("ConfigDialog2.modern.trackingAppearance.outlineOpacitySub", "调整动态质量外框的不透明程度"),
         pnlTrackingPointOutlineOpacity);
     content.add(trackingAppearance);
     content.add(javax.swing.Box.createVerticalStrut(12));
 
-    JPanel blunders = createDesignSettingsCard(configText("ConfigDialog2.modern.theme.blunders", "错误节点"), configText("ConfigDialog2.modern.theme.blundersSub", "管理胜率波动阈值和对应颜色。"));
+    JPanel blunders =
+        createDesignSettingsCard(
+            configText("ConfigDialog2.modern.theme.blunders", "错误节点"),
+            configText("ConfigDialog2.modern.theme.blundersSub", "管理胜率波动阈值和对应颜色。"));
     pnlScrollBlunderNodes.setPreferredSize(new Dimension(440, 116));
     addLargeComponentRow(
         blunders,
-        "config.theme.blunder-rules", configText("ConfigDialog2.modern.theme.blunderRules", "错误节点规则"),
+        "config.theme.blunder-rules",
+        configText("ConfigDialog2.modern.theme.blunderRules", "错误节点规则"),
         configText("ConfigDialog2.modern.theme.blunderRulesSub", "添加、删除或重置阈值"),
         rowOf(pnlScrollBlunderNodes, btnAdd, btnRemove, btnReset),
         150);
     addToggleInputRow(
-        blunders, "config.theme.score-blunders", configText("ConfigDialog2.modern.theme.scoreBlunders", "同时考虑胜率与目数"), configText("ConfigDialog2.modern.theme.scoreBlundersSub", "目数剧烈波动也标记为错误节点"), chkUseScoreDiff, txtPercentScoreDiff);
+        blunders,
+        "config.theme.score-blunders",
+        configText("ConfigDialog2.modern.theme.scoreBlunders", "同时考虑胜率与目数"),
+        configText("ConfigDialog2.modern.theme.scoreBlundersSub", "目数剧烈波动也标记为错误节点"),
+        chkUseScoreDiff,
+        txtPercentScoreDiff);
     content.add(blunders);
     validateSettingRows(content, SettingSection.THEME);
 
@@ -3990,7 +3997,8 @@ public class ConfigDialog2 extends JDialog {
     return slot;
   }
 
-  private void addComponentRow(JPanel card, String targetId, String title, String subtitle, Component component) {
+  private void addComponentRow(
+      JPanel card, String targetId, String title, String subtitle, Component component) {
     JPanel row = createDesignRow(targetId, title, subtitle);
     Component detached = detachComponent(component);
     nameInteractiveComponents(detached, title, subtitle);
@@ -4003,7 +4011,8 @@ public class ConfigDialog2 extends JDialog {
     card.add(row);
   }
 
-  private void addComponentRow(JPanel card, String targetId, String title, String subtitle, JPanel componentPanel) {
+  private void addComponentRow(
+      JPanel card, String targetId, String title, String subtitle, JPanel componentPanel) {
     JPanel row = createDesignRow(targetId, title, subtitle);
     nameInteractiveComponents(componentPanel, title, subtitle);
     addDesignRowControl(row, componentPanel);
@@ -4011,7 +4020,12 @@ public class ConfigDialog2 extends JDialog {
   }
 
   private JPanel addLargeComponentRow(
-      JPanel card, String targetId, String title, String subtitle, Component component, int height) {
+      JPanel card,
+      String targetId,
+      String title,
+      String subtitle,
+      Component component,
+      int height) {
     JPanel row = createDesignRow(targetId, title, subtitle);
     nameInteractiveComponents(component, title, subtitle);
     row.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
@@ -4023,9 +4037,11 @@ public class ConfigDialog2 extends JDialog {
 
   private void addColorRow(JPanel card, String targetId, String title, ColorLabel colorLabel) {
     JPanel row =
-        createDesignRow(targetId, title, configText("ConfigDialog2.modern.colorRowHint", "点击色块或按钮选择颜色"));
+        createDesignRow(
+            targetId, title, configText("ConfigDialog2.modern.colorRowHint", "点击色块或按钮选择颜色"));
     JPanel control = createColorControl(colorLabel);
-    nameInteractiveComponents(control, title, configText("ConfigDialog2.modern.colorRowHint", "点击色块或按钮选择颜色"));
+    nameInteractiveComponents(
+        control, title, configText("ConfigDialog2.modern.colorRowHint", "点击色块或按钮选择颜色"));
     addDesignRowControl(row, control);
     card.add(row);
   }
@@ -4067,9 +4083,9 @@ public class ConfigDialog2 extends JDialog {
     return controls;
   }
 
-
   private void addToggleInputRow(
-      JPanel card, String targetId,
+      JPanel card,
+      String targetId,
       String title,
       String subtitle,
       JCheckBox toggle,
@@ -4115,15 +4131,14 @@ public class ConfigDialog2 extends JDialog {
   }
 
   private void addAssetRow(
-      JPanel card, String targetId,
+      JPanel card,
+      String targetId,
       String title,
       JCheckBox pureToggle,
       ColorLabel colorLabel,
       JTextField path,
       JButton browse) {
-    String description =
-        configText(
-            "ConfigDialog2.modern.theme.assetHint", "可使用纯色，也可选择图片资源");
+    String description = configText("ConfigDialog2.modern.theme.assetHint", "可使用纯色，也可选择图片资源");
     JPanel row = createDesignRow(targetId, title, description);
     JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
     controls.setOpaque(false);
@@ -6077,7 +6092,6 @@ public class ConfigDialog2 extends JDialog {
     }
   }
 
-
   private void setStoneIndicatorType(int type) {
     switch (type) {
       case 0:
@@ -6483,8 +6497,7 @@ public class ConfigDialog2 extends JDialog {
       return false;
     }
     Lizzie.config.uiConfig.put(NetworkProxy.KEY_PROXY_MODE, selectedNetworkProxyMode());
-    Lizzie.config.uiConfig.put(
-        NetworkProxy.KEY_PROXY_HOST, txtNetworkProxyHost.getText().trim());
+    Lizzie.config.uiConfig.put(NetworkProxy.KEY_PROXY_HOST, txtNetworkProxyHost.getText().trim());
     Lizzie.config.uiConfig.put(NetworkProxy.KEY_PROXY_PORT, savedNetworkProxyPort());
     Lizzie.config.showScoreAsDiff = chkShowScoreAsLead.isSelected();
     Lizzie.config.uiConfig.put("show-score-as-diff", Lizzie.config.showScoreAsDiff);
@@ -6625,8 +6638,7 @@ public class ConfigDialog2 extends JDialog {
       }
 
       int previousTrackingAnalysisMaxVisits = Lizzie.config.trackingAnalysisMaxVisits;
-      int previousAnalyzeUpdateIntervalCentisec =
-          Lizzie.config.analyzeUpdateIntervalCentisec;
+      int previousAnalyzeUpdateIntervalCentisec = Lizzie.config.analyzeUpdateIntervalCentisec;
       Lizzie.config.trackingAnalysisMaxVisits =
           Utils.parseTextToInt(
               txtTrackingAnalysisMaxVisits, Lizzie.config.trackingAnalysisMaxVisits);
@@ -6635,8 +6647,7 @@ public class ConfigDialog2 extends JDialog {
       Lizzie.config.uiConfig.put(
           "tracking-analysis-max-visits", Lizzie.config.trackingAnalysisMaxVisits);
       Lizzie.config.showTrackingPointOutline = chkShowTrackingPointOutline.isSelected();
-      Lizzie.config.trackingPointOutlineOpacityPercent =
-          sldTrackingPointOutlineOpacity.getValue();
+      Lizzie.config.trackingPointOutlineOpacityPercent = sldTrackingPointOutlineOpacity.getValue();
       Lizzie.config.saveTrackingPointAppearanceConfig();
       Lizzie.config.loadSgfLast = chkSgfLoadLast.isSelected();
       Lizzie.config.uiConfig.put("load-sgf-last", Lizzie.config.loadSgfLast);

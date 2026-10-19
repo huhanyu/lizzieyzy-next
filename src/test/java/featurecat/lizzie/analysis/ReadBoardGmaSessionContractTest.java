@@ -170,8 +170,7 @@ class ReadBoardGmaSessionContractTest {
       assertTrue(ports.exactStarts.isEmpty(), "PLAYED must not start exact restore");
       assertTrue(ports.runtimeStarts.isEmpty(), "PLAYED must not start runtime restore");
       assertEquals(
-          List.of("publishTerminal", "continueNormal", "requestReservationRelease"),
-          ports.calls);
+          List.of("publishTerminal", "continueNormal", "requestReservationRelease"), ports.calls);
       assertEquals(1, ports.publications.size());
       assertEquals(1, ports.releases.size());
       assertEquals(1, ports.continuations);
@@ -198,8 +197,7 @@ class ReadBoardGmaSessionContractTest {
         ports.runtimeStarts.get(0), new ReadBoardGmaSession.ParticipantResult.Succeeded());
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(
-        List.of(
-            "startExact", "startRuntime", "publishTerminal", "requestReservationRelease"),
+        List.of("startExact", "startRuntime", "publishTerminal", "requestReservationRelease"),
         ports.calls);
     assertEquals(1, ports.publications.size());
     assertEquals(1, ports.releases.size());
@@ -237,7 +235,10 @@ class ReadBoardGmaSessionContractTest {
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(
         List.of(
-            "startExact", "startExact", "publishTerminal", "continueNormal",
+            "startExact",
+            "startExact",
+            "publishTerminal",
+            "continueNormal",
             "requestReservationRelease"),
         ports.calls);
     assertEquals(1, ports.publications.size());
@@ -282,7 +283,10 @@ class ReadBoardGmaSessionContractTest {
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(
         List.of(
-            "startExact", "startRuntime", "startExact", "publishTerminal",
+            "startExact",
+            "startRuntime",
+            "startExact",
+            "publishTerminal",
             "requestReservationRelease"),
         ports.calls);
     assertEquals(1, ports.publications.size());
@@ -298,7 +302,6 @@ class ReadBoardGmaSessionContractTest {
     Object latestIntent = new Object();
     ReadBoardGmaSession.GmaTerminalCapability terminalCapability =
         session.admitGma(session.helperCapability(), new Object(), nonEmptySnapshot());
-
 
     session.consumeGmaTerminal(terminalCapability, ReadBoardGmaSession.GmaTerminal.PASS);
     assertInstanceOf(ReadBoardGmaSession.RestoringExact.class, session.state());
@@ -635,8 +638,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.Terminal terminal = terminalOf(session);
     assertEquals(ReadBoardGmaSession.SessionOutcome.FAILED, terminal.outcome());
     assertEquals(
-        ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
-        terminal.firstFailure().category());
+        ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED, terminal.firstFailure().category());
     assertSame(INCARNATION, terminal.firstFailure().engineIncarnation());
     assertEquals(
         List.of("handleFailure", "publishTerminal", "requestReservationRelease"), ports.calls);
@@ -652,8 +654,7 @@ class ReadBoardGmaSessionContractTest {
     ReadBoardGmaSession.GmaTerminalCapability exactTerminal =
         exactSession.admitGma(exactSession.helperCapability(), new Object(), nonEmptySnapshot());
     exactSession.consumeGmaTerminal(exactTerminal, ReadBoardGmaSession.GmaTerminal.REQUEST_ERROR);
-    ReadBoardGmaSession.ExactParticipantCapability exactCapability =
-        exactPorts.exactStarts.get(0);
+    ReadBoardGmaSession.ExactParticipantCapability exactCapability = exactPorts.exactStarts.get(0);
 
     assertTrue(exactSession.failEngineProcess(exactTerminal, "engine exited during exact"));
     exactSession.completeExact(
@@ -662,8 +663,7 @@ class ReadBoardGmaSessionContractTest {
         ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED,
         terminalOf(exactSession).firstFailure().category());
     assertEquals(
-        List.of(
-            "startExact", "handleFailure", "publishTerminal", "requestReservationRelease"),
+        List.of("startExact", "handleFailure", "publishTerminal", "requestReservationRelease"),
         exactPorts.calls);
 
     RecordingPorts runtimePorts = new RecordingPorts();
@@ -963,8 +963,7 @@ class ReadBoardGmaSessionContractTest {
 
     // The publish failure did not suppress the continuation and release effects.
     assertEquals(
-        List.of(
-            "startExact", "publishTerminal", "continueNormal", "requestReservationRelease"),
+        List.of("startExact", "publishTerminal", "continueNormal", "requestReservationRelease"),
         ports.calls);
     assertEquals(ReadBoardGmaSession.SessionOutcome.SUCCEEDED, terminalOf(session).outcome());
     assertEquals(1, ports.continuations);
@@ -1138,8 +1137,7 @@ class ReadBoardGmaSessionContractTest {
     assertEquals(expectedCategory, terminal.firstFailure().category());
     assertEquals(INCARNATION, terminal.firstFailure().engineIncarnation());
     assertTrue(
-        ports.runtimeStarts.isEmpty(),
-        "an exact failure must never start the runtime participant");
+        ports.runtimeStarts.isEmpty(), "an exact failure must never start the runtime participant");
     assertEquals(0, ports.continuations, "an exact failure must never continue normal GMA");
   }
 

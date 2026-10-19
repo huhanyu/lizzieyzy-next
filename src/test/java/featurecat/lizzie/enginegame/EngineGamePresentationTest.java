@@ -21,8 +21,7 @@ class EngineGamePresentationTest {
 
   @Test
   void exchangedPlayingMapsFirstWinsOntoWhite() {
-    EngineGameSnapshot snapshot =
-        playing(true, 3, 1);
+    EngineGameSnapshot snapshot = playing(true, 3, 1);
 
     assertTrue(EngineGamePresentation.showLiveBatchScores(snapshot));
     assertEquals(1, EngineGamePresentation.blackWins(snapshot));
@@ -53,8 +52,7 @@ class EngineGamePresentationTest {
   void pausedPlayingIsDistinctFromRunning() {
     EngineGameSnapshot paused =
         new EngineGameSnapshot.BatchActive(
-            summary(0, 0),
-            new GameActivity.Playing(view(false), RunState.PAUSED));
+            summary(0, 0), new GameActivity.Playing(view(false), RunState.PAUSED));
 
     assertTrue(paused.playing());
     assertTrue(paused.paused());
@@ -187,8 +185,7 @@ class EngineGamePresentationTest {
             confirmed(SECOND, KataGoRules.parse("japanese").orElseThrow()),
             MatchRulesAdmission.Outcome.ADMIT_CONFIRMED);
     MatchRulesSnapshot inspectable =
-        EngineGamePresentation.inspectableMatchRules(
-            playing(false, 1, 0), laterLive, info);
+        EngineGamePresentation.inspectableMatchRules(playing(false, 1, 0), laterLive, info);
     assertEquals(frozen, inspectable);
     assertTrue(MatchRulesTexts.details(inspectable, bundle).contains("ko=POSITIONAL"));
     assertFalse(MatchRulesTexts.details(inspectable, bundle).contains("TERRITORY"));
@@ -214,10 +211,8 @@ class EngineGamePresentationTest {
     GameInfo info = new GameInfo();
     assertEquals(
         failed,
-        EngineGamePresentation.inspectableMatchRules(
-            new EngineGameSnapshot.Idle(), failed, info));
-    assertNull(
-        EngineGamePresentation.historyMatchRules(info));
+        EngineGamePresentation.inspectableMatchRules(new EngineGameSnapshot.Idle(), failed, info));
+    assertNull(EngineGamePresentation.historyMatchRules(info));
   }
 
   private static MatchRulesAdmission.SideResult confirmed(

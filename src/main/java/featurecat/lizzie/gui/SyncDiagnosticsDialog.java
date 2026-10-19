@@ -4,7 +4,6 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.SyncDecisionTrace;
 import featurecat.lizzie.analysis.SyncDiagnosticsEnvironment;
 import featurecat.lizzie.analysis.SyncDiagnosticsExportSanitizer;
-import featurecat.lizzie.analysis.SyncDiagnosticsExporter;
 import featurecat.lizzie.analysis.SyncDiagnosticsRecorder;
 import featurecat.lizzie.analysis.SyncDiagnosticsReport;
 import featurecat.lizzie.analysis.SyncDiagnosticsSnapshot;

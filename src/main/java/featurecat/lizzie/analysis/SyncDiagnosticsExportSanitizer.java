@@ -13,8 +13,7 @@ public final class SyncDiagnosticsExportSanitizer {
           "(?<![A-Za-z0-9_-])((?:live-room|unite-board):"
               + "[A-Za-z0-9_~-]+(?:\\.[A-Za-z0-9_~-]+)*)(?![A-Za-z0-9_~-])");
   private static final Pattern YIKE_LIVE_URL =
-      Pattern.compile(
-          "https?://(?:www\\.)?yikeweiqi\\.com/live/(\\d+)(?![A-Za-z0-9_-])[^\\s,;]*");
+      Pattern.compile("https?://(?:www\\.)?yikeweiqi\\.com/live/(\\d+)(?![A-Za-z0-9_-])[^\\s,;]*");
   private static final Pattern RAW_URL = Pattern.compile("https?://[^\\s,;]+");
   private static final Pattern SGF_PAYLOAD = Pattern.compile("\\(;.*?\\)", Pattern.DOTALL);
   private static final Pattern TOKEN_PARAMETER =
@@ -25,8 +24,7 @@ public final class SyncDiagnosticsExportSanitizer {
       Pattern.compile(
           "(?i)([\\\"']?(?:password|connectPassword|zhizi-account-token|zz-socketio-token|authorization)[\\\"']?\\s*(?:[=:]\\s*|\\s+)[\\\"']?)([^\\\"'\\s,;}&]+)([\\\"']?)");
   private static final Pattern YIKE_ROOM_PARAMETER =
-      Pattern.compile(
-          "(?i)\\b(?:room|roomId|id)\\b(?:\\s*[=:]\\s*|\\s+)(\\d+)(?![A-Za-z0-9_-])");
+      Pattern.compile("(?i)\\b(?:room|roomId|id)\\b(?:\\s*[=:]\\s*|\\s+)(\\d+)(?![A-Za-z0-9_-])");
   private static final Pattern WSL_MOUNT_USER_PATH =
       Pattern.compile("/mnt/([A-Za-z])/Users/[^\\r\\n,;]+");
   private static final Pattern POSIX_HOME_PATH = Pattern.compile("/home/[^\\r\\n,;]+");
@@ -155,9 +153,9 @@ public final class SyncDiagnosticsExportSanitizer {
   }
 
   /**
-   * Redacts embedded Windows absolute paths without treating every doubled backslash as a UNC
-   * path. A UNC candidate must contain both a server and a share; drive paths must contain the
-   * rooted separator. A single leading backslash is also treated as rooted because persistence
+   * Redacts embedded Windows absolute paths without treating every doubled backslash as a UNC path.
+   * A UNC candidate must contain both a server and a share; drive paths must contain the rooted
+   * separator. A single leading backslash is also treated as rooted because persistence
    * canonicalization in older logs can collapse the leading UNC pair. The same detector handles
    * ordinary, WSL, device/extended, and JSON-escaped spellings so new path families cannot silently
    * bypass a collection of unrelated regexes.
@@ -169,8 +167,7 @@ public final class SyncDiagnosticsExportSanitizer {
     StringBuilder safe = null;
     int copiedThrough = 0;
     for (int index = 0; index < value.length(); index++) {
-      if (!isEmbeddedPathBoundary(value, index)
-          || windowsAbsolutePathPrefixEnd(value, index) < 0) {
+      if (!isEmbeddedPathBoundary(value, index) || windowsAbsolutePathPrefixEnd(value, index) < 0) {
         continue;
       }
       int end = windowsAbsolutePathEnd(value, index);

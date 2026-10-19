@@ -378,8 +378,7 @@ public class SidebarHeaderPanel extends JPanel {
       g2.fillOval(seg1X, dotY, APPLE_DOT_SIZE, APPLE_DOT_SIZE);
       g2.setColor(new Color(255, 255, 255, blackSelected ? 190 : 90));
       g2.drawOval(seg1X, dotY, APPLE_DOT_SIZE, APPLE_DOT_SIZE);
-      g2.setColor(
-          blackSelected ? new Color(239, 242, 241) : SidebarPanel.secondaryTextColor());
+      g2.setColor(blackSelected ? new Color(239, 242, 241) : SidebarPanel.secondaryTextColor());
       g2.drawString(b1, layout.blackTextX, layout.sideBaseline);
 
       int seg2Content = APPLE_DOT_SIZE + APPLE_DOT_GAP + fm.stringWidth(b2);

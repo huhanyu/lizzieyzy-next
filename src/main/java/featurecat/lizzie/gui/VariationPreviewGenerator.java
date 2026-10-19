@@ -20,8 +20,8 @@ import java.awt.Paint;
 import java.awt.font.TextAttribute;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.Map;
+import java.util.Objects;
 
 /** Generates candidate layers exclusively from values captured at the host boundary. */
 final class VariationPreviewGenerator {
@@ -38,10 +38,14 @@ final class VariationPreviewGenerator {
       int hoverX,
       int hoverY) {
     boolean sameSurface(Geometry other) {
-      return gridWidth == other.gridWidth && gridHeight == other.gridHeight
-          && pixelWidth == other.pixelWidth && pixelHeight == other.pixelHeight
-          && marginWidth == other.marginWidth && marginHeight == other.marginHeight
-          && squareWidth == other.squareWidth && squareHeight == other.squareHeight
+      return gridWidth == other.gridWidth
+          && gridHeight == other.gridHeight
+          && pixelWidth == other.pixelWidth
+          && pixelHeight == other.pixelHeight
+          && marginWidth == other.marginWidth
+          && marginHeight == other.marginHeight
+          && squareWidth == other.squareWidth
+          && squareHeight == other.squareHeight
           && stoneRadius == other.stoneRadius;
     }
   }
@@ -73,7 +77,6 @@ final class VariationPreviewGenerator {
       return Arrays.hashCode(stones);
     }
   }
-
 
   /**
    * Sprites are already scaled to the captured radius; sprites, shadow and board paint are shared
@@ -108,21 +111,30 @@ final class VariationPreviewGenerator {
 
     boolean sameRendering(Style other) {
       return sameSurface(other)
-          && stoneLimit == other.stoneLimit && numberLimit == other.numberLimit;
+          && stoneLimit == other.stoneLimit
+          && numberLimit == other.numberLimit;
     }
 
     boolean sameSurface(Style other) {
       return other != null
-          && floating == other.floating && editMode == other.editMode
+          && floating == other.floating
+          && editMode == other.editMode
           && removeDeadChains == other.removeDeadChains
           && previousBestMoves == other.previousBestMoves
-          && pureStone == other.pureStone && fancyBoard == other.fancyBoard
-          && stoneHighlight == other.stoneHighlight && hoverGlow == other.hoverGlow
-          && trying == other.trying && pvVisitsAll == other.pvVisitsAll
-          && pvVisitsLast == other.pvVisitsLast && pvVisitsLimit == other.pvVisitsLimit
-          && boardType == other.boardType && Objects.equals(font, other.font)
-          && blackStone == other.blackStone && whiteStone == other.whiteStone
-          && shadow == other.shadow && shadowCenter == other.shadowCenter
+          && pureStone == other.pureStone
+          && fancyBoard == other.fancyBoard
+          && stoneHighlight == other.stoneHighlight
+          && hoverGlow == other.hoverGlow
+          && trying == other.trying
+          && pvVisitsAll == other.pvVisitsAll
+          && pvVisitsLast == other.pvVisitsLast
+          && pvVisitsLimit == other.pvVisitsLimit
+          && boardType == other.boardType
+          && Objects.equals(font, other.font)
+          && blackStone == other.blackStone
+          && whiteStone == other.whiteStone
+          && shadow == other.shadow
+          && shadowCenter == other.shadowCenter
           && Objects.equals(boardPaint, other.boardPaint)
           && Objects.equals(boardColor, other.boardColor)
           && Objects.equals(sourceStones, other.sourceStones)
@@ -170,7 +182,8 @@ final class VariationPreviewGenerator {
       gAnnotations.setRenderingHint(KEY_ANTIALIASING, VALUE_ANTIALIAS_ON);
       mouseOverStoneBlack = drawStones(g, gShadow, branch, geometry, style);
       Font font =
-          style.font
+          style
+              .font
               .deriveFont(Font.PLAIN, 100)
               .deriveFont(Map.of(TextAttribute.KERNING, TextAttribute.KERNING_ON));
       hideMouseOverInfo = drawAnnotations(gAnnotations, branch, geometry, style, font);
@@ -361,7 +374,8 @@ final class VariationPreviewGenerator {
             drawNumber(g, centerX, centerY, -moveNumber, showVisits, false, geometry, font);
           }
         } else {
-          drawNumber(g, centerX, centerY, moveNumber, showVisits, moveNumber >= 100, geometry, font);
+          drawNumber(
+              g, centerX, centerY, moveNumber, showVisits, moveNumber >= 100, geometry, font);
         }
       }
     }

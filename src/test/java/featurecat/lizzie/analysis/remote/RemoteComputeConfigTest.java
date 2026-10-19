@@ -42,16 +42,10 @@ class RemoteComputeConfigTest {
   @Test
   void windowsCredentialsFallBackToUserRoamingProfileWhenAppDataIsUnavailable() {
     Path directory =
-        RemoteComputeConfig.credentialDirectoryForTests(
-            "Windows 11", Map.of(), "/users/test");
+        RemoteComputeConfig.credentialDirectoryForTests("Windows 11", Map.of(), "/users/test");
 
     assertEquals(
-        Path.of(
-                "/users/test",
-                "AppData",
-                "Roaming",
-                "LizzieYzy Next",
-                "secure-credentials")
+        Path.of("/users/test", "AppData", "Roaming", "LizzieYzy Next", "secure-credentials")
             .toAbsolutePath()
             .normalize(),
         directory);
@@ -257,8 +251,7 @@ class RemoteComputeConfigTest {
 
           assertEquals("การคำนวณแบบกำหนดเอง · compute.example.com", custom);
           assertTrue(
-              zhizi.startsWith(
-                  "คลาวด์ Zhizi ตามการใช้งาน 1x · Transformer 10B · รุ่นสมดุล · "));
+              zhizi.startsWith("คลาวด์ Zhizi ตามการใช้งาน 1x · Transformer 10B · รุ่นสมดุล · "));
           assertFalse(custom.matches(".*\\p{IsHan}.*"));
           assertFalse(zhizi.matches(".*\\p{IsHan}.*"));
         });
@@ -697,11 +690,7 @@ class RemoteComputeConfigTest {
 
           EngineData usable = new EngineData();
           usable.commands =
-              quote(executable)
-                  + " gtp -model "
-                  + quote(model)
-                  + " -config "
-                  + quote(gtpConfig);
+              quote(executable) + " gtp -model " + quote(model) + " -config " + quote(gtpConfig);
           usable.name = "Usable KataGo";
 
           EngineData zhizi = new EngineData();
@@ -747,41 +736,40 @@ class RemoteComputeConfigTest {
           Path root = Files.createTempDirectory("remote-custom-local-engine");
           String localCommand = usableKataGoCommand(root);
           withResourceBundle(
-                AppLocale.ENGLISH.loadBundle(),
-                () -> {
-                  ArrayList<EngineData> engines = new ArrayList<>();
-                  EngineData local = new EngineData();
-                  local.commands = localCommand;
-                  local.name = "Local KataGo";
-                  local.isDefault = false;
-                  engines.add(local);
-                  Utils.saveEngineSettings(engines);
+              AppLocale.ENGLISH.loadBundle(),
+              () -> {
+                ArrayList<EngineData> engines = new ArrayList<>();
+                EngineData local = new EngineData();
+                local.commands = localCommand;
+                local.name = "Local KataGo";
+                local.isDefault = false;
+                engines.add(local);
+                Utils.saveEngineSettings(engines);
 
-                  RemoteComputeConfig.State state = RemoteComputeConfig.load();
-                  state.provider = RemoteComputeConfig.PROVIDER_CUSTOM;
-                  state.customRemoteCode = "wss://compute.example.com/katago";
-                  RemoteComputeConfig.save(state);
+                RemoteComputeConfig.State state = RemoteComputeConfig.load();
+                state.provider = RemoteComputeConfig.PROVIDER_CUSTOM;
+                state.customRemoteCode = "wss://compute.example.com/katago";
+                RemoteComputeConfig.save(state);
 
-                  int customIndex = RemoteComputeConfig.createOrUpdateCustomWebSocketEngine(true);
+                int customIndex = RemoteComputeConfig.createOrUpdateCustomWebSocketEngine(true);
 
-                  ArrayList<EngineData> savedEngines = Utils.getEngineData();
-                  assertEquals(1, customIndex);
-                  assertEquals(
-                      RemoteComputeConfig.COMMAND_CUSTOM_WS,
-                      savedEngines.get(customIndex).commands);
-                  assertEquals(
-                      "Custom Compute · compute.example.com", savedEngines.get(customIndex).name);
-                  assertTrue(savedEngines.get(customIndex).isDefault);
-                  assertEquals(1, Lizzie.config.uiConfig.optInt("last-engine", -1));
+                ArrayList<EngineData> savedEngines = Utils.getEngineData();
+                assertEquals(1, customIndex);
+                assertEquals(
+                    RemoteComputeConfig.COMMAND_CUSTOM_WS, savedEngines.get(customIndex).commands);
+                assertEquals(
+                    "Custom Compute · compute.example.com", savedEngines.get(customIndex).name);
+                assertTrue(savedEngines.get(customIndex).isDefault);
+                assertEquals(1, Lizzie.config.uiConfig.optInt("last-engine", -1));
 
-                  int localIndex = RemoteComputeConfig.saveLocalProviderAndDefaultEngine();
+                int localIndex = RemoteComputeConfig.saveLocalProviderAndDefaultEngine();
 
-                  savedEngines = Utils.getEngineData();
-                  assertEquals(0, localIndex);
-                  assertTrue(savedEngines.get(0).isDefault);
-                  assertFalse(savedEngines.get(customIndex).isDefault);
-                  assertEquals(0, Lizzie.config.uiConfig.optInt("last-engine", -1));
-                });
+                savedEngines = Utils.getEngineData();
+                assertEquals(0, localIndex);
+                assertTrue(savedEngines.get(0).isDefault);
+                assertFalse(savedEngines.get(customIndex).isDefault);
+                assertEquals(0, Lizzie.config.uiConfig.optInt("last-engine", -1));
+              });
         });
   }
 
@@ -903,11 +891,7 @@ class RemoteComputeConfigTest {
     Path executable = Files.write(root.resolve("katago"), new byte[] {1});
     Path model = Files.write(root.resolve("default.bin.gz"), new byte[] {1});
     Path gtpConfig = Files.write(root.resolve("gtp.cfg"), new byte[] {1});
-    return quote(executable)
-        + " gtp -model "
-        + quote(model)
-        + " -config "
-        + quote(gtpConfig);
+    return quote(executable) + " gtp -model " + quote(model) + " -config " + quote(gtpConfig);
   }
 
   private static void withConfigAndStore(ThrowingStoreRunnable action) throws Exception {

@@ -2,8 +2,8 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
-import featurecat.lizzie.enginegame.EngineGameMove;
 import featurecat.lizzie.enginegame.EngineGameMatchRulesSelection;
+import featurecat.lizzie.enginegame.EngineGameMove;
 import featurecat.lizzie.enginegame.EngineGameParsedStart;
 import featurecat.lizzie.enginegame.EngineGameResignPolicy;
 import featurecat.lizzie.enginegame.EngineGameTimeMode;
@@ -55,7 +55,9 @@ final class EngineGameBatchSpecCapture {
         .autosave(toolbar.AutosavePk)
         .saveWinrateImage(toolbar.enginePkSaveWinrate)
         .batchName(toolbar.batchPkNameToolbar)
-        .matchRules(EngineGameMatchRulesSelection.stored(config).orElseGet(() -> EngineGameMatchRulesSelection.prefill(config)))
+        .matchRules(
+            EngineGameMatchRulesSelection.stored(config)
+                .orElseGet(() -> EngineGameMatchRulesSelection.prefill(config)))
         .build();
   }
 

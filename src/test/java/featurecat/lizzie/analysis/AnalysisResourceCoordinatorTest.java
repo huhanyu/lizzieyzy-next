@@ -296,8 +296,7 @@ class AnalysisResourceCoordinatorTest {
       AnalysisResourceCoordinator.processStarted(
           owner, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, "replacement", replacement);
       AnalysisResourceCoordinator.foregroundPlayoutSample(owner, 17);
-      Object replacementSample =
-          AnalysisResourceCoordinator.captureForegroundSampleIdentity(owner);
+      Object replacementSample = AnalysisResourceCoordinator.captureForegroundSampleIdentity(owner);
 
       retired.destroy();
       AnalysisResourceCoordinator.processStopped(
@@ -306,8 +305,7 @@ class AnalysisResourceCoordinatorTest {
       assertTrue(
           AnalysisResourceCoordinator.isRegisteredProcessIdentityForTesting(owner, replacement));
       assertTrue(
-          replacementSample
-              == AnalysisResourceCoordinator.captureForegroundSampleIdentity(owner));
+          replacementSample == AnalysisResourceCoordinator.captureForegroundSampleIdentity(owner));
 
       replacement.destroy();
       AnalysisResourceCoordinator.processStopped(
@@ -333,10 +331,12 @@ class AnalysisResourceCoordinatorTest {
   }
 
   private static void awaitLogs(LoggingRuntime runtime) throws Exception {
-    Method awaitIdle = LoggingRuntime.class.getDeclaredMethod(
-        "awaitIdle", long.class, java.util.concurrent.TimeUnit.class);
+    Method awaitIdle =
+        LoggingRuntime.class.getDeclaredMethod(
+            "awaitIdle", long.class, java.util.concurrent.TimeUnit.class);
     awaitIdle.setAccessible(true);
-    assertTrue((Boolean) awaitIdle.invoke(runtime, 10L, java.util.concurrent.TimeUnit.SECONDS),
+    assertTrue(
+        (Boolean) awaitIdle.invoke(runtime, 10L, java.util.concurrent.TimeUnit.SECONDS),
         "submitted diagnostic records did not reach the log writer");
   }
 

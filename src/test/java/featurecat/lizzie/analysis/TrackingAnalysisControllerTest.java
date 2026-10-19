@@ -35,11 +35,22 @@ class TrackingAnalysisControllerTest {
       Lizzie.frame = allocate(LizzieFrame.class);
       Lizzie.board = null;
       TrackingAnalysisController controller = new TrackingAnalysisController();
-      TrackingAnalysisController.Context context = new TrackingAnalysisController.Context(
-          this, output, 19, 19, "stones", true, "chinese", 7.5,
-          engine, engine.trackingStreamIncarnation(),
-          new TrackingAnalysisController.Parameters(10, 100), null);
-      assertEquals(TrackingAnalysisController.AddResult.LEASE_UNAVAILABLE,
+      TrackingAnalysisController.Context context =
+          new TrackingAnalysisController.Context(
+              this,
+              output,
+              19,
+              19,
+              "stones",
+              true,
+              "chinese",
+              7.5,
+              engine,
+              engine.trackingStreamIncarnation(),
+              new TrackingAnalysisController.Parameters(10, 100),
+              null);
+      assertEquals(
+          TrackingAnalysisController.AddResult.LEASE_UNAVAILABLE,
           controller.addPoint("D4", context));
       assertEquals("", output.toString(StandardCharsets.UTF_8));
       assertTrue(controller.snapshot().selectedPoints().isEmpty());

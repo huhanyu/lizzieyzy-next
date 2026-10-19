@@ -99,7 +99,8 @@ class BranchInputCaptureTest {
       Board board = Lizzie.board;
       BoardHistoryNode source = board.getHistory().getCurrentHistoryNode();
       source.getData().stones[Board.getIndex(0, 2)] = Stone.WHITE;
-      BoardHistoryNode analysis = new BoardHistoryList(BoardData.empty(2, 3)).getCurrentHistoryNode();
+      BoardHistoryNode analysis =
+          new BoardHistoryList(BoardData.empty(2, 3)).getCurrentHistoryNode();
       BranchInputCapture capture = BranchInputCapture.begin(board, () -> source, () -> analysis);
       assertFalse(capture.isEmptyPoint("A1"));
       assertTrue(capture.isEmptyPoint("B2"));

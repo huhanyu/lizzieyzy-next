@@ -6,8 +6,8 @@ import static java.lang.Math.min;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
-import featurecat.lizzie.enginegame.EngineGamePresentation;
 import featurecat.lizzie.analysis.MoveData;
+import featurecat.lizzie.enginegame.EngineGamePresentation;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryNode;
@@ -716,7 +716,6 @@ public class IndependentMainBoard extends JFrame {
     super.dispose();
   }
 
-
   private void paintMianPanel(Graphics g) {
     int width = Utils.zoomOut(mainPanel.getWidth());
     int height = Utils.zoomOut(mainPanel.getHeight());
@@ -909,8 +908,10 @@ public class IndependentMainBoard extends JFrame {
   }
 
   public void setMouseOverCoords(int index) {
-    List<MoveData> bestMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
-        ? Lizzie.frame.getBestMoves() : Lizzie.board.getHistory().getData().bestMoves;
+    List<MoveData> bestMoves =
+        featurecat.lizzie.fox.FoxLiveSession.isActive()
+            ? Lizzie.frame.getBestMoves()
+            : Lizzie.board.getHistory().getData().bestMoves;
     if (bestMoves == null || bestMoves.isEmpty()) return;
     if (index >= bestMoves.size()) return;
     if (curSuggestionMoveOrderByNumber == index) {
@@ -956,7 +957,6 @@ public class IndependentMainBoard extends JFrame {
     BoardData nextData = Lizzie.board.getHistory().getCurrentHistoryNode().next().get().getData();
     return LizzieFrame.isNextMoveBlunderTarget(nextData, curCoords);
   }
-
 
   public boolean isMouseOverSuggestions() {
     return boardRenderer.hasSelectedVariation();

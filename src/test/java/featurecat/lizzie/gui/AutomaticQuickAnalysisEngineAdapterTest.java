@@ -395,18 +395,24 @@ class AutomaticQuickAnalysisEngineAdapterTest {
     // The manual owner is authorized only once the transfer callback has run.
     executor.run(RETURN);
     if (dispatched) {
-      onEdt(() -> {
-        assertTrue(automatic.releases.isEmpty(), "manual use must wait for finite parameter handback");
-        assertSame(worker, Lizzie.frame.analysisEngine);
-      });
+      onEdt(
+          () -> {
+            assertTrue(
+                automatic.releases.isEmpty(), "manual use must wait for finite parameter handback");
+            assertSame(worker, Lizzie.frame.analysisEngine);
+          });
       worker.transferFinished.accept(ForegroundRestoreResult.SUCCEEDED);
       flushEdt();
     }
     List<ForegroundRestoreResult> manualResults = new ArrayList<>();
     onEdt(
         () -> {
-          assertEquals(List.of(dispatched ? ForegroundRestoreResult.SUCCEEDED
-              : ForegroundRestoreResult.NOT_REQUIRED), automatic.releases);
+          assertEquals(
+              List.of(
+                  dispatched
+                      ? ForegroundRestoreResult.SUCCEEDED
+                      : ForegroundRestoreResult.NOT_REQUIRED),
+              automatic.releases);
           assertNull(adapter.ownedEngine());
           assertSame(worker, Lizzie.frame.analysisEngine);
           worker.setCompletionCallback(manualResults::add);

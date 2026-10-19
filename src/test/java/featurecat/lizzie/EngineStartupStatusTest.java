@@ -132,8 +132,7 @@ class EngineStartupStatusTest {
     assertTrue(basePanel.repaintedOnEdt, "READY repaint publication must run on EDT");
   }
 
-  private static void invokeStatusUpdate(
-      LizzieFrame frame, EngineStartupStatus.Snapshot snapshot) {
+  private static void invokeStatusUpdate(LizzieFrame frame, EngineStartupStatus.Snapshot snapshot) {
     try {
       Method update =
           LizzieFrame.class.getDeclaredMethod(
@@ -147,8 +146,7 @@ class EngineStartupStatusTest {
 
   private static void invokeStatusLayout(LizzieFrame frame, int availableWidth) {
     try {
-      Method layout =
-          LizzieFrame.class.getDeclaredMethod("layoutEngineStartupStatus", int.class);
+      Method layout = LizzieFrame.class.getDeclaredMethod("layoutEngineStartupStatus", int.class);
       layout.setAccessible(true);
       layout.invoke(frame, availableWidth);
     } catch (ReflectiveOperationException failure) {
@@ -162,12 +160,14 @@ class EngineStartupStatusTest {
     field.setAccessible(true);
     field.set(target, value);
   }
+
   private static Object getField(Class<?> declaringType, Object target, String name)
       throws Exception {
     Field field = declaringType.getDeclaredField(name);
     field.setAccessible(true);
     return field.get(target);
   }
+
   @SuppressWarnings("unchecked")
   private static <T> T allocate(Class<T> type) throws Exception {
     Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
@@ -201,6 +201,7 @@ class EngineStartupStatusTest {
       repaintedOnEdt |= SwingUtilities.isEventDispatchThread();
     }
   }
+
   private static final class CountingPanel extends javax.swing.JPanel {
     private int repaintCount;
 

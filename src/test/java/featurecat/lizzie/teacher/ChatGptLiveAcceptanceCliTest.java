@@ -29,7 +29,8 @@ class ChatGptLiveAcceptanceCliTest {
   @Test
   void otherCredentialKindsAreNotParsedOrCounted() throws Exception {
     var observer =
-        new ChatGptLiveAcceptanceCli.ExpiryObservationStore(new ChatGptIntegrationTest.MemoryStore());
+        new ChatGptLiveAcceptanceCli.ExpiryObservationStore(
+            new ChatGptIntegrationTest.MemoryStore());
     observer.write(CredentialStore.Kind.API_KEY, "fixture", "synthetic-not-json");
     assertEquals(
         "synthetic-not-json", observer.read(CredentialStore.Kind.API_KEY, "fixture").orElseThrow());

@@ -98,8 +98,7 @@ class KataGoAutoSetupDialogLayoutTest {
 
     assertEquals(new Dimension(1200, 900), KataGoAutoSetupDialog.dialogSizeForBounds(workArea));
     assertEquals(
-        new Dimension(900, 620),
-        KataGoAutoSetupDialog.minimumDialogSizeForBounds(workArea));
+        new Dimension(900, 620), KataGoAutoSetupDialog.minimumDialogSizeForBounds(workArea));
   }
 
   @Test
@@ -348,8 +347,7 @@ class KataGoAutoSetupDialogLayoutTest {
   @Test
   void localizedExperimentalBackendActionWrapsWithoutClipping() {
     JComboBox<String> selector =
-        new JComboBox<String>(
-            new String[] {"OpenVINO (หน่วยประมวลผลประสาท Intel NPU)"});
+        new JComboBox<String>(new String[] {"OpenVINO (หน่วยประมวลผลประสาท Intel NPU)"});
     selector.setPreferredSize(new Dimension(390, 36));
     JButton install = new JButton("ติดตั้งและใช้แบ็กเอนด์ทดลองที่เลือก");
 
@@ -445,9 +443,7 @@ class KataGoAutoSetupDialogLayoutTest {
   @Test
   void tensorRtRepairSummaryWrapsInsideABoundedKeyboardDialog() {
     String summary =
-        "Repaired C:\\ailearn3\\"
-            + "long-managed-tensorrt-path\\".repeat(14)
-            + ". Runtime ready.";
+        "Repaired C:\\ailearn3\\" + "long-managed-tensorrt-path\\".repeat(14) + ". Runtime ready.";
 
     JTextArea textArea = KataGoAutoSetupDialog.createTensorRtRepairSummaryText(summary);
 
@@ -516,8 +512,7 @@ class KataGoAutoSetupDialogLayoutTest {
   void benchmarkReportUsesCompactPreferredAndMinimumHeightInsideNarrowParent() {
     JPanel parent = new JPanel(new BorderLayout());
     KataGoAutoSetupDialog.BenchmarkReportBody report =
-        new KataGoAutoSetupDialog.BenchmarkReportBody(
-            new JPanel(), new JPanel(), new JPanel());
+        new KataGoAutoSetupDialog.BenchmarkReportBody(new JPanel(), new JPanel(), new JPanel());
     parent.add(report, BorderLayout.CENTER);
     parent.setSize(620, 420);
 
@@ -551,35 +546,19 @@ class KataGoAutoSetupDialogLayoutTest {
     assertEquals(
         KataGoAutoSetupDialog.AppliedEngineWaitState.WAITING,
         KataGoAutoSetupDialog.evaluateAppliedEngineWait(
-            expectedToken,
-            EngineManager.EngineSwitchUiPhase.SWITCHING,
-            0,
-            expectedToken,
-            1));
+            expectedToken, EngineManager.EngineSwitchUiPhase.SWITCHING, 0, expectedToken, 1));
     assertEquals(
         KataGoAutoSetupDialog.AppliedEngineWaitState.ACTIVE,
         KataGoAutoSetupDialog.evaluateAppliedEngineWait(
-            expectedToken,
-            EngineManager.EngineSwitchUiPhase.ACTIVE,
-            1,
-            expectedToken,
-            1));
+            expectedToken, EngineManager.EngineSwitchUiPhase.ACTIVE, 1, expectedToken, 1));
     assertEquals(
         KataGoAutoSetupDialog.AppliedEngineWaitState.FAILED,
         KataGoAutoSetupDialog.evaluateAppliedEngineWait(
-            expectedToken,
-            EngineManager.EngineSwitchUiPhase.FAILED,
-            0,
-            expectedToken,
-            1));
+            expectedToken, EngineManager.EngineSwitchUiPhase.FAILED, 0, expectedToken, 1));
     assertEquals(
         KataGoAutoSetupDialog.AppliedEngineWaitState.SUPERSEDED,
         KataGoAutoSetupDialog.evaluateAppliedEngineWait(
-            expectedToken + 1,
-            EngineManager.EngineSwitchUiPhase.ACTIVE,
-            1,
-            expectedToken,
-            1));
+            expectedToken + 1, EngineManager.EngineSwitchUiPhase.ACTIVE, 1, expectedToken, 1));
   }
 
   @Test
@@ -678,8 +657,7 @@ class KataGoAutoSetupDialogLayoutTest {
   }
 
   @Test
-  void terminalFailedWeightSwitchReconcilesWithTheAuthoritativeSetupSnapshot(
-      @TempDir Path tempDir)
+  void terminalFailedWeightSwitchReconcilesWithTheAuthoritativeSetupSnapshot(@TempDir Path tempDir)
       throws IOException {
     SetupSnapshot current = createSetupSnapshot(tempDir, "current.bin.gz");
     SetupSnapshot requested = createSetupSnapshot(tempDir, "requested.bin.gz");
@@ -721,8 +699,7 @@ class KataGoAutoSetupDialogLayoutTest {
   }
 
   @Test
-  void diskDiscoveryAloneNeverClaimsThatAWeightIsActive(@TempDir Path tempDir)
-      throws IOException {
+  void diskDiscoveryAloneNeverClaimsThatAWeightIsActive(@TempDir Path tempDir) throws IOException {
     SetupSnapshot discovered = createSetupSnapshot(tempDir, "discovered.bin.gz");
 
     KataGoAutoSetupDialog.WeightSwitchDisplayState displayed =

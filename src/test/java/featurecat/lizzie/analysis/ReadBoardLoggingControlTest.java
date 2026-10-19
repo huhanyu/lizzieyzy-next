@@ -238,7 +238,8 @@ class ReadBoardLoggingControlTest {
 
     assertTrue(snapshot.desired().diagnostics);
     assertEquals(ReadBoardLoggingProtocol.Toggle.OFF, snapshot.observedDiagnostics());
-    assertEquals(ReadBoardLoggingControl.Presentation.NOT_APPLIED, snapshot.diagnosticsPresentation());
+    assertEquals(
+        ReadBoardLoggingControl.Presentation.NOT_APPLIED, snapshot.diagnosticsPresentation());
     assertNotEquals(ReadBoardLoggingControl.Presentation.ON, snapshot.diagnosticsPresentation());
   }
 
@@ -274,7 +275,9 @@ class ReadBoardLoggingControlTest {
     assertEquals(PROCESS_SESSION, snapshot.processSessionId());
     assertEquals(ReadBoardLoggingProtocol.Persistence.DEGRADED, snapshot.persistence());
     assertEquals(4, snapshot.dropCount());
-    assertEquals(ReadBoardLoggingControl.Presentation.ON_STORAGE_DEGRADED, snapshot.diagnosticsPresentation());
+    assertEquals(
+        ReadBoardLoggingControl.Presentation.ON_STORAGE_DEGRADED,
+        snapshot.diagnosticsPresentation());
     assertEquals(ReadBoardLoggingControl.Presentation.OFF, snapshot.capturePresentation());
     assertTrue(snapshot.captureSummary().contains(PROCESS_SESSION));
     assertTrue(snapshot.captureSummary().contains("off"));

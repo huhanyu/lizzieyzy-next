@@ -1,13 +1,15 @@
 package featurecat.lizzie.fox;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FoxProtocolStateTest {
-  @Test void directBudgetIncludesInitializationAndRefreshAndFencesPhysicalWrite() {
+  @Test
+  void directBudgetIncludesInitializationAndRefreshAndFencesPhysicalWrite() {
     FoxGameState state = initialized();
     state.setDirectMaxTime(10);
     refresh(state, 3_000_000_000L, "60,30,3");
@@ -26,7 +28,8 @@ class FoxProtocolStateTest {
     assertEquals(59_000_000_000L, tighter.snapshot().submitDeadlineNanos());
   }
 
-  @Test void repeatedInitializationCannotResetIdentityBudgetHistoryOrFailedSubmission() {
+  @Test
+  void repeatedInitializationCannotResetIdentityBudgetHistoryOrFailedSubmission() {
     FoxGameState state = initialized();
     refresh(state, 0, "60,30,3");
     var initial = state.snapshot();
@@ -72,7 +75,8 @@ class FoxProtocolStateTest {
     assertEquals("Fox.protocolError", state.snapshot().statusKey());
   }
 
-  @Test void officialOperationStopsAutomationWithoutDiscardingConfirmedHistory() {
+  @Test
+  void officialOperationStopsAutomationWithoutDiscardingConfirmedHistory() {
     FoxGameState state = initialized();
     state.receive("FAMOVE,0,B,1^16^3^B", 1);
     var confirmed = state.snapshot().actions();
@@ -90,7 +94,8 @@ class FoxProtocolStateTest {
     assertFalse(state.hasCheckpoint(), "official operation must not become recovery permission");
   }
 
-  @Test void emptyPlacementReconnectPreservesObservedPassRatherThanAssumingOpeningTurn() {
+  @Test
+  void emptyPlacementReconnectPreservesObservedPassRatherThanAssumingOpeningTurn() {
     FoxGameState state = initialized();
     state.receive("FASKIP,0,B", 1);
     state.disconnected();
@@ -104,7 +109,9 @@ class FoxProtocolStateTest {
     assertEquals(1, state.snapshot().actions().size());
     assertTrue(state.snapshot().actions().get(0).isPass());
   }
-  @Test void checkpointMatchRequiresRulesSetupColorPlacementsAndAuthoritativeTurn() {
+
+  @Test
+  void checkpointMatchRequiresRulesSetupColorPlacementsAndAuthoritativeTurn() {
     String[][] changes = {
       {"FARULE,19,60,30,3,750", "FASTATUS,1,B,1^16^3^B,2^3^15^W", "FAMOVE,0,B,2^3^15^W"},
       {"FARULE,19,60,30,3,650,0^3^3^B", "FASTATUS,1,B,1^16^3^B,2^3^15^W", "FAMOVE,0,B,2^3^15^W"},
@@ -129,7 +136,8 @@ class FoxProtocolStateTest {
     assertFalse(missing.snapshot().searchable());
   }
 
-  @Test void offlineOpponentPlacementPreservesFourRealActionsAndBlackTurn() {
+  @Test
+  void offlineOpponentPlacementPreservesFourRealActionsAndBlackTurn() {
     FoxGameState state = retainedPass();
     state.connected();
     state.receive("FARULE,19,60,30,3,650", 100_000_000_000L);
@@ -137,7 +145,8 @@ class FoxProtocolStateTest {
     state.receive("FATIMELEFT,40,30,3", 100_000_000_000L);
     state.receive("FAMOVE,1,B,3^15^15^W", 100_000_000_000L);
     assertTrue(state.recoverHistory(101_000_000_000L));
-    assertEquals(List.of("R16", "D4", "pass", "Q4"),
+    assertEquals(
+        List.of("R16", "D4", "pass", "Q4"),
         state.snapshot().actions().stream().map(a -> a.vertex(19)).toList());
     assertEquals(Character.valueOf('B'), state.snapshot().toPlay());
     assertEquals(3, state.snapshot().placements().size());
@@ -147,7 +156,9 @@ class FoxProtocolStateTest {
     state.receive("FATIMELEFT,38,30,3", 102_000_000_001L);
     assertNotNull(state.prepareSubmission(state.snapshot(), 2, "Q16", 103_000_000_000L));
   }
-  @Test void unchangedOwnTurnRecoveryRetainsOriginalBudgetAndFreshClockRequirement() {
+
+  @Test
+  void unchangedOwnTurnRecoveryRetainsOriginalBudgetAndFreshClockRequirement() {
     FoxGameState state = initialized();
     state.setDirectMaxTime(10);
     refresh(state, 0, "60,30,3");
@@ -168,7 +179,8 @@ class FoxProtocolStateTest {
     assertNull(state.prepareSubmission(state.snapshot(), 2, "D4", 10_000_000_000L));
   }
 
-  @Test void unsupportedExtensionsAndExpiredClockRemainObservation() {
+  @Test
+  void unsupportedExtensionsAndExpiredClockRemainObservation() {
     for (String suffix : List.of(",3^15^15^W,4^3^3^B", ",3^15^15^B")) {
       FoxGameState state = retainedPass();
       state.connected();
@@ -187,7 +199,8 @@ class FoxProtocolStateTest {
     assertEquals("Fox.clockRisk", expired.recoveryStatus());
   }
 
-  @Test void freshSkipFlagRestoresOnlyTheAlreadyProvenPass() {
+  @Test
+  void freshSkipFlagRestoresOnlyTheAlreadyProvenPass() {
     FoxGameState state = retainedPass();
     state.connected();
     state.receive("FARULE,19,60,30,3,650", 100_000_000_000L);
@@ -200,7 +213,8 @@ class FoxProtocolStateTest {
     assertEquals(Character.valueOf('W'), state.snapshot().toPlay());
   }
 
-  @Test void ordinaryOpponentExtensionSurvivesAnIncompleteConnectionWithoutMixingInitialization() {
+  @Test
+  void ordinaryOpponentExtensionSurvivesAnIncompleteConnectionWithoutMixingInitialization() {
     FoxGameState state = initialized();
     state.receive("FAMOVE,0,B,1^16^3^B", 1);
     state.disconnected();
@@ -217,11 +231,13 @@ class FoxProtocolStateTest {
     assertFalse(state.recoverHistory(3), "previous connection cannot supply this clock");
     state.receive("FATIMELEFT,50,30,3", 4);
     assertTrue(state.recoverHistory(5));
-    assertEquals(List.of("R16", "D4"), state.snapshot().actions().stream().map(a -> a.vertex(19)).toList());
+    assertEquals(
+        List.of("R16", "D4"), state.snapshot().actions().stream().map(a -> a.vertex(19)).toList());
     assertTrue(state.snapshot().ownTurn());
   }
 
-  @Test void officialStopDuringIncompleteRecoveryCannotSurviveAsCheckpoint() {
+  @Test
+  void officialStopDuringIncompleteRecoveryCannotSurviveAsCheckpoint() {
     FoxGameState state = retainedPass();
     reconnectPass(state);
     state.receive("FASCORE", 102_000_000_000L);
@@ -249,7 +265,8 @@ class FoxProtocolStateTest {
     state.receive("FATIMELEFT,40,30,3", 101_000_000_000L);
   }
 
-  @Test void retainedPassAutomaticallyRecoversAfterCompleteFreshInitialization() {
+  @Test
+  void retainedPassAutomaticallyRecoversAfterCompleteFreshInitialization() {
     FoxGameState state = retainedPass();
     reconnectPass(state);
     assertFalse(state.snapshot().searchable());
@@ -268,7 +285,8 @@ class FoxProtocolStateTest {
     assertNotNull(state.prepareSubmission(state.snapshot(), 100, "D16", 105_000_000_000L));
   }
 
-  @Test void incompleteRecoveryCannotSurviveContradictoryActionTerminalConnectionOrEngineRevocation() {
+  @Test
+  void incompleteRecoveryCannotSurviveContradictoryActionTerminalConnectionOrEngineRevocation() {
     for (String event : List.of("FAMOVE,1,B,3^15^15^W", "FARESULT,B+R", "connection", "engine")) {
       FoxGameState state = retainedPass();
       reconnectPass(state);
@@ -280,7 +298,8 @@ class FoxProtocolStateTest {
     }
   }
 
-  @Test void mismatchAndFailedSubmissionCannotBecomeCheckpoints() {
+  @Test
+  void mismatchAndFailedSubmissionCannotBecomeCheckpoints() {
     FoxGameState mismatch = retainedPass();
     reconnectPass(mismatch);
     mismatch.receive("FASTATUS,1,B,1^16^3^B", 102_000_000_000L);
@@ -300,7 +319,9 @@ class FoxProtocolStateTest {
     assertTrue(failed.snapshot().searchable(), "genuinely new game remains admissible");
     assertEquals(FoxGameState.SubmissionOutcome.FAILED, failed.submissions().get(0).outcome());
   }
-  @Test void fragmentedAndCoalescedFramesAreAtomic() {
+
+  @Test
+  void fragmentedAndCoalescedFramesAreAtomic() {
     FoxProtocol codec = new FoxProtocol();
     List<String> frames = new ArrayList<>();
     byte[] first = "$FASTATUS,0*0F\r\n".getBytes(StandardCharsets.US_ASCII);
@@ -317,7 +338,8 @@ class FoxProtocolStateTest {
     assertEquals(3, frames.size());
   }
 
-  @Test void waitsForAllInitializationAndPreservesUnnumberedPass() {
+  @Test
+  void waitsForAllInitializationAndPreservesUnnumberedPass() {
     FoxGameState state = new FoxGameState();
     state.connected();
     state.receive("FARULE,19,3600,30,3,650", 0);
@@ -342,7 +364,8 @@ class FoxProtocolStateTest {
     assertTrue(state.snapshot().searchable());
   }
 
-  @Test void coldMidgameAndMissingActionsNeverBecomeCompleteHistory() {
+  @Test
+  void coldMidgameAndMissingActionsNeverBecomeCompleteHistory() {
     FoxGameState cold = new FoxGameState();
     cold.connected();
     cold.receive("FARULE,19,60,30,3,650", 0);
@@ -354,12 +377,12 @@ class FoxProtocolStateTest {
     FoxGameState state = initialized();
     state.receive("FAMOVE,1,B,1^3^3^W", 0);
     assertFalse(state.snapshot().complete());
-    assertThrows(IllegalArgumentException.class,
-        () -> state.receive("FAMOVE,0,B,3^4^4^B", 0));
+    assertThrows(IllegalArgumentException.class, () -> state.receive("FAMOVE,0,B,3^4^4^B", 0));
     assertEquals(1, state.snapshot().placements().size());
   }
 
-  @Test void setupIsNotAnActionAndKomiUsesHundredths() {
+  @Test
+  void setupIsNotAnActionAndKomiUsesHundredths() {
     FoxGameState state = new FoxGameState();
     state.connected();
     state.receive("FARULE,9,60,10,2,50,0^2^2^B,0^6^6^B", 0);
@@ -373,7 +396,8 @@ class FoxProtocolStateTest {
     assertEquals('W', state.snapshot().toPlay());
   }
 
-  @Test void disconnectRequiresNewGameRatherThanEmptyReconnectAssumption() {
+  @Test
+  void disconnectRequiresNewGameRatherThanEmptyReconnectAssumption() {
     FoxGameState state = initialized();
     long connection = state.snapshot().connection();
     state.disconnected();
@@ -389,7 +413,8 @@ class FoxProtocolStateTest {
     assertTrue(state.snapshot().searchable());
   }
 
-  @Test void refreshAndQueueTimeConsumeBudgetAndWriteIsNotConfirmation() {
+  @Test
+  void refreshAndQueueTimeConsumeBudgetAndWriteIsNotConfirmation() {
     FoxGameState state = initialized();
     assertTrue(state.beginClockRefresh(2_000_000_000L));
     state.receive("FATIMELEFT,58,30,3", 3_000_000_000L);
@@ -411,7 +436,8 @@ class FoxProtocolStateTest {
     assertEquals(FoxGameState.SubmissionOutcome.CONFIRMED, state.submissions().get(0).outcome());
   }
 
-  @Test void passConfirmationConsumesActionButNotNextPlacementNumber() {
+  @Test
+  void passConfirmationConsumesActionButNotNextPlacementNumber() {
     FoxGameState state = initialized();
     refresh(state, 0, "60,30,3");
     var pass = state.prepareSubmission(state.snapshot(), 1, "pass", 1);
@@ -425,11 +451,12 @@ class FoxProtocolStateTest {
     assertTrue(state.snapshot().placements().isEmpty());
     state.receive("FAMOVE,1,B,1^3^3^W", 6);
     refresh(state, 7, "59,30,3");
-    assertEquals("AFPLAY,B,2^16^3^B",
-        state.prepareSubmission(state.snapshot(), 2, "R16", 8).body());
+    assertEquals(
+        "AFPLAY,B,2^16^3^B", state.prepareSubmission(state.snapshot(), 2, "R16", 8).body());
   }
 
-  @Test void matchingFullStatusConfirmsPlacementWithoutInferringMissingPass() {
+  @Test
+  void matchingFullStatusConfirmsPlacementWithoutInferringMissingPass() {
     FoxGameState state = initialized();
     refresh(state, 0, "60,30,3");
     var pending = state.prepareSubmission(state.snapshot(), 1, "D4", 1);
@@ -442,7 +469,8 @@ class FoxProtocolStateTest {
     assertTrue(state.snapshot().complete());
   }
 
-  @Test void whiteNineByNineUsesAuthoritativeTurnAndCoordinateSpace() {
+  @Test
+  void whiteNineByNineUsesAuthoritativeTurnAndCoordinateSpace() {
     FoxGameState state = new FoxGameState();
     state.connected();
     state.receive("FARULE,9,60,10,2,50", 0);
@@ -460,8 +488,10 @@ class FoxProtocolStateTest {
     assertEquals(2, state.snapshot().actions().size());
   }
 
-  @Test void deadlineAndInvalidationRejectLateOrQueuedSubmissions() {
-    for (String event : List.of("stop", "disconnect", "FASCORE", "FARESULT,W+R", "FAMOVE,0,B,1^3^15^B")) {
+  @Test
+  void deadlineAndInvalidationRejectLateOrQueuedSubmissions() {
+    for (String event :
+        List.of("stop", "disconnect", "FASCORE", "FARESULT,W+R", "FAMOVE,0,B,1^3^15^B")) {
       FoxGameState state = initialized();
       refresh(state, 0, "60,30,3");
       var original = state.snapshot();
@@ -482,7 +512,8 @@ class FoxProtocolStateTest {
     assertNull(state.prepareSubmission(state.snapshot(), 2, "pass", 59_000_000_001L));
   }
 
-  @Test void unconfirmedFailureSurvivesDisconnectAndNoResendOccurs() {
+  @Test
+  void unconfirmedFailureSurvivesDisconnectAndNoResendOccurs() {
     FoxGameState state = initialized();
     refresh(state, 0, "60,30,3");
     var pending = state.prepareSubmission(state.snapshot(), 1, "D4", 1);
@@ -500,18 +531,23 @@ class FoxProtocolStateTest {
     assertFalse(state.snapshot().searchable());
   }
 
-  @Test void consumedMainTimeAndPeriodsAreNotResetByTurnsOrRepeatedQueries() {
+  @Test
+  void consumedMainTimeAndPeriodsAreNotResetByTurnsOrRepeatedQueries() {
     FoxGameState state = initialized();
     refresh(state, 0, "60,30,3");
     state.receive("FASKIP,0,B", 10_000_000_000L);
     state.receive("FAMOVE,1,B,1^3^3^W", 20_000_000_000L);
     refresh(state, 21_000_000_000L, "60,30,3");
-    assertEquals(69_000_000_000L, state.snapshot().submitDeadlineNanos(), "opponent time excluded, own ten seconds retained");
+    assertEquals(
+        69_000_000_000L,
+        state.snapshot().submitDeadlineNanos(),
+        "opponent time excluded, own ten seconds retained");
     state.receive("FATIMELEFT,0,30,2", 30_000_000_000L);
     assertEquals(59_000_000_000L, state.snapshot().submitDeadlineNanos());
     state.receive("FATIMELEFT,0,30,2", 40_000_000_000L);
     assertEquals(59_000_000_000L, state.snapshot().submitDeadlineNanos());
-    assertThrows(IllegalArgumentException.class, () -> state.receive("FATIMELEFT,0,30,3", 41_000_000_000L));
+    assertThrows(
+        IllegalArgumentException.class, () -> state.receive("FATIMELEFT,0,30,3", 41_000_000_000L));
     state.receive("FASKIP,0,B", 42_000_000_000L);
     state.receive("FAMOVE,1,B,2^4^4^W", 50_000_000_000L);
     refresh(state, 51_000_000_000L, "0,30,2");
@@ -519,7 +555,8 @@ class FoxProtocolStateTest {
     assertEquals(2, state.snapshot().clock().periods());
   }
 
-  @Test void exhaustedOrContradictoryClockNeverAdmitsAChoice() {
+  @Test
+  void exhaustedOrContradictoryClockNeverAdmitsAChoice() {
     FoxGameState state = initialized();
     refresh(state, 0, "0,1,1");
     assertNull(state.prepareSubmission(state.snapshot(), 1, "pass", 1));
@@ -533,8 +570,11 @@ class FoxProtocolStateTest {
   }
 
   private static FoxGameState initialized() {
-    FoxGameState state = new FoxGameState(); initialize(state); return state;
+    FoxGameState state = new FoxGameState();
+    initialize(state);
+    return state;
   }
+
   private static void initialize(FoxGameState state) {
     state.connected();
     state.receive("FARULE,19,60,30,3,650", 0);

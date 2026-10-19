@@ -13,26 +13,39 @@ import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.io.CleanupMode;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Actual packaged-engine protocol acceptance; never substitutes a fake process. */
 @EnabledIfSystemProperty(named = "lizzie.acceptance.engine", matches = ".+")
 class KataGoRulesProcessIT {
-  @TempDir(cleanup = CleanupMode.ON_SUCCESS) Path directory;
+  @TempDir(cleanup = CleanupMode.ON_SUCCESS)
+  Path directory;
 
   @Test
   void everyPresetRoundTripsThroughRealKataGo() throws Exception {
     Path config = directory.resolve("gtp.cfg");
-    Files.writeString(config, "rules = chinese\nnumSearchThreads = 1\nmaxVisits = 16\n"
-        + "logAllGTPCommunication = true\nlogSearchInfo = true\n"
-        + "logSearchInfoForChosenMove = false\nponderingEnabled = false\n"
-        + "allowResignation = true\nresignThreshold = -0.90\nresignConsecTurns = 3\n");
-    Process process = new ProcessBuilder(System.getProperty("lizzie.acceptance.engine"), "gtp",
-        "-model", System.getProperty("lizzie.acceptance.model"), "-config", config.toString())
-        .directory(directory.toFile()).redirectError(directory.resolve("engine.log").toFile()).start();
+    Files.writeString(
+        config,
+        "rules = chinese\nnumSearchThreads = 1\nmaxVisits = 16\n"
+            + "logAllGTPCommunication = true\nlogSearchInfo = true\n"
+            + "logSearchInfoForChosenMove = false\nponderingEnabled = false\n"
+            + "allowResignation = true\nresignThreshold = -0.90\nresignConsecTurns = 3\n");
+    Process process =
+        new ProcessBuilder(
+                System.getProperty("lizzie.acceptance.engine"),
+                "gtp",
+                "-model",
+                System.getProperty("lizzie.acceptance.model"),
+                "-config",
+                config.toString())
+            .directory(directory.toFile())
+            .redirectError(directory.resolve("engine.log").toFile())
+            .start();
     var reader = Executors.newSingleThreadExecutor();
-    try (var input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+    try (var input =
+            new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
         var output = new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8)) {
       int id = 1;
       for (String preset : KataGoRules.officialPresetNames()) {
@@ -57,8 +70,9 @@ class KataGoRulesProcessIT {
       assertTrue(process.waitFor(10, TimeUnit.SECONDS));
       assertEquals(0, process.exitValue());
     } catch (Exception failure) {
-      throw new AssertionError("KataGo protocol acceptance failed: "
-          + Files.readString(directory.resolve("engine.log")), failure);
+      throw new AssertionError(
+          "KataGo protocol acceptance failed: " + Files.readString(directory.resolve("engine.log")),
+          failure);
     } finally {
       process.destroyForcibly();
       reader.shutdownNow();

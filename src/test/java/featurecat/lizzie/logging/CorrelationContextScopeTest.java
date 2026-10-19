@@ -80,11 +80,9 @@ class CorrelationContextScopeTest {
                                       "req-network", MDC.get(CorrelationContext.REQUEST_ID));
                                   assertEquals(
                                       "trace-caller", MDC.get(CorrelationContext.TRACE_SESSION));
+                                  assertEquals("gma-readboard", MDC.get(CorrelationContext.GMA_ID));
                                   assertEquals(
-                                      "gma-readboard", MDC.get(CorrelationContext.GMA_ID));
-                                  assertEquals(
-                                      "yike-readboard",
-                                      MDC.get(CorrelationContext.SYNC_SESSION));
+                                      "yike-readboard", MDC.get(CorrelationContext.SYNC_SESSION));
                                   throw new MarkerFailure();
                                 }))));
 

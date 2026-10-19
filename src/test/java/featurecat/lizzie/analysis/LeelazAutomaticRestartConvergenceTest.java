@@ -320,8 +320,10 @@ class LeelazAutomaticRestartConvergenceTest {
       assertEngineMatchesBoard(engine, board, 19, 19);
     }
   }
+
   @Test
-  void runtimeSourceRestoreRestartsDespiteUnchangedSourceAndWaitsForContinuation() throws Exception {
+  void runtimeSourceRestoreRestartsDespiteUnchangedSourceAndWaitsForContinuation()
+      throws Exception {
     try (RestartTestEnvironment env = RestartTestEnvironment.open()) {
       ConvergingRestartLeelaz engine = new ConvergingRestartLeelaz();
       engine.freshReaderOnStart = true;
@@ -336,14 +338,17 @@ class LeelazAutomaticRestartConvergenceTest {
       AtomicInteger callbacks = new AtomicInteger();
       var prepared = original.prepareRestore();
       assertEquals(Leelaz.RuntimeThreadSource.CFG, prepared.source());
-      var restored = prepared.execute(successor -> {
-        callbacks.incrementAndGet();
-        assertFalse(original.isCurrent());
-        assertEquals(Leelaz.RuntimeThreadOverrideState.OFF, successor.overrideState());
-        assertEquals(0, engine.resumeCount.get());
-        assertTrue(engineModeAdmissionOpen(engine), "continuation runs after endpoint release");
-        return continuation;
-      });
+      var restored =
+          prepared.execute(
+              successor -> {
+                callbacks.incrementAndGet();
+                assertFalse(original.isCurrent());
+                assertEquals(Leelaz.RuntimeThreadOverrideState.OFF, successor.overrideState());
+                assertEquals(0, engine.resumeCount.get());
+                assertTrue(
+                    engineModeAdmissionOpen(engine), "continuation runs after endpoint release");
+                return continuation;
+              });
       assertThrows(
           java.util.concurrent.ExecutionException.class,
           () ->
@@ -366,7 +371,8 @@ class LeelazAutomaticRestartConvergenceTest {
       assertEquals(
           Leelaz.RuntimeThreadOverrideState.OFF,
           restored.get(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS).overrideState());
-      assertEquals(1, engine.resumeCount.get(), "captured ponder intent resumes only after handback");
+      assertEquals(
+          1, engine.resumeCount.get(), "captured ponder intent resumes only after handback");
       assertEquals(1, callbacks.get());
     }
   }
@@ -382,10 +388,14 @@ class LeelazAutomaticRestartConvergenceTest {
       Leelaz.RuntimeSearchThreads original = engine.captureRuntimeSearchThreads();
       assertEquals(10, original.apply(10).get(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
       AtomicInteger callbacks = new AtomicInteger();
-      var restored = original.prepareRestore().execute(successor -> {
-        callbacks.incrementAndGet();
-        return CompletableFuture.completedFuture(null);
-      });
+      var restored =
+          original
+              .prepareRestore()
+              .execute(
+                  successor -> {
+                    callbacks.incrementAndGet();
+                    return CompletableFuture.completedFuture(null);
+                  });
       assertThrows(
           java.util.concurrent.ExecutionException.class,
           () -> restored.get(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
@@ -417,20 +427,24 @@ class LeelazAutomaticRestartConvergenceTest {
               throw new AssertionError(failure);
             }
           };
-      var restored = original.prepareRestore().execute(next -> CompletableFuture.completedFuture(null));
+      var restored =
+          original.prepareRestore().execute(next -> CompletableFuture.completedFuture(null));
       assertTrue(reserved.await(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
-      var primary = (java.util.concurrent.locks.ReentrantLock)
-          privateField(Lizzie.class, null, "PRIMARY_ENGINE_LOCK");
+      var primary =
+          (java.util.concurrent.locks.ReentrantLock)
+              privateField(Lizzie.class, null, "PRIMARY_ENGINE_LOCK");
       Object arbitration = privateField(Leelaz.class, engine, "engineArbitrationLock");
       boolean holdsEngine = false;
       primary.lock();
       try {
         proceed.countDown();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-        while (!primary.hasQueuedThread(worker.get()) && System.nanoTime() < deadline) Thread.sleep(5);
+        while (!primary.hasQueuedThread(worker.get()) && System.nanoTime() < deadline)
+          Thread.sleep(5);
         assertTrue(primary.hasQueuedThread(worker.get()));
-        var info = java.lang.management.ManagementFactory.getThreadMXBean()
-            .getThreadInfo(new long[] {worker.get().getId()}, true, true)[0];
+        var info =
+            java.lang.management.ManagementFactory.getThreadMXBean()
+                .getThreadInfo(new long[] {worker.get().getId()}, true, true)[0];
         for (var monitor : info.getLockedMonitors()) {
           holdsEngine |= monitor.getIdentityHashCode() == System.identityHashCode(arbitration);
         }
@@ -456,20 +470,30 @@ class LeelazAutomaticRestartConvergenceTest {
       engine.started = engine.isLoaded = engine.isKatago = true;
       var original = engine.captureRuntimeSearchThreads();
       assertEquals(10, original.apply(10).get(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
-      engine.onRestartAttempt = attempt -> {
-        try {
-          Object operation = privateField(attempt.getClass(), attempt, "operation");
-          Object claim = privateField(operation.getClass(), operation, "completionClaim");
-          var method = claim.getClass().getDeclaredMethod("runAfterEndpointRelease", Runnable.class);
-          method.setAccessible(true);
-          method.invoke(claim, (Runnable) () -> engine.installFreshCommandOutputForTest(engine.transport));
-        } catch (Exception failure) { throw new AssertionError(failure); }
-      };
+      engine.onRestartAttempt =
+          attempt -> {
+            try {
+              Object operation = privateField(attempt.getClass(), attempt, "operation");
+              Object claim = privateField(operation.getClass(), operation, "completionClaim");
+              var method =
+                  claim.getClass().getDeclaredMethod("runAfterEndpointRelease", Runnable.class);
+              method.setAccessible(true);
+              method.invoke(
+                  claim,
+                  (Runnable) () -> engine.installFreshCommandOutputForTest(engine.transport));
+            } catch (Exception failure) {
+              throw new AssertionError(failure);
+            }
+          };
       AtomicInteger callbacks = new AtomicInteger();
-      var restored = original.prepareRestore().execute(next -> {
-        callbacks.incrementAndGet();
-        return CompletableFuture.completedFuture(null);
-      });
+      var restored =
+          original
+              .prepareRestore()
+              .execute(
+                  next -> {
+                    callbacks.incrementAndGet();
+                    return CompletableFuture.completedFuture(null);
+                  });
       assertTrue(engine.startCompleted.await(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
       assertTrue(
           waitForRawCommandPrefix(
@@ -493,15 +517,26 @@ class LeelazAutomaticRestartConvergenceTest {
       engine.savedEntryId = "handoff-source";
       org.json.JSONObject policy = new org.json.JSONObject().put("source", "CFG");
       Lizzie.config.uiConfig = new org.json.JSONObject().put("engine-thread-policy-migrated", true);
-      Lizzie.config.leelazConfig = new org.json.JSONObject().put("engine-settings-list",
-          new org.json.JSONArray().put(new org.json.JSONObject().put("id", engine.savedEntryId)
-              .put("command", "controlled-engine").put("threadPolicy", policy)));
+      Lizzie.config.leelazConfig =
+          new org.json.JSONObject()
+              .put(
+                  "engine-settings-list",
+                  new org.json.JSONArray()
+                      .put(
+                          new org.json.JSONObject()
+                              .put("id", engine.savedEntryId)
+                              .put("command", "controlled-engine")
+                              .put("threadPolicy", policy)));
       var original = engine.captureRuntimeSearchThreads();
       assertEquals(10, original.apply(10).get(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
-      var restored = original.prepareRestore().execute(next -> {
-        policy.put("source", "BENCHMARK").put("katago-benchmark-threads", 6);
-        return CompletableFuture.completedFuture(null);
-      });
+      var restored =
+          original
+              .prepareRestore()
+              .execute(
+                  next -> {
+                    policy.put("source", "BENCHMARK").put("katago-benchmark-threads", 6);
+                    return CompletableFuture.completedFuture(null);
+                  });
       assertTrue(engine.startCompleted.await(POSITIVE_WAIT_SECONDS, TimeUnit.SECONDS));
       assertTrue(
           waitForRawCommandPrefix(
@@ -1294,8 +1329,7 @@ class LeelazAutomaticRestartConvergenceTest {
       assertEquals(0, engine.analyzeCount.get(), "no analysis after a mirror fence failure");
       assertFalse(engine.isLoaded(), "the authority must be unavailable after the mirror failure");
       assertFalse(
-          mirror.isLoaded(),
-          "the failed mirror fence must not leave the captured mirror loaded");
+          mirror.isLoaded(), "the failed mirror fence must not leave the captured mirror loaded");
 
       // Late responses to the retired fence legs must be isolated.
       invokeFenceResponse(engine);
@@ -1335,8 +1369,7 @@ class LeelazAutomaticRestartConvergenceTest {
           engine.startCompleted.await(2, TimeUnit.SECONDS),
           "the root-replay restart must reach the startup phase");
       assertTrue(
-          board.previousMove(false),
-          "navigation during the delayed readiness must stay available");
+          board.previousMove(false), "navigation during the delayed readiness must stay available");
       engine.publishReady();
 
       assertTrue(
@@ -1483,8 +1516,7 @@ class LeelazAutomaticRestartConvergenceTest {
           "the first owner's completion gate must stay active after the rejected duplicate");
 
       assertTrue(
-          board.previousMove(false),
-          "navigation must stay available after the rejected duplicate");
+          board.previousMove(false), "navigation must stay available after the rejected duplicate");
       invokeLoadSgfResponse(engine);
 
       assertTrue(
@@ -1532,15 +1564,13 @@ class LeelazAutomaticRestartConvergenceTest {
 
       // A stale attempt from a previous restart round is captured, settled and then held in a
       // variable so a later stale cleanup can be replayed against the successor.
-      Leelaz.AutomaticRestartAttempt staleAttempt =
-          engine.beginAutomaticEngineRestartAttempt();
+      Leelaz.AutomaticRestartAttempt staleAttempt = engine.beginAutomaticEngineRestartAttempt();
       assertNotNull(staleAttempt);
       staleAttempt.close();
 
       // The successor attempt owns the lifecycle claim and blocks unrelated engine-mode owners on
       // both endpoints from capture through final fence settlement.
-      Leelaz.AutomaticRestartAttempt successorAttempt =
-          engine.beginAutomaticEngineRestartAttempt();
+      Leelaz.AutomaticRestartAttempt successorAttempt = engine.beginAutomaticEngineRestartAttempt();
       assertNotNull(successorAttempt);
       CountDownLatch completed = new CountDownLatch(1);
       successorAttempt.restartClosedEngine(0, completed::countDown);
@@ -1637,8 +1667,7 @@ class LeelazAutomaticRestartConvergenceTest {
       assertEquals(0, engine.analyzeCount.get(), "no analysis after an authority fence error");
       assertFalse(engine.isLoaded(), "the authority must be unavailable after its fence error");
       assertFalse(
-          mirror.isLoaded(),
-          "the unconfirmed captured mirror must fail closed with the authority");
+          mirror.isLoaded(), "the unconfirmed captured mirror must fail closed with the authority");
       Leelaz.EngineModeReservation afterFailure = engine.beginEngineModeReservation();
       assertNotNull(
           afterFailure,
@@ -1901,7 +1930,6 @@ class LeelazAutomaticRestartConvergenceTest {
     return count;
   }
 
-
   private static boolean waitForLoadSgfCount(
       ConvergingRestartLeelaz engine, int count, long timeout, TimeUnit unit)
       throws InterruptedException {
@@ -1915,8 +1943,8 @@ class LeelazAutomaticRestartConvergenceTest {
     return false;
   }
 
-  private static boolean waitForCount(
-      AtomicInteger counter, int count, long timeout, TimeUnit unit) throws InterruptedException {
+  private static boolean waitForCount(AtomicInteger counter, int count, long timeout, TimeUnit unit)
+      throws InterruptedException {
     long deadline = System.nanoTime() + unit.toNanos(timeout);
     while (System.nanoTime() < deadline) {
       if (counter.get() >= count) {
@@ -1932,7 +1960,9 @@ class LeelazAutomaticRestartConvergenceTest {
     return plainHistoryWithMoves(19);
   }
 
-  /** Plain MOVE history of the given size without any usable snapshot anchor (root-replay route). */
+  /**
+   * Plain MOVE history of the given size without any usable snapshot anchor (root-replay route).
+   */
   private static BoardHistoryList plainHistoryWithMoves(int boardSize) {
     BoardData root = BoardData.empty(boardSize, boardSize);
     BoardHistoryList history = new BoardHistoryList(root);
@@ -2066,8 +2096,7 @@ class LeelazAutomaticRestartConvergenceTest {
 
   private static Leelaz.AutomaticRestartAttempt beginAutomaticRestartAttempt(
       Leelaz engine, boolean allowUnrestoredState) throws Exception {
-    Method method =
-        Leelaz.class.getDeclaredMethod("beginAutomaticRestartAttempt", boolean.class);
+    Method method = Leelaz.class.getDeclaredMethod("beginAutomaticRestartAttempt", boolean.class);
     method.setAccessible(true);
     return (Leelaz.AutomaticRestartAttempt) method.invoke(engine, allowUnrestoredState);
   }
@@ -2078,16 +2107,11 @@ class LeelazAutomaticRestartConvergenceTest {
       throws Exception {
     Method queueMethod = Leelaz.class.getDeclaredMethod("commandQueue");
     queueMethod.setAccessible(true);
-    java.util.ArrayDeque<Object> queue =
-        (java.util.ArrayDeque<Object>) queueMethod.invoke(engine);
-    Class<?> queuedCommandType =
-        Class.forName("featurecat.lizzie.analysis.Leelaz$QueuedCommand");
+    java.util.ArrayDeque<Object> queue = (java.util.ArrayDeque<Object>) queueMethod.invoke(engine);
+    Class<?> queuedCommandType = Class.forName("featurecat.lizzie.analysis.Leelaz$QueuedCommand");
     java.lang.reflect.Constructor<?> constructor =
         queuedCommandType.getDeclaredConstructor(
-            String.class,
-            Runnable.class,
-            Leelaz.CommandSendFailureHandler.class,
-            boolean.class);
+            String.class, Runnable.class, Leelaz.CommandSendFailureHandler.class, boolean.class);
     constructor.setAccessible(true);
     Object queuedCommand = constructor.newInstance(command, null, failureHandler, true);
     synchronized (queue) {
