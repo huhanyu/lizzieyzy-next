@@ -38,8 +38,8 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
    * <p>序列里所有发命令前 stop ponder、用 NoPonder 版 play，避免每个 play 都触发 kata-analyze 重启，否则 KataGo
    * 会在中间盘面的多次重启过程中产生大量短暂的 info 行。序列发完才统一 ponder() 启动新分析。
    *
-   * <p>exact snapshot restore module 负责最近 SNAPSHOT、loadsgf 与真实 tail；没有 SNAPSHOT
-   * 时才保留原 root replay。dummy 与 SNAPSHOT 节点本身跳过。
+   * <p>exact snapshot restore module 负责最近 SNAPSHOT、loadsgf 与真实 tail；没有 SNAPSHOT 时才保留原 root
+   * replay。dummy 与 SNAPSHOT 节点本身跳过。
    */
   @Override
   public void resyncFromCurrentHistory(BoardHistoryNode target) {
@@ -82,9 +82,7 @@ public final class LeelazEngineCommandSink implements EngineCommandSink {
     if (TrialDiag.ENABLED) {
       System.out.printf(
           "[trial-resync] target moveNum=%d snapshotAnchor=%s chainLen=%d%n",
-          target.getData() == null ? -1 : target.getData().moveNumber,
-          "(root)",
-          chain.size());
+          target.getData() == null ? -1 : target.getData().moveNumber, "(root)", chain.size());
     }
 
     int played = 0;

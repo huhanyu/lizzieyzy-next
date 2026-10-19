@@ -267,8 +267,7 @@ final class InFrameLayout {
     int rightInset = request.rightInset;
     int bottomInset = request.bottomInset;
     int maxBound = Math.max(width, height);
-    int maxSize =
-        Math.min(width - leftInset - rightInset, height - topInset - bottomInset);
+    int maxSize = Math.min(width - leftInset - rightInset, height - topInset - bottomInset);
     maxSize = Math.max(maxSize, Math.max(request.boardWidth, request.boardHeight) + 5);
     int panelMargin = (int) (maxSize * 0.02);
     int leftoverWidth = width - maxSize;
@@ -407,12 +406,9 @@ final class InFrameLayout {
       }
     }
 
-    Rectangle comment =
-        request.showComment ? new Rectangle(cx, cy, cw, ch) : new Rectangle();
+    Rectangle comment = request.showComment ? new Rectangle(cx, cy, cw, ch) : new Rectangle();
     Rectangle variationGraph =
-        request.showVariationGraph
-            ? new Rectangle(treex, treey, treew, treeh)
-            : new Rectangle();
+        request.showVariationGraph ? new Rectangle(treex, treey, treew, treeh) : new Rectangle();
     Rectangle subBoard =
         request.showSubBoard
             ? new Rectangle(subBoardX, subBoardY, subBoardLength, subBoardLength)

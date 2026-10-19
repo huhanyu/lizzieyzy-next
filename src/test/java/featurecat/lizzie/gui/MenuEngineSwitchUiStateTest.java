@@ -36,8 +36,7 @@ class MenuEngineSwitchUiStateTest {
         "application switching",
         Menu.engineSwitchUiMessage(null, applicationBundle, SWITCHING_KEY, "switching..."));
     assertEquals(
-        "switching...",
-        Menu.engineSwitchUiMessage(null, null, SWITCHING_KEY, "switching..."));
+        "switching...", Menu.engineSwitchUiMessage(null, null, SWITCHING_KEY, "switching..."));
   }
 
   @Test
@@ -47,8 +46,7 @@ class MenuEngineSwitchUiStateTest {
 
     assertEquals(
         "menu switching",
-        Menu.engineSwitchUiMessage(
-            menuBundle, applicationBundle, SWITCHING_KEY, "switching..."));
+        Menu.engineSwitchUiMessage(menuBundle, applicationBundle, SWITCHING_KEY, "switching..."));
     assertEquals(
         "switching...",
         Menu.engineSwitchUiMessage(menuBundle, applicationBundle, "missing", "switching..."));
@@ -73,8 +71,7 @@ class MenuEngineSwitchUiStateTest {
   }
 
   @Test
-  void twentyFirstAndTwentySecondEngineReplayActiveStateIntoFreshMoreItem()
-      throws Exception {
+  void twentyFirstAndTwentySecondEngineReplayActiveStateIntoFreshMoreItem() throws Exception {
     Icon playing = new ImageIcon(new byte[] {1});
     Icon stopped = new ImageIcon(new byte[] {2});
     for (int activeIndex : new int[] {20, 21}) {
@@ -94,8 +91,7 @@ class MenuEngineSwitchUiStateTest {
       Menu.applyEngineSwitchPresentation(
           menu, items, active, playing, stopped, true, "switching...");
 
-      assertEquals(
-          "[" + (activeIndex + 1) + "]: Engine " + (activeIndex + 1), menu.getText());
+      assertEquals("[" + (activeIndex + 1) + "]: Engine " + (activeIndex + 1), menu.getText());
       assertSame(playing, items[20].getIcon());
       assertTrue(items[20].isEnabled());
     }
@@ -128,17 +124,21 @@ class MenuEngineSwitchUiStateTest {
   }
 
   @Test
-  void failedSwitchThenSuccessfulRollbackShowsRecoveredEngineNotFailedTarget()
-      throws Exception {
+  void failedSwitchThenSuccessfulRollbackShowsRecoveredEngineNotFailedTarget() throws Exception {
     Icon playing = new ImageIcon(new byte[] {1});
     Icon stopped = new ImageIcon(new byte[] {2});
     JFontMenu menu = new JFontMenu("no engine");
-    JFontMenuItem[] items = {
-      new JFontMenuItem("Engine A"), new JFontMenuItem("Engine B")
-    };
+    JFontMenuItem[] items = {new JFontMenuItem("Engine A"), new JFontMenuItem("Engine B")};
     EngineManager.EngineSwitchUiSnapshot activeA =
         snapshot(
-            EngineManager.EngineSwitchUiPhase.ACTIVE, 0, "Engine A", 0, "Engine A", 0, "Engine A", "");
+            EngineManager.EngineSwitchUiPhase.ACTIVE,
+            0,
+            "Engine A",
+            0,
+            "Engine A",
+            0,
+            "Engine A",
+            "");
     EngineManager.EngineSwitchUiSnapshot switchingB =
         snapshot(
             EngineManager.EngineSwitchUiPhase.SWITCHING,
@@ -164,14 +164,7 @@ class MenuEngineSwitchUiStateTest {
     Menu.applyEngineSwitchPresentation(
         menu, items, switchingB, playing, stopped, true, "switching...");
     Menu.applyEngineSwitchPresentation(
-        menu,
-        items,
-        failedB,
-        playing,
-        stopped,
-        true,
-        "",
-        "Switch failed, rolled back");
+        menu, items, failedB, playing, stopped, true, "", "Switch failed, rolled back");
 
     assertEquals("[1]: Engine A  ·  Switch failed, rolled back", menu.getText());
     assertFalse(menu.getText().startsWith("[2]:"));
@@ -189,9 +182,7 @@ class MenuEngineSwitchUiStateTest {
     Icon playing = new ImageIcon(new byte[] {1});
     Icon stopped = new ImageIcon(new byte[] {2});
     JFontMenu menu = new JFontMenu("no engine");
-    JFontMenuItem[] items = {
-      new JFontMenuItem("Engine A"), new JFontMenuItem("Engine B")
-    };
+    JFontMenuItem[] items = {new JFontMenuItem("Engine A"), new JFontMenuItem("Engine B")};
     EngineManager.EngineSwitchUiSnapshot switchingB =
         snapshot(
             EngineManager.EngineSwitchUiPhase.SWITCHING,
@@ -203,8 +194,7 @@ class MenuEngineSwitchUiStateTest {
             "Engine A",
             "");
     EngineManager.EngineSwitchUiSnapshot idle =
-        snapshot(
-            EngineManager.EngineSwitchUiPhase.IDLE, -1, "", -1, "", -1, "", "");
+        snapshot(EngineManager.EngineSwitchUiPhase.IDLE, -1, "", -1, "", -1, "", "");
 
     Menu.applyEngineSwitchPresentation(
         menu, items, switchingB, playing, stopped, true, "switching...");
@@ -283,6 +273,50 @@ class MenuEngineSwitchUiStateTest {
     }
   }
 
+  @Test
+  void queuedBreadthRefreshUsesCurrentEngineAndPreservesUserValue() throws Exception {
+    Leelaz previous = Lizzie.leelaz;
+    Menu menu = allocate(Menu.class);
+    menu.chkWRN = new JFontCheckBox();
+    menu.chkWRN.setSelected(true);
+    menu.txtWRN = new JFontTextField();
+    menu.txtWRN.setText("0.37");
+    Leelaz ready =
+        new Leelaz("") {
+          @Override
+          public boolean canSetAnalysisWideRootNoise() {
+            return true;
+          }
+        };
+    try {
+      EngineGameSnapshotFixtures.publishIdle();
+      SwingUtilities.invokeAndWait(
+          () -> {
+            Lizzie.setPrimaryEngine(ready);
+            Thread callback = new Thread(menu::refreshBreadthAdmission);
+            callback.start();
+            try {
+              callback.join(2000);
+            } catch (InterruptedException ex) {
+              Thread.currentThread().interrupt();
+              throw new AssertionError(ex);
+            }
+            assertFalse(callback.isAlive());
+            // The old ready notification is queued behind this replacement on the EDT.
+            Lizzie.setPrimaryEngine(null);
+          });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            assertFalse(menu.chkWRN.isEnabled());
+            assertFalse(menu.txtWRN.isEnabled());
+            assertTrue(menu.chkWRN.isSelected());
+            assertEquals("0.37", menu.txtWRN.getText());
+          });
+    } finally {
+      Lizzie.setPrimaryEngine(previous);
+    }
+  }
+
   private static EngineManager.EngineSwitchUiSnapshot failedSnapshot(
       int previousIndex, int targetIndex) throws Exception {
     return snapshot(
@@ -341,8 +375,7 @@ class MenuEngineSwitchUiStateTest {
   private static JFontMenuItem[] freshEngineItems() {
     JFontMenuItem[] items = new JFontMenuItem[21];
     for (int index = 0; index < items.length; index++) {
-      items[index] =
-          new JFontMenuItem(index == 20 ? "More engines" : "Engine " + (index + 1));
+      items[index] = new JFontMenuItem(index == 20 ? "More engines" : "Engine " + (index + 1));
     }
     return items;
   }

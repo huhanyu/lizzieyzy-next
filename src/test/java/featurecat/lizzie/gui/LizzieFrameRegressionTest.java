@@ -592,8 +592,7 @@ class LizzieFrameRegressionTest {
       PolicyFrame frame = allocate(PolicyFrame.class);
       Lizzie.frame = frame;
       assertEquals(
-          AutomaticQuickAnalysisTask.Readiness.WAIT,
-          frame.automaticQuickAnalysisReadiness());
+          AutomaticQuickAnalysisTask.Readiness.WAIT, frame.automaticQuickAnalysisReadiness());
       startAutomaticQuickAnalysis(frame);
       var task = (AutomaticQuickAnalysisTask) getField(frame, "automaticQuickAnalysisTask");
       assertTrue(task.isActive(), "A retired connection must not cancel the loaded game's curve");
@@ -1542,8 +1541,7 @@ class LizzieFrameRegressionTest {
         "XGBoost 20TUN",
         displayName.invoke(null, PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN));
     assertEquals(
-        "HumanSL 40",
-        displayName.invoke(null, PlayerStrengthEstimator.StrengthModel.HUMANSL40));
+        "HumanSL 40", displayName.invoke(null, PlayerStrengthEstimator.StrengthModel.HUMANSL40));
   }
 
   @Test
@@ -2759,7 +2757,8 @@ class LizzieFrameRegressionTest {
 
         activateAnalysisControl(toolbar);
 
-        assertEquals(1, frame.prompts().size(), "the first explicit operation must explain recovery");
+        assertEquals(
+            1, frame.prompts().size(), "the first explicit operation must explain recovery");
         assertFalse(frame.isUserAnalysisPaused());
         assertFalse((boolean) getField(frame, "pendingForegroundResumeAfterCleanup"));
         assertNull(getField(frame, "userCancelledQuickAnalysisRoot"));
@@ -3488,8 +3487,7 @@ class LizzieFrameRegressionTest {
           else
             new Input()
                 .keyPressed(
-                    new KeyEvent(
-                        new Canvas(), KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_SPACE, ' '));
+                    new KeyEvent(new Canvas(), KeyEvent.KEY_PRESSED, 0, 0, KeyEvent.VK_SPACE, ' '));
         });
   }
 

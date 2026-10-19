@@ -48,8 +48,11 @@ class WindowsUpdateServiceTest {
 
       Path requestPath = new WindowsUpdateService().downloadAndPrepare(plan, null);
 
-      Path archivePath = requestPath.getParent().resolve(sha256(archive))
-          .resolve("2026-06-12-windows64.core-update.zip");
+      Path archivePath =
+          requestPath
+              .getParent()
+              .resolve(sha256(archive))
+              .resolve("2026-06-12-windows64.core-update.zip");
       assertEquals("downloaded archive", Files.readString(archivePath));
       JSONObject request = new JSONObject(Files.readString(requestPath));
       assertEquals(
@@ -77,33 +80,57 @@ class WindowsUpdateServiceTest {
       WindowsUpdatePlan plan = updatePlan("http://example.invalid/core.zip", archive);
       UpdateCheckResult offer = UpdateCheckResult.offerWindows(plan);
       AtomicInteger launches = new AtomicInteger();
-      java.util.concurrent.atomic.AtomicReference<Path> prepared = new java.util.concurrent.atomic.AtomicReference<>();
-      UpdateCheckCoordinator coordinator = new UpdateCheckCoordinator(s -> offer,
-          new UpdateCheckCoordinator.OfferHandoff() {
-            public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) {
-              assertEquals(0, launches.get(), "Viewing prepared files must not launch the updater");
-            }
-            public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) {
-              throw new AssertionError("Wrong platform");
-            }
-          }, new UpdateCheckCoordinator.Runner() {
-            public void runBackground(Runnable r) { r.run(); }
-            public void runOnEdt(Runnable r) { r.run(); }
-          }, s -> {}, new UpdateCheckCoordinator.DownloadService() {
-            public Path prepare(UpdateCheckResult r, ResumableDownloader.Control control,
-                ResumableDownloader.ProgressListener listener) throws Exception {
-              Path request = new WindowsUpdateService().downloadAndPrepare(r.windowsPlan, control, listener);
-              prepared.set(request);
-              return request;
-            }
-            public void apply(UpdateCheckResult r, Path request) throws Exception {
-              assertEquals(prepared.get(), request);
-              assertEquals(ProcessHandle.current().pid(), new JSONObject(Files.readString(request)).getLong("mainPid"));
-              launches.incrementAndGet();
-            }
-          });
-      coordinator.captureStartupPolicy(true, true, UpdateCheckSelection.of(
-          UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-06-01.1"));
+      java.util.concurrent.atomic.AtomicReference<Path> prepared =
+          new java.util.concurrent.atomic.AtomicReference<>();
+      UpdateCheckCoordinator coordinator =
+          new UpdateCheckCoordinator(
+              s -> offer,
+              new UpdateCheckCoordinator.OfferHandoff() {
+                public void openWindows(UpdateCheckSelection s, UpdateCheckResult r) {
+                  assertEquals(
+                      0, launches.get(), "Viewing prepared files must not launch the updater");
+                }
+
+                public void openPackage(UpdateCheckSelection s, UpdateCheckResult r) {
+                  throw new AssertionError("Wrong platform");
+                }
+              },
+              new UpdateCheckCoordinator.Runner() {
+                public void runBackground(Runnable r) {
+                  r.run();
+                }
+
+                public void runOnEdt(Runnable r) {
+                  r.run();
+                }
+              },
+              s -> {},
+              new UpdateCheckCoordinator.DownloadService() {
+                public Path prepare(
+                    UpdateCheckResult r,
+                    ResumableDownloader.Control control,
+                    ResumableDownloader.ProgressListener listener)
+                    throws Exception {
+                  Path request =
+                      new WindowsUpdateService()
+                          .downloadAndPrepare(r.windowsPlan, control, listener);
+                  prepared.set(request);
+                  return request;
+                }
+
+                public void apply(UpdateCheckResult r, Path request) throws Exception {
+                  assertEquals(prepared.get(), request);
+                  assertEquals(
+                      ProcessHandle.current().pid(),
+                      new JSONObject(Files.readString(request)).getLong("mainPid"));
+                  launches.incrementAndGet();
+                }
+              });
+      coordinator.captureStartupPolicy(
+          true,
+          true,
+          UpdateCheckSelection.of(
+              UpdateChannel.STABLE, UpdateSource.OFFICIAL_SITE, "next-2026-06-01.1"));
       coordinator.applicationReady();
       assertTrue(coordinator.state().ready());
       assertEquals(0, launches.get());
@@ -111,7 +138,8 @@ class WindowsUpdateServiceTest {
       coordinator.openOffer();
       assertEquals(0, launches.get());
       coordinator.startDownload(offer, true);
-      assertEquals(1, proxy.requests.get(), "Confirmation must not download the prepared update again");
+      assertEquals(
+          1, proxy.requests.get(), "Confirmation must not download the prepared update again");
       assertEquals(1, launches.get());
     }
   }
@@ -125,8 +153,7 @@ class WindowsUpdateServiceTest {
     assertEquals("nvidia", WindowsUpdatePaths.detectFlavor(fromManifest));
 
     Path fromBackend = Files.createDirectories(tempDir.resolve("legacy-backend").resolve("app"));
-    Path engineDir =
-        Files.createDirectories(fromBackend.resolve("engines/katago/windows-x64"));
+    Path engineDir = Files.createDirectories(fromBackend.resolve("engines/katago/windows-x64"));
     Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia50-cuda");
     assertEquals("nvidia", WindowsUpdatePaths.detectFlavor(fromBackend));
   }
@@ -209,9 +236,7 @@ class WindowsUpdateServiceTest {
         while ((line = reader.readLine()) != null && !line.isEmpty()) {}
         OutputStream out = socket.getOutputStream();
         out.write(
-            ("HTTP/1.1 200 OK\r\nContent-Length: "
-                    + body.length
-                    + "\r\nConnection: close\r\n\r\n")
+            ("HTTP/1.1 200 OK\r\nContent-Length: " + body.length + "\r\nConnection: close\r\n\r\n")
                 .getBytes(StandardCharsets.US_ASCII));
         out.write(body);
       }

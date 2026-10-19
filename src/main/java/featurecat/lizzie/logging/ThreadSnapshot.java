@@ -50,8 +50,7 @@ public final class ThreadSnapshot {
     HELD_RAW.set(null);
   }
 
-  static String render(
-      List<? extends ThreadRecord> records, Instant capturedAt, String reason) {
+  static String render(List<? extends ThreadRecord> records, Instant capturedAt, String reason) {
     Instant at = capturedAt == null ? Instant.now() : capturedAt;
     String why = reason == null || reason.isEmpty() ? "export" : reason;
     List<RenderedThread> rendered = new ArrayList<>();
@@ -125,8 +124,7 @@ public final class ThreadSnapshot {
         id = thread.getId();
       } catch (Throwable ignored) {
       }
-      records.add(
-          new JdkThreadRecord(thread, entry.getValue(), id < 0 ? null : infos.get(id)));
+      records.add(new JdkThreadRecord(thread, entry.getValue(), id < 0 ? null : infos.get(id)));
     }
     return records;
   }

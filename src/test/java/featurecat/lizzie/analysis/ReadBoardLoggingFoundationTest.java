@@ -160,7 +160,8 @@ class ReadBoardLoggingFoundationTest {
     LoggingRuntime runtime = startRuntime();
     captureStreams();
     ReadBoard board = allocateBoard();
-    invoke(board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_HELPER});
+    invoke(
+        board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_HELPER});
     board.parseLine(RAW_HELPER);
     awaitLogs(runtime);
 
@@ -188,7 +189,8 @@ class ReadBoardLoggingFoundationTest {
     setField(
         board,
         "inputStream",
-        new InputStreamReader(new SequenceThenThrow(badFrame, "broken-pipe"), StandardCharsets.UTF_8));
+        new InputStreamReader(
+            new SequenceThenThrow(badFrame, "broken-pipe"), StandardCharsets.UTF_8));
 
     invoke(board, "read");
     awaitLogs(runtime);
@@ -223,8 +225,10 @@ class ReadBoardLoggingFoundationTest {
     LoggingRuntime runtime = startRuntime();
     runtime.startFullTrace(EnumSet.of(TraceScope.READBOARD_YIKE));
     ReadBoard board = allocateBoard();
-    invoke(board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_HELPER});
-    invoke(board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_FRAME});
+    invoke(
+        board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_HELPER});
+    invoke(
+        board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_FRAME});
     board.parseLine("readboardLoggingV1 dGVzdFByb2Nlc3NJRA on off off healthy 0");
     awaitLogs(runtime);
     runtime.stopFullTrace();
@@ -260,9 +264,11 @@ class ReadBoardLoggingFoundationTest {
         "logNativeReadBoardStartFailure",
         new Class<?>[] {ProcessBuilder.class, IOException.class},
         new Object[] {new ProcessBuilder("readboard.exe"), new IOException("boom")});
-    invoke(board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_HELPER});
+    invoke(
+        board, "logReadBoardOutputLine", new Class<?>[] {String.class}, new Object[] {RAW_HELPER});
     invoke(board, "logReadBoardExit");
-    board.parseLine("readboardLoggingObserved cmVxdWVzdDE dGVzdFByb2Nlc3NJRA on off on degraded 3 writer-fault");
+    board.parseLine(
+        "readboardLoggingObserved cmVxdWVzdDE dGVzdFByb2Nlc3NJRA on off on degraded 3 writer-fault");
   }
 
   private LoggingRuntime startRuntime() {

@@ -96,8 +96,6 @@ class LeelazLoadSgfResponseBindingTest {
     }
   }
 
-
-
   @Test
   void loadSgfBindsAfterConsumedToImmediateResponse() throws Exception {
     try (TestHarness harness = TestHarness.open()) {
@@ -804,10 +802,10 @@ class LeelazLoadSgfResponseBindingTest {
   }
 
   /**
-   * A buffered test transport whose selected flush fails before any byte reaches its delegate.
-   * This models the recoverable branch: the failed command is discarded locally and the same
-   * physical stream may safely carry the already-queued successor. Partial/delegated-byte failures
-   * have a separate fail-closed test below.
+   * A buffered test transport whose selected flush fails before any byte reaches its delegate. This
+   * models the recoverable branch: the failed command is discarded locally and the same physical
+   * stream may safely carry the already-queued successor. Partial/delegated-byte failures have a
+   * separate fail-closed test below.
    */
   private static final class RecordingFailingOutputStream extends BufferedOutputStream {
     private final String failPrefix;
@@ -958,11 +956,7 @@ class LeelazLoadSgfResponseBindingTest {
     private static TestHarness open() throws Exception {
       TestHarness harness =
           new TestHarness(
-              Lizzie.config,
-              Lizzie.frame,
-              Lizzie.gtpConsole,
-              Lizzie.leelaz,
-              Lizzie.leelaz2);
+              Lizzie.config, Lizzie.frame, Lizzie.gtpConsole, Lizzie.leelaz, Lizzie.leelaz2);
       Lizzie.config = minimalConfig();
       Lizzie.frame = allocate(SilentFrame.class);
       Lizzie.gtpConsole = allocate(SilentGtpConsole.class);

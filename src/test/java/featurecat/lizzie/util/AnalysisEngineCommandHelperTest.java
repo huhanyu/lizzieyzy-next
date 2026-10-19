@@ -91,8 +91,7 @@ class AnalysisEngineCommandHelperTest {
                 + " gtp -model model.bin.gz -config "
                 + quote(gtpConfig));
 
-    AnalysisEngineCommandHelper.Result result =
-        AnalysisEngineCommandHelper.fromSavedEngine(engine);
+    AnalysisEngineCommandHelper.Result result = AnalysisEngineCommandHelper.fromSavedEngine(engine);
 
     assertFalse(result.isSuccess());
     assertFalse(Files.exists(analysisConfig));
@@ -184,8 +183,7 @@ class AnalysisEngineCommandHelperTest {
   }
 
   @Test
-  void convertsCurrentEngineBeforeDefaultEngineWhenFlashCommandIsNotCustomized()
-      throws Exception {
+  void convertsCurrentEngineBeforeDefaultEngineWhenFlashCommandIsNotCustomized() throws Exception {
     Path currentConfig = tempDir.resolve("current").resolve("gtp.cfg");
     Path defaultConfig = tempDir.resolve("default-current").resolve("gtp.cfg");
     Files.createDirectories(currentConfig.getParent());
@@ -358,8 +356,7 @@ class AnalysisEngineCommandHelperTest {
   }
 
   @Test
-  void humanSlFailedResolveLogsSourceFlavorAndMissingComponentsWithoutFullPaths()
-      throws Exception {
+  void humanSlFailedResolveLogsSourceFlavorAndMissingComponentsWithoutFullPaths() throws Exception {
     Path root = tempDir.resolve("secret-katago-home-368");
     Path engine = writeIncompleteOpenClBundleMissingAnalysisConfig(root);
     ListAppender<ILoggingEvent> events = attachEngineLog();
@@ -375,9 +372,7 @@ class AnalysisEngineCommandHelperTest {
           List<String> messages =
               events.list.stream()
                   .map(ILoggingEvent::getFormattedMessage)
-                  .filter(
-                      message ->
-                          message.contains("HumanSL analysis engine resolution failed:"))
+                  .filter(message -> message.contains("HumanSL analysis engine resolution failed:"))
                   .toList();
           assertEquals(1, messages.size(), events.list.toString());
           String message = messages.get(0);
@@ -434,8 +429,7 @@ class AnalysisEngineCommandHelperTest {
             String diagnosticLine = humanSlResolutionFailureLine(appLog);
             assertFalse(diagnosticLine.isEmpty(), appLog);
             assertTrue(diagnosticLine.contains("source=BUNDLED_PACKAGE"), diagnosticLine);
-            assertTrue(
-                diagnosticLine.contains("packageFlavor=INCOMPLETE_BUNDLE"), diagnosticLine);
+            assertTrue(diagnosticLine.contains("packageFlavor=INCOMPLETE_BUNDLE"), diagnosticLine);
             assertTrue(
                 diagnosticLine.contains("missingComponents=[ANALYSIS_CONFIG]"), diagnosticLine);
             assertTrue(diagnosticLine.contains("engine=true"), diagnosticLine);
@@ -461,11 +455,7 @@ class AnalysisEngineCommandHelperTest {
     Path config = writeFile(tempDir.resolve("自定义引擎/analysis.cfg"));
     Path weight = writeFile(tempDir.resolve("自定义权重/model.bin.gz"));
     String customCommand =
-        quote(engine)
-            + " analysis -model "
-            + quote(weight)
-            + " -config "
-            + quote(config);
+        quote(engine) + " analysis -model " + quote(weight) + " -config " + quote(config);
     ListAppender<ILoggingEvent> events = attachEngineLog();
 
     withUserDirAndConfig(
@@ -480,7 +470,8 @@ class AnalysisEngineCommandHelperTest {
               events.list.stream()
                   .noneMatch(
                       event ->
-                          event.getFormattedMessage()
+                          event
+                              .getFormattedMessage()
                               .contains("HumanSL analysis engine resolution failed:")),
               events.list.toString());
         });
@@ -578,8 +569,7 @@ class AnalysisEngineCommandHelperTest {
   }
 
   private static SyncDiagnosticsExportSnapshot emptySnapshot() {
-    return new SyncDiagnosticsExportSnapshot(
-        1L, null, List.of(), List.of(), List.of(), null);
+    return new SyncDiagnosticsExportSnapshot(1L, null, List.of(), List.of(), List.of(), null);
   }
 
   private static String humanSlResolutionFailureLine(String appLog) {

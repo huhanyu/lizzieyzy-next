@@ -8,8 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
-import featurecat.lizzie.enginegame.EngineGamePlans;
 import featurecat.lizzie.analysis.remote.EngineTransport;
+import featurecat.lizzie.enginegame.EngineGamePlans;
 import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.HtmlMessage;
@@ -327,8 +327,7 @@ class LeelazReaderIncarnationTest {
       initializeStreams(engine, bytes(""), bytes(""));
       Object binding = getField(engine, "readerStreamBinding");
       int previousCurrentEngineNo = EngineManager.currentEngineNo;
-      Lizzie.engineManager =
-          new EngineManager(new java.util.ArrayList<>(List.of(engine)));
+      Lizzie.engineManager = new EngineManager(new java.util.ArrayList<>(List.of(engine)));
       EngineManager.currentEngineNo = 0;
       Lizzie.setPrimaryEngine(engine);
       engine.bindCurrentPrimaryEngineGeneration();

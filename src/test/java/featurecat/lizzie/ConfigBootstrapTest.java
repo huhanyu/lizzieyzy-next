@@ -150,7 +150,8 @@ class ConfigBootstrapTest {
   @ParameterizedTest
   @ValueSource(strings = {"", "{\"ui-persist\":{"})
   void corruptedPersistIsRecoveredWithoutResettingOtherFiles(String payload) throws Exception {
-    Path workDir = isolatedWorkDir("corrupt-persist-" + (payload.isEmpty() ? "empty" : "truncated"));
+    Path workDir =
+        isolatedWorkDir("corrupt-persist-" + (payload.isEmpty() ? "empty" : "truncated"));
     writeJson(configFile(workDir), userConfig());
     writeCorrupt(persistFile(workDir), payload);
     writeJson(saveFile(workDir), userSave());

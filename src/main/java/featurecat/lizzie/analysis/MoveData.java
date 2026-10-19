@@ -13,8 +13,10 @@ import java.util.regex.Pattern;
 public class MoveData {
   public String coordinate;
   public int playouts;
+
   /** Missing edge statistics are distinct from a known zero allocation. */
   public int edgeVisits = -1;
+
   public double winrate;
   public List<String> variation;
   // 待完成
@@ -36,6 +38,7 @@ public class MoveData {
   public boolean lastTimeUnlimited;
   public long lastTimeUnlimitedTime;
   public boolean isSymmetry = false;
+
   /** Root allocation when supplied by KataGo, otherwise the legacy candidate count. */
   public int allocationVisits() {
     return edgeVisits >= 0 ? edgeVisits : playouts;
@@ -335,8 +338,10 @@ public class MoveData {
     }
 
     boolean isTopLevelBoundary() {
-      return matches("info") || matches("rootInfo")
-          || matches("ownership") || matches("ownershipStdev");
+      return matches("info")
+          || matches("rootInfo")
+          || matches("ownership")
+          || matches("ownershipStdev");
     }
 
     boolean next() {
@@ -496,8 +501,7 @@ public class MoveData {
           String subKey = data[s];
           if (subKey.equals("pvVisits")) {
             pvVisitsPos = s;
-            result.pvVisits =
-                new ArrayList<>(Arrays.asList(data).subList(s + 1, data.length));
+            result.pvVisits = new ArrayList<>(Arrays.asList(data).subList(s + 1, data.length));
             break;
           }
         }

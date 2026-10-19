@@ -59,18 +59,20 @@ class ExactSnapshotEngineRestoreContractTest {
       Leelaz engine = new Leelaz("");
       engine.useRemoteCompute = true;
       ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(engine,
-              command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
       frozen.prepare(engine.captureBoardSyncExactSnapshotRestoreAdmission()).execute();
-      assertTrue(transport.commands().contains("rectangular_boardsize 4 3"), transport.commands().toString());
+      assertTrue(
+          transport.commands().contains("rectangular_boardsize 4 3"),
+          transport.commands().toString());
     }
   }
 
   @Test
   void frozenHandicapRestoresOriginalSetupAndRealTailWithoutHostFiles() throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
-      BoardHistoryList history = SGFParser.parseSgf(
-          "(;SZ[3]HA[2]KM[0.5]AB[aa][cc]PL[W];W[bb])", true);
+      BoardHistoryList history =
+          SGFParser.parseSgf("(;SZ[3]HA[2]KM[0.5]AB[aa][cc]PL[W];W[bb])", true);
       BoardHistoryNode target = history.getStart().next().orElseThrow();
       ExactSnapshotEngineRestore.FrozenHistoryPosition frozen =
           ExactSnapshotEngineRestore.freezeHistoryPosition(target, 2, 0.5);
@@ -79,25 +81,25 @@ class ExactSnapshotEngineRestoreContractTest {
       Leelaz engine = new Leelaz("");
       engine.useJavaSSH = true;
       ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(engine,
-              command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
       engine.advertiseCommandsForTest(List.of("set_free_handicap"));
       frozen.prepare(engine.captureBoardSyncExactSnapshotRestoreAdmission()).execute();
-      assertEquals(List.of("clear_board", "boardsize 3", "komi 0.5",
-          "set_free_handicap A3 C1", "play W B2"), transport.commands());
+      assertEquals(
+          List.of("clear_board", "boardsize 3", "komi 0.5", "set_free_handicap A3 C1", "play W B2"),
+          transport.commands());
     }
   }
 
   @Test
   void missingHandicapCapabilityFailsBeforeAnyBoardMutation() throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
-      BoardHistoryList history = SGFParser.parseSgf(
-          "(;SZ[3]HA[2]KM[0.5]AB[aa][cc]PL[W])", true);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]HA[2]KM[0.5]AB[aa][cc]PL[W])", true);
       Leelaz engine = new Leelaz("");
       engine.useJavaSSH = true;
       ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.install(engine,
-              command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
       engine.advertiseCommandsForTest(List.of("loadsgf"));
       ExactSnapshotEngineRestore.PreparedRestore prepared =
           ExactSnapshotEngineRestore.freezeHistoryPosition(history.getStart(), 2, 0.5)
@@ -309,8 +311,7 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
-  void remoteComputeEmptyTailWhiteToPlayFailsClosedAndReleasesBoardSyncLease()
-      throws Exception {
+  void remoteComputeEmptyTailWhiteToPlayFailsClosedAndReleasesBoardSyncLease() throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
       Leelaz engine = new Leelaz("");
       engine.useRemoteCompute = true;
@@ -659,8 +660,7 @@ class ExactSnapshotEngineRestoreContractTest {
         if (restoreThread.isAlive()) {
           engine.processCommandResponseLineForTest(buildSuccessResponseLine(rawBoardSize));
           for (String command : transport.rawCommands()) {
-            if (commandPayload(command).startsWith("komi ")
-                || isSetPositionCommand(command)) {
+            if (commandPayload(command).startsWith("komi ") || isSetPositionCommand(command)) {
               engine.processCommandResponseLineForTest(buildSuccessResponseLine(command));
             }
           }
@@ -887,9 +887,7 @@ class ExactSnapshotEngineRestoreContractTest {
               engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
       Leelaz.ExactSnapshotRestoreAdmission admission =
           engine.captureExactSnapshotRestoreAdmission(
-              Leelaz.ExactSnapshotRestoreOwner.ORDINARY,
-              null,
-              engine.resolveLoadSgfMirrorEngine());
+              Leelaz.ExactSnapshotRestoreOwner.ORDINARY, null, engine.resolveLoadSgfMirrorEngine());
 
       ExactSnapshotEngineRestore.prepareCurrentHistoryPosition(
               admission, history.getCurrentHistoryNode())
@@ -1210,7 +1208,6 @@ class ExactSnapshotEngineRestoreContractTest {
     }
   }
 
-
   @Test
   void dualTargetsWithDistinctCwdsKeepBothSnapshotsUntilBothAcknowledge() throws Exception {
     String previousTempDirectory = System.getProperty("java.io.tmpdir");
@@ -1504,13 +1501,13 @@ class ExactSnapshotEngineRestoreContractTest {
       preparedRestore.execute();
       int commandCount = output.commands().size();
 
-        assertThrows(IllegalStateException.class, preparedRestore::execute);
+      assertThrows(IllegalStateException.class, preparedRestore::execute);
       assertEquals(
           commandCount,
           output.commands().size(),
           "a repeated execute must fail before issuing another command");
-        }
-      }
+    }
+  }
 
   @Test
   void preparedBoardRestoreDoesNotReadLiveMoveListAfterPlanCapture() throws Exception {
@@ -1530,7 +1527,7 @@ class ExactSnapshotEngineRestoreContractTest {
           prepareHistoryRestore(engine, history.getCurrentHistoryNode()).orElseThrow();
 
       board.resendMoveToEngine(engine, false, preparedRestore);
-      }
+    }
   }
 
   @Test
@@ -1754,6 +1751,7 @@ class ExactSnapshotEngineRestoreContractTest {
           "a rejected tail command must not be reported as a completed exact restore.");
     }
   }
+
   @Test
   void discardedPreparedRestoreReleasesLifecycleCompletionLeaseWithoutSendingCommands()
       throws Exception {
@@ -1788,7 +1786,6 @@ class ExactSnapshotEngineRestoreContractTest {
       assertNotNull(engine.tryBeginLifecycleCompletion(new Object(), null));
     }
   }
-
 
   @Test
   void exactSnapshotRestoreDeletesSgfWhenAdmissionRejectsBeforeLoadDispatch() throws Exception {
@@ -1899,8 +1896,7 @@ class ExactSnapshotEngineRestoreContractTest {
         IllegalStateException thrown =
             assertThrows(
                 IllegalStateException.class, () -> board.resendMoveToEngine(primary, false));
-        long elapsedMillis =
-            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
         assertTrue(thrown.getMessage().contains("rejected"), thrown.getMessage());
         assertTrue(
@@ -2818,7 +2814,8 @@ class ExactSnapshotEngineRestoreContractTest {
       assertEquals(null, readerFailure.get());
       String output = Files.readString(resultFile, StandardCharsets.UTF_8);
       int separator = output.indexOf('\n');
-      return new SnapshotChildResult(output.substring(0, separator), output.substring(separator + 1));
+      return new SnapshotChildResult(
+          output.substring(0, separator), output.substring(separator + 1));
     } finally {
       if (child.isAlive()) {
         child.destroyForcibly();
@@ -3086,6 +3083,7 @@ class ExactSnapshotEngineRestoreContractTest {
     config.alwaysGtp = false;
     return config;
   }
+
   private static Config minimalConfig(boolean doubleEngine, Path runtimeDirectory)
       throws Exception {
     var constructor = Config.class.getDeclaredConstructor(File.class);
@@ -3095,7 +3093,6 @@ class ExactSnapshotEngineRestoreContractTest {
     config.alwaysGtp = false;
     return config;
   }
-
 
   @SuppressWarnings("unchecked")
   private static <T> T allocate(Class<T> type) throws Exception {
@@ -3245,8 +3242,7 @@ class ExactSnapshotEngineRestoreContractTest {
     private int matchingCommandCount;
     private String loadedSgf = "";
 
-    private CommandMutationOutputStream(
-        Leelaz engine, String mutationCommand, Runnable mutation) {
+    private CommandMutationOutputStream(Leelaz engine, String mutationCommand, Runnable mutation) {
       this.engine = engine;
       this.mutationCommand = mutationCommand;
       this.mutation = mutation;
@@ -3457,8 +3453,8 @@ class ExactSnapshotEngineRestoreContractTest {
       }
       return null;
     }
-
   }
+
   private static final class RebindingOnValidationLeelaz extends Leelaz {
     private final RecordingOutputStream replacementOutput = new RecordingOutputStream(null);
     private int validationCount;
@@ -3540,7 +3536,6 @@ class ExactSnapshotEngineRestoreContractTest {
     }
   }
 
-
   private static final class TailReplayAwareOutputStream extends RecordedCommandOutputStream {
     private final Leelaz engine;
     private Path loadSgfPath;
@@ -3596,7 +3591,6 @@ class ExactSnapshotEngineRestoreContractTest {
       invokeResponseHandlerForLine(engine, buildSuccessResponseLine(command));
       engine.beginForegroundRestoreForTest();
     }
-
   }
 
   private static final class SilentFrame extends LizzieFrame {

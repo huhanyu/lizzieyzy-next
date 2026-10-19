@@ -372,8 +372,7 @@ public class ZhiziApiClient {
     int status = response.statusCode();
     String responseBody = response.body() == null ? "" : response.body();
     long retryAfter = parseRetryAfter(response);
-    String headerId =
-        NetworkObservation.normalizeExternalRequestIdentity(requestId(response));
+    String headerId = NetworkObservation.normalizeExternalRequestIdentity(requestId(response));
     if (!headerId.isEmpty()) {
       requestId = headerId;
     }

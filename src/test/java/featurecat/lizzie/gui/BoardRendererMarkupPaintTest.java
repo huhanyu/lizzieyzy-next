@@ -22,7 +22,8 @@ class BoardRendererMarkupPaintTest {
   void remainingPointsAfterLastFileStillPaint() {
     assertEquals(List.of("sa", "dd"), BoardRenderer.remainingMarkupEntries("sa,dd", 19, 19));
     assertEquals(List.of("as", "pd"), BoardRenderer.remainingMarkupEntries("as,pd", 19, 19));
-    assertEquals(List.of("ss:A", "dd:B"), BoardRenderer.remainingMarkupEntries("ss:A,dd:B", 19, 19));
+    assertEquals(
+        List.of("ss:A", "dd:B"), BoardRenderer.remainingMarkupEntries("ss:A,dd:B", 19, 19));
   }
 
   @Test
@@ -35,19 +36,14 @@ class BoardRendererMarkupPaintTest {
 
   @Test
   void emptyStarUsesHaloWhileEmptyPointStaysDarkAndBlackStoneStaysLight() {
-    assertEquals(
-        BoardRenderer.MarkupStroke.DARK, BoardRenderer.markupStroke(Stone.EMPTY, false));
+    assertEquals(BoardRenderer.MarkupStroke.DARK, BoardRenderer.markupStroke(Stone.EMPTY, false));
     assertEquals(
         BoardRenderer.MarkupStroke.DARK_WITH_LIGHT_HALO,
         BoardRenderer.markupStroke(Stone.EMPTY, true));
-    assertEquals(
-        BoardRenderer.MarkupStroke.LIGHT, BoardRenderer.markupStroke(Stone.BLACK, false));
-    assertEquals(
-        BoardRenderer.MarkupStroke.LIGHT, BoardRenderer.markupStroke(Stone.BLACK, true));
-    assertEquals(
-        BoardRenderer.MarkupStroke.DARK, BoardRenderer.markupStroke(Stone.WHITE, false));
-    assertEquals(
-        BoardRenderer.MarkupStroke.DARK, BoardRenderer.markupStroke(Stone.WHITE, true));
+    assertEquals(BoardRenderer.MarkupStroke.LIGHT, BoardRenderer.markupStroke(Stone.BLACK, false));
+    assertEquals(BoardRenderer.MarkupStroke.LIGHT, BoardRenderer.markupStroke(Stone.BLACK, true));
+    assertEquals(BoardRenderer.MarkupStroke.DARK, BoardRenderer.markupStroke(Stone.WHITE, false));
+    assertEquals(BoardRenderer.MarkupStroke.DARK, BoardRenderer.markupStroke(Stone.WHITE, true));
   }
 
   @Test

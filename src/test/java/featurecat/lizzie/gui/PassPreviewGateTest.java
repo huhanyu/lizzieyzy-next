@@ -1,7 +1,7 @@
 package featurecat.lizzie.gui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -124,9 +124,7 @@ class PassPreviewGateTest {
       Lizzie.board = null;
       BufferedImage image =
           new BufferedImage(
-              PREVIEW_CANVAS_SIZE + 20,
-              PREVIEW_CANVAS_SIZE + 20,
-              BufferedImage.TYPE_INT_ARGB);
+              PREVIEW_CANVAS_SIZE + 20, PREVIEW_CANVAS_SIZE + 20, BufferedImage.TYPE_INT_ARGB);
       Graphics2D graphics = image.createGraphics();
       try {
         graphics.setClip(PREVIEW_CANVAS_SIZE + 5, PREVIEW_CANVAS_SIZE + 5, 10, 10);

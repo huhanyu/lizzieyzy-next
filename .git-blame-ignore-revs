@@ -1,2 +1,5 @@
 # Repository-wide CRLF/mixed-EOL to LF normalization for Issue #244.
 25b0117705f41a7d4a40ca7edb01507c978c179e
+
+# Repository-wide google-java-format 1.28.0 formatting (fmt:check is enforced in CI from here on).
+c39758c962c75ff7566cb697fccbd7ac2f966208

@@ -803,8 +803,7 @@ class WholeGameAnalysisSessionTest {
 
   private static void waitForFinished(SessionFixture fixture) throws Exception {
     waitUntil(
-        () -> fixture.frame.finishedCount == 1,
-        "session should notify its frame exactly once");
+        () -> fixture.frame.finishedCount == 1, "session should notify its frame exactly once");
   }
 
   private static Object getObjectField(Object target, String name) throws Exception {
@@ -907,8 +906,7 @@ class WholeGameAnalysisSessionTest {
     }
 
     private static SessionFixture createWithHistory(
-        BoardHistoryList history, WholeGameAnalysisSession.EngineFactory factory)
-        throws Exception {
+        BoardHistoryList history, WholeGameAnalysisSession.EngineFactory factory) throws Exception {
       Board board = allocate(Board.class);
       board.setHistory(history);
       Lizzie.board = board;

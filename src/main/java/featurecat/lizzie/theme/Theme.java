@@ -465,8 +465,7 @@ public class Theme {
 
     private BlunderNodeRuleSet(List<Double> thresholds, Map<Double, Color> colorsByThreshold) {
       this.thresholds = Collections.unmodifiableList(new ArrayList<>(thresholds));
-      this.colorsByThreshold =
-          Collections.unmodifiableMap(new LinkedHashMap<>(colorsByThreshold));
+      this.colorsByThreshold = Collections.unmodifiableMap(new LinkedHashMap<>(colorsByThreshold));
     }
   }
 

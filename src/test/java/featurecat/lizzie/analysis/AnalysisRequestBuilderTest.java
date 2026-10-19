@@ -3,7 +3,6 @@ package featurecat.lizzie.analysis;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
@@ -55,12 +54,7 @@ class AnalysisRequestBuilderTest {
       JSONObject request =
           payload(
               AnalysisRequestBuilder.buildRequest(
-                  "flags",
-                  root,
-                  50,
-                  includePVVisits,
-                  includeOwnership,
-                  includeMovesOwnership));
+                  "flags", root, 50, includePVVisits, includeOwnership, includeMovesOwnership));
 
       assertEquals("flags", request.getString("id"));
       assertEquals(50, request.getInt("maxVisits"));
@@ -161,8 +155,7 @@ class AnalysisRequestBuilderTest {
       BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
       history.add(
           moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1));
-      history.add(
-          passNode(stones(placement(0, 0, Stone.BLACK)), Stone.WHITE, true, 2));
+      history.add(passNode(stones(placement(0, 0, Stone.BLACK)), Stone.WHITE, true, 2));
       boardWithHistory(history);
 
       JSONObject request =
@@ -204,8 +197,7 @@ class AnalysisRequestBuilderTest {
           payload(AnalysisRequestBuilder.buildRequest("first", first, 9, false, false, false));
 
       assertEquals(
-          List.of(List.of("B", "A3"), List.of("W", "B3")),
-          pairs(leafFirst.getJSONArray("moves")));
+          List.of(List.of("B", "A3"), List.of("W", "B3")), pairs(leafFirst.getJSONArray("moves")));
       assertEquals(List.of(), rootAfterLeaf.getJSONArray("moves").toList());
       assertEquals(List.of(0), rootAfterLeaf.getJSONArray("analyzeTurns").toList());
       assertEquals(List.of(List.of("B", "A3")), pairs(firstMove.getJSONArray("moves")));

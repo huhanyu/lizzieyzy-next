@@ -24,7 +24,10 @@ public final class HumanSlTrainingConfig {
   private HumanSlTrainingConfig(Builder builder) {
     mode = Objects.requireNonNull(builder.mode, "mode");
     opponentPreset = Objects.requireNonNull(builder.opponentPreset, "opponentPreset");
-    rank = builder.danRank ? Math.max(1, Math.min(9, builder.rank)) : Math.max(1, Math.min(20, builder.rank));
+    rank =
+        builder.danRank
+            ? Math.max(1, Math.min(9, builder.rank))
+            : Math.max(1, Math.min(20, builder.rank));
     danRank = builder.danRank;
     playerColor = Objects.requireNonNull(builder.playerColor, "playerColor");
     moveTimeSeconds = Math.max(2, builder.moveTimeSeconds);

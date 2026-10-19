@@ -244,8 +244,7 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
         rejected = true;
       } else {
         long sequence = nextSequence.get() + 1L;
-        long incidentGeneration =
-            runtime == null ? 0L : runtime.incidentGeneration(stream);
+        long incidentGeneration = runtime == null ? 0L : runtime.incidentGeneration(stream);
         QueuedEvent queued = new QueuedEvent(sequence, incidentGeneration, event);
         synchronized (progress) {
           outstanding++;
@@ -430,8 +429,7 @@ final class BoundedAsyncAppender extends UnsynchronizedAppenderBase<ILoggingEven
 
   private void reportWriteFailure() {
     String path = activeFile == null ? stream.name() : activeFile.toAbsolutePath().toString();
-    ErrorStatus status =
-        new ErrorStatus("IO failure while writing to file [" + path + "]", nested);
+    ErrorStatus status = new ErrorStatus("IO failure while writing to file [" + path + "]", nested);
     if (getContext() != null) {
       getContext().getStatusManager().add(status);
     } else if (runtime != null) {

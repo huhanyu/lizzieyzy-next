@@ -107,8 +107,7 @@ class AnalysisSettingsSaveConfigTest {
   }
 
   @Test
-  void missingCommandCancellationDiscardsPendingRequestAndDoesNotStartAnalysis()
-      throws Exception {
+  void missingCommandCancellationDiscardsPendingRequestAndDoesNotStartAnalysis() throws Exception {
     TrackingFlashAnalysisFrame frame = allocate(TrackingFlashAnalysisFrame.class);
 
     frame.handleMissingFlashAnalysisCommandChoice(JOptionPane.OK_OPTION, false, true);
@@ -129,8 +128,7 @@ class AnalysisSettingsSaveConfigTest {
       Lizzie.config = config;
       SilentAnalysisSettings settings = allocate(SilentAnalysisSettings.class);
       setField(AnalysisSettings.class, settings, "engineCmd", new JFontTextArea("   "));
-      setField(
-          AnalysisSettings.class, settings, "chkReuseCurrentEngine", selectedCheckBox(false));
+      setField(AnalysisSettings.class, settings, "chkReuseCurrentEngine", selectedCheckBox(false));
 
       assertFalse(settings.saveConfig());
       assertEquals(1, settings.commandRequiredCount);
@@ -192,8 +190,7 @@ class AnalysisSettingsSaveConfigTest {
       assertSame(previousLeelaz, config.leelazConfig);
       assertSame(existingEngine, frame.analysisEngine);
       assertSame(
-          pendingRequest,
-          getField(LizzieFrame.class, frame, "pendingFlashAnalysisAfterSettings"));
+          pendingRequest, getField(LizzieFrame.class, frame, "pendingFlashAnalysisAfterSettings"));
       assertFalse(config.analysisAutoQuit);
       assertFalse(config.analysisEnginePreLoad);
       assertFalse(config.analysisReuseCurrentEngine);

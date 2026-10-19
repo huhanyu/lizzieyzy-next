@@ -1026,11 +1026,15 @@ public class LizzieFrame extends JFrame {
             new ActionListener() {
               public void actionPerformed(ActionEvent evt) {
                 if (listTable.isVisible()) {
-                  List<MoveData> displayedMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
-                      ? getBestMoves() : Lizzie.board.getHistory().getData().bestMoves;
+                  List<MoveData> displayedMoves =
+                      featurecat.lizzie.fox.FoxLiveSession.isActive()
+                          ? getBestMoves()
+                          : Lizzie.board.getHistory().getData().bestMoves;
                   if (!displayedMoves.isEmpty()) {
-                    boolean kataData = featurecat.lizzie.fox.FoxLiveSession.isActive()
-                        ? displayedMoves.get(0).isKataData : Lizzie.board.getHistory().getData().isKataData;
+                    boolean kataData =
+                        featurecat.lizzie.fox.FoxLiveSession.isActive()
+                            ? displayedMoves.get(0).isKataData
+                            : Lizzie.board.getHistory().getData().isKataData;
                     if (scoreColumnIsHidden && kataData)
                       resumColumn(5, listTable, listTableColum5Width);
                     if (!scoreColumnIsHidden && !kataData) {
@@ -5623,8 +5627,10 @@ public class LizzieFrame extends JFrame {
     SgfObservation.record("engine-sync", "failed", null, failure);
     // Only an explicit Continue retries a terminal preparation failure. Reacquire the current
     // rules, position and readers so repaired permissions or a replacement engine can recover.
-    failedKifuPositionRetry = () -> scheduleEngineSyncAndResumeAfterKifuLoad(
-        0, this::resumeForegroundAnalysisForConfirmedPosition, false);
+    failedKifuPositionRetry =
+        () ->
+            scheduleEngineSyncAndResumeAfterKifuLoad(
+                0, this::resumeForegroundAnalysisForConfirmedPosition, false);
     showPositionSyncFailure(failure);
   }
 
@@ -8263,7 +8269,8 @@ public class LizzieFrame extends JFrame {
       return;
     }
     if (featurecat.lizzie.fox.FoxLiveSession.isBrowsingHistory()) {
-      text1 = Lizzie.resourceBundle.getString(featurecat.lizzie.fox.FoxLiveSession.browsingStatusKey());
+      text1 =
+          Lizzie.resourceBundle.getString(featurecat.lizzie.fox.FoxLiveSession.browsingStatusKey());
       text2 = Lizzie.resourceBundle.getString("Fox.returnLive");
     }
     int lineCount = Lizzie.config.userKnownX ? 2 : 3;
@@ -14642,8 +14649,10 @@ public class LizzieFrame extends JFrame {
       this.independentMainBoard.setMouseOverCoords(index);
       return;
     }
-    List<MoveData> bestMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
-        ? getBestMoves() : Lizzie.board.getHistory().getData().bestMoves;
+    List<MoveData> bestMoves =
+        featurecat.lizzie.fox.FoxLiveSession.isActive()
+            ? getBestMoves()
+            : Lizzie.board.getHistory().getData().bestMoves;
     if (bestMoves == null || bestMoves.isEmpty()) return;
     if (index >= bestMoves.size()) return;
     if (curSuggestionMoveOrderByNumber == index) {

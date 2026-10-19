@@ -78,8 +78,7 @@ import org.junit.jupiter.api.Test;
 public final class TensorRtRepairAcceptanceTest {
   private static final Duration PARENT_TIMEOUT = Duration.ofMinutes(5);
   private static final Duration UI_TIMEOUT = Duration.ofSeconds(45);
-  private static final Set<String> CASES =
-      Set.of("CT-01", "CT-02", "CT-03", "CT-04", "CT-05");
+  private static final Set<String> CASES = Set.of("CT-01", "CT-02", "CT-03", "CT-04", "CT-05");
   private static final String DIRECTML = "DirectML controlled";
   private static final String TENSORRT = "TensorRT managed missing";
   private static final String CUSTOM_ANALYSIS = "custom-analysis-command --preserve";
@@ -96,8 +95,8 @@ public final class TensorRtRepairAcceptanceTest {
     runLocale("zh_CN", 1, "zh", "CN");
   }
 
-  private static void runLocale(
-      String locale, int languageConfig, String language, String country) throws Exception {
+  private static void runLocale(String locale, int languageConfig, String language, String country)
+      throws Exception {
     DesktopProbeProcess.requireDisplay();
     requireNativeWindowsJdk21();
     Path evidenceRoot =
@@ -168,21 +167,14 @@ public final class TensorRtRepairAcceptanceTest {
         if (scenario == Scenario.COMPLETE_ENABLE) {
           Map<String, JSONObject> snapshots = new LinkedHashMap<>();
           for (String snapshot :
-              List.of(
-                  "pre-error-directml", "settled-repair-entry", "post-repair", "post-enable")) {
+              List.of("pre-error-directml", "settled-repair-entry", "post-repair", "post-enable")) {
             Path path = Path.of(required(child, "snapshot." + snapshot));
             assertTrue(Files.isRegularFile(path), path.toString());
             assertTrue(Files.isRegularFile(path.resolveSibling(snapshot + ".png")));
-            snapshots.put(
-                snapshot,
-                new JSONObject(Files.readString(path, StandardCharsets.UTF_8)));
+            snapshots.put(snapshot, new JSONObject(Files.readString(path, StandardCharsets.UTF_8)));
           }
           validateSnapshotEvidence(
-              locale,
-              languageConfig,
-              snapshots,
-              Path.of(required(child, "http.ledger")),
-              cleanup);
+              locale, languageConfig, snapshots, Path.of(required(child, "http.ledger")), cleanup);
           assertEquals("PASS", child.get("config-delta"), child.toString());
           assertEquals("controlled-reload", child.get("reload-kind"), child.toString());
         }
@@ -279,7 +271,8 @@ public final class TensorRtRepairAcceptanceTest {
     FixtureServer server = null;
     try {
       DesktopProbeProcess.phase(result, "fixture-setup");
-      FixtureLayout layout = FixtureLayout.install(work, directMlImage, tensorRtImage, languageConfig);
+      FixtureLayout layout =
+          FixtureLayout.install(work, directMlImage, tensorRtImage, languageConfig);
       System.setProperty("lizzie.work.dir", work.toString());
       server = FixtureServer.start(layout, scenario);
       configureFixtureProperties(server, scenario);
@@ -290,7 +283,8 @@ public final class TensorRtRepairAcceptanceTest {
       var repairContext =
           KataGoRuntimeHelper.inspectTensorRtStartupFailure(
               layout.tensorRtEngine(), layout.tensorRtEngine().toString());
-      assertTrue(repairContext != null, "controlled TensorRT fixture did not produce a repair context");
+      assertTrue(
+          repairContext != null, "controlled TensorRT fixture did not produce a repair context");
       assertTrue(
           repairContext.repairable,
           "controlled TensorRT fixture is outside the managed repair root: "
@@ -333,7 +327,15 @@ public final class TensorRtRepairAcceptanceTest {
         records.put("CT-03", "PASS");
       } else {
         runCompletionAndEnable(
-            setup, result, gtpRoot, nvidiaLedger, initialConfig, baseline, settled, server, records);
+            setup,
+            result,
+            gtpRoot,
+            nvidiaLedger,
+            initialConfig,
+            baseline,
+            settled,
+            server,
+            records);
         records.put("CT-04", "PASS");
         records.put("CT-05", "PASS");
       }
@@ -371,10 +373,7 @@ public final class TensorRtRepairAcceptanceTest {
   }
 
   private static void runConfirmationCancel(
-      KataGoAutoSetupDialog setup,
-      JSONObject initialConfig,
-      Snapshot settled,
-      FixtureServer server)
+      KataGoAutoSetupDialog setup, JSONObject initialConfig, Snapshot settled, FixtureServer server)
       throws Exception {
     int requestsBefore = server.requests.get();
     JDialog confirmation =
@@ -385,7 +384,8 @@ public final class TensorRtRepairAcceptanceTest {
     Thread.sleep(250);
     assertEquals(requestsBefore, server.requests.get(), "confirmation cancel sent a request");
     assertEquals(initialConfig.toString(), readConfig(setupWork()).toString());
-    Snapshot after = currentSnapshot(settled.name, settled.gtpRoot, readConfig(setupWork()), server);
+    Snapshot after =
+        currentSnapshot(settled.name, settled.gtpRoot, readConfig(setupWork()), server);
     settled.assertSameForeground(after, true);
     assertTrue(setup.isShowing(), "setup dialog became unusable after confirmation cancel");
   }
@@ -417,7 +417,8 @@ public final class TensorRtRepairAcceptanceTest {
     assertEquals(initialConfig.toString(), readConfig(setupWork()).toString());
     assertFalse(Files.isRegularFile(layout.companionTarget));
     assertFalse(runtimeReady(layout.runtimeRoot));
-    Snapshot after = currentSnapshot(settled.name, settled.gtpRoot, readConfig(setupWork()), server);
+    Snapshot after =
+        currentSnapshot(settled.name, settled.gtpRoot, readConfig(setupWork()), server);
     settled.assertSameForeground(after, true);
     assertLockAvailable(layout.runtimeRoot.resolve("nvidia-runtime/tensorrt-install.lock"));
   }
@@ -454,7 +455,8 @@ public final class TensorRtRepairAcceptanceTest {
     AbstractButton enable = button(setup, "AutoSetup.enableTensorRt");
     assertTrue(enable.isShowing() && enable.isEnabled(), "TensorRT enable action is not available");
     Snapshot repaired =
-        snapshot("post-repair", result, gtpRoot.resolve("directml"), readConfig(setupWork()), server);
+        snapshot(
+            "post-repair", result, gtpRoot.resolve("directml"), readConfig(setupWork()), server);
     settled.assertSameForeground(repaired, true);
     assertNotEquals(0, server.requests.get(), "successful repair made no loopback requests");
     assertTrue(nvidiaQueriesObserved(nvidiaLedger), "production GPU detector did not use fixture");
@@ -471,7 +473,8 @@ public final class TensorRtRepairAcceptanceTest {
     assertNotEquals(settled.pid, enabled.pid, "explicit enable did not replace foreground process");
     assertEquals(1, enabled.engineIndex);
     assertTrue(enabled.visits > 0);
-    assertEquals(CUSTOM_ANALYSIS, afterEnable.getJSONObject("ui").getString("analysis-engine-command"));
+    assertEquals(
+        CUSTOM_ANALYSIS, afterEnable.getJSONObject("ui").getString("analysis-engine-command"));
     assertTrue(afterEnable.getJSONObject("ui").getBoolean("analysis-engine-command-customized"));
     assertTrue(afterEnable.getJSONObject("ui").getBoolean("autoload-default"));
     assertFalse(afterEnable.getJSONObject("ui").getBoolean("autoload-empty"));
@@ -482,9 +485,14 @@ public final class TensorRtRepairAcceptanceTest {
     records.put("snapshot.post-enable", enabled.path.toString());
     records.put("config-delta", "PASS");
     records.put("reload-kind", "controlled-reload");
-    records.put("config.before-enable", writeJson(result.resolveSibling("config-before-enable.json"), beforeEnable).toString());
-    records.put("config.after-enable", writeJson(result.resolveSibling("config-after-enable.json"), afterEnable).toString());
-    assertEquals(initialConfig.getJSONObject("ui").getString("analysis-engine-command"), CUSTOM_ANALYSIS);
+    records.put(
+        "config.before-enable",
+        writeJson(result.resolveSibling("config-before-enable.json"), beforeEnable).toString());
+    records.put(
+        "config.after-enable",
+        writeJson(result.resolveSibling("config-after-enable.json"), afterEnable).toString());
+    assertEquals(
+        initialConfig.getJSONObject("ui").getString("analysis-engine-command"), CUSTOM_ANALYSIS);
   }
 
   private static EngineFailedMessage selectTensorRtThroughVisibleMenu() throws Exception {
@@ -499,8 +507,7 @@ public final class TensorRtRepairAcceptanceTest {
     assertTrue(
         target.getText().contains(TENSORRT),
         "unexpected second engine menu item: " + target.getText());
-    openMenuThroughVisibleButton(
-        buttonContaining(Lizzie.frame.windowMenuStrip, DIRECTML), target);
+    openMenuThroughVisibleButton(buttonContaining(Lizzie.frame.windowMenuStrip, DIRECTML), target);
     AtomicInteger targetActions = new AtomicInteger();
     target.addActionListener(event -> targetActions.incrementAndGet());
     clickShowing(target);
@@ -615,16 +622,19 @@ public final class TensorRtRepairAcceptanceTest {
         .put("enableEnabled", enable.isEnabled())
         .put(
             "runtimeReady",
-            hasShowingText(setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtRuntimeReady")))
+            hasShowingText(
+                setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtRuntimeReady")))
         .put(
             "companionReady",
-            hasShowingText(setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtCompanionReady")))
+            hasShowingText(
+                setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtCompanionReady")))
         .put(
             "engineReady",
             hasShowingText(setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtEngineReady")))
         .put(
             "profileInactive",
-            hasShowingText(setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtProfileInactive")));
+            hasShowingText(
+                setup, Lizzie.resourceBundle.getString("AutoSetup.tensorRtProfileInactive")));
   }
 
   private static Object repairContextState(
@@ -661,10 +671,7 @@ public final class TensorRtRepairAcceptanceTest {
     long pid = readLong(gtpRoot.resolve("peer.pid"));
     int visits = currentVisits();
     String backend =
-        Files.readString(
-                entryPath(entry)
-                    .getParent()
-                    .resolve("lizzieyzy-next-engine-backend.txt"))
+        Files.readString(entryPath(entry).getParent().resolve("lizzieyzy-next-engine-backend.txt"))
             .trim();
     return new Snapshot(
         name,
@@ -796,7 +803,8 @@ public final class TensorRtRepairAcceptanceTest {
     List<AbstractButton> matches = new ArrayList<>();
     collectButtons(root, text, matches);
     if (matches.size() != 1) {
-      throw new AssertionError("expected one shown button for " + resourceKey + ", found " + matches.size());
+      throw new AssertionError(
+          "expected one shown button for " + resourceKey + ", found " + matches.size());
     }
     return matches.get(0);
   }
@@ -836,6 +844,7 @@ public final class TensorRtRepairAcceptanceTest {
       for (Component child : container.getComponents()) collectButtons(child, text, matches);
     }
   }
+
   private static boolean hasShowingText(Component root, String expected) {
     AtomicReference<Boolean> found = new AtomicReference<>(false);
     try {
@@ -884,7 +893,8 @@ public final class TensorRtRepairAcceptanceTest {
   private static JDialog showingOptionDialog() {
     for (Window window : Window.getWindows()) {
       if (!(window instanceof JDialog dialog) || !dialog.isShowing()) continue;
-      if (dialog instanceof KataGoAutoSetupDialog || dialog instanceof EngineFailedMessage) continue;
+      if (dialog instanceof KataGoAutoSetupDialog || dialog instanceof EngineFailedMessage)
+        continue;
       if (dialog.isModal()) return dialog;
     }
     return null;
@@ -1041,8 +1051,7 @@ public final class TensorRtRepairAcceptanceTest {
 
   private static void capture(Path path) {
     try {
-      List<Window> visible =
-          Arrays.stream(Window.getWindows()).filter(Window::isShowing).toList();
+      List<Window> visible = Arrays.stream(Window.getWindows()).filter(Window::isShowing).toList();
       Window preferred =
           visible.stream()
               .filter(Window::isActive)
@@ -1077,8 +1086,8 @@ public final class TensorRtRepairAcceptanceTest {
     return titles;
   }
 
-  private static void cleanupProduction(
-      FixtureServer server, FixtureLayout layout, Path evidence) throws Exception {
+  private static void cleanupProduction(FixtureServer server, FixtureLayout layout, Path evidence)
+      throws Exception {
     if (Lizzie.engineManager != null) Lizzie.engineManager.forceKillAllEngines();
     await(
         () ->
@@ -1131,26 +1140,28 @@ public final class TensorRtRepairAcceptanceTest {
     String runtime = scenario == Scenario.ACTIVE_CANCEL ? "/slow-runtime" : "/runtime";
     System.setProperty("lizzie.tensorrt.runtime.fixture.url", server.url(runtime));
     System.setProperty("lizzie.tensorrt.runtime.fixture.sha256", server.runtimeSha256);
-    System.setProperty("lizzie.tensorrt.runtime.fixture.size", Long.toString(server.runtime.length));
+    System.setProperty(
+        "lizzie.tensorrt.runtime.fixture.size", Long.toString(server.runtime.length));
   }
 
   static void setCompanionDigestForTests(String sha256) throws Exception {
     var method =
-        KataGoRuntimeHelper.class.getDeclaredMethod("setHumanSlCompanionSha256ForTests", String.class);
+        KataGoRuntimeHelper.class.getDeclaredMethod(
+            "setHumanSlCompanionSha256ForTests", String.class);
     method.setAccessible(true);
     method.invoke(null, sha256);
   }
 
   static void setKatagoExecutableDigestForTests(String sha256) throws Exception {
     var method =
-        KataGoRuntimeHelper.class.getDeclaredMethod("setKatagoExecutableSha256ForTests", String.class);
+        KataGoRuntimeHelper.class.getDeclaredMethod(
+            "setKatagoExecutableSha256ForTests", String.class);
     method.setAccessible(true);
     method.invoke(null, sha256);
   }
 
   static String tensorRtEngineManifestText() throws Exception {
-    var method =
-        KataGoRuntimeHelper.class.getDeclaredMethod("tensorRtEngineManifestText");
+    var method = KataGoRuntimeHelper.class.getDeclaredMethod("tensorRtEngineManifestText");
     method.setAccessible(true);
     return (String) method.invoke(null);
   }
@@ -1188,7 +1199,9 @@ public final class TensorRtRepairAcceptanceTest {
 
   private static String clean(Throwable failure) {
     String message = failure.getMessage();
-    return failure.getClass().getName() + ": " + (message == null ? "" : message.replace('\n', ' '));
+    return failure.getClass().getName()
+        + ": "
+        + (message == null ? "" : message.replace('\n', ' '));
   }
 
   private static void writeResult(Path result, Map<String, String> records) throws IOException {
@@ -1231,7 +1244,8 @@ public final class TensorRtRepairAcceptanceTest {
           }
 
           @Override
-          public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+          public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+              throws IOException {
             Files.copy(
                 file,
                 target.resolve(source.relativize(file).toString()),
@@ -1382,8 +1396,10 @@ public final class TensorRtRepairAcceptanceTest {
           Files.writeString(
               Files.createDirectories(runtimeRoot.resolve("weights")).resolve("controlled.bin.gz"),
               "controlled");
-      JSONObject directEntry = engineEntry("directml-id", DIRECTML, command(direct, gtp, weight), true);
-      JSONObject tensorEntry = engineEntry("tensorrt-id", TENSORRT, command(tensor, gtp, weight), false);
+      JSONObject directEntry =
+          engineEntry("directml-id", DIRECTML, command(direct, gtp, weight), true);
+      JSONObject tensorEntry =
+          engineEntry("tensorrt-id", TENSORRT, command(tensor, gtp, weight), false);
       JSONObject ui =
           new JSONObject()
               .put("autoload-default", true)
@@ -1406,7 +1422,9 @@ public final class TensorRtRepairAcceptanceTest {
                   "leelaz",
                   new JSONObject()
                       .put("fast-engine-change", false)
-                      .put("engine-settings-list", new JSONArray().put(directEntry).put(tensorEntry)))
+                      .put(
+                          "engine-settings-list",
+                          new JSONArray().put(directEntry).put(tensorEntry)))
               .put("ui", ui);
       Files.writeString(work.resolve("config.txt"), root.toString(2), StandardCharsets.UTF_8);
       return new FixtureLayout(
@@ -1484,14 +1502,10 @@ public final class TensorRtRepairAcceptanceTest {
       ExecutorService executor = Executors.newCachedThreadPool();
       FixtureServer fixture =
           new FixtureServer(
-              server,
-              executor,
-              companion,
-              runtime,
-              sha256(companion),
-              sha256(runtime));
+              server, executor, companion, runtime, sha256(companion), sha256(runtime));
       server.createContext("/companion", exchange -> fixture.respond(exchange, companion, false));
-      server.createContext("/slow-companion", exchange -> fixture.respond(exchange, companion, true));
+      server.createContext(
+          "/slow-companion", exchange -> fixture.respond(exchange, companion, true));
       server.createContext("/runtime", exchange -> fixture.respond(exchange, runtime, false));
       server.createContext("/slow-runtime", exchange -> fixture.respond(exchange, runtime, true));
       server.createContext("/fail-engine", fixture::fail);
@@ -1788,8 +1802,7 @@ public final class TensorRtRepairAcceptanceTest {
     }
   }
 
-  private static void rememberOwnedDescendants(
-      Process process, Map<Long, ProcessHandle> owned) {
+  private static void rememberOwnedDescendants(Process process, Map<Long, ProcessHandle> owned) {
     process.descendants().forEach(handle -> owned.putIfAbsent(handle.pid(), handle));
   }
 
@@ -1809,7 +1822,8 @@ public final class TensorRtRepairAcceptanceTest {
         // releasing inherited output handles; ProcessHandle.isAlive() alone is not a barrier.
         for (ProcessHandle handle : handles) {
           WinNT.HANDLE nativeHandle =
-              Kernel32.INSTANCE.OpenProcess(WinNT.SYNCHRONIZE, false, Math.toIntExact(handle.pid()));
+              Kernel32.INSTANCE.OpenProcess(
+                  WinNT.SYNCHRONIZE, false, Math.toIntExact(handle.pid()));
           if (nativeHandle != null) {
             nativeHandles.add(nativeHandle);
           } else if (handle.isAlive()) {

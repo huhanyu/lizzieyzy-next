@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.gui.LizzieFrame;
-
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -68,15 +68,16 @@ class LeelazBoardSynchronizationConfirmationTest {
       onChange.setAccessible(true);
       onChange.invoke(
           lineage,
-          (Runnable) () -> {
-            failurePublished.countDown();
-            try {
-              assertTrue(releaseListener.await(5, TimeUnit.SECONDS));
-            } catch (InterruptedException failure) {
-              Thread.currentThread().interrupt();
-              throw new AssertionError(failure);
-            }
-          });
+          (Runnable)
+              () -> {
+                failurePublished.countDown();
+                try {
+                  assertTrue(releaseListener.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException failure) {
+                  Thread.currentThread().interrupt();
+                  throw new AssertionError(failure);
+                }
+              });
       AtomicInteger successes = new AtomicInteger();
       AtomicInteger failures = new AtomicInteger();
       engine.confirmBoardSynchronization(
@@ -175,9 +176,9 @@ class LeelazBoardSynchronizationConfirmationTest {
       assertTrue(pendingResponses(engine).isEmpty());
     }
   }
+
   @Test
-  void sendFailureRetiresPendingBoardSynchronizationResponseAndIgnoresLateReply()
-      throws Exception {
+  void sendFailureRetiresPendingBoardSynchronizationResponseAndIgnoresLateReply() throws Exception {
     try (TestEnvironment ignored = new TestEnvironment()) {
       Leelaz engine = new Leelaz("");
       Lizzie.leelaz = engine;
@@ -207,7 +208,6 @@ class LeelazBoardSynchronizationConfirmationTest {
     }
   }
 
-
   @Test
   void settledResponseMayCancelTimeoutBeforeItIsScheduled() {
     Timer timeout = new Timer(true);
@@ -236,11 +236,11 @@ class LeelazBoardSynchronizationConfirmationTest {
     field.setAccessible(true);
     field.set(engine, new BufferedOutputStream(output));
   }
+
   private static String commandId(ByteArrayOutputStream output) {
     String command = output.toString(StandardCharsets.UTF_8).trim();
     return command.substring(0, command.indexOf(' '));
   }
-
 
   @SuppressWarnings("unchecked")
   private static ArrayDeque<Object> pendingResponses(Leelaz engine) throws Exception {

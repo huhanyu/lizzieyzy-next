@@ -82,10 +82,21 @@ public final class RealCpuEngineAcceptanceIT {
     DesktopProbeProcess.requireDisplay();
     SourceIdentity source = sourceIdentity();
     for (String kind : List.of("black", "mixed", "handicap")) {
-      Path result = DesktopProbeProcess.run(RealCpuEngineAcceptanceIT.class,
-          "initial-white-" + kind, List.of(), List.of("initial-white", kind,
-              inputs.engine.toString(), inputs.model.toString(), inputs.config.toString(),
-              inputs.manifestPath.toString(), source.commit, Boolean.toString(source.dirty)), 450);
+      Path result =
+          DesktopProbeProcess.run(
+              RealCpuEngineAcceptanceIT.class,
+              "initial-white-" + kind,
+              List.of(),
+              List.of(
+                  "initial-white",
+                  kind,
+                  inputs.engine.toString(),
+                  inputs.model.toString(),
+                  inputs.config.toString(),
+                  inputs.manifestPath.toString(),
+                  source.commit,
+                  Boolean.toString(source.dirty)),
+              450);
       JSONObject record = new JSONObject(Files.readString(result));
       assertEquals("PASS", record.getString("status"));
       assertEquals(2, record.getJSONArray("positions").length());
@@ -95,40 +106,60 @@ public final class RealCpuEngineAcceptanceIT {
 
   private static void runInitialWhite(String[] args) throws Exception {
     String kind = args[1];
-    Inputs inputs = Inputs.load(Path.of(args[2]), Path.of(args[3]), Path.of(args[4]), Path.of(args[5]));
+    Inputs inputs =
+        Inputs.load(Path.of(args[2]), Path.of(args[3]), Path.of(args[4]), Path.of(args[5]));
     Path work = Path.of(args[8]);
     Path result = Path.of(args[9]);
     ProbeState state = new ProbeState();
-    JSONObject record = new JSONObject().put("status", "FAIL")
-        .put("source", new JSONObject().put("commit", args[6]).put("dirty", Boolean.parseBoolean(args[7])))
-        .put("assets", assetEvidence(inputs)).put("kind", kind);
+    JSONObject record =
+        new JSONObject()
+            .put("status", "FAIL")
+            .put(
+                "source",
+                new JSONObject().put("commit", args[6]).put("dirty", Boolean.parseBoolean(args[7])))
+            .put("assets", assetEvidence(inputs))
+            .put("kind", kind);
     try {
       writeIsolatedConfig(work);
       System.setProperty("lizzie.work.dir", work.toString());
       Lizzie.main(new String[0]);
-      await(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), Deadline.after(STARTUP_BUDGET), "window");
+      await(
+          () -> Lizzie.frame != null && Lizzie.frame.isShowing(),
+          Deadline.after(STARTUP_BUDGET),
+          "window");
       dismissDialogs();
       LoggingRuntime.current().orElseThrow().startFullTrace(Set.of(TraceScope.ENGINE_GTP));
-      String sgf = "(;SZ[19]RU[Chinese]KM[7.5]"
-          + (kind.equals("handicap") ? "HA[2];" : "")
-          + "AB[dp][pd]" + (kind.equals("mixed") ? "AW[dd][pp]" : "") + ";W[cc];B[])";
+      String sgf =
+          "(;SZ[19]RU[Chinese]KM[7.5]"
+              + (kind.equals("handicap") ? "HA[2];" : "")
+              + "AB[dp][pd]"
+              + (kind.equals("mixed") ? "AW[dd][pp]" : "")
+              + ";W[cc];B[])";
       Path fixture = work.resolve("initial.sgf");
       Files.writeString(fixture, sgf);
-      SwingUtilities.invokeAndWait(() -> {
-        assertTrue(SGFParser.loadFromString(sgf, false));
-        BoardHistoryNode root = Lizzie.board.getHistory().getStart();
-        Lizzie.board.moveToAnyPosition(kind.equals("handicap") ? root.next().orElseThrow() : root);
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            assertTrue(SGFParser.loadFromString(sgf, false));
+            BoardHistoryNode root = Lizzie.board.getHistory().getStart();
+            Lizzie.board.moveToAnyPosition(
+                kind.equals("handicap") ? root.next().orElseThrow() : root);
+          });
       BoardHistoryNode target = Lizzie.board.getHistory().getCurrentHistoryNode();
       assertFalse(target.getData().blackToPlay);
       assertEquals(0, target.getData().moveNumber);
-      assertEquals(kind.equals("handicap"), featurecat.lizzie.rules.InitialHandicapSetup.isInitialHandicap(
-          target, Lizzie.board.getHistory().getGameInfo().getHandicap(), 19, 19));
+      assertEquals(
+          kind.equals("handicap"),
+          featurecat.lizzie.rules.InitialHandicapSetup.isInitialHandicap(
+              target, Lizzie.board.getHistory().getGameInfo().getHandicap(), 19, 19));
       record.put("handicapEligible", kind.equals("handicap"));
       BoardHistoryList.SessionRulesTarget rules = SGFParser.adoptCurrentHistoryExternalRules();
       EngineManager manager = Lizzie.engineManager;
       int index = manager.engineList.size();
-      EngineData entry = catalogEntry(index, UUID.randomUUID().toString(), command(inputs.engine, inputs.model, inputs.config));
+      EngineData entry =
+          catalogEntry(
+              index,
+              UUID.randomUUID().toString(),
+              command(inputs.engine, inputs.model, inputs.config));
       Utils.saveEngineSettings(new ArrayList<>(List.of(entry)));
       CatalogNamedLeelaz real = new CatalogNamedLeelaz(entry);
       state.engine = real;
@@ -136,18 +167,29 @@ public final class RealCpuEngineAcceptanceIT {
       assertTrue(manager.switchEngineIfAvailable(index, true));
       state.peer = awaitOwnedPeer(real, inputs, Deadline.after(STARTUP_BUDGET));
       state.readers = awaitReaderThreads(Deadline.after(STARTUP_BUDGET));
-      await(() -> real.isLoaded() && manager.isEngineSwitchActive(index, true)
-          && confirmedChineseRules(real, rules), Deadline.after(STARTUP_BUDGET), "confirmed production restore");
+      await(
+          () ->
+              real.isLoaded()
+                  && manager.isEngineSwitchActive(index, true)
+                  && confirmedChineseRules(real, rules),
+          Deadline.after(STARTUP_BUDGET),
+          "confirmed production restore");
       JSONArray positions = new JSONArray();
       for (int round = 0; round < 2; round++) {
         if (round > 0) {
-          SwingUtilities.invokeAndWait(() -> { Lizzie.board.nextMove(false); Lizzie.board.previousMove(false); });
+          SwingUtilities.invokeAndWait(
+              () -> {
+                Lizzie.board.nextMove(false);
+                Lizzie.board.previousMove(false);
+              });
           assertTrue(Lizzie.board.getHistory().getCurrentHistoryNode() == target);
           Lizzie.board.clearbestmoves();
           real.ponder();
         }
-        await(() -> positiveLegalCandidate(target).isPresent() && real.isPondering(),
-            Deadline.after(ANALYSIS_BUDGET), "real White analysis");
+        await(
+            () -> positiveLegalCandidate(target).isPresent() && real.isPondering(),
+            Deadline.after(ANALYSIS_BUDGET),
+            "real White analysis");
         MoveData candidate = positiveLegalCandidate(target).orElseThrow();
         real.togglePonder();
         awaitAnalysisQuiescence(real, target, Deadline.after(STOP_BUDGET));
@@ -158,15 +200,25 @@ public final class RealCpuEngineAcceptanceIT {
         assertEngineInitialBoard(boardResponse, target.getData());
         java.awt.Robot robot = new java.awt.Robot();
         robot.waitForIdle();
-        javax.imageio.ImageIO.write(robot.createScreenCapture(Lizzie.frame.getBounds()), "png",
+        javax.imageio.ImageIO.write(
+            robot.createScreenCapture(Lizzie.frame.getBounds()),
+            "png",
             result.resolveSibling("position-" + round + ".png").toFile());
-        positions.put(new JSONObject().put("round", round).put("confirmed", true)
-            .put("board", boardResponse).put("turn", "W")
-            .put("visits", candidate.playouts).put("move", candidate.coordinate));
+        positions.put(
+            new JSONObject()
+                .put("round", round)
+                .put("confirmed", true)
+                .put("board", boardResponse)
+                .put("turn", "W")
+                .put("visits", candidate.playouts)
+                .put("move", candidate.coordinate));
       }
       record.put("positions", positions).put("pid", state.peer.pid());
       real.normalQuit();
-      await(() -> !state.peer.isAlive() && state.readers.terminated(), Deadline.after(QUIT_BUDGET), "owned cleanup");
+      await(
+          () -> !state.peer.isAlive() && state.readers.terminated(),
+          Deadline.after(QUIT_BUDGET),
+          "owned cleanup");
       record.put("status", "PASS").put("cleanup", true);
     } catch (Throwable failure) {
       record.put("failure", failure.toString());
@@ -182,21 +234,27 @@ public final class RealCpuEngineAcceptanceIT {
     field.setAccessible(true);
     @SuppressWarnings("unchecked")
     java.util.ArrayDeque<String> lines = (java.util.ArrayDeque<String>) field.get(engine);
-    synchronized (lines) { return String.join("\n", lines); }
+    synchronized (lines) {
+      return String.join("\n", lines);
+    }
   }
 
   private static void assertEngineInitialBoard(String response, BoardData expected) {
     assertTrue(response.matches("(?s).*Next player[^\\n]*[Ww](?:hite)?.*"), response);
     int rows = 0;
     for (String line : response.split("\\n")) {
-      java.util.regex.Matcher row = java.util.regex.Pattern.compile("^\\s*(\\d{1,2})\\s+([.XO+ ]+)(?:\\s+\\d+)?\\s*$").matcher(line);
+      java.util.regex.Matcher row =
+          java.util.regex.Pattern.compile("^\\s*(\\d{1,2})\\s+([.XO+ ]+)(?:\\s+\\d+)?\\s*$")
+              .matcher(line);
       if (!row.matches()) continue;
       String cells = row.group(2).replace(" ", "");
       if (cells.length() != 19) continue;
       int y = 19 - Integer.parseInt(row.group(1));
       for (int x = 0; x < 19; x++) {
-        Stone stone = cells.charAt(x) == 'X' ? Stone.BLACK
-            : cells.charAt(x) == 'O' ? Stone.WHITE : Stone.EMPTY;
+        Stone stone =
+            cells.charAt(x) == 'X'
+                ? Stone.BLACK
+                : cells.charAt(x) == 'O' ? Stone.WHITE : Stone.EMPTY;
         assertEquals(expected.stones[Board.getIndex(x, y)], stone, "engine cell " + x + "," + y);
       }
       rows++;
@@ -205,15 +263,24 @@ public final class RealCpuEngineAcceptanceIT {
   }
 
   private static String queryInitialPosition(Leelaz engine, String command) throws Exception {
-    java.util.concurrent.CompletableFuture<String> response = new java.util.concurrent.CompletableFuture<>();
-    java.lang.reflect.Method send = Leelaz.class.getDeclaredMethod("sendCommandNoLeelaz2", String.class, Runnable.class);
+    java.util.concurrent.CompletableFuture<String> response =
+        new java.util.concurrent.CompletableFuture<>();
+    java.lang.reflect.Method send =
+        Leelaz.class.getDeclaredMethod("sendCommandNoLeelaz2", String.class, Runnable.class);
     send.setAccessible(true);
     Field line = Leelaz.class.getDeclaredField("currentCommandResponseLine");
     line.setAccessible(true);
-    send.invoke(engine, command, (Runnable) () -> {
-      try { response.complete((String) line.get(engine)); }
-      catch (IllegalAccessException failure) { response.completeExceptionally(failure); }
-    });
+    send.invoke(
+        engine,
+        command,
+        (Runnable)
+            () -> {
+              try {
+                response.complete((String) line.get(engine));
+              } catch (IllegalAccessException failure) {
+                response.completeExceptionally(failure);
+              }
+            });
     String value = response.get(30, TimeUnit.SECONDS);
     assertTrue(value.startsWith("="), value);
     return value;
@@ -254,8 +321,12 @@ public final class RealCpuEngineAcceptanceIT {
   public static void main(String[] args) throws Exception {
     if (args.length == 10 && "initial-white".equals(args[0])) {
       int code = 1;
-      try { runInitialWhite(args); code = 0; }
-      finally { System.exit(code); }
+      try {
+        runInitialWhite(args);
+        code = 0;
+      } finally {
+        System.exit(code);
+      }
       return;
     }
     if (args.length != 11 || !"probe".equals(args[0])) {
@@ -264,8 +335,7 @@ public final class RealCpuEngineAcceptanceIT {
     }
     Path fixture = Path.of(args[1]).toAbsolutePath().normalize();
     Inputs inputs =
-        Inputs.load(
-            Path.of(args[2]), Path.of(args[3]), Path.of(args[4]), Path.of(args[5]));
+        Inputs.load(Path.of(args[2]), Path.of(args[3]), Path.of(args[4]), Path.of(args[5]));
     String engineId = args[6];
     SourceIdentity source = new SourceIdentity(args[7], Boolean.parseBoolean(args[8]));
     Path work = Path.of(args[9]).toAbsolutePath().normalize();
@@ -285,9 +355,14 @@ public final class RealCpuEngineAcceptanceIT {
       try {
         String diagnostics = "phase=" + state.phase + "\n";
         if (state.engine != null) {
-          diagnostics += "pondering=" + state.engine.isPondering()
-              + "\nengineVisits=" + state.engine.getBestMovesPlayouts()
-              + "\nnodeVisits=" + (state.target == null ? -1 : state.target.getData().getPlayouts()) + "\n";
+          diagnostics +=
+              "pondering="
+                  + state.engine.isPondering()
+                  + "\nengineVisits="
+                  + state.engine.getBestMovesPlayouts()
+                  + "\nnodeVisits="
+                  + (state.target == null ? -1 : state.target.getData().getPlayouts())
+                  + "\n";
         }
         for (java.lang.management.ThreadInfo thread :
             java.lang.management.ManagementFactory.getThreadMXBean().dumpAllThreads(true, true)) {
@@ -471,9 +546,7 @@ public final class RealCpuEngineAcceptanceIT {
         quitDeadline,
         "production normal quit");
     await(
-        () -> !peer.isAlive() && !real.isStarted(),
-        quitDeadline,
-        "owned production process exit");
+        () -> !peer.isAlive() && !real.isStarted(), quitDeadline, "owned production process exit");
     long quitMillis = elapsedMillis(quitStart);
     state.quitMillis = quitMillis;
 
@@ -509,9 +582,7 @@ public final class RealCpuEngineAcceptanceIT {
                     .put("pid", peer.pid())
                     .put("stdoutReader", readers.identity(readers.stdout))
                     .put("stderrReader", readers.identity(readers.stderr)))
-            .put(
-                "source",
-                new JSONObject().put("commit", source.commit).put("dirty", source.dirty))
+            .put("source", new JSONObject().put("commit", source.commit).put("dirty", source.dirty))
             .put(
                 "platform",
                 new JSONObject()
@@ -529,9 +600,7 @@ public final class RealCpuEngineAcceptanceIT {
             .put("assets", assetEvidence(inputs))
             .put(
                 "fixture",
-                new JSONObject()
-                    .put("path", fixture.toString())
-                    .put("sha256", sha256(fixture)))
+                new JSONObject().put("path", fixture.toString()).put("sha256", sha256(fixture)))
             .put(
                 "node",
                 new JSONObject()
@@ -558,7 +627,8 @@ public final class RealCpuEngineAcceptanceIT {
                     .put("scoreLead", candidate.scoreMean)
                     .put(
                         "pv",
-                        new JSONArray(candidate.variation == null ? List.of() : candidate.variation)))
+                        new JSONArray(
+                            candidate.variation == null ? List.of() : candidate.variation)))
             .put(
                 "phasesMs",
                 new JSONObject()
@@ -595,14 +665,12 @@ public final class RealCpuEngineAcceptanceIT {
                     .put("appLog", appLog.toString())
                     .put("phases", phases.toString())
                     .put(
-                        "stagedSgfs",
-                        new JSONArray(staged.stream().map(Path::toString).toList())));
+                        "stagedSgfs", new JSONArray(staged.stream().map(Path::toString).toList())));
     writeResult(result, record);
     phase(state, result, "production-cleanup-complete");
   }
 
-  private static CleanupOutcome cleanupAfterFailure(
-      ProbeState state, SnapshotObserver snapshots) {
+  private static CleanupOutcome cleanupAfterFailure(ProbeState state, SnapshotObserver snapshots) {
     long cleanupStart = System.nanoTime();
     Deadline deadline = Deadline.after(CLEANUP_BUDGET);
     ProcessHandle peer = state.peer;
@@ -638,14 +706,10 @@ public final class RealCpuEngineAcceptanceIT {
     boolean processStopped =
         ownedPeer == null || settle(() -> !ownedPeer.isAlive(), deadline, "owned process cleanup");
     boolean readersStopped =
-        ownedReaders == null
-            || settle(ownedReaders::terminated, deadline, "owned reader cleanup");
+        ownedReaders == null || settle(ownedReaders::terminated, deadline, "owned reader cleanup");
     List<Path> staged = snapshots == null ? List.of() : snapshots.paths();
     boolean stagedRemoved =
-        settle(
-            () -> staged.stream().noneMatch(Files::exists),
-            deadline,
-            "staged snapshot cleanup");
+        settle(() -> staged.stream().noneMatch(Files::exists), deadline, "staged snapshot cleanup");
     return new CleanupOutcome(
         ownedPeer == null ? -1L : ownedPeer.pid(),
         readersStopped,
@@ -655,8 +719,7 @@ public final class RealCpuEngineAcceptanceIT {
         staged);
   }
 
-  private static boolean settle(
-      CheckedCondition condition, Deadline deadline, String description) {
+  private static boolean settle(CheckedCondition condition, Deadline deadline, String description) {
     try {
       await(condition, deadline, description);
       return true;
@@ -728,7 +791,8 @@ public final class RealCpuEngineAcceptanceIT {
             "node",
             new JSONObject()
                 .put("semanticPath", target == null ? "" : "0/0/0/0/0")
-                .put("kind", target == null ? "NOT_OBSERVED" : target.getData().getNodeKind().name())
+                .put(
+                    "kind", target == null ? "NOT_OBSERVED" : target.getData().getNodeKind().name())
                 .put(
                     "identity",
                     target == null ? "" : Integer.toHexString(System.identityHashCode(target))))
@@ -760,9 +824,7 @@ public final class RealCpuEngineAcceptanceIT {
                 .put("stop", state.stopMillis)
                 .put("quit", state.quitMillis)
                 .put("cleanup", cleanup.durationMillis)
-                .put(
-                    "total",
-                    state.totalStart == 0L ? -1L : elapsedMillis(state.totalStart)))
+                .put("total", state.totalStart == 0L ? -1L : elapsedMillis(state.totalStart)))
         .put(
             "stop",
             new JSONObject()
@@ -793,8 +855,7 @@ public final class RealCpuEngineAcceptanceIT {
                     new JSONArray(cleanup.staged.stream().map(Path::toString).toList())));
   }
 
-  private static JSONObject failurePositionEvidence(
-      BoardHistoryNode target, boolean confirmed) {
+  private static JSONObject failurePositionEvidence(BoardHistoryNode target, boolean confirmed) {
     if (target != null && confirmed) return positionEvidence(target);
     return new JSONObject()
         .put("confirmed", false)
@@ -1052,7 +1113,8 @@ public final class RealCpuEngineAcceptanceIT {
     while (deadline.hasTime()) {
       int currentEnginePlayouts = engine.getBestMovesPlayouts();
       int currentApplicationVisits = target.getData().getPlayouts();
-      if (currentEnginePlayouts != enginePlayouts || currentApplicationVisits != applicationVisits) {
+      if (currentEnginePlayouts != enginePlayouts
+          || currentApplicationVisits != applicationVisits) {
         enginePlayouts = currentEnginePlayouts;
         applicationVisits = currentApplicationVisits;
         stableSince = System.nanoTime();
@@ -1211,8 +1273,7 @@ public final class RealCpuEngineAcceptanceIT {
         "manifest",
         Set.of("path", "sha256", "preparedAt", "networkUsed"));
     requireKeys(result.getJSONObject("fixture"), "fixture", Set.of("path", "sha256"));
-    requireKeys(
-        result.getJSONObject("node"), "node", Set.of("semanticPath", "kind", "identity"));
+    requireKeys(result.getJSONObject("node"), "node", Set.of("semanticPath", "kind", "identity"));
     requireKeys(
         result.getJSONObject("rules"),
         "rules",
@@ -1253,17 +1314,12 @@ public final class RealCpuEngineAcceptanceIT {
         "evidence",
         Set.of("result", "stdout", "stderr", "appLog", "phases", "stagedSgfs"));
     if (!result.isNull("failure")) {
-      requireKeys(
-          result.getJSONObject("failure"), "failure", Set.of("phase", "class", "message"));
+      requireKeys(result.getJSONObject("failure"), "failure", Set.of("phase", "class", "message"));
     }
   }
 
   private static void validateResult(
-      JSONObject result,
-      Inputs inputs,
-      SourceIdentity source,
-      String engineId,
-      Path resultPath)
+      JSONObject result, Inputs inputs, SourceIdentity source, String engineId, Path resultPath)
       throws Exception {
     validateRecordShape(result);
     assertEquals(1, result.getInt("schemaVersion"));
@@ -1295,7 +1351,8 @@ public final class RealCpuEngineAcceptanceIT {
         result.getJSONObject("manifest"),
         "manifest",
         Set.of("path", "sha256", "preparedAt", "networkUsed"));
-    assertEquals(inputs.manifestPath.toString(), result.getJSONObject("manifest").getString("path"));
+    assertEquals(
+        inputs.manifestPath.toString(), result.getJSONObject("manifest").getString("path"));
     assertEquals(inputs.manifestSha256, result.getJSONObject("manifest").getString("sha256"));
 
     requireKeys(
@@ -1407,9 +1464,7 @@ public final class RealCpuEngineAcceptanceIT {
     assertTrue(result.getJSONObject("quit").getBoolean("normal"));
     JSONObject cleanup = result.getJSONObject("cleanup");
     requireKeys(
-        cleanup,
-        "cleanup",
-        Set.of("forced", "durationMs", "process", "readers", "stagedSgf"));
+        cleanup, "cleanup", Set.of("forced", "durationMs", "process", "readers", "stagedSgf"));
     assertFalse(cleanup.getBoolean("forced"));
     assertTrue(cleanup.getLong("durationMs") <= CLEANUP_BUDGET.toMillis());
     assertTrue(cleanup.getBoolean("process"));
@@ -1731,8 +1786,7 @@ public final class RealCpuEngineAcceptanceIT {
       requireRegular(config, "lizzie.acceptance.engine.config");
       requireRegular(manifestPath, "lizzie.acceptance.engine.manifest");
 
-      JSONObject manifest =
-          new JSONObject(Files.readString(manifestPath, StandardCharsets.UTF_8));
+      JSONObject manifest = new JSONObject(Files.readString(manifestPath, StandardCharsets.UTF_8));
       requireKeys(
           manifest,
           "manifest",
@@ -1749,8 +1803,7 @@ public final class RealCpuEngineAcceptanceIT {
       }
       JSONObject manifestCatalog = manifest.getJSONObject("catalog");
       requireKeys(manifestCatalog, "manifest.catalog", Set.of("path", "sha256"));
-      Path catalogPath =
-          Path.of(manifestCatalog.getString("path")).toAbsolutePath().normalize();
+      Path catalogPath = Path.of(manifestCatalog.getString("path")).toAbsolutePath().normalize();
       requireRegular(catalogPath, "catalog");
       if (Files.isRegularFile(CATALOG) && !catalogPath.equals(CATALOG)) {
         throw new IllegalArgumentException(
@@ -1760,8 +1813,7 @@ public final class RealCpuEngineAcceptanceIT {
         throw new IllegalArgumentException("catalog SHA-256 does not match manifest");
       }
 
-      JSONObject catalog =
-          new JSONObject(Files.readString(catalogPath, StandardCharsets.UTF_8));
+      JSONObject catalog = new JSONObject(Files.readString(catalogPath, StandardCharsets.UTF_8));
       if (catalog.getInt("schemaVersion") != 2) {
         throw new IllegalArgumentException("catalog schemaVersion must be 2");
       }
@@ -1782,9 +1834,7 @@ public final class RealCpuEngineAcceptanceIT {
       }
       JSONObject archive = katago.getJSONObject("archive");
       requireKeys(
-          archive,
-          "manifest.katago.archive",
-          Set.of("fileName", "path", "sizeBytes", "sha256"));
+          archive, "manifest.katago.archive", Set.of("fileName", "path", "sizeBytes", "sha256"));
       if (!archive.getString("fileName").equals(catalogAsset.getString("assetName"))
           || archive.getLong("sizeBytes") != catalogAsset.getLong("sizeBytes")
           || !archive.getString("sha256").equals(catalogAsset.getString("sha256"))) {
@@ -1861,7 +1911,8 @@ public final class RealCpuEngineAcceptanceIT {
       requireRegular(path, label);
       if (Files.size(path) != identity.getLong("sizeBytes")
           || !sha256(path).equals(identity.getString("sha256"))) {
-        throw new IllegalArgumentException(label + " size/SHA-256 does not match manifest: " + path);
+        throw new IllegalArgumentException(
+            label + " size/SHA-256 does not match manifest: " + path);
       }
     }
 
@@ -1872,7 +1923,8 @@ public final class RealCpuEngineAcceptanceIT {
         process.destroyForcibly();
         throw new IllegalArgumentException("engine version command timed out");
       }
-      String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+      String output =
+          new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
       if (process.exitValue() != 0) {
         throw new IllegalArgumentException("engine version command failed: " + output);
       }

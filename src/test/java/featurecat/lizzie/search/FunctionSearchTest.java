@@ -59,17 +59,25 @@ class FunctionSearchTest {
     assertTrue(
         FunctionCatalog.entries().stream()
             .allMatch(entry -> FunctionCatalog.categoryKeys().contains(entry.categoryKey())));
-    assertEquals(1, FunctionCatalog.entries().stream().filter(entry -> entry.id().equals("game.komi")).count());
-    assertEquals(1, FunctionCatalog.entries().stream().filter(entry -> entry.id().equals("engine.rules")).count());
+    assertEquals(
+        1,
+        FunctionCatalog.entries().stream().filter(entry -> entry.id().equals("game.komi")).count());
+    assertEquals(
+        1,
+        FunctionCatalog.entries().stream()
+            .filter(entry -> entry.id().equals("engine.rules"))
+            .count());
   }
 
   @Test
   void sameTreeFocusExposesOnlyTheRemainingOutlineSettings() {
-    List<String> trackingIds = FunctionCatalog.configSettingTargets().stream()
-        .map(FunctionCatalog.ConfigSettingTarget::id)
-        .filter(id -> id.startsWith("config.tracking."))
-        .toList();
-    assertEquals(List.of("config.tracking.outline", "config.tracking.outline-opacity"), trackingIds);
+    List<String> trackingIds =
+        FunctionCatalog.configSettingTargets().stream()
+            .map(FunctionCatalog.ConfigSettingTarget::id)
+            .filter(id -> id.startsWith("config.tracking."))
+            .toList();
+    assertEquals(
+        List.of("config.tracking.outline", "config.tracking.outline-opacity"), trackingIds);
   }
 
   @Test
@@ -118,8 +126,7 @@ class FunctionSearchTest {
           "toolbar.detailed",
           search.search(bundle.getString("Accessibility.toolbarDetails"), locale).get(0).id());
       assertEquals(
-          "game.stop-human",
-          search.search(bundle.getString("Menu.breakGame"), locale).get(0).id());
+          "game.stop-human", search.search(bundle.getString("Menu.breakGame"), locale).get(0).id());
     }
   }
 

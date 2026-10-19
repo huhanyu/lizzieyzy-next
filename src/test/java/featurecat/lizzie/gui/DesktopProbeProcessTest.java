@@ -69,6 +69,7 @@ class DesktopProbeProcessTest {
       assertTrue(Files.readString(hungDirectory.resolve("screenshot.log")).contains("headless"));
     }
   }
+
   @Test
   void childEnvironmentIsExplicitAndIsolated() throws Exception {
     String key = "LIZZIE_DESKTOP_PROBE_ENV";
@@ -102,8 +103,7 @@ class DesktopProbeProcessTest {
         new Thread(
             () -> {
               try {
-                TensorRtRepairAcceptanceTest.runBounded(
-                    command, temporary, Duration.ofMinutes(1));
+                TensorRtRepairAcceptanceTest.runBounded(command, temporary, Duration.ofMinutes(1));
               } catch (Throwable thrown) {
                 failure.set(thrown);
               }
@@ -193,8 +193,7 @@ class DesktopProbeProcessTest {
         .put("ui", new JSONObject().put("default-engine", 0).put("stable", "same"))
         .put(
             "leelaz",
-            new JSONObject()
-                .put("engine-settings-list", new JSONArray().put(direct).put(tensor)))
+            new JSONObject().put("engine-settings-list", new JSONArray().put(direct).put(tensor)))
         .put("logging", new JSONObject().put("level", "info"));
   }
 

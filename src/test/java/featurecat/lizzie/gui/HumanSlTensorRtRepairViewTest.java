@@ -73,7 +73,6 @@ class HumanSlTensorRtRepairViewTest {
             .offerRepair);
   }
 
-
   @Test
   void openingDirectedRepairHidesModalHostAndDoesNotStartRunner() {
     TensorRtRepairContext context = context(List.of(TensorRtInstallStatus.MISSING_COMPANION), true);

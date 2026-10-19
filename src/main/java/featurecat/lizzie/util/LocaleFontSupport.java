@@ -82,10 +82,7 @@ public final class LocaleFontSupport {
       return preferred;
     }
     return resolveFontName(
-        preferred,
-        preferred,
-        candidates,
-        requestedName -> canRender(requestedName, sample));
+        preferred, preferred, candidates, requestedName -> canRender(requestedName, sample));
   }
 
   public static String resolveConfiguredFontName(
@@ -101,8 +98,7 @@ public final class LocaleFontSupport {
 
   static String resolveThaiFontName(
       String configuredName, String fallbackName, Predicate<String> supportsThai) {
-    return resolveFontName(
-        configuredName, fallbackName, THAI_FONT_CANDIDATES, supportsThai);
+    return resolveFontName(configuredName, fallbackName, THAI_FONT_CANDIDATES, supportsThai);
   }
 
   private static String resolveFontName(

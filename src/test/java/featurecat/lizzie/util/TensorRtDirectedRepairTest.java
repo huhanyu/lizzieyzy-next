@@ -427,8 +427,7 @@ public class TensorRtDirectedRepairTest {
   }
 
   @Test
-  void directedTargetInvalidatedAtMutationBoundaryDoesNotMutateDefaultOrOutside()
-      throws Exception {
+  void directedTargetInvalidatedAtMutationBoundaryDoesNotMutateDefaultOrOutside() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
         () -> {

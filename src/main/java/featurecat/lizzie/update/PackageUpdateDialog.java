@@ -28,7 +28,8 @@ public final class PackageUpdateDialog extends JDialog {
   private final UpdateCheckCoordinator coordinator;
   private final UpdateCheckResult offered;
   private final PackageUpdatePlan plan;
-  private final java.util.function.Consumer<UpdateCheckCoordinator.State> observer = this::showState;
+  private final java.util.function.Consumer<UpdateCheckCoordinator.State> observer =
+      this::showState;
   private final JProgressBar progressBar = new JProgressBar(0, 1000);
   private final JTextArea statusLabel = UpdateText.createStatusArea();
   private final JFontButton downloadButton =
@@ -40,8 +41,11 @@ public final class PackageUpdateDialog extends JDialog {
   private final JFontButton releaseButton =
       new JFontButton(UpdateText.tr("WindowsUpdate.btnRelease", "查看 Release", "View release"));
 
-  PackageUpdateDialog(Component parent, UpdateCheckCoordinator coordinator,
-      UpdateCheckResult result, String checkWarning) {
+  PackageUpdateDialog(
+      Component parent,
+      UpdateCheckCoordinator coordinator,
+      UpdateCheckResult result,
+      String checkWarning) {
     super(
         parent == null ? null : SwingUtilities.getWindowAncestor(parent),
         UpdateText.tr("WindowsUpdate.title", "发现新版本", "New version available"),
@@ -176,12 +180,17 @@ public final class PackageUpdateDialog extends JDialog {
   private void showState(UpdateCheckCoordinator.State state) {
     boolean current = state.result() == offered;
     downloadButton.setEnabled(current && !coordinator.busy());
-    downloadButton.setText(state.ready() ? UpdateDownloadText.action(offered)
-        : UpdateText.tr("WindowsUpdate.btnDownload", "下载新版", "Download update"));
+    downloadButton.setText(
+        state.ready()
+            ? UpdateDownloadText.action(offered)
+            : UpdateText.tr("WindowsUpdate.btnDownload", "下载新版", "Download update"));
     pauseButton.setEnabled(current && state.downloading());
     pauseButton.setText(UpdateDownloadText.pauseAction(state));
     cancelButton.setEnabled(current && state.downloading());
-    if (!current) { dispose(); return; }
+    if (!current) {
+      dispose();
+      return;
+    }
     progressBar.setVisible(state.download().phase() != UpdateCheckCoordinator.DownloadPhase.NONE);
     if (state.download().progress() != null) updateProgress(state.download().progress());
     String status = UpdateDownloadText.status(state);
@@ -244,7 +253,6 @@ public final class PackageUpdateDialog extends JDialog {
             + WindowsUpdateDialog.formatBytes(progress.totalBytes)
             + speed);
   }
-
 
   private void openRelease() {
     try {

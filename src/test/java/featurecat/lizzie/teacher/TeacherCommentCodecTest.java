@@ -41,11 +41,7 @@ class TeacherCommentCodecTest {
   void removingCommentaryDoesNotNormalizeUserWhitespace() {
     String userText = "first  aligned  \n\n\nlast";
     String stored =
-        userText
-            + "\n"
-            + TeacherCommentCodec.BEGIN
-            + "\n\nanswer\n"
-            + TeacherCommentCodec.END;
+        userText + "\n" + TeacherCommentCodec.BEGIN + "\n\nanswer\n" + TeacherCommentCodec.END;
 
     assertEquals(userText + "\n", TeacherCommentCodec.removeBlocks(stored));
   }

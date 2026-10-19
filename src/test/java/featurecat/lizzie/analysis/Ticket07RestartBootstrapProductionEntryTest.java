@@ -264,7 +264,6 @@ class Ticket07RestartBootstrapProductionEntryTest {
     }
   }
 
-
   private static void stopEngineForTest(Leelaz engine) {
     try {
       engine.isNormalEnd = true;

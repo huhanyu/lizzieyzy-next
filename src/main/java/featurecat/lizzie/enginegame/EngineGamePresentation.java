@@ -14,9 +14,7 @@ public final class EngineGamePresentation {
   private EngineGamePresentation() {}
 
   public static EngineGameSnapshot current() {
-    return Lizzie.engineGame == null
-        ? new EngineGameSnapshot.Idle()
-        : Lizzie.engineGame.current();
+    return Lizzie.engineGame == null ? new EngineGameSnapshot.Idle() : Lizzie.engineGame.current();
   }
 
   public static boolean showLiveBatchScores(EngineGameSnapshot snapshot) {
@@ -172,10 +170,7 @@ public final class EngineGamePresentation {
   }
 
   public static String matchRulesCaption(
-      EngineGameSnapshot snapshot,
-      MatchRulesSnapshot live,
-      GameInfo info,
-      ResourceBundle bundle) {
+      EngineGameSnapshot snapshot, MatchRulesSnapshot live, GameInfo info, ResourceBundle bundle) {
     if (bundle == null) {
       return "";
     }

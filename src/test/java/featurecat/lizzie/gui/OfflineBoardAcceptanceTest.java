@@ -61,9 +61,14 @@ public final class OfflineBoardAcceptanceTest {
             LizzieFrame.menu.btnKomiDown.doClick();
             assertEquals(6.5, Lizzie.board.getHistory().getGameInfo().getKomi());
             LizzieFrame.menu.txtKomi.setText("8.5");
-            java.awt.event.KeyEvent released = new java.awt.event.KeyEvent(
-                LizzieFrame.menu.txtKomi, java.awt.event.KeyEvent.KEY_RELEASED,
-                System.currentTimeMillis(), 0, java.awt.event.KeyEvent.VK_ENTER, '\n');
+            java.awt.event.KeyEvent released =
+                new java.awt.event.KeyEvent(
+                    LizzieFrame.menu.txtKomi,
+                    java.awt.event.KeyEvent.KEY_RELEASED,
+                    System.currentTimeMillis(),
+                    0,
+                    java.awt.event.KeyEvent.VK_ENTER,
+                    '\n');
             for (java.awt.event.KeyListener listener : LizzieFrame.menu.txtKomi.getKeyListeners())
               listener.keyReleased(released);
             assertEquals(8.5, Lizzie.board.getHistory().getGameInfo().getKomi());
@@ -76,14 +81,17 @@ public final class OfflineBoardAcceptanceTest {
               dialog.dispose();
             }
             while (Lizzie.board.nextMove(true)) {}
-            java.awt.image.BufferedImage graphImage = new java.awt.image.BufferedImage(
-                640, 480, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.image.BufferedImage graphImage =
+                new java.awt.image.BufferedImage(
+                    640, 480, java.awt.image.BufferedImage.TYPE_INT_ARGB);
             java.awt.Graphics2D graphGraphics = graphImage.createGraphics();
             try {
               for (boolean kataBoard : new boolean[] {false, true}) {
                 Lizzie.board.isKataBoard = kataBoard;
-                assertDoesNotThrow(() -> new WinrateGraph().draw(
-                    graphGraphics, graphGraphics, graphGraphics, 0, 0, 640, 480));
+                assertDoesNotThrow(
+                    () ->
+                        new WinrateGraph()
+                            .draw(graphGraphics, graphGraphics, graphGraphics, 0, 0, 640, 480));
               }
             } finally {
               graphGraphics.dispose();
@@ -116,25 +124,38 @@ public final class OfflineBoardAcceptanceTest {
 
   private static void verifyOfflineEstimateMenus() {
     javax.swing.JMenu estimate = findMenu(LizzieFrame.menu, "Menu.kataEstimate");
-    for (String key : new String[] {
-        "Menu.kataEstimateClose", "Menu.kataEstimateCloseView",
-        "Menu.kataEstimateOnMainBoard", "Menu.kataEstimateOnSubBoard",
-        "Menu.kataEstimateOnBothBoard", "Menu.kataEstimateByTransparentSmall",
-        "Menu.kataEstimateByTransparent", "Menu.kataEstimateByTransparentNotOnLive",
-        "Menu.kataEstimateByBigSquare", "Menu.kataEstimateBySize"}) {
+    for (String key :
+        new String[] {
+          "Menu.kataEstimateClose", "Menu.kataEstimateCloseView",
+          "Menu.kataEstimateOnMainBoard", "Menu.kataEstimateOnSubBoard",
+          "Menu.kataEstimateOnBothBoard", "Menu.kataEstimateByTransparentSmall",
+          "Menu.kataEstimateByTransparent", "Menu.kataEstimateByTransparentNotOnLive",
+          "Menu.kataEstimateByBigSquare", "Menu.kataEstimateBySize"
+        }) {
       javax.swing.JMenuItem item = findMenuItem(estimate.getMenuComponents(), key);
       assertTrue(item.isEnabled(), key);
-      assertDoesNotThrow(() -> { item.doClick(); }, key);
+      assertDoesNotThrow(
+          () -> {
+            item.doClick();
+          },
+          key);
       assertNull(Lizzie.leelaz, "Changing display preferences must not create an engine");
     }
-    javax.swing.JMenu pure = (javax.swing.JMenu) findMenuItem(
-        estimate.getMenuComponents(), "Menu.kataEstimateInPureNet");
-    for (String key : new String[] {
-        "Menu.kataEstimateByTransparentSmall", "Menu.kataEstimateByTransparent",
-        "Menu.kataEstimateByTransparentNotOnLive", "Menu.kataEstimateByBigSquare",
-        "Menu.kataEstimateBySize"}) {
+    javax.swing.JMenu pure =
+        (javax.swing.JMenu)
+            findMenuItem(estimate.getMenuComponents(), "Menu.kataEstimateInPureNet");
+    for (String key :
+        new String[] {
+          "Menu.kataEstimateByTransparentSmall", "Menu.kataEstimateByTransparent",
+          "Menu.kataEstimateByTransparentNotOnLive", "Menu.kataEstimateByBigSquare",
+          "Menu.kataEstimateBySize"
+        }) {
       javax.swing.JMenuItem item = findMenuItem(pure.getMenuComponents(), key);
-      assertDoesNotThrow(() -> { item.doClick(); }, key);
+      assertDoesNotThrow(
+          () -> {
+            item.doClick();
+          },
+          key);
       assertNull(Lizzie.leelaz);
     }
   }
@@ -142,26 +163,35 @@ public final class OfflineBoardAcceptanceTest {
   private static void verifyCancelledOfflineSave(Runnable save) {
     boolean rawBefore = LizzieFrame.isSavingRaw;
     boolean commentsBefore = LizzieFrame.isSavingRawComment;
-    java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
-    javax.swing.Timer cancelChooser = new javax.swing.Timer(100, event -> {
-      for (java.awt.Window window : java.awt.Window.getWindows()) {
-        if (!window.isShowing()) continue;
-        javax.swing.JFileChooser chooser = findChooser(window);
-        if (chooser != null) {
-          assertEquals(Lizzie.frame, window.getOwner(), "Main window must own the save dialog");
-          cancelled.set(true);
-          chooser.cancelSelection();
-          ((javax.swing.Timer) event.getSource()).stop();
-          return;
-        }
-      }
-    });
+    java.util.concurrent.atomic.AtomicBoolean cancelled =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    javax.swing.Timer cancelChooser =
+        new javax.swing.Timer(
+            100,
+            event -> {
+              for (java.awt.Window window : java.awt.Window.getWindows()) {
+                if (!window.isShowing()) continue;
+                javax.swing.JFileChooser chooser = findChooser(window);
+                if (chooser != null) {
+                  assertEquals(
+                      Lizzie.frame, window.getOwner(), "Main window must own the save dialog");
+                  cancelled.set(true);
+                  chooser.cancelSelection();
+                  ((javax.swing.Timer) event.getSource()).stop();
+                  return;
+                }
+              }
+            });
     cancelChooser.start();
     try {
-      assertDoesNotThrow(() -> { save.run(); });
+      assertDoesNotThrow(
+          () -> {
+            save.run();
+          });
       assertTrue(cancelled.get(), "Save must reach its chooser with no foreground engine");
       assertEquals(rawBefore, LizzieFrame.isSavingRaw, "Cancelled save leaked raw mode");
-      assertEquals(commentsBefore, LizzieFrame.isSavingRawComment, "Cancelled save leaked comment mode");
+      assertEquals(
+          commentsBefore, LizzieFrame.isSavingRawComment, "Cancelled save leaked comment mode");
     } finally {
       cancelChooser.stop();
       LizzieFrame.isSavingRaw = rawBefore;
@@ -182,43 +212,50 @@ public final class OfflineBoardAcceptanceTest {
 
   private static void verifySuccessfulSaves(Path work) throws Exception {
     Runnable[] saves = {
-        () -> LizzieFrame.saveFile(false), () -> LizzieFrame.saveFile(true),
-        () -> Lizzie.frame.saveRawFileComment(), LizzieFrame::saveCurrentBranch};
+      () -> LizzieFrame.saveFile(false),
+      () -> LizzieFrame.saveFile(true),
+      () -> Lizzie.frame.saveRawFileComment(),
+      LizzieFrame::saveCurrentBranch
+    };
     for (int index = 0; index < saves.length; index++) {
       Path target = work.resolve("成功保存-中文-" + index + ".SGF");
       Runnable save = saves[index];
       int mode = index;
-      SwingUtilities.invokeAndWait(() -> {
-        assertTrue(SGFParser.loadFromString("(;SZ[19];B[aa](;W[bb])(;W[dd]C[before]))"));
-        var history = Lizzie.board.getHistory();
-        var root = history.getStart();
-        var fork = root.next().orElseThrow();
-        var selected = fork.getVariation(1).orElseThrow();
-        history.setHead(selected);
-        javax.swing.Timer approve = new javax.swing.Timer(100, event -> {
-          for (java.awt.Window window : java.awt.Window.getWindows()) {
-            if (!window.isShowing()) continue;
-            javax.swing.JFileChooser chooser = findChooser(window);
-            if (chooser != null) {
-              assertEquals(Lizzie.frame, window.getOwner());
-              chooser.setSelectedFile(target.toFile());
-              chooser.approveSelection();
-              ((javax.swing.Timer) event.getSource()).stop();
-              return;
+      SwingUtilities.invokeAndWait(
+          () -> {
+            assertTrue(SGFParser.loadFromString("(;SZ[19];B[aa](;W[bb])(;W[dd]C[before]))"));
+            var history = Lizzie.board.getHistory();
+            var root = history.getStart();
+            var fork = root.next().orElseThrow();
+            var selected = fork.getVariation(1).orElseThrow();
+            history.setHead(selected);
+            javax.swing.Timer approve =
+                new javax.swing.Timer(
+                    100,
+                    event -> {
+                      for (java.awt.Window window : java.awt.Window.getWindows()) {
+                        if (!window.isShowing()) continue;
+                        javax.swing.JFileChooser chooser = findChooser(window);
+                        if (chooser != null) {
+                          assertEquals(Lizzie.frame, window.getOwner());
+                          chooser.setSelectedFile(target.toFile());
+                          chooser.approveSelection();
+                          ((javax.swing.Timer) event.getSource()).stop();
+                          return;
+                        }
+                      }
+                    });
+            approve.start();
+            try {
+              save.run();
+              assertEquals(history, Lizzie.board.getHistory(), "Save must not rebuild the board");
+              assertEquals(selected, history.getCurrentHistoryNode());
+              assertEquals(2, fork.numberOfChildren());
+              selected.getData().comment = "edited after snapshot";
+            } finally {
+              approve.stop();
             }
-          }
-        });
-        approve.start();
-        try {
-          save.run();
-          assertEquals(history, Lizzie.board.getHistory(), "Save must not rebuild the board");
-          assertEquals(selected, history.getCurrentHistoryNode());
-          assertEquals(2, fork.numberOfChildren());
-          selected.getData().comment = "edited after snapshot";
-        } finally {
-          approve.stop();
-        }
-      });
+          });
       SgfSaveCoordinator.pendingSaves().get(10, java.util.concurrent.TimeUnit.SECONDS);
       String written = Files.readString(target);
       assertTrue(written.contains(";B[aa]"));
@@ -226,8 +263,10 @@ public final class OfflineBoardAcceptanceTest {
       assertEquals(mode != 3, written.contains(";W[bb]"));
       assertEquals(mode == 0 || mode == 2, written.contains("C[before]"));
       assertTrue(!written.contains("edited after snapshot"));
-      assertTrue(!Files.exists(Path.of(target + ".sgf")), "Uppercase SGF must not gain another suffix");
-      if (mode < 2) SwingUtilities.invokeAndWait(() -> assertEquals(target.toFile(), LizzieFrame.curFile));
+      assertTrue(
+          !Files.exists(Path.of(target + ".sgf")), "Uppercase SGF must not gain another suffix");
+      if (mode < 2)
+        SwingUtilities.invokeAndWait(() -> assertEquals(target.toFile(), LizzieFrame.curFile));
     }
   }
 
@@ -236,29 +275,34 @@ public final class OfflineBoardAcceptanceTest {
     Path target = work.resolve("protected-sgf-中文.sgf");
     String original = "(;GM[1]SZ[19]C[Do not overwrite this fixture])";
     Files.writeString(target, original);
-    java.util.concurrent.atomic.AtomicBoolean approved = new java.util.concurrent.atomic.AtomicBoolean();
-    java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
-    javax.swing.Timer control = new javax.swing.Timer(100, event -> {
-      for (java.awt.Window window : java.awt.Window.getWindows()) {
-        if (!window.isShowing()) continue;
-        if (!approved.get()) {
-          javax.swing.JFileChooser chooser = findChooser(window);
-          if (chooser != null) {
-            approved.set(true);
-            chooser.setSelectedFile(selected.toFile());
-            chooser.approveSelection();
-            return;
-          }
-        } else {
-          javax.swing.JOptionPane pane = findOptionPane(window);
-          if (pane != null) {
-            cancelled.set(true);
-            pane.setValue(javax.swing.JOptionPane.CANCEL_OPTION);
-            return;
-          }
-        }
-      }
-    });
+    java.util.concurrent.atomic.AtomicBoolean approved =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    java.util.concurrent.atomic.AtomicBoolean cancelled =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    javax.swing.Timer control =
+        new javax.swing.Timer(
+            100,
+            event -> {
+              for (java.awt.Window window : java.awt.Window.getWindows()) {
+                if (!window.isShowing()) continue;
+                if (!approved.get()) {
+                  javax.swing.JFileChooser chooser = findChooser(window);
+                  if (chooser != null) {
+                    approved.set(true);
+                    chooser.setSelectedFile(selected.toFile());
+                    chooser.approveSelection();
+                    return;
+                  }
+                } else {
+                  javax.swing.JOptionPane pane = findOptionPane(window);
+                  if (pane != null) {
+                    cancelled.set(true);
+                    pane.setValue(javax.swing.JOptionPane.CANCEL_OPTION);
+                    return;
+                  }
+                }
+              }
+            });
     control.start();
     try {
       save.run();
@@ -289,10 +333,13 @@ public final class OfflineBoardAcceptanceTest {
 
       SaveTrackingEngine replacement = new SaveTrackingEngine(false);
       Lizzie.setPrimaryEngine(active);
-      javax.swing.Timer switchEngine = new javax.swing.Timer(50, event -> {
-        Lizzie.setPrimaryEngine(replacement);
-        ((javax.swing.Timer) event.getSource()).stop();
-      });
+      javax.swing.Timer switchEngine =
+          new javax.swing.Timer(
+              50,
+              event -> {
+                Lizzie.setPrimaryEngine(replacement);
+                ((javax.swing.Timer) event.getSource()).stop();
+              });
       switchEngine.start();
       try {
         verifyCancelledOfflineSave(() -> LizzieFrame.saveFile(false));

@@ -210,8 +210,7 @@ public class EngineFollowControllerTest {
           };
       ExactSnapshotEngineRestore.Failure failure =
           new ExactSnapshotEngineRestore.Failure(
-              ExactSnapshotEngineRestore.FailureCategory.SNAPSHOT_PREPARATION,
-              "no readable path");
+              ExactSnapshotEngineRestore.FailureCategory.SNAPSHOT_PREPARATION, "no readable path");
 
       assertEquals(
           "snapshot preparation failed: no readable path",
@@ -247,5 +246,4 @@ public class EngineFollowControllerTest {
       Lizzie.resourceBundle = previousResourceBundle;
     }
   }
-
 }

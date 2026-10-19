@@ -4,14 +4,13 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.Leelaz;
-import featurecat.lizzie.enginegame.EngineGameBatchSpecFactory;
 import featurecat.lizzie.enginegame.Acceptance;
+import featurecat.lizzie.enginegame.EngineGameBatchSpecFactory;
 import featurecat.lizzie.enginegame.EngineGameMatchRulesSelection;
+import featurecat.lizzie.enginegame.EngineGamePresentation;
 import featurecat.lizzie.enginegame.MatchRulesTexts;
 import featurecat.lizzie.enginegame.StartFailure;
 import featurecat.lizzie.enginegame.StartObserver;
-import featurecat.lizzie.enginegame.EngineGamePresentation;
-
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Movelist;
@@ -1085,7 +1084,6 @@ public class BottomToolbar extends JPanel {
           }
         });
 
-
     yike = new JPopupMenu();
     JFontMenuItem yikeLive =
         new JFontMenuItem(Lizzie.resourceBundle.getString("BottomToolbar.yikeLive")); // ("弈客直播");
@@ -1571,8 +1569,7 @@ public class BottomToolbar extends JPanel {
             // 获得焦点执行的代码
           }
         });
-    lblAnaFirstPlayouts =
-        new JLabel(text("BottomToolbar.detail.firstPlayouts", "首位计算量:"));
+    lblAnaFirstPlayouts = new JLabel(text("BottomToolbar.detail.firstPlayouts", "首位计算量:"));
     chkAnaFirstPlayouts = new JCheckBox();
     chkAnaFirstPlayouts.addActionListener(
         new ActionListener() {
@@ -1651,8 +1648,7 @@ public class BottomToolbar extends JPanel {
             setTxtUnfocuse();
           }
         });
-    lbltxtAnaPlayouts =
-        new JLabel(text("BottomToolbar.detail.totalPlayouts", "总计算量:"));
+    lbltxtAnaPlayouts = new JLabel(text("BottomToolbar.detail.totalPlayouts", "总计算量:"));
     anaPanel.add(chkAnaPlayouts);
     anaPanel.add(lbltxtAnaPlayouts);
     chkAnaPlayouts.setBounds(104, 22, 20, 20);
@@ -1685,8 +1681,7 @@ public class BottomToolbar extends JPanel {
     anaPanel.add(txtAnaTime);
     txtAnaTime.setBounds(305, 23, 25, 18);
 
-    JButton analysisTable =
-        new JButton(text("BottomToolbar.detail.batchProgress", "批量进度表"));
+    JButton analysisTable = new JButton(text("BottomToolbar.detail.batchProgress", "批量进度表"));
     analysisTable.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
@@ -1739,10 +1734,8 @@ public class BottomToolbar extends JPanel {
     lblchkShowBlack = new JLabel(text("BottomToolbar.detail.showBlack", "显示黑"));
     lblchkShowWhite = new JLabel(text("BottomToolbar.detail.showWhite", "显示白"));
 
-    JLabel autoMain =
-        new JLabel(text("BottomToolbar.detail.autoMain", "自动播放(大)(秒)"));
-    JLabel autoSub =
-        new JLabel(text("BottomToolbar.detail.autoVariation", "自动变化图(毫秒)"));
+    JLabel autoMain = new JLabel(text("BottomToolbar.detail.autoMain", "自动播放(大)(秒)"));
+    JLabel autoSub = new JLabel(text("BottomToolbar.detail.autoVariation", "自动变化图(毫秒)"));
     chkAutoMain = new JCheckBox();
     chkAutoSub = new JCheckBox();
     chkAutoMain.addActionListener(
@@ -1867,8 +1860,7 @@ public class BottomToolbar extends JPanel {
     txtAutoPlayTime.setBounds(290, 2, 33, 18);
 
     chkAutoPlayPlayouts = new JCheckBox();
-    lblAutoPlayPlayouts =
-        new JLabel(text("BottomToolbar.detail.totalPlayouts", "总计算量:"));
+    lblAutoPlayPlayouts = new JLabel(text("BottomToolbar.detail.totalPlayouts", "总计算量:"));
     txtAutoPlayPlayouts = new JTextField();
     chkAutoPlayPlayouts.addActionListener(
         new ActionListener() {
@@ -1886,8 +1878,7 @@ public class BottomToolbar extends JPanel {
     txtAutoPlayPlayouts.setBounds(135, 23, 50, 18);
 
     chkAutoPlayFirstPlayouts = new JCheckBox();
-    lblAutoPlayFirstPlayouts =
-        new JLabel(text("BottomToolbar.detail.firstPlayouts", "首位计算量:"));
+    lblAutoPlayFirstPlayouts = new JLabel(text("BottomToolbar.detail.firstPlayouts", "首位计算量:"));
     txtAutoPlayFirstPlayouts = new JTextField();
     chkAutoPlayFirstPlayouts.addActionListener(
         new ActionListener() {
@@ -2091,8 +2082,7 @@ public class BottomToolbar extends JPanel {
     chkenginePkFirstPlayputs.setBounds(250, 23, 20, 18);
     lblenginePkFirstPlayputs.setBounds(269, 22, 90, 18);
     txtenginePkFirstPlayputs.setBounds(350, 24, 50, 18);
-    lblenginePkFirstPlayputsWhite =
-        new JLabel(text("BottomToolbar.detail.whiteColon", "白:"));
+    lblenginePkFirstPlayputsWhite = new JLabel(text("BottomToolbar.detail.whiteColon", "白:"));
     txtenginePkFirstPlayputsWhite = new JTextField();
     txtenginePkFirstPlayputsWhite.setDocument(new IntDocument());
     enginePkPanel.add(lblenginePkFirstPlayputsWhite);
@@ -2171,8 +2161,7 @@ public class BottomToolbar extends JPanel {
           }
         });
 
-    lblenginePkPlayputs =
-        new JLabel(text("BottomToolbar.detail.totalPlayoutsBlack", "总计算量  黑:"));
+    lblenginePkPlayputs = new JLabel(text("BottomToolbar.detail.totalPlayoutsBlack", "总计算量  黑:"));
     chkenginePkPlayouts = new JCheckBox();
     txtenginePkPlayputs = new JTextField();
     txtenginePkPlayputs.setDocument(new IntDocument());
@@ -2747,9 +2736,7 @@ public class BottomToolbar extends JPanel {
   }
 
   static String autoAnalyzeStatusKey(boolean completed) {
-    return completed
-        ? "BottomToolbar.stopAutoAnaHint"
-        : "BottomToolbar.stopAutoAnaStoppedHint";
+    return completed ? "BottomToolbar.stopAutoAnaHint" : "BottomToolbar.stopAutoAnaStoppedHint";
   }
 
   static String autoAnalyzeSavedStatusKey(boolean completed) {
@@ -2757,13 +2744,10 @@ public class BottomToolbar extends JPanel {
   }
 
   static String batchAutoAnalyzeStatusKey(boolean completed) {
-    return completed
-        ? "Leelaz.batchAutoAnalyzeComplete"
-        : "Leelaz.batchAutoAnalyzeStopped";
+    return completed ? "Leelaz.batchAutoAnalyzeComplete" : "Leelaz.batchAutoAnalyzeStopped";
   }
 
-  static boolean shouldContinueBatchAutoAnalysis(
-      boolean completed, int batchSize, int batchIndex) {
+  static boolean shouldContinueBatchAutoAnalysis(boolean completed, int batchSize, int batchIndex) {
     return completed && batchIndex >= 0 && batchSize > batchIndex + 1;
   }
 
@@ -2780,8 +2764,7 @@ public class BottomToolbar extends JPanel {
         if (Lizzie.config.analyzeAllBranch)
           if (threadAnalyzeAllNode != null) threadAnalyzeAllNode.interrupt();
         if (!completed) {
-          Utils.showMsgNoModal(
-              resourceBundle.getString("BottomToolbar.stopAutoAnaStoppedHint"));
+          Utils.showMsgNoModal(resourceBundle.getString("BottomToolbar.stopAutoAnaStoppedHint"));
         }
         return;
       }
@@ -2905,8 +2888,7 @@ public class BottomToolbar extends JPanel {
   }
 
   public void loadAutoBatchFile() {
-    if (Lizzie.frame.deferKifuOpenUntilAutomaticQuickAnalysisRestored(
-        this::loadAutoBatchFile)) {
+    if (Lizzie.frame.deferKifuOpenUntilAutomaticQuickAnalysisRestored(this::loadAutoBatchFile)) {
       return;
     }
     Lizzie.frame.BatchAnaNum = Lizzie.frame.BatchAnaNum + 1;
@@ -3827,8 +3809,7 @@ public class BottomToolbar extends JPanel {
       return;
     }
     if (Lizzie.leelaz == null) {
-      failPendingAutoAnalysisStart(
-          LizzieFrame.ManualAutoAnalysisStartFailure.ENGINE_UNAVAILABLE);
+      failPendingAutoAnalysisStart(LizzieFrame.ManualAutoAnalysisStartFailure.ENGINE_UNAVAILABLE);
       return;
     }
     finishPendingAutoAnalysisStart(true);
@@ -3836,8 +3817,7 @@ public class BottomToolbar extends JPanel {
     startAutoAnaNow();
   }
 
-  private void failPendingAutoAnalysisStart(
-      LizzieFrame.ManualAutoAnalysisStartFailure failure) {
+  private void failPendingAutoAnalysisStart(LizzieFrame.ManualAutoAnalysisStartFailure failure) {
     Lizzie.frame.endBatchAutoAnalysis(autoAnalysisBatch);
     autoAnalysisBatch = null;
     finishPendingAutoAnalysisStart(false);
@@ -4140,7 +4120,6 @@ public class BottomToolbar extends JPanel {
       EngineGameDesktop.reviseLiveBatchLimit(txtenginePkBatch.getText());
     }
   }
-
 
   //  public void startEnginePk() {
   //    if (!Lizzie.engineManager.isEmpty && Lizzie.leelaz != null) {

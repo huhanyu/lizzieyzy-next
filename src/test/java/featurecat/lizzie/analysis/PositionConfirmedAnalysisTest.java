@@ -4,15 +4,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
-import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.gui.GtpConsolePane;
+import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.rules.Board;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,8 +38,7 @@ class PositionConfirmedAnalysisTest {
       fixture.engine.dispatchReaderLineForTest("=" + id);
 
       assertEquals(List.of("play"), fixture.engine.commandLists);
-      assertEquals(
-          List.of("set_position B D4", "kata-analyze B 10"), fixture.transport.commands());
+      assertEquals(List.of("set_position B D4", "kata-analyze B 10"), fixture.transport.commands());
     }
   }
 
@@ -353,15 +352,19 @@ class PositionConfirmedAnalysisTest {
             if (withMirror) fixture.mirror.sendCommandNoLeelaz2("play B D4");
           });
       try {
-        latest.get().execute(
-            () -> {
-              fixture.engine.sendCommandNoLeelaz2("clear_board");
-              if (withMirror) fixture.mirror.sendCommandNoLeelaz2("clear_board");
-            });
+        latest
+            .get()
+            .execute(
+                () -> {
+                  fixture.engine.sendCommandNoLeelaz2("clear_board");
+                  if (withMirror) fixture.mirror.sendCommandNoLeelaz2("clear_board");
+                });
         older.cancel();
-        latest.get().confirm(
-            () -> fixture.engine.sendCommandNoLeelaz2("kata-analyze B 10"),
-            detail -> fail(detail));
+        latest
+            .get()
+            .confirm(
+                () -> fixture.engine.sendCommandNoLeelaz2("kata-analyze B 10"),
+                detail -> fail(detail));
         assertEquals(
             List.of("clear_board", "play B D4", "clear_board", "name"),
             fixture.transport.commands());

@@ -125,7 +125,6 @@ class RuleAwareFakeLeelaz extends Leelaz {
     return lastLoadedSgf;
   }
 
-
   int ponderCallCount() {
     return ponderCallCount;
   }
@@ -133,6 +132,7 @@ class RuleAwareFakeLeelaz extends Leelaz {
   int notPonderingCallCount() {
     return notPonderingCallCount;
   }
+
   private void clearBoardState() {
     stones = new Stone[Board.boardWidth * Board.boardHeight];
     for (int index = 0; index < stones.length; index++) {

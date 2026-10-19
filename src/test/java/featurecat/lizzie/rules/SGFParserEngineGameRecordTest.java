@@ -17,7 +17,6 @@ import featurecat.lizzie.enginegame.EngineParticipantIdentity;
 import featurecat.lizzie.enginegame.GameOutcome;
 import featurecat.lizzie.enginegame.MatchRulesAdmission;
 import featurecat.lizzie.enginegame.MatchRulesSnapshot;
-import featurecat.lizzie.enginegame.MatchRulesTexts;
 import featurecat.lizzie.gui.LizzieFrame;
 import java.util.ResourceBundle;
 import org.junit.jupiter.api.Test;
@@ -128,7 +127,12 @@ class SGFParserEngineGameRecordTest {
       int firstIndex = first.indexOf(bundle.getString("MatchRules.sgf.begin"));
       int secondBegin = second.indexOf(bundle.getString("MatchRules.sgf.begin"));
       long beginLines =
-          Lizzie.board.getHistory().getStart().getData().comment.lines()
+          Lizzie.board
+              .getHistory()
+              .getStart()
+              .getData()
+              .comment
+              .lines()
               .filter(bundle.getString("MatchRules.sgf.begin")::equals)
               .count();
       assertTrue(firstIndex >= 0, first);

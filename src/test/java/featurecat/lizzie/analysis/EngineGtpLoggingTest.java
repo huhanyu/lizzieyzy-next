@@ -428,8 +428,7 @@ class EngineGtpLoggingTest {
   }
 
   private static void awaitLogs(LoggingRuntime runtime) throws Exception {
-    Method method =
-        LoggingRuntime.class.getDeclaredMethod("awaitIdle", long.class, TimeUnit.class);
+    Method method = LoggingRuntime.class.getDeclaredMethod("awaitIdle", long.class, TimeUnit.class);
     method.setAccessible(true);
     assertTrue(
         (Boolean) method.invoke(runtime, 10L, TimeUnit.SECONDS),

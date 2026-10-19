@@ -18,8 +18,10 @@ class TensorRtParserRuntimeTest {
 
         var missing = KataGoRuntimeHelper.inspectNvidiaRuntime(fixture.tensorRtEngine, "");
         assertFalse(
-            missing.ready, "The Windows loader cannot start this TensorRT binary without its parser");
-        assertTrue(missing.missingDlls.contains("nvonnxparser_10.dll"), missing.missingDlls.toString());
+            missing.ready,
+            "The Windows loader cannot start this TensorRT binary without its parser");
+        assertTrue(
+            missing.missingDlls.contains("nvonnxparser_10.dll"), missing.missingDlls.toString());
         assertTrue(
             KataGoRuntimeHelper.inspectNvidiaRuntime(fixture.companion, "").ready,
             "The CUDA companion must not inherit TensorRT-only dependencies");

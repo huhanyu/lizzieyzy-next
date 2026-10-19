@@ -129,7 +129,9 @@ public final class WholeGameAnalysisPlan {
 
   public boolean stillMatches(BoardHistoryNode currentRoot) {
     if (root != currentRoot
-        || !positionFingerprints.get(0).matches(currentRoot == null ? null : currentRoot.getData())) {
+        || !positionFingerprints
+            .get(0)
+            .matches(currentRoot == null ? null : currentRoot.getData())) {
       return false;
     }
     int positionIndex = 1;
@@ -195,9 +197,7 @@ public final class WholeGameAnalysisPlan {
           && lastMoveColor == data.lastMoveColor
           && Arrays.equals(
               lastMove,
-              data.lastMove == null || data.lastMove.isEmpty()
-                  ? null
-                  : data.lastMove.get());
+              data.lastMove == null || data.lastMove.isEmpty() ? null : data.lastMove.get());
     }
   }
 }

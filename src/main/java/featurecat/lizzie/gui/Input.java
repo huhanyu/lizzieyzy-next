@@ -47,8 +47,7 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
       }
       return;
     }
-    if (Lizzie.board.isSetupMode()
-        && boardButton) {
+    if (Lizzie.board.isSetupMode() && boardButton) {
       Input.tempDrag = false;
       int setupX = Utils.zoomOut(e.getX());
       int setupY = Utils.zoomOut(e.getY());

@@ -64,41 +64,90 @@ class BoardDataAnalysisCacheTraceTest {
     node.setPlayouts2(2000);
     node.rootVisits2 = 2000;
     Object source = new Object();
-    var payload = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move D4 visits 900 winrate 0.6 pv D4 rootInfo visits 1500");
-    assertEquals(BoardData.AnalysisAdoption.REJECTED,
-        node.adoptOrdinaryAnalysis(payload.moves, "KataGo", Lizzie.leelaz,
-            payload.totalVisits(), payload.rootVisits, null, source, false, false));
+    var payload =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move D4 visits 900 winrate 0.6 pv D4 rootInfo visits 1500");
+    assertEquals(
+        BoardData.AnalysisAdoption.REJECTED,
+        node.adoptOrdinaryAnalysis(
+            payload.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            payload.totalVisits(),
+            payload.rootVisits,
+            null,
+            source,
+            false,
+            false));
     assertEquals(1000, node.getPlayouts());
     assertEquals(-1, node.rootVisits);
-    payload = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move D4 visits 1100 winrate 0.6 pv D4 rootInfo visits 100");
-    assertEquals(BoardData.AnalysisAdoption.FULL,
-        node.adoptOrdinaryAnalysis(payload.moves, "KataGo", Lizzie.leelaz,
-            payload.totalVisits(), payload.rootVisits, null, source, false, false));
+    payload =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move D4 visits 1100 winrate 0.6 pv D4 rootInfo visits 100");
+    assertEquals(
+        BoardData.AnalysisAdoption.FULL,
+        node.adoptOrdinaryAnalysis(
+            payload.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            payload.totalVisits(),
+            payload.rootVisits,
+            null,
+            source,
+            false,
+            false));
     assertEquals(100, node.getPlayouts());
     assertEquals(100, node.rootVisits);
     assertEquals(2000, node.rootVisits2);
-    var lower = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move C3 visits 50000 winrate 0.8 pv C3 rootInfo visits 50 ownership 0.5 -0.5");
+    var lower =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move C3 visits 50000 winrate 0.8 pv C3 rootInfo visits 50 ownership 0.5 -0.5");
     Object replacement = new Object();
-    assertEquals(BoardData.AnalysisAdoption.OWNERSHIP_ONLY,
-        node.adoptOrdinaryAnalysis(lower.moves, "KataGo", Lizzie.leelaz,
-            lower.totalVisits(), lower.rootVisits, lower.ownership, replacement, false, false));
+    assertEquals(
+        BoardData.AnalysisAdoption.OWNERSHIP_ONLY,
+        node.adoptOrdinaryAnalysis(
+            lower.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            lower.totalVisits(),
+            lower.rootVisits,
+            lower.ownership,
+            replacement,
+            false,
+            false));
     assertEquals("D4", node.bestMoves.get(0).coordinate);
     assertEquals(100, node.rootVisits);
     assertEquals(List.of(0.5, -0.5), node.estimateArray);
     node.isChanged2 = true;
-    assertEquals(BoardData.AnalysisAdoption.FULL,
-        node.adoptOrdinaryAnalysis(lower.moves, "KataGo", Lizzie.leelaz,
-            lower.totalVisits(), lower.rootVisits, null, replacement, true, false));
+    assertEquals(
+        BoardData.AnalysisAdoption.FULL,
+        node.adoptOrdinaryAnalysis(
+            lower.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            lower.totalVisits(),
+            lower.rootVisits,
+            null,
+            replacement,
+            true,
+            false));
     assertEquals(50, node.rootVisits2);
     assertEquals(100, node.rootVisits);
-    var unknown = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move C3 visits 90000 winrate 0.9 pv C3");
-    assertEquals(BoardData.AnalysisAdoption.REJECTED,
-        node.adoptOrdinaryAnalysis(unknown.moves, "KataGo", Lizzie.leelaz,
-            unknown.totalVisits(), -1, null, replacement, false, false));
+    var unknown =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move C3 visits 90000 winrate 0.9 pv C3");
+    assertEquals(
+        BoardData.AnalysisAdoption.REJECTED,
+        node.adoptOrdinaryAnalysis(
+            unknown.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            unknown.totalVisits(),
+            -1,
+            null,
+            replacement,
+            false,
+            false));
     assertEquals(100, node.rootVisits);
   }
 
@@ -108,18 +157,38 @@ class BoardDataAnalysisCacheTraceTest {
     BoardData node = primaryNode(1000, 40, 1);
     node.rootVisits = 1000;
     Object source = new Object();
-    var shallow = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move D4 visits 50000 edgeVisits 900 winrate 0.6 pv D4 "
-            + "info move Q4 visits 50000 edgeVisits 900 isSymmetryOf D4 winrate 0.6 pv Q4");
-    assertEquals(BoardData.AnalysisAdoption.REJECTED,
-        node.adoptOrdinaryAnalysis(shallow.moves, "KataGo", Lizzie.leelaz,
-            shallow.totalVisits(), -1, null, source, false, false));
+    var shallow =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move D4 visits 50000 edgeVisits 900 winrate 0.6 pv D4 "
+                + "info move Q4 visits 50000 edgeVisits 900 isSymmetryOf D4 winrate 0.6 pv Q4");
+    assertEquals(
+        BoardData.AnalysisAdoption.REJECTED,
+        node.adoptOrdinaryAnalysis(
+            shallow.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            shallow.totalVisits(),
+            -1,
+            null,
+            source,
+            false,
+            false));
     assertEquals(1000, node.rootVisits, "DAG visits and symmetry copies must not inflate depth");
-    var deeper = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move D4 visits 1100 edgeVisits 1101 winrate 0.6 pv D4");
-    assertEquals(BoardData.AnalysisAdoption.FULL,
-        node.adoptOrdinaryAnalysis(deeper.moves, "KataGo", Lizzie.leelaz,
-            deeper.totalVisits(), -1, null, source, false, false));
+    var deeper =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move D4 visits 1100 edgeVisits 1101 winrate 0.6 pv D4");
+    assertEquals(
+        BoardData.AnalysisAdoption.FULL,
+        node.adoptOrdinaryAnalysis(
+            deeper.moves,
+            "KataGo",
+            Lizzie.leelaz,
+            deeper.totalVisits(),
+            -1,
+            null,
+            source,
+            false,
+            false));
     assertEquals(1100, node.getPlayouts());
     assertEquals(-1, node.rootVisits, "A lower bound is not an exact root total");
   }
@@ -131,13 +200,23 @@ class BoardDataAnalysisCacheTraceTest {
     node.rootVisits = 1000;
     node.setPlayouts2(1000);
     node.rootVisits2 = 1000;
-    var mixed = featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
-        "info move D4 visits 50000 edgeVisits 2000 winrate 0.6 pv D4 "
-            + "info move Q4 visits 50000 winrate 0.6 pv Q4");
+    var mixed =
+        featurecat.lizzie.analysis.KataGoAnalysisPayload.parse(
+            "info move D4 visits 50000 edgeVisits 2000 winrate 0.6 pv D4 "
+                + "info move Q4 visits 50000 winrate 0.6 pv Q4");
     for (boolean secondary : List.of(false, true)) {
-      assertEquals(BoardData.AnalysisAdoption.REJECTED,
-          node.adoptOrdinaryAnalysis(mixed.moves, "KataGo", Lizzie.leelaz,
-              mixed.totalVisits(), -1, null, new Object(), secondary, false));
+      assertEquals(
+          BoardData.AnalysisAdoption.REJECTED,
+          node.adoptOrdinaryAnalysis(
+              mixed.moves,
+              "KataGo",
+              Lizzie.leelaz,
+              mixed.totalVisits(),
+              -1,
+              null,
+              new Object(),
+              secondary,
+              false));
     }
     assertEquals(1000, node.rootVisits);
     assertEquals(1000, node.rootVisits2);
@@ -156,15 +235,7 @@ class BoardDataAnalysisCacheTraceTest {
 
     assertEquals(10621, node.getPlayouts());
     assertEquals(99.87, node.winrate, 0.0001);
-    assertDecision(
-        "ACCEPT",
-        "HIGHER_VISITS",
-        10621,
-        99.87,
-        30.6,
-        10555,
-        0.12,
-        -27.1);
+    assertDecision("ACCEPT", "HIGHER_VISITS", 10621, 99.87, 30.6, 10555, 0.12, -27.1);
   }
 
   @Test
@@ -197,19 +268,13 @@ class BoardDataAnalysisCacheTraceTest {
 
     assertTrue(
         node.tryToSetBestMovesFromEngine(
-            new ArrayList<>(List.of(incoming)),
-            "KataGo",
-            Lizzie.leelaz,
-            868,
-            ownership,
-            false));
+            new ArrayList<>(List.of(incoming)), "KataGo", Lizzie.leelaz, 868, ownership, false));
 
     assertEquals(10555, node.getPlayouts());
     assertEquals("A1", node.bestMoves.get(0).coordinate);
     assertEquals(0.12, node.winrate, 0.0001);
     assertEquals(ownership, node.estimateArray);
-    assertDecision(
-        "ACCEPT", "OWNERSHIP_BACKFILL", 868, 99.91, 30.4, 10555, 0.12, -27.1);
+    assertDecision("ACCEPT", "OWNERSHIP_BACKFILL", 868, 99.91, 30.4, 10555, 0.12, -27.1);
   }
 
   @Test
@@ -349,16 +414,7 @@ class BoardDataAnalysisCacheTraceTest {
         null);
 
     assertEquals(10621, node.getPlayouts2());
-    assertDecision(
-        "ACCEPT",
-        "HIGHER_VISITS",
-        10621,
-        99.87,
-        30.6,
-        10555,
-        0.12,
-        -27.1,
-        "KataGo-2");
+    assertDecision("ACCEPT", "HIGHER_VISITS", 10621, 99.87, 30.6, 10555, 0.12, -27.1, "KataGo-2");
   }
 
   @Test
@@ -368,15 +424,10 @@ class BoardDataAnalysisCacheTraceTest {
     BoardData node = secondaryNode(10555, 0.12, -27.1);
 
     node.tryToSetBestMoves2FromEngine(
-        new ArrayList<>(List.of(kataMove(868, 99.91, 30.4))),
-        "KataGo-2",
-        Lizzie.leelaz,
-        868,
-        null);
+        new ArrayList<>(List.of(kataMove(868, 99.91, 30.4))), "KataGo-2", Lizzie.leelaz, 868, null);
 
     assertEquals(10555, node.getPlayouts2());
-    assertDecision(
-        "REJECT", "LOWER_VISITS", 868, 99.91, 30.4, 10555, 0.12, -27.1, "KataGo-2");
+    assertDecision("REJECT", "LOWER_VISITS", 868, 99.91, 30.4, 10555, 0.12, -27.1, "KataGo-2");
   }
 
   @Test
@@ -436,15 +487,7 @@ class BoardDataAnalysisCacheTraceTest {
     assertEquals("A1", node.bestMoves2.get(0).coordinate);
     assertEquals(ownership, node.estimateArray2);
     assertDecision(
-        "ACCEPT",
-        "OWNERSHIP_BACKFILL",
-        868,
-        99.91,
-        30.4,
-        10555,
-        0.12,
-        -27.1,
-        "KataGo-2");
+        "ACCEPT", "OWNERSHIP_BACKFILL", 868, 99.91, 30.4, 10555, 0.12, -27.1, "KataGo-2");
   }
 
   @Test

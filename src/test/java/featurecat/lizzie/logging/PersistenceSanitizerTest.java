@@ -67,26 +67,32 @@ class PersistenceSanitizerTest {
   @Test
   void plinkPasswordsAreWholeArgumentsRatherThanQueryValues() {
     PersistenceSanitizer sanitizer = new PersistenceSanitizer();
-    for (String value : List.of(
-        "CANARY_PW_SIMPLE",
-        "\"CANARY_PW_SPACE tail\"",
-        "'CANARY_PW_SINGLE tail'",
-        "CANARY_PW_SPECIAL&suffix;end,rest}final",
-        "\"CANARY_PW_ESCAPED\\\" suffix\"",
-        "CANARY_PW_PREFIX\" spaced suffix\"",
-        "CANARY_PW_ESCAPED\\ suffix")) {
+    for (String value :
+        List.of(
+            "CANARY_PW_SIMPLE",
+            "\"CANARY_PW_SPACE tail\"",
+            "'CANARY_PW_SINGLE tail'",
+            "CANARY_PW_SPECIAL&suffix;end,rest}final",
+            "\"CANARY_PW_ESCAPED\\\" suffix\"",
+            "CANARY_PW_PREFIX\" spaced suffix\"",
+            "CANARY_PW_ESCAPED\\ suffix")) {
       assertEquals(
           "command=plink user@host -P 22 -pw <redacted> ./start-engine.sh",
           sanitizer.sanitize("command=plink user@host -P 22 -pw " + value + " ./start-engine.sh"));
     }
-    assertEquals("plink -pwfile file.txt -P 22", sanitizer.sanitize("plink -pwfile file.txt -P 22"));
+    assertEquals(
+        "plink -pwfile file.txt -P 22", sanitizer.sanitize("plink -pwfile file.txt -P 22"));
   }
 
   @Test
   void structuredPlinkArgumentsRedactTheWholeValueWithoutMutatingInput() {
-    org.json.JSONObject input = new org.json.JSONObject().put("arguments",
-        new org.json.JSONArray(List.of("plink", "-pw", "CANARY_PW & suffix", "-P", "22")));
-    org.json.JSONArray safe = new ExportSanitizer().sanitizeJsonObject(input).getJSONArray("arguments");
+    org.json.JSONObject input =
+        new org.json.JSONObject()
+            .put(
+                "arguments",
+                new org.json.JSONArray(List.of("plink", "-pw", "CANARY_PW & suffix", "-P", "22")));
+    org.json.JSONArray safe =
+        new ExportSanitizer().sanitizeJsonObject(input).getJSONArray("arguments");
     assertEquals("<redacted>", safe.getString(2));
     assertEquals("-P", safe.getString(3));
     assertEquals("22", safe.getString(4));
@@ -96,18 +102,25 @@ class PersistenceSanitizerTest {
   @Test
   void structuredOverridesPreserveLiteralReplacementMetacharacters() {
     String argument = "runLabel=run$archive\\segment,password=CANARY secret,maxSimultaneousGames=1";
-    org.json.JSONObject input = new org.json.JSONObject().put("arguments",
-        new org.json.JSONArray(List.of("katago", "contribute", "-override-config", argument)));
-    org.json.JSONArray safe = new ExportSanitizer().sanitizeJsonObject(input).getJSONArray("arguments");
-    assertEquals("runLabel=run$archive\\segment,password=<redacted>,maxSimultaneousGames=1",
+    org.json.JSONObject input =
+        new org.json.JSONObject()
+            .put(
+                "arguments",
+                new org.json.JSONArray(
+                    List.of("katago", "contribute", "-override-config", argument)));
+    org.json.JSONArray safe =
+        new ExportSanitizer().sanitizeJsonObject(input).getJSONArray("arguments");
+    assertEquals(
+        "runLabel=run$archive\\segment,password=<redacted>,maxSimultaneousGames=1",
         safe.getString(3));
     assertEquals(argument, input.getJSONArray("arguments").getString(3));
   }
 
   @Test
   void ordinaryCredentialFieldsPreserveFollowingDiagnosticContext() {
-    String safe = new PersistenceSanitizer().sanitize(
-        "token=CANARY_TOKEN password=CANARY_PASSWORD stage=install status=failed");
+    String safe =
+        new PersistenceSanitizer()
+            .sanitize("token=CANARY_TOKEN password=CANARY_PASSWORD stage=install status=failed");
     assertFalse(safe.contains("CANARY"));
     assertTrue(safe.contains("stage=install status=failed"));
   }
@@ -123,16 +136,17 @@ class PersistenceSanitizerTest {
         sanitizer.sanitize(raw));
 
     List<String> splitTokens = featurecat.lizzie.util.Utils.splitCommand(raw);
-    assertEquals("password=CANARY_CONTRIB space&suffix;end,maxSimultaneousGames=1", splitTokens.get(3));
     assertEquals(
-        "password=<redacted>,maxSimultaneousGames=1",
-        sanitizer.sanitize(splitTokens.get(3)));
+        "password=CANARY_CONTRIB space&suffix;end,maxSimultaneousGames=1", splitTokens.get(3));
+    assertEquals(
+        "password=<redacted>,maxSimultaneousGames=1", sanitizer.sanitize(splitTokens.get(3)));
     assertEquals(
         "maxSimultaneousGames=1,password=<redacted>",
         sanitizer.sanitize("maxSimultaneousGames=1,password=CANARY_CONTRIB space&suffix;end"));
     assertEquals(
         "threads=4,password=<redacted>,maxSimultaneousGames=1",
-        sanitizer.sanitize("threads=4,password=CANARY_CONTRIB space&suffix;end,maxSimultaneousGames=1"));
+        sanitizer.sanitize(
+            "threads=4,password=CANARY_CONTRIB space&suffix;end,maxSimultaneousGames=1"));
 
     String rendered =
         "\"katago\" \"contribute\" \"-override-config\" \"password=CANARY_CONTRIB space&suffix;end,maxSimultaneousGames=1\"";
@@ -153,33 +167,29 @@ class PersistenceSanitizerTest {
     PersistenceSanitizer sanitizer = new PersistenceSanitizer();
 
     assertEquals(
-        "\"password=<redacted>\"",
-        sanitizer.sanitize("\"password=CANARY\\\"quote suffix\""));
+        "\"password=<redacted>\"", sanitizer.sanitize("\"password=CANARY\\\"quote suffix\""));
     assertEquals(
-        "\"password=<redacted>\"",
-        sanitizer.sanitize("\"password=CANARY'single quote suffix\""));
+        "\"password=<redacted>\"", sanitizer.sanitize("\"password=CANARY'single quote suffix\""));
     assertEquals(
-        "'password=<redacted>'",
-        sanitizer.sanitize("'password=CANARY single quote suffix'"));
+        "'password=<redacted>'", sanitizer.sanitize("'password=CANARY single quote suffix'"));
     assertEquals(
-        "'password=<redacted>'",
-        sanitizer.sanitize("'password=CANARY\\'single quote suffix'"));
+        "'password=<redacted>'", sanitizer.sanitize("'password=CANARY\\'single quote suffix'"));
     assertEquals(
-        "'password=<redacted>'",
-        sanitizer.sanitize("'password=CANARY\\\"double quote suffix'"));
+        "'password=<redacted>'", sanitizer.sanitize("'password=CANARY\\\"double quote suffix'"));
     assertEquals(
-        "\"password=<redacted>\"",
-        sanitizer.sanitize("\"password=CANARY\\\\path suffix\""));
+        "\"password=<redacted>\"", sanitizer.sanitize("\"password=CANARY\\\\path suffix\""));
 
     assertEquals(
         "\"password=<redacted>\"",
         sanitizer.sanitize("\"password=CANARY space&suffix;end#foo!bar?baz=123\""));
     assertEquals(
         "password=<redacted>,maxSimultaneousGames=1",
-        sanitizer.sanitize("password=CANARY space&suffix;end#foo!bar?baz=123,maxSimultaneousGames=1"));
+        sanitizer.sanitize(
+            "password=CANARY space&suffix;end#foo!bar?baz=123,maxSimultaneousGames=1"));
     assertEquals(
         "maxSimultaneousGames=1,password=<redacted>",
-        sanitizer.sanitize("maxSimultaneousGames=1,password=CANARY space&suffix;end#foo!bar?baz=123"));
+        sanitizer.sanitize(
+            "maxSimultaneousGames=1,password=CANARY space&suffix;end#foo!bar?baz=123"));
   }
 
   @Test
@@ -207,8 +217,7 @@ class PersistenceSanitizerTest {
         "plink -pw <redacted> -P 22",
         sanitizer.sanitize("plink -pw \"CANARY_PW_SPACE tail\" -P 22"));
     assertEquals(
-        "plink -pwfile file.txt -P 22",
-        sanitizer.sanitize("plink -pwfile file.txt -P 22"));
+        "plink -pwfile file.txt -P 22", sanitizer.sanitize("plink -pwfile file.txt -P 22"));
   }
 
   @Test
@@ -224,11 +233,9 @@ class PersistenceSanitizerTest {
         "body=password%3D<redacted>",
         sanitizer.sanitize("body=password%3DCANARY_PERCENT_PASSWORD_09"));
     assertEquals(
-        "body=%70assword=<redacted>",
-        sanitizer.sanitize("body=%70assword=CANARY_PERCENT_KEY_10"));
+        "body=%70assword=<redacted>", sanitizer.sanitize("body=%70assword=CANARY_PERCENT_KEY_10"));
     assertEquals(
-        "body=token%253D<redacted>",
-        sanitizer.sanitize("body=token%253DCANARY_PERCENT_DOUBLE_11"));
+        "body=token%253D<redacted>", sanitizer.sanitize("body=token%253DCANARY_PERCENT_DOUBLE_11"));
     assertEquals(
         "body=passw%4Frd%3d<redacted>",
         sanitizer.sanitize("body=passw%4Frd%3dCANARY_PERCENT_MIXED_HEX_12"));
@@ -237,31 +244,26 @@ class PersistenceSanitizerTest {
         sanitizer.sanitize("body=secret%2525253DCANARY_PERCENT_MAX_DEPTH"));
     assertEquals(
         "body=password%252525253D<redacted>",
-        sanitizer.sanitize(
-            "body=password%252525253DCANARY_PERCENT_OVERDEPTH_ASSIGNMENT_13"));
+        sanitizer.sanitize("body=password%252525253DCANARY_PERCENT_OVERDEPTH_ASSIGNMENT_13"));
     assertEquals(
         "body=%2525252570assword=<redacted>",
         sanitizer.sanitize("body=%2525252570assword=CANARY_PERCENT_OVERDEPTH_KEY_14"));
     assertEquals(
         "body=passw%254Frd%252525253d<redacted>",
-        sanitizer.sanitize(
-            "body=passw%254Frd%252525253dCANARY_PERCENT_OVERDEPTH_MIXED_HEX_15"));
+        sanitizer.sanitize("body=passw%254Frd%252525253dCANARY_PERCENT_OVERDEPTH_MIXED_HEX_15"));
     assertEquals(
         "Authorization%252525253A <redacted>",
-        sanitizer.sanitize(
-            "Authorization%252525253A Bearer CANARY_PERCENT_OVERDEPTH_HEADER_16"));
+        sanitizer.sanitize("Authorization%252525253A Bearer CANARY_PERCENT_OVERDEPTH_HEADER_16"));
     assertEquals(
         "body=opaque%2525252520token=<redacted>",
-        sanitizer.sanitize(
-            "body=opaque%2525252520token=CANARY_PERCENT_OVERDEPTH_BOUNDARY_17"));
+        sanitizer.sanitize("body=opaque%2525252520token=CANARY_PERCENT_OVERDEPTH_BOUNDARY_17"));
   }
 
   @Test
   void percentCredentialScanLimitFailsClosedWithoutExposingTheValue() {
     String beyondScanLimit = "%" + "25".repeat(64) + "3D";
     String canary = "CANARY_PERCENT_BEYOND_SCAN_LIMIT_18";
-    String sanitized =
-        new PersistenceSanitizer().sanitize("body=token" + beyondScanLimit + canary);
+    String sanitized = new PersistenceSanitizer().sanitize("body=token" + beyondScanLimit + canary);
 
     assertEquals(PersistenceSanitizer.FAILURE_MARKER, sanitized);
     assertFalse(sanitized.contains(canary));

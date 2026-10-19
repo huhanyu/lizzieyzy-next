@@ -189,8 +189,7 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
   }
 
   @Test
-  void suppressionStaysUntilPausedReservationThenAllowsSelectedForegroundLease()
-      throws Exception {
+  void suppressionStaysUntilPausedReservationThenAllowsSelectedForegroundLease() throws Exception {
     try (BenchmarkEnvironment environment = new BenchmarkEnvironment(2)) {
       RecordingBenchmarkLeelaz pausedEngine = environment.engine(0);
       RecordingBenchmarkLeelaz selectedEngine = environment.engine(1);
@@ -502,7 +501,6 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     }
   }
 
-
   @Test
   void shutdownWaitReportsOnlyConfirmedIsolation() throws Exception {
     try (BenchmarkEnvironment environment = new BenchmarkEnvironment(1)) {
@@ -748,7 +746,6 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       processCommandResponse(this, "?" + commandId + " controlled benchmark fence settlement");
     }
 
-
     private static void await(CountDownLatch gate) {
       if (gate == null) {
         return;
@@ -950,7 +947,6 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
     return (T) UnsafeHolder.UNSAFE.allocateInstance(type);
   }
 
-
   private static void awaitRestartSettlement(Leelaz engine) {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
     while (engine.hasExclusiveGtpWorkInProgress() && System.nanoTime() < deadline) {
@@ -983,7 +979,6 @@ class KataGoRuntimeHelperBenchmarkLeaseTest {
       throw new IllegalStateException(failure);
     }
   }
-
 
   private static void processCommandResponse(Leelaz engine, String line) throws Exception {
     Method method = Leelaz.class.getDeclaredMethod("processCommandResponseLine", String.class);

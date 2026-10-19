@@ -73,7 +73,8 @@ class TsumegoTest {
   void cornerEdgeAndCenterWallsStayOnBoardAndKeepOriginals() throws Exception {
     Stone[] corner = construct(1, TsumegoTest::placeCornerProblem, false, false, false, false);
     Stone[] edge = construct(1, TsumegoTest::placeLeftEdgeProblem, false, false, false, false);
-    Stone[] center = construct(1, TsumegoTest::placeBlackSurroundsWhite, false, false, false, false);
+    Stone[] center =
+        construct(1, TsumegoTest::placeBlackSurroundsWhite, false, false, false, false);
 
     assertEquals(Stone.BLACK, corner[Board.getIndex(5, 2)]);
     assertEquals(Stone.BLACK, edge[Board.getIndex(4, 8)]);
@@ -132,13 +133,7 @@ class TsumegoTest {
             "18,18=EMPTY"),
         stoneDeltas(none, sideOnly));
     assertEquals(
-        List.of(
-            "0,0=EMPTY",
-            "0,1=BLACK",
-            "1,0=BLACK",
-            "1,1=BLACK",
-            "2,1=BLACK",
-            "3,1=EMPTY"),
+        List.of("0,0=EMPTY", "0,1=BLACK", "1,0=BLACK", "1,1=BLACK", "2,1=BLACK", "3,1=EMPTY"),
         stoneDeltas(none, otherOnly));
     assertEquals(
         List.of(

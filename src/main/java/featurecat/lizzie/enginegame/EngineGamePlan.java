@@ -181,9 +181,7 @@ public final class EngineGamePlan {
     if (maxMoveLimitEnabled && maxMoves > 0) {
       return maxMoves;
     }
-    return featurecat.lizzie.rules.Board.boardWidth
-        * featurecat.lizzie.rules.Board.boardHeight
-        * 2;
+    return featurecat.lizzie.rules.Board.boardWidth * featurecat.lizzie.rules.Board.boardHeight * 2;
   }
 
   public ArrayList<Movelist> openingMovelist() {
@@ -219,5 +217,4 @@ public final class EngineGamePlan {
         batch,
         openingIndex);
   }
-
 }

@@ -21,7 +21,15 @@ class TensorRtAccelerationViewTest {
   @Test
   void runtimeMissingIsNotHiddenByAnInstalledStyleEnginePresence() {
     TensorRtAccelerationView view =
-        view(false, true, true, true, false, true, false, List.of(TensorRtInstallStatus.MISSING_RUNTIME));
+        view(
+            false,
+            true,
+            true,
+            true,
+            false,
+            true,
+            false,
+            List.of(TensorRtInstallStatus.MISSING_RUNTIME));
 
     assertEquals(TensorRtAccelerationView.RUNTIME_NOT_READY_KEY, view.runtimeStatusKey);
     assertEquals(TensorRtAccelerationView.COMPANION_READY_KEY, view.companionStatusKey);
@@ -93,8 +101,7 @@ class TensorRtAccelerationViewTest {
 
   @Test
   void readyComponentsWithInactiveProfileStayDistinguishable() {
-    TensorRtAccelerationView view =
-        view(true, true, true, true, false, true, true, List.of());
+    TensorRtAccelerationView view = view(true, true, true, true, false, true, true, List.of());
 
     assertEquals(TensorRtAccelerationView.RUNTIME_READY_KEY, view.runtimeStatusKey);
     assertEquals(TensorRtAccelerationView.COMPANION_READY_KEY, view.companionStatusKey);
@@ -129,9 +136,7 @@ class TensorRtAccelerationViewTest {
     assertEquals(TensorRtAccelerationView.GPU_DETECTING_KEY, view.gpuAdviceKey);
     assertFalse(view.repairEnabled);
     assertEquals(
-        List.of(
-            "AutoSetup.tensorRtMissingGpuDetection",
-            "AutoSetup.tensorRtMissingRuntime"),
+        List.of("AutoSetup.tensorRtMissingGpuDetection", "AutoSetup.tensorRtMissingRuntime"),
         view.activationMissingKeys);
   }
 
@@ -141,30 +146,25 @@ class TensorRtAccelerationViewTest {
         TensorRtAccelerationView.GPU_ALLOWED_KEY,
         gpuView(true, true, TensorRtRecommendation.ALLOWED).gpuAdviceKey);
 
-    TensorRtAccelerationView modern =
-        gpuView(true, true, TensorRtRecommendation.NOT_RECOMMENDED);
+    TensorRtAccelerationView modern = gpuView(true, true, TensorRtRecommendation.NOT_RECOMMENDED);
     assertEquals("AutoSetup.gpuPreferCudaModern", modern.gpuAdviceKey);
     assertTrue(modern.repairEnabled);
-    assertEquals(
-        List.of("AutoSetup.tensorRtMissingRuntime"), modern.activationMissingKeys);
+    assertEquals(List.of("AutoSetup.tensorRtMissingRuntime"), modern.activationMissingKeys);
 
     TensorRtAccelerationView unknown = gpuView(true, true, TensorRtRecommendation.UNKNOWN);
     assertEquals(TensorRtAccelerationView.GPU_UNKNOWN_KEY, unknown.gpuAdviceKey);
     assertTrue(unknown.repairEnabled);
 
-    TensorRtAccelerationView noGpu =
-        gpuView(false, false, TensorRtRecommendation.UNKNOWN);
+    TensorRtAccelerationView noGpu = gpuView(false, false, TensorRtRecommendation.UNKNOWN);
     assertEquals(TensorRtAccelerationView.GPU_NOT_FOUND_KEY, noGpu.gpuAdviceKey);
     assertFalse(noGpu.repairEnabled);
-    assertEquals(
-        "AutoSetup.tensorRtMissingNvidiaGpu", noGpu.activationMissingKeys.get(0));
+    assertEquals("AutoSetup.tensorRtMissingNvidiaGpu", noGpu.activationMissingKeys.get(0));
 
     TensorRtAccelerationView unsupported =
         gpuView(true, false, TensorRtRecommendation.NOT_RECOMMENDED);
     assertEquals("AutoSetup.gpuNotRecommendTensorRt", unsupported.gpuAdviceKey);
     assertFalse(unsupported.repairEnabled);
-    assertEquals(
-        "AutoSetup.tensorRtMissingNvidiaGpu", unsupported.activationMissingKeys.get(0));
+    assertEquals("AutoSetup.tensorRtMissingNvidiaGpu", unsupported.activationMissingKeys.get(0));
   }
 
   @Test
@@ -179,12 +179,13 @@ class TensorRtAccelerationViewTest {
             true,
             false,
             List.of(
-                TensorRtInstallStatus.MISSING_WEIGHT,
-                TensorRtInstallStatus.MISSING_GTP_CONFIG));
+                TensorRtInstallStatus.MISSING_WEIGHT, TensorRtInstallStatus.MISSING_GTP_CONFIG));
 
     assertFalse(view.enableEnabled);
-    assertEquals(TensorRtAccelerationView.ACTIVATION_MISSING_KEY, view.activationAccessibleDescriptionKey);
-    assertEquals(TensorRtAccelerationView.ACTIVATION_MISSING_KEY, view.enableAccessibleDescriptionKey);
+    assertEquals(
+        TensorRtAccelerationView.ACTIVATION_MISSING_KEY, view.activationAccessibleDescriptionKey);
+    assertEquals(
+        TensorRtAccelerationView.ACTIVATION_MISSING_KEY, view.enableAccessibleDescriptionKey);
     assertEquals(
         List.of("AutoSetup.tensorRtMissingWeight", "AutoSetup.tensorRtMissingGtpConfig"),
         view.activationMissingKeys);
@@ -246,8 +247,7 @@ class TensorRtAccelerationViewTest {
 
   @Test
   void repairSummaryNamesTargetAndComponentStatesWithoutActivation() {
-    TensorRtAccelerationView view =
-        view(true, true, true, true, false, true, true, List.of());
+    TensorRtAccelerationView view = view(true, true, true, true, false, true, true, List.of());
 
     assertEquals(TensorRtAccelerationView.REPAIR_SUMMARY_KEY, view.repairSummaryKey);
     assertEquals(TARGET.toString(), view.repairTarget);
@@ -260,25 +260,30 @@ class TensorRtAccelerationViewTest {
 
   @Test
   void actionsAndStatusRowsExposeLocalizedAccessibleKeys() {
-    TensorRtAccelerationView view =
-        view(true, true, true, true, false, true, true, List.of());
+    TensorRtAccelerationView view = view(true, true, true, true, false, true, true, List.of());
 
     assertEquals("AutoSetup.tensorRtGpuAdviceAccessibleName", view.gpuAccessibleNameKey);
-    assertEquals("AutoSetup.tensorRtGpuAdviceAccessibleDescription", view.gpuAccessibleDescriptionKey);
+    assertEquals(
+        "AutoSetup.tensorRtGpuAdviceAccessibleDescription", view.gpuAccessibleDescriptionKey);
     assertEquals("AutoSetup.tensorRtRuntimeAccessibleName", view.runtimeAccessibleNameKey);
-    assertEquals("AutoSetup.tensorRtRuntimeAccessibleDescription", view.runtimeAccessibleDescriptionKey);
+    assertEquals(
+        "AutoSetup.tensorRtRuntimeAccessibleDescription", view.runtimeAccessibleDescriptionKey);
     assertEquals("AutoSetup.tensorRtCompanionAccessibleName", view.companionAccessibleNameKey);
     assertEquals(
         "AutoSetup.tensorRtCompanionAccessibleDescription", view.companionAccessibleDescriptionKey);
     assertEquals("AutoSetup.tensorRtEngineAccessibleName", view.engineAccessibleNameKey);
-    assertEquals("AutoSetup.tensorRtEngineAccessibleDescription", view.engineAccessibleDescriptionKey);
+    assertEquals(
+        "AutoSetup.tensorRtEngineAccessibleDescription", view.engineAccessibleDescriptionKey);
     assertEquals("AutoSetup.tensorRtActivationAccessibleName", view.activationAccessibleNameKey);
     assertEquals(
-        "AutoSetup.tensorRtActivationAccessibleDescription", view.activationAccessibleDescriptionKey);
+        "AutoSetup.tensorRtActivationAccessibleDescription",
+        view.activationAccessibleDescriptionKey);
     assertEquals("AutoSetup.repairTensorRtAccessibleName", view.repairAccessibleNameKey);
-    assertEquals("AutoSetup.repairTensorRtAccessibleDescription", view.repairAccessibleDescriptionKey);
+    assertEquals(
+        "AutoSetup.repairTensorRtAccessibleDescription", view.repairAccessibleDescriptionKey);
     assertEquals("AutoSetup.enableTensorRtAccessibleName", view.enableAccessibleNameKey);
-    assertEquals("AutoSetup.enableTensorRtAccessibleDescription", view.enableAccessibleDescriptionKey);
+    assertEquals(
+        "AutoSetup.enableTensorRtAccessibleDescription", view.enableAccessibleDescriptionKey);
   }
 
   private static TensorRtAccelerationView view(
@@ -312,8 +317,7 @@ class TensorRtAccelerationViewTest {
 
   @Test
   void presentationKeysExistInTheEnglishBundle() throws Exception {
-    TensorRtAccelerationView view =
-        view(true, true, true, true, false, true, true, List.of());
+    TensorRtAccelerationView view = view(true, true, true, true, false, true, true, List.of());
     Properties bundle = englishBundle();
     for (String key :
         List.of(
@@ -361,9 +365,7 @@ class TensorRtAccelerationViewTest {
   }
 
   private static TensorRtAccelerationView gpuView(
-      boolean detected,
-      boolean hardwareEligible,
-      TensorRtRecommendation recommendation) {
+      boolean detected, boolean hardwareEligible, TensorRtRecommendation recommendation) {
     return TensorRtAccelerationView.present(
         false,
         true,

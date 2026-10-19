@@ -348,8 +348,7 @@ public class AnalysisSettings extends JDialog {
 
     chkUseJavaSSH =
         new JFontCheckBox(Lizzie.resourceBundle.getString("MoreEngines.chkRemoteEngine"));
-    btnSetRemoteEngine =
-        new JFontButton(Lizzie.resourceBundle.getString("Menu.settings"));
+    btnSetRemoteEngine = new JFontButton(Lizzie.resourceBundle.getString("Menu.settings"));
     btnSetRemoteEngine.setMargin(new Insets(0, 0, 0, 0));
     chkUseJavaSSH.addActionListener(
         new ActionListener() {
@@ -495,8 +494,7 @@ public class AnalysisSettings extends JDialog {
     btnGenerate.setEnabled(state.generateEnabled);
     btnSavedEngine.setEnabled(state.savedEngineEnabled);
     chkUseJavaSSH.setEnabled(state.remoteEngineEnabled);
-    btnSetRemoteEngine.setEnabled(
-        state.remoteSettingsEnabled && chkUseJavaSSH.isSelected());
+    btnSetRemoteEngine.setEnabled(state.remoteSettingsEnabled && chkUseJavaSSH.isSelected());
     chkPreLoad.setEnabled(state.preloadEnabled);
     chkAutoExit.setEnabled(state.autoExitEnabled);
     lblReuseTarget.setText(reuseTargetText());
@@ -679,8 +677,7 @@ public class AnalysisSettings extends JDialog {
     JSONObject candidateUiConfig = new JSONObject(Lizzie.config.uiConfig.toString());
     JSONObject candidateLeelazConfig = new JSONObject(Lizzie.config.leelazConfig.toString());
     Utils.updateAnalysisEngineRemoteEngineData(candidateLeelazConfig, remoteEngineData);
-    candidateUiConfig.put(
-        "analysis-engine-command-customized", newCommandCustomized);
+    candidateUiConfig.put("analysis-engine-command-customized", newCommandCustomized);
     if (context == Context.BATCH) {
       candidateUiConfig.put("batch-analysis-playouts", newBatchAnalysisPlayouts);
     } else {
@@ -728,8 +725,7 @@ public class AnalysisSettings extends JDialog {
       String originalCommand,
       String newCommand) {
     return previouslyCustomized
-        || (!reuseCurrentEngine
-            && (explicitlyChanged || !newCommand.equals(originalCommand)));
+        || (!reuseCurrentEngine && (explicitlyChanged || !newCommand.equals(originalCommand)));
   }
 
   void showSaveFailure(IOException error) {

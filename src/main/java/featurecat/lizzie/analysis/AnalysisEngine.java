@@ -183,7 +183,15 @@ public class AnalysisEngine {
   private boolean sharedForegroundRestoreInProgress;
   private Runnable sharedForegroundRestoreCompletion;
   private Runnable sharedForegroundRestoreFailure;
-  private enum FinitePreparation { CAPABILITIES, CAPTURE, INSTALL, READY, LEGACY }
+
+  private enum FinitePreparation {
+    CAPABILITIES,
+    CAPTURE,
+    INSTALL,
+    READY,
+    LEGACY
+  }
+
   private FinitePreparation finitePreparation;
   private static final String[] FINITE_PARAMS = {
     "maxVisits", "maxPlayouts", "maxTime", "ponderingEnabled"
@@ -255,8 +263,7 @@ public class AnalysisEngine {
       throws IOException {
     this.isPreLoad = isPreLoad;
     this.workload = workload == null ? Workload.STANDARD : workload;
-    this.purpose =
-        purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
+    this.purpose = purpose == null ? AnalysisResourceCoordinator.Purpose.OTHER : purpose;
     this.persistentPreload = persistentPreload;
     boolean lightweightQuickModelRequested =
         commandOverride != null && !commandOverride.trim().isEmpty();
@@ -319,8 +326,11 @@ public class AnalysisEngine {
         : commandOverride;
   }
 
-  /** Shared by admission and construction, including remote-only profiles without a local command. */
-  public static boolean automaticallyReusesPrimaryForeground(boolean lightweightQuickModelRequested) {
+  /**
+   * Shared by admission and construction, including remote-only profiles without a local command.
+   */
+  public static boolean automaticallyReusesPrimaryForeground(
+      boolean lightweightQuickModelRequested) {
     String command = Lizzie.leelaz == null ? null : Lizzie.leelaz.engineCommand();
     return shouldAutomaticallyReusePrimaryForeground(
         AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
@@ -370,16 +380,9 @@ public class AnalysisEngine {
     String launchPurpose = purpose == null ? "OTHER" : purpose.name();
     String engineId =
         EngineObservation.restartInstance(
-            this,
-            launchPurpose,
-            EngineStartupBootstrap.factsFor(engineCommand, launchPurpose));
+            this, launchPurpose, EngineStartupBootstrap.factsFor(engineCommand, launchPurpose));
     startupDiagnosticAttempt =
-        EngineStartupDiagnostics.getDefault()
-            .begin(
-                engineId,
-                launchPurpose,
-                commands,
-                isLocal);
+        EngineStartupDiagnostics.getDefault().begin(engineId, launchPurpose, commands, isLocal);
     if (this.useRemoteCompute) {
       this.useJavaSSH = false;
       process = null;
@@ -446,9 +449,7 @@ public class AnalysisEngine {
             startupDiagnosticAttempt.fail("runtime-preflight", e.toString());
           }
           TensorRtRepairContext repairContext =
-              e instanceof TensorRtRuntimeException
-                  ? ((TensorRtRuntimeException) e).context
-                  : null;
+              e instanceof TensorRtRuntimeException ? ((TensorRtRuntimeException) e).context : null;
           showErrMsg(
               resourceBundle.getString("Leelaz.engineFailed") + ": " + e.getLocalizedMessage(),
               repairContext);
@@ -508,14 +509,18 @@ public class AnalysisEngine {
   }
 
   private void showErrMsg(
-      String errMsg, TensorRtRepairContext repairContext, EngineStartupDiagnostics.Attempt attempt) {
+      String errMsg,
+      TensorRtRepairContext repairContext,
+      EngineStartupDiagnostics.Attempt attempt) {
     if (!javax.swing.SwingUtilities.isEventDispatchThread()) {
       javax.swing.SwingUtilities.invokeLater(() -> showErrMsg(errMsg, repairContext, attempt));
       return;
     }
     if (attempt != null && attempt != startupDiagnosticAttempt) return;
-    if (isNormalEnd || (Lizzie.frame != null && Lizzie.frame.analysisEngine != null
-        && Lizzie.frame.analysisEngine != this)) return;
+    if (isNormalEnd
+        || (Lizzie.frame != null
+            && Lizzie.frame.analysisEngine != null
+            && Lizzie.frame.analysisEngine != this)) return;
     if (isPreLoad) return;
     if (waitFrame != null) waitFrame.setVisible(false);
     DiagnosticActionResult diagnostic = tryToDignostic(errMsg, repairContext, attempt);
@@ -535,7 +540,9 @@ public class AnalysisEngine {
   }
 
   public DiagnosticActionResult tryToDignostic(
-      String message, TensorRtRepairContext repairContext, EngineStartupDiagnostics.Attempt attempt) {
+      String message,
+      TensorRtRepairContext repairContext,
+      EngineStartupDiagnostics.Attempt attempt) {
     EngineStartupDiagnostics.Attempt diagnosticAttempt =
         attempt != null ? attempt : startupDiagnosticAttempt;
     if (engineFailedMessage != null
@@ -713,8 +720,10 @@ public class AnalysisEngine {
       return;
     }
     boolean payloadApplied = applyAnalysisPayload(node, moves, ownershipArray, reportedPlayouts);
-    if (payloadApplied && node.getData().bestMoves == moves
-        && rootInfo != null && rootInfo.has("visits")) {
+    if (payloadApplied
+        && node.getData().bestMoves == moves
+        && rootInfo != null
+        && rootInfo.has("visits")) {
       node.getData().rootVisits = reportedPlayouts;
     }
     responseCount++;
@@ -738,7 +747,8 @@ public class AnalysisEngine {
     if (finitePreparation == FinitePreparation.CAPABILITIES
         || finitePreparation == FinitePreparation.CAPTURE
         || finitePreparation == FinitePreparation.INSTALL) return handleFinitePreparation(trimmed);
-    if (finitePreparation == FinitePreparation.READY && remoteGtpActiveJob != null
+    if (finitePreparation == FinitePreparation.READY
+        && remoteGtpActiveJob != null
         && remoteGtpExpectedAnalyzeCommandId > 0) return handleFiniteSearch(trimmed);
     if (trimmed.startsWith("=") || trimmed.startsWith("?")) {
       remoteGtpNonAnalyzeResponse =
@@ -825,7 +835,8 @@ public class AnalysisEngine {
   private List<MoveData> remoteGtpMoves(KataGoAnalysisPayload payload) {
     for (MoveData move : payload.moves) {
       if ((move.variation == null || move.variation.isEmpty())
-          && move.coordinate != null && !move.coordinate.isEmpty()) {
+          && move.coordinate != null
+          && !move.coordinate.isEmpty()) {
         move.variation = new ArrayList<>();
         move.variation.add(move.coordinate);
       }
@@ -835,8 +846,7 @@ public class AnalysisEngine {
 
   private RemoteGtpRootInfo remoteGtpRootInfo(KataGoAnalysisPayload payload) {
     if (payload.rootVisits < 0) return null;
-    return new RemoteGtpRootInfo(
-        payload.rootVisits, payload.rootWinrate, payload.rootScoreMean);
+    return new RemoteGtpRootInfo(payload.rootVisits, payload.rootWinrate, payload.rootScoreMean);
   }
 
   private void completeRemoteGtpJob(
@@ -943,7 +953,8 @@ public class AnalysisEngine {
     }
     Leelaz engine = sharedForegroundEngine;
     Leelaz.ForegroundAnalysisLease lease = sharedForegroundLease;
-    boolean restoreRulesCaptured = engine != null && lease != null && lease.setRestoreRules(payload);
+    boolean restoreRulesCaptured =
+        engine != null && lease != null && lease.setRestoreRules(payload);
     if (!restoreRulesCaptured) {
       failRemoteGtpSetup();
       return true;
@@ -973,7 +984,10 @@ public class AnalysisEngine {
       }
     }
     if (acknowledged == null) {
-      return line.isEmpty() || line.startsWith("=") || line.startsWith("?") || line.startsWith("info ");
+      return line.isEmpty()
+          || line.startsWith("=")
+          || line.startsWith("?")
+          || line.startsWith("info ");
     }
     boolean oldest = remoteGtpSetupInFlight.peekFirst() == acknowledged;
     remoteGtpSetupInFlight.remove(acknowledged);
@@ -1426,11 +1440,8 @@ public class AnalysisEngine {
     showRequestProgressOrContinueBatch(showProgressDialog);
   }
 
-
   private void finishSuccessfulEmptyRequestIfNeeded() {
-    if (!requestDispatchFailed
-        && analyzeMap.isEmpty()
-        && !Lizzie.frame.isBatchAnalysisMode) {
+    if (!requestDispatchFailed && analyzeMap.isEmpty() && !Lizzie.frame.isBatchAnalysisMode) {
       finishSuccessfulEmptyRequest();
     }
   }
@@ -1459,7 +1470,6 @@ public class AnalysisEngine {
       finishForegroundRestore(finishSuccessfulRequest, this::finishSharedForegroundRestoreFailure);
     }
   }
-
 
   public int startRequestMissingMainline(boolean showProgressDialog) {
     if (useRemoteCompute) {
@@ -1511,7 +1521,8 @@ public class AnalysisEngine {
   }
 
   /** Returns a preloaded worker only after its finite-search lease has restored borrowed state. */
-  public synchronized void returnAutomaticQuickAnalysisUse(Consumer<ForegroundRestoreResult> finished) {
+  public synchronized void returnAutomaticQuickAnalysisUse(
+      Consumer<ForegroundRestoreResult> finished) {
     if (finitePreparation == null || finitePreparation == FinitePreparation.LEGACY) {
       finished.accept(ForegroundRestoreResult.NOT_REQUIRED);
       return;
@@ -1587,9 +1598,7 @@ public class AnalysisEngine {
     if (!isLoaded || shutdownRequested) return -1;
     List<BoardHistoryNode> pendingNodes =
         collectWholeGameRequestNodes(
-            requestedNodes,
-            targetVisits,
-            includeOwnership && supportsWholeGameOwnershipRequests());
+            requestedNodes, targetVisits, includeOwnership && supportsWholeGameOwnershipRequests());
     if (pendingNodes.isEmpty()) return 0;
     return startWholeGameRequestNow(pendingNodes, targetVisits, includeOwnership);
   }
@@ -1669,17 +1678,14 @@ public class AnalysisEngine {
   }
 
   private static List<BoardHistoryNode> collectWholeGameRequestNodes(
-      List<BoardHistoryNode> requestedNodes,
-      int targetVisits,
-      boolean ownershipRequested) {
+      List<BoardHistoryNode> requestedNodes, int targetVisits, boolean ownershipRequested) {
     int normalizedTargetVisits = Math.max(1, targetVisits);
     Set<BoardHistoryNode> uniqueNodes = new LinkedHashSet<BoardHistoryNode>();
     if (requestedNodes != null) {
       for (BoardHistoryNode node : requestedNodes) {
         if (node != null
             && node.getData() != null
-            && !node
-                .getData()
+            && !node.getData()
                 .hasCompletePrimaryAnalysis(normalizedTargetVisits, ownershipRequested)) {
           uniqueNodes.add(node);
         }
@@ -1702,8 +1708,9 @@ public class AnalysisEngine {
 
   private boolean handleFinitePreparation(String line) {
     if (line.startsWith("=") || line.startsWith("?")) {
-      if (finiteResponseId != 0 && (isExpectedRemoteGtpSuccessResponse(line, finiteResponseId)
-          || isExpectedRemoteGtpErrorResponse(line, finiteResponseId))) {
+      if (finiteResponseId != 0
+          && (isExpectedRemoteGtpSuccessResponse(line, finiteResponseId)
+              || isExpectedRemoteGtpErrorResponse(line, finiteResponseId))) {
         failRemoteGtpSetup();
         return true;
       }
@@ -1737,8 +1744,8 @@ public class AnalysisEngine {
         return true;
       }
       Set<String> commands = new java.util.HashSet<>(java.util.Arrays.asList(value.split("\\s+")));
-      if (!commands.containsAll(List.of("kata-search_analyze_cancellable", "kata-get-param",
-          "kata-set-param", "stop"))) {
+      if (!commands.containsAll(
+          List.of("kata-search_analyze_cancellable", "kata-get-param", "kata-set-param", "stop"))) {
         finitePreparation = FinitePreparation.LEGACY;
         cancelRemoteGtpSetupAckTimeout();
         if (!beginSharedForegroundRulesCapture()) failRemoteGtpSetup();
@@ -1770,7 +1777,9 @@ public class AnalysisEngine {
     if (parameter == 3) return value.equals("true") || value.equals("false");
     try {
       double number = Double.parseDouble(value);
-      return Double.isFinite(number) && number >= 0 && value.matches("[0-9.eE+\\-]+")
+      return Double.isFinite(number)
+          && number >= 0
+          && value.matches("[0-9.eE+\\-]+")
           && (parameter == 2 || number == Math.rint(number));
     } catch (NumberFormatException ex) {
       return false;
@@ -1792,8 +1801,10 @@ public class AnalysisEngine {
       boolean sent;
       if (install) {
         String value = i < 2 ? Integer.toString(visits) : i == 2 ? "1e20" : "false";
-        sent = sharedForegroundLease != null && sharedForegroundLease.installSearchParameter(
-            ids[i], FINITE_PARAMS[i], finiteOriginalValues[i], value);
+        sent =
+            sharedForegroundLease != null
+                && sharedForegroundLease.installSearchParameter(
+                    ids[i], FINITE_PARAMS[i], finiteOriginalValues[i], value);
       } else sent = sendAdmittedPreparationCommand(ids[i] + " kata-get-param " + FINITE_PARAMS[i]);
       if (!sent) {
         failRemoteGtpSetup();
@@ -1804,14 +1815,20 @@ public class AnalysisEngine {
 
   private void scheduleFiniteSearchTimeout(int commandId) {
     long generation = ++finiteSearchGeneration;
-    remoteGtpSetupAckTimeoutExecutor().schedule(() -> {
-      synchronized (AnalysisEngine.this) {
-        if (generation == finiteSearchGeneration && !automaticRequestRetired()
-            && remoteGtpExpectedAnalyzeCommandId == commandId && remoteGtpActiveJob != null) {
-          failRemoteGtpSetup();
-        }
-      }
-    }, REMOTE_GTP_ANALYZE_STALL_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+    remoteGtpSetupAckTimeoutExecutor()
+        .schedule(
+            () -> {
+              synchronized (AnalysisEngine.this) {
+                if (generation == finiteSearchGeneration
+                    && !automaticRequestRetired()
+                    && remoteGtpExpectedAnalyzeCommandId == commandId
+                    && remoteGtpActiveJob != null) {
+                  failRemoteGtpSetup();
+                }
+              }
+            },
+            REMOTE_GTP_ANALYZE_STALL_TIMEOUT_MILLIS,
+            TimeUnit.MILLISECONDS);
   }
 
   private boolean handleFiniteSearch(String line) {
@@ -1833,14 +1850,16 @@ public class AnalysisEngine {
       remoteGtpStoppingRootInfo = remoteGtpRootInfo(payload);
       return true;
     }
-    if (line.startsWith("play ") && !finitePlayed
-        && validFiniteMove(line.substring(5))) {
+    if (line.startsWith("play ") && !finitePlayed && validFiniteMove(line.substring(5))) {
       finitePlayed = true;
       return true;
     }
-    if (line.isEmpty() && finitePlayed && remoteGtpStoppingRootInfo != null
+    if (line.isEmpty()
+        && finitePlayed
+        && remoteGtpStoppingRootInfo != null
         && remoteGtpStoppingRootInfo.visits >= remoteGtpActiveJob.targetVisits
-        && remoteGtpStoppingMoves != null && !remoteGtpStoppingMoves.isEmpty()) {
+        && remoteGtpStoppingMoves != null
+        && !remoteGtpStoppingMoves.isEmpty()) {
       finiteSearchGeneration++;
       remoteGtpStoppingJob = remoteGtpActiveJob;
       remoteGtpActiveJob = null;
@@ -1852,8 +1871,10 @@ public class AnalysisEngine {
   private boolean validFiniteMove(String move) {
     if (move.equalsIgnoreCase("pass") || move.equalsIgnoreCase("resign")) return true;
     if (!move.matches("[A-HJ-Z][1-9][0-9]?")) return false;
-    return Board.asCoordinates(move, requestBoardHeight).filter(c -> c[0] >= 0
-        && c[0] < requestBoardWidth && c[1] >= 0 && c[1] < requestBoardHeight).isPresent();
+    return Board.asCoordinates(move, requestBoardHeight)
+        .filter(
+            c -> c[0] >= 0 && c[0] < requestBoardWidth && c[1] >= 0 && c[1] < requestBoardHeight)
+        .isPresent();
   }
 
   private void prepareRequestState(boolean showProgressDialog, AutomaticRequestUse use) {
@@ -1985,8 +2006,7 @@ public class AnalysisEngine {
 
   private void finishFailedRequestDispatch(
       boolean showProgressDialog, Runnable afterForegroundRestore) {
-    finishFailedRequestDispatch(
-        showProgressDialog, afterForegroundRestore, afterForegroundRestore);
+    finishFailedRequestDispatch(showProgressDialog, afterForegroundRestore, afterForegroundRestore);
   }
 
   private void finishFailedRequestDispatch(
@@ -2019,10 +2039,8 @@ public class AnalysisEngine {
     Runnable deliverFailure =
         failedRequestCallback == null ? null : () -> dispatchRequestCallback(failedRequestCallback);
     Runnable finishRestore = chainCallbacks(deliverFailure, afterForegroundRestore);
-    Runnable finishRestoreFailure =
-        chainCallbacks(deliverFailure, afterForegroundRestoreFailure);
-    boolean restorePending =
-        releaseSharedForegroundLease(finishRestore, finishRestoreFailure);
+    Runnable finishRestoreFailure = chainCallbacks(deliverFailure, afterForegroundRestoreFailure);
+    boolean restorePending = releaseSharedForegroundLease(finishRestore, finishRestoreFailure);
     resumeForegroundAnalysisIfRequested();
     if (Lizzie.frame.isBatchAnalysisMode) Lizzie.frame.isBatchAnalysisMode = false;
     if (waitFrame != null || showProgressDialog) {
@@ -2198,8 +2216,7 @@ public class AnalysisEngine {
       enqueueRemoteGtpRequest(selectedNode, Math.max(1, targetVisits), commands);
       previousQueuedNode = selectedNode;
     }
-    if (shutdownRequested
-        || (!remoteGtpQueue().isEmpty() && !startNextRemoteGtpJob())) {
+    if (shutdownRequested || (!remoteGtpQueue().isEmpty() && !startNextRemoteGtpJob())) {
       requestDispatchFailed = true;
     }
   }
@@ -2245,7 +2262,8 @@ public class AnalysisEngine {
     if (sharedForegroundEngine != null && !sharedForegroundLeaseActive) {
       return beginSharedForegroundLease();
     }
-    if (finitePreparation != null && finitePreparation != FinitePreparation.READY
+    if (finitePreparation != null
+        && finitePreparation != FinitePreparation.READY
         && finitePreparation != FinitePreparation.LEGACY) return true;
     if (sharedForegroundEngine != null && remoteGtpExpectedRulesCommandId > 0) {
       return true;
@@ -2332,16 +2350,22 @@ public class AnalysisEngine {
         if (remoteGtpSetupInFlight.size() >= window
             || (!remoteGtpSetupInFlight.isEmpty()
                 && (!replay || !remoteGtpSetupInFlight.peekFirst().replay()))) return true;
-        String command = resolveSharedForegroundSetupCommand(remoteGtpPendingSetupCommands.removeFirst());
+        String command =
+            resolveSharedForegroundSetupCommand(remoteGtpPendingSetupCommands.removeFirst());
         int commandId = nextRemoteGtpSetupCommandId();
-        remoteGtpSetupInFlight.addLast(new PendingSetupCommand(commandId,
-            System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS), replay));
+        remoteGtpSetupInFlight.addLast(
+            new PendingSetupCommand(
+                commandId,
+                System.nanoTime()
+                    + TimeUnit.MILLISECONDS.toNanos(REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS),
+                replay));
         if (remoteGtpSetupInFlight.size() == 1) scheduleOldestSetupTimeout();
         // Registration and deadline precede physical output, including synchronous replies.
         if (!sendAdmittedPreparationCommand(commandId + " " + command)) return false;
       }
       if (requestDispatchFailed || !requestStillTargetsCurrentGame()) return false;
-      if (automaticRequestRetired() || shutdownRequested || !remoteGtpSetupInFlight.isEmpty()) return true;
+      if (automaticRequestRetired() || shutdownRequested || !remoteGtpSetupInFlight.isEmpty())
+        return true;
       String analyzeCommand = remoteGtpPendingAnalyzeCommand;
       remoteGtpPendingAnalyzeCommand = null;
       remoteGtpPendingSetupCommands = null;
@@ -2350,8 +2374,9 @@ public class AnalysisEngine {
       remoteGtpExpectedAnalyzeCommandId = commandId;
       if (finitePreparation == FinitePreparation.READY) {
         // Zhizi needs the terminal-output interval to expose the completed root budget.
-        analyzeCommand = analyzeCommand.replaceFirst(
-            "^kata-analyze ([BW]) [0-9]+", "kata-search_analyze_cancellable $1 10000");
+        analyzeCommand =
+            analyzeCommand.replaceFirst(
+                "^kata-analyze ([BW]) [0-9]+", "kata-search_analyze_cancellable $1 10000");
         finitePlayed = false;
         remoteGtpStoppingMoves = null;
         remoteGtpStoppingRootInfo = null;
@@ -2384,8 +2409,9 @@ public class AnalysisEngine {
   private void scheduleOldestSetupTimeout() {
     PendingSetupCommand oldest = remoteGtpSetupInFlight.peekFirst();
     if (oldest == null) cancelRemoteGtpSetupAckTimeout();
-    else scheduleRemoteGtpSetupAckTimeout(oldest.id(),
-        Math.max(0L, oldest.deadlineNanos() - System.nanoTime()));
+    else
+      scheduleRemoteGtpSetupAckTimeout(
+          oldest.id(), Math.max(0L, oldest.deadlineNanos() - System.nanoTime()));
   }
 
   private String resolveSharedForegroundSetupCommand(String command) {
@@ -2396,8 +2422,8 @@ public class AnalysisEngine {
   }
 
   private synchronized void scheduleRemoteGtpSetupAckTimeout(int commandId) {
-    scheduleRemoteGtpSetupAckTimeout(commandId,
-        TimeUnit.MILLISECONDS.toNanos(REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS));
+    scheduleRemoteGtpSetupAckTimeout(
+        commandId, TimeUnit.MILLISECONDS.toNanos(REMOTE_GTP_SETUP_ACK_TIMEOUT_MILLIS));
   }
 
   private synchronized void scheduleRemoteGtpSetupAckTimeout(int commandId, long delayNanos) {
@@ -2410,8 +2436,10 @@ public class AnalysisEngine {
                   synchronized (AnalysisEngine.this) {
                     boolean stillWaiting =
                         generation == remoteGtpSetupAckGeneration
-                            && !automaticRequestRetired() && !shutdownRequested
-                            && ((finiteParameterCommands != null && !finiteParameterCommands.isEmpty()
+                            && !automaticRequestRetired()
+                            && !shutdownRequested
+                            && ((finiteParameterCommands != null
+                                    && !finiteParameterCommands.isEmpty()
                                     && finitePreparation != FinitePreparation.READY
                                     && finitePreparation != FinitePreparation.LEGACY)
                                 || remoteGtpExpectedRulesCommandId == commandId
@@ -2499,7 +2527,8 @@ public class AnalysisEngine {
                 if (use != null) use.pipeline = lease.isActiveBuiltInZhizi();
                 if (automaticRequestRetired() || shutdownRequested) return;
                 if (!(use != null && use.pipeline
-                    ? beginFiniteCapabilities() : beginSharedForegroundRulesCapture())) {
+                    ? beginFiniteCapabilities()
+                    : beginSharedForegroundRulesCapture())) {
                   requestDispatchFailed = true;
                   finishFailedRequestDispatch(!silentProgress);
                 }
@@ -3149,7 +3178,8 @@ public class AnalysisEngine {
   private boolean requestStillTargetsCurrentGame() {
     return !shutdownRequested
         && !automaticRequestRetired()
-        && (automaticRequestUse == null || sharedForegroundEngine == null
+        && (automaticRequestUse == null
+            || sharedForegroundEngine == null
             || Lizzie.leelaz == sharedForegroundEngine)
         && (requestHistoryRoot == null
             || (Lizzie.board != null
@@ -3171,8 +3201,7 @@ public class AnalysisEngine {
       requestPositionFingerprints() {
     if (requestPositionFingerprints == null) {
       requestPositionFingerprints =
-          new ConcurrentHashMap<
-              BoardHistoryNode, WholeGameAnalysisPlan.PositionFingerprint>();
+          new ConcurrentHashMap<BoardHistoryNode, WholeGameAnalysisPlan.PositionFingerprint>();
     }
     return requestPositionFingerprints;
   }

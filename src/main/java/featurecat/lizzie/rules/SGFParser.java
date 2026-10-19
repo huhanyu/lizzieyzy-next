@@ -489,7 +489,8 @@ public class SGFParser {
           next++;
         }
         if (Character.isLetter(previous)
-            && next < value.length() && Character.isLetter(value.charAt(next))) {
+            && next < value.length()
+            && Character.isLetter(value.charAt(next))) {
           return null;
         }
         if (normalized == null) {
@@ -918,8 +919,7 @@ public class SGFParser {
             currentNodeHasDummy = false;
             topLevelNodeCount += 1;
             allowRootSetupOnCurrentNode = topLevelNodeCount == 1;
-            rootNodeHasDummy =
-                allowRootSetupOnCurrentNode && nodeStartsWithDummy(value, i + 1);
+            rootNodeHasDummy = allowRootSetupOnCurrentNode && nodeStartsWithDummy(value, i + 1);
             addPassForMove = true;
             currentNodeHasSetupSnapshot = false;
             currentNodeHasMove = false;
@@ -994,10 +994,12 @@ public class SGFParser {
     }
   }
 
-  /** Capture the complete write payload before leaving the UI thread. No background caller may
-   * serialize the live board or borrow the process-wide raw export flags. */
-  public static String saveSnapshot(Board board, boolean raw, boolean comments, boolean currentBranch)
-      throws IOException {
+  /**
+   * Capture the complete write payload before leaving the UI thread. No background caller may
+   * serialize the live board or borrow the process-wide raw export flags.
+   */
+  public static String saveSnapshot(
+      Board board, boolean raw, boolean comments, boolean currentBranch) throws IOException {
     if (!SwingUtilities.isEventDispatchThread()) {
       throw new IllegalStateException("SGF save snapshots must be captured on the event thread");
     }
@@ -2898,7 +2900,8 @@ public class SGFParser {
         data.scoreStdev,
         data.pda,
         data.bestMovesToString(),
-        data.estimateArray, data.rootVisits);
+        data.estimateArray,
+        data.rootVisits);
   }
 
   private static String formatNodeData2(BoardHistoryNode node) {
@@ -2928,7 +2931,8 @@ public class SGFParser {
         data.scoreStdev2,
         data.pda2,
         data.bestMovesToString2(),
-        data.estimateArray2, data.rootVisits2);
+        data.estimateArray2,
+        data.rootVisits2);
   }
 
   private static String formatAnalysisPayload(
@@ -2941,14 +2945,16 @@ public class SGFParser {
       double scoreStdev,
       double pda,
       String bestMoves,
-      List<Double> estimateArray, int rootVisits) {
+      List<Double> estimateArray,
+      int rootVisits) {
     StringBuilder header = new StringBuilder();
     header.append(engineName).append(" ").append(curWinrate).append(" ").append(playouts);
     if (kataData || rootVisits >= 0) {
       boolean hasExplicitHeaderSlots = rootVisits < 0 && headerSlots > 0;
       boolean includeScoreStdev = !hasExplicitHeaderSlots || headerSlots >= 5;
-      boolean includePda = rootVisits >= 0
-          || (hasExplicitHeaderSlots ? headerSlots >= 6 : Double.compare(pda, 0) != 0);
+      boolean includePda =
+          rootVisits >= 0
+              || (hasExplicitHeaderSlots ? headerSlots >= 6 : Double.compare(pda, 0) != 0);
       header.append(" ").append(formatAnalysisScalar(scoreMean));
       if (includeScoreStdev) {
         header.append(" ").append(formatAnalysisScalar(scoreStdev));
@@ -3605,8 +3611,7 @@ public class SGFParser {
     if (history == null || history.getStart() == null) {
       return;
     }
-    int declaredHandicap =
-        history.getGameInfo() == null ? 0 : history.getGameInfo().getHandicap();
+    int declaredHandicap = history.getGameInfo() == null ? 0 : history.getGameInfo().getHandicap();
     int[] boardSize = resolveHistoryBoardSize(history);
     stabilizeEligibleSetupSubtree(
         history.getStart(), null, declaredHandicap, boardSize[0], boardSize[1]);
@@ -3626,11 +3631,12 @@ public class SGFParser {
     Boolean effectivePlayer = explicitPlayer == null ? inheritedPlayer : explicitPlayer;
     if (data.isSnapshotNode()) {
       Boolean firstPlayer = firstInitialActionPlayer(node);
-      data.blackToPlay = effectivePlayer != null
-          ? effectivePlayer
-          : firstPlayer != null
-              ? firstPlayer
-              : !hasCompletedInitialHandicap(node, declaredHandicap, width, height);
+      data.blackToPlay =
+          effectivePlayer != null
+              ? effectivePlayer
+              : firstPlayer != null
+                  ? firstPlayer
+                  : !hasCompletedInitialHandicap(node, declaredHandicap, width, height);
     }
 
     for (BoardHistoryNode child : node.getVariations()) {
@@ -3642,11 +3648,13 @@ public class SGFParser {
   private static boolean hasCompletedInitialHandicap(
       BoardHistoryNode node, int declaredHandicap, int width, int height) {
     int handicap = declaredHandicap;
-    for (BoardHistoryNode ancestor = node; ancestor != null;
+    for (BoardHistoryNode ancestor = node;
+        ancestor != null;
         ancestor = ancestor.previous().orElse(null)) {
       BoardData data = ancestor.getData();
       if ((data.isHistoryActionNode() && !data.dummy)
-          || data.getProperties().containsKey("AW") || data.getProperties().containsKey("AE")) {
+          || data.getProperties().containsKey("AW")
+          || data.getProperties().containsKey("AE")) {
         return false;
       }
       String declaration = data.getProperty("HA");
@@ -3689,7 +3697,8 @@ public class SGFParser {
   private static void resolveImportedInitialBranches(
       BoardHistoryList history, BoardHistoryNode parent, int existingChildren) {
     Boolean inheritedPlayer = null;
-    for (BoardHistoryNode ancestor = parent; ancestor != null;
+    for (BoardHistoryNode ancestor = parent;
+        ancestor != null;
         ancestor = ancestor.previous().orElse(null)) {
       BoardData data = ancestor.getData();
       if (data.isHistoryActionNode() && !data.dummy) return;
@@ -3697,8 +3706,12 @@ public class SGFParser {
     }
     int[] size = resolveHistoryBoardSize(history);
     for (int i = existingChildren; i < parent.numberOfChildren(); i++) {
-      stabilizeEligibleSetupSubtree(parent.getVariations().get(i), inheritedPlayer,
-          history.getGameInfo().getHandicap(), size[0], size[1]);
+      stabilizeEligibleSetupSubtree(
+          parent.getVariations().get(i),
+          inheritedPlayer,
+          history.getGameInfo().getHandicap(),
+          size[0],
+          size[1]);
     }
   }
 
@@ -4285,8 +4298,7 @@ public class SGFParser {
             currentNodeHasDummy = false;
             topLevelNodeCount += 1;
             allowRootSetupOnCurrentNode = !isBranch && topLevelNodeCount == 1;
-            rootNodeHasDummy =
-                allowRootSetupOnCurrentNode && nodeStartsWithDummy(value, i + 1);
+            rootNodeHasDummy = allowRootSetupOnCurrentNode && nodeStartsWithDummy(value, i + 1);
             addPassForMove = true;
             currentNodeHasSetupSnapshot = false;
             currentNodeHasMove = false;

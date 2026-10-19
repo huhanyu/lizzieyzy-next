@@ -77,13 +77,7 @@ class NetworkRemoteSgfLoggingTest {
 
     LoggingRuntime runtime = startDiagnostics();
     NetworkObservation.recordRemote(
-        "GET",
-        "api.example.test",
-        NetworkEndpointCategory.ACCOUNT,
-        500,
-        1L,
-        "failed",
-        injected);
+        "GET", "api.example.test", NetworkEndpointCategory.ACCOUNT, 500, 1L, "failed", injected);
     runtime.awaitIdle();
 
     String app = readApp();

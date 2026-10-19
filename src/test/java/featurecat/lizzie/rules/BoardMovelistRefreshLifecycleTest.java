@@ -21,7 +21,8 @@ class BoardMovelistRefreshLifecycleTest {
     AtomicReference<Throwable> uncaught = new AtomicReference<>();
     TrackingBoard board = trackingBoard(singleNodeHistory());
     try {
-      Thread.setDefaultUncaughtExceptionHandler((thread, error) -> uncaught.compareAndSet(null, error));
+      Thread.setDefaultUncaughtExceptionHandler(
+          (thread, error) -> uncaught.compareAndSet(null, error));
       Lizzie.board = null;
 
       board.setMovelistAll();
@@ -43,7 +44,8 @@ class BoardMovelistRefreshLifecycleTest {
       Lizzie.board = board;
       board.blockFirstUpdate = true;
       board.setMovelistAll();
-      assertTrue(board.firstUpdate.await(2, TimeUnit.SECONDS), "refresh should reach its first node.");
+      assertTrue(
+          board.firstUpdate.await(2, TimeUnit.SECONDS), "refresh should reach its first node.");
 
       board.setHistory(singleNodeHistory());
       board.releaseFirstUpdate.countDown();
@@ -85,7 +87,8 @@ class BoardMovelistRefreshLifecycleTest {
       Lizzie.board = board;
       board.blockFirstUpdate = true;
       board.setMovelistAll(completed::countDown);
-      assertTrue(board.firstUpdate.await(2, TimeUnit.SECONDS), "refresh should reach its first node.");
+      assertTrue(
+          board.firstUpdate.await(2, TimeUnit.SECONDS), "refresh should reach its first node.");
 
       board.setHistory(singleNodeHistory());
       board.releaseFirstUpdate.countDown();

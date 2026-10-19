@@ -26,7 +26,9 @@ class CrashPersistenceBarrierTest {
   }
 
   @ParameterizedTest
-  @EnumSource(value = LogStream.class, names = {"APP", "CRASH"})
+  @EnumSource(
+      value = LogStream.class,
+      names = {"APP", "CRASH"})
   void fatalBarrierWaitsThroughDequeueHandoff(LogStream pausedStream) throws Exception {
     LoggingRuntime runtime =
         LoggingRuntime.initialize(

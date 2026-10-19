@@ -53,7 +53,8 @@ public final class FoxKifuDownloadAccessibilityTest {
                 }
                 Component next = window.getFocusTraversalPolicy().getComponentAfter(window, choice);
                 if (next == null
-                    || window.getFocusTraversalPolicy().getComponentBefore(window, next) != choice) {
+                    || window.getFocusTraversalPolicy().getComponentBefore(window, next)
+                        != choice) {
                   throw new AssertionError("Tab/Shift+Tab traversal skips the search choice");
                 }
               }

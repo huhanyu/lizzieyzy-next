@@ -103,10 +103,12 @@ class SidebarHeaderPanelHitTest {
         "Comments and Problem moves must not share pixels.");
     assertEquals(
         0,
-        SidebarHeaderPanel.primarySegmentIndexAt(center(layout.comments), false, metrics, WIDE_SIDEBAR));
+        SidebarHeaderPanel.primarySegmentIndexAt(
+            center(layout.comments), false, metrics, WIDE_SIDEBAR));
     assertEquals(
         1,
-        SidebarHeaderPanel.primarySegmentIndexAt(center(layout.problems), false, metrics, WIDE_SIDEBAR));
+        SidebarHeaderPanel.primarySegmentIndexAt(
+            center(layout.problems), false, metrics, WIDE_SIDEBAR));
   }
 
   @Test
@@ -119,14 +121,18 @@ class SidebarHeaderPanelHitTest {
     assertNoOverlap(layout.comments, layout.problems, layout.black, layout.white);
     assertEquals(
         0,
-        SidebarHeaderPanel.primarySegmentIndexAt(center(layout.comments), false, metrics, WIDE_SIDEBAR));
+        SidebarHeaderPanel.primarySegmentIndexAt(
+            center(layout.comments), false, metrics, WIDE_SIDEBAR));
     assertEquals(
         1,
-        SidebarHeaderPanel.primarySegmentIndexAt(center(layout.problems), false, metrics, WIDE_SIDEBAR));
+        SidebarHeaderPanel.primarySegmentIndexAt(
+            center(layout.problems), false, metrics, WIDE_SIDEBAR));
     assertEquals(
-        0, SidebarHeaderPanel.sideSegmentIndexAt(center(layout.black), false, metrics, WIDE_SIDEBAR));
+        0,
+        SidebarHeaderPanel.sideSegmentIndexAt(center(layout.black), false, metrics, WIDE_SIDEBAR));
     assertEquals(
-        1, SidebarHeaderPanel.sideSegmentIndexAt(center(layout.white), false, metrics, WIDE_SIDEBAR));
+        1,
+        SidebarHeaderPanel.sideSegmentIndexAt(center(layout.white), false, metrics, WIDE_SIDEBAR));
   }
 
   @Test
@@ -135,7 +141,8 @@ class SidebarHeaderPanelHitTest {
     FontMetrics metrics = headerMetrics();
     SidebarHeaderPanel.HeaderLayout layout =
         SidebarHeaderPanel.headerLayout(true, false, metrics, WIDE_SIDEBAR, "");
-    int problemsWidth = metrics.stringWidth(Lizzie.resourceBundle.getString("SidebarHeader.problems"));
+    int problemsWidth =
+        metrics.stringWidth(Lizzie.resourceBundle.getString("SidebarHeader.problems"));
 
     assertTrue(
         layout.problems.width >= problemsWidth,
@@ -143,10 +150,12 @@ class SidebarHeaderPanelHitTest {
     assertFalse(layout.comments.intersects(layout.problems));
     assertEquals(
         0,
-        SidebarHeaderPanel.primarySegmentIndexAt(center(layout.comments), true, metrics, WIDE_SIDEBAR));
+        SidebarHeaderPanel.primarySegmentIndexAt(
+            center(layout.comments), true, metrics, WIDE_SIDEBAR));
     assertEquals(
         1,
-        SidebarHeaderPanel.primarySegmentIndexAt(center(layout.problems), true, metrics, WIDE_SIDEBAR));
+        SidebarHeaderPanel.primarySegmentIndexAt(
+            center(layout.problems), true, metrics, WIDE_SIDEBAR));
   }
 
   @Test
@@ -158,9 +167,11 @@ class SidebarHeaderPanelHitTest {
 
     assertNoOverlap(layout.comments, layout.problems, layout.black, layout.white);
     assertEquals(
-        0, SidebarHeaderPanel.sideSegmentIndexAt(center(layout.black), true, metrics, WIDE_SIDEBAR));
+        0,
+        SidebarHeaderPanel.sideSegmentIndexAt(center(layout.black), true, metrics, WIDE_SIDEBAR));
     assertEquals(
-        1, SidebarHeaderPanel.sideSegmentIndexAt(center(layout.white), true, metrics, WIDE_SIDEBAR));
+        1,
+        SidebarHeaderPanel.sideSegmentIndexAt(center(layout.white), true, metrics, WIDE_SIDEBAR));
   }
 
   @Test
@@ -236,9 +247,9 @@ class SidebarHeaderPanelHitTest {
     FontMetrics metrics = headerMetrics();
     assertEquals(
         48, SidebarHeaderPanel.headerLayout(false, true, metrics, NARROW_SIDEBAR, "").height);
-    assertEquals(48, SidebarHeaderPanel.headerLayout(false, true, metrics, WIDE_SIDEBAR, "").height);
     assertEquals(
-        56, SidebarHeaderPanel.headerLayout(true, true, metrics, WIDE_SIDEBAR, "").height);
+        48, SidebarHeaderPanel.headerLayout(false, true, metrics, WIDE_SIDEBAR, "").height);
+    assertEquals(56, SidebarHeaderPanel.headerLayout(true, true, metrics, WIDE_SIDEBAR, "").height);
   }
 
   @Test

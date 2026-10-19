@@ -522,8 +522,7 @@ public class BrowserFrame extends JFrame {
     }
   }
 
-  private static File resolveJcefBundleFolder()
-      throws IOException, UnsupportedPlatformException {
+  private static File resolveJcefBundleFolder() throws IOException, UnsupportedPlatformException {
     Optional<File> bundledFolder = findBundledJcefFolder(defaultJcefSearchBases());
     if (bundledFolder.isPresent()) {
       return bundledFolder.get();
@@ -890,8 +889,8 @@ public class BrowserFrame extends JFrame {
   }
 
   /**
-   * Yike bridge messages are accepted only from the main frame of a Yike window showing an
-   * http(s) page on yikeweiqi.com, so other pages and embedded frames cannot inject games.
+   * Yike bridge messages are accepted only from the main frame of a Yike window showing an http(s)
+   * page on yikeweiqi.com, so other pages and embedded frames cannot inject games.
    */
   static boolean isTrustedYikeQuerySource(boolean isYike, boolean mainFrame, String frameUrl) {
     if (!isYike || !mainFrame || frameUrl == null || frameUrl.isBlank()) {

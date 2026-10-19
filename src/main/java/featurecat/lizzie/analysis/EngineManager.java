@@ -118,13 +118,14 @@ public class EngineManager {
    */
   private static final ReentrantLock ENGINE_GAME_ANALYSIS_OUTPUT_MUTATION_LOCK =
       new ReentrantLock();
+
   private static boolean ordinaryAnalysisOutputMutationInProgress;
 
   /** Exact failed incarnations remain unavailable for selection until their blocking stop ends. */
   private static final Map<Leelaz, FailedEngineQuarantine> FAILED_ENGINE_QUARANTINES =
       new IdentityHashMap<>();
-  private static volatile FailedEngineStopThreadFactory failedEngineStopThreadFactory =
-      Thread::new;
+
+  private static volatile FailedEngineStopThreadFactory failedEngineStopThreadFactory = Thread::new;
   private static final InitialEnginePreloadScheduler DEFAULT_INITIAL_ENGINE_PRELOAD_SCHEDULER =
       new InitialEnginePreloadScheduler() {
         @Override
@@ -183,6 +184,7 @@ public class EngineManager {
    * slot/incarnation until it either publishes a replacement incarnation or gives up.
    */
   private static EngineGameRecoveryBatch activeEngineGameRecoveryBatch;
+
   private final ResourceBundle resourceBundle = Lizzie.resourceBundle;
   public static boolean isUpdating = false;
   public volatile List<Leelaz> engineList;
@@ -254,11 +256,15 @@ public class EngineManager {
     private volatile InitialEngineStartupSynchronization foregroundSynchronization;
     private final AtomicReference<EngineGameRetirementContinuation> retirementContinuation =
         new AtomicReference<>();
+
     /** Guarded by {@link #ENGINE_SELECTION_STATE_LOCK}. */
     private final List<EngineGameDeferredRecovery> deferredRecoveries = new ArrayList<>();
+
     private volatile EngineGamePhase phase = EngineGamePhase.PREPARING;
+
     /** Exact bindings published while each participant is still PREPARING/DISPATCHED. */
     private volatile Object blackStartupIncarnation;
+
     private volatile Object whiteStartupIncarnation;
     private volatile Object blackIncarnation;
     private volatile Object whiteIncarnation;
@@ -318,8 +324,7 @@ public class EngineManager {
       // A match has one ruleset. If either participant cannot represent suicide, reject suicide
       // for both sides instead of changing legality when PRIMARY changes after each move.
       this.canSuicidal = blackEngine.canSuicidal && whiteEngine.canSuicidal;
-      this.newMoveNumberInBranch =
-          Lizzie.config != null && Lizzie.config.newMoveNumberInBranch;
+      this.newMoveNumberInBranch = Lizzie.config != null && Lizzie.config.newMoveNumberInBranch;
       this.previousPrimary = previousPrimary;
       this.previousPrimaryGeneration = previousPrimaryGeneration;
       this.retainedForegroundLifecycleOwner = retainedForegroundLifecycleOwner;
@@ -369,13 +374,13 @@ public class EngineManager {
     }
 
     boolean paused() {
-      return paused || (product != null && product.paused())
+      return paused
+          || (product != null && product.paused())
           || (komiState != null && komiState.pending());
     }
 
     boolean genmovePauseSettled() {
-      return genmovePauseSettled
-          || (product != null && product.genmovePauseSettled());
+      return genmovePauseSettled || (product != null && product.genmovePauseSettled());
     }
 
     void recordPendingGenmoveSide(EngineGameSide side) {
@@ -436,14 +441,7 @@ public class EngineManager {
 
       private MatchRulesAdmission.SideResult toSideResult() {
         return new MatchRulesAdmission.SideResult(
-            identity,
-            canSet,
-            canQuery,
-            original,
-            observed,
-            status,
-            reason,
-            modifiedOrUncertain);
+            identity, canSet, canQuery, original, observed, status, reason, modifiedOrUncertain);
       }
     }
   }
@@ -775,14 +773,10 @@ public class EngineManager {
   }
 
   private static void dispatchInitialEnginePreload(Leelaz engine, int engineIndex) {
-    InitialEnginePreloadDispatch dispatch =
-        new InitialEnginePreloadDispatch(engine, engineIndex);
+    InitialEnginePreloadDispatch dispatch = new InitialEnginePreloadDispatch(engine, engineIndex);
     InitialEnginePreloadScheduler scheduler = initialEnginePreloadScheduler;
     try {
-      Thread worker =
-          scheduler.create(
-              dispatch,
-              "lizzie-initial-engine-preload-" + engineIndex);
+      Thread worker = scheduler.create(dispatch, "lizzie-initial-engine-preload-" + engineIndex);
       if (worker == null) {
         throw new IllegalStateException("Initial engine preload scheduler returned no worker");
       }
@@ -1123,10 +1117,7 @@ public class EngineManager {
                     schedulingFailure));
     Thread worker;
     try {
-      worker =
-          scheduler.create(
-              dispatch,
-              "lizzie-initial-engine-startup-" + uiToken);
+      worker = scheduler.create(dispatch, "lizzie-initial-engine-startup-" + uiToken);
       if (worker == null) {
         throw new IllegalStateException("Initial engine startup scheduler returned no worker");
       }
@@ -1294,14 +1285,12 @@ public class EngineManager {
       Board restoreBoard,
       Throwable failure) {
     boolean currentStartup = isCurrentInitialManagerStartup(startupAuthority, restoreBoard);
-    boolean failureSuperseded =
-        transaction != null && transaction.synchronizationFailureSuperseded;
+    boolean failureSuperseded = transaction != null && transaction.synchronizationFailureSuperseded;
     AtomicReference<Runnable> staleRuntimeStop = new AtomicReference<>();
     Throwable cleanupFailure = null;
     if (currentStartup && !failureSuperseded) {
       cleanupFailure =
-          runLifecycleCleanupStep(
-              cleanupFailure, () -> failEngineSwitchUi(uiToken, true, detail));
+          runLifecycleCleanupStep(cleanupFailure, () -> failEngineSwitchUi(uiToken, true, detail));
     } else if (!currentStartup
         && (transaction == null || !transaction.targetStartFailureCleanupClaimed)) {
       cleanupFailure =
@@ -1315,16 +1304,13 @@ public class EngineManager {
                           uiToken)));
     }
     if (synchronization != null) {
-      cleanupFailure =
-          runLifecycleCleanupStep(cleanupFailure, synchronization::close);
+      cleanupFailure = runLifecycleCleanupStep(cleanupFailure, synchronization::close);
     }
     cleanupFailure =
-        runLifecycleCleanupStep(
-            cleanupFailure, () -> finishEngineSwitchTransaction(transaction));
+        runLifecycleCleanupStep(cleanupFailure, () -> finishEngineSwitchTransaction(transaction));
     cleanupFailure =
         runLifecycleCleanupStep(
-            cleanupFailure,
-            () -> dispatchFailedEngineStop(staleRuntimeStop.get(), uiToken));
+            cleanupFailure, () -> dispatchFailedEngineStop(staleRuntimeStop.get(), uiToken));
     if (currentStartup
         && !failureSuperseded
         && (transaction == null || !transaction.targetStartFailureCleanupClaimed)) {
@@ -1345,7 +1331,6 @@ public class EngineManager {
   public EngineManager(List<Leelaz> engines) {
     engineList = engines;
   }
-
 
   public void autoCheckEngineAlive(boolean enable) {
     if (enable) {
@@ -1422,8 +1407,7 @@ public class EngineManager {
     if (engineBlack == engineWhite) {
       return false;
     }
-    EngineGameOwnerTransaction gameTransaction =
-        startNewEngineGame(firstGame, plan, null, true);
+    EngineGameOwnerTransaction gameTransaction = startNewEngineGame(firstGame, plan, null, true);
     if (gameTransaction == null || !isCurrentEngineGameTransaction(gameTransaction)) {
       return false;
     }
@@ -1619,7 +1603,6 @@ public class EngineManager {
         limits.timeSeconds(),
         limits.advancedTimeCommand());
   }
-
 
   private ArrayList<Movelist> prepareEngineGameBoard(
       boolean firstTime, boolean analysisMode, EngineGamePlan engineGame) {
@@ -2107,8 +2090,7 @@ public class EngineManager {
     if (transaction == null || transaction.manager == null) {
       return false;
     }
-    if (!claimTerminalEngineGameTransaction(
-        transaction, EngineGamePhase.CANCELLED, null, true)) {
+    if (!claimTerminalEngineGameTransaction(transaction, EngineGamePhase.CANCELLED, null, true)) {
       return false;
     }
     EngineGameStopClaim stopClaim;
@@ -2121,8 +2103,7 @@ public class EngineManager {
               transaction.gameWasStartingBeforeTerminal,
               transaction.inactiveEpoch);
     }
-    transaction.manager.finishClaimedEngineGameStop(
-        stopClaim, resignEngineIndex, manual);
+    transaction.manager.finishClaimedEngineGameStop(stopClaim, resignEngineIndex, manual);
     return true;
   }
 
@@ -2130,8 +2111,7 @@ public class EngineManager {
       EngineGameStopClaim stopClaim, int resgnEngineIndex, boolean mannul) {
     EngineGamePlan plan = stopClaim.plan;
     EngineGameOwnerTransaction stoppedTransaction = stopClaim.transaction;
-    BatchSummary summary =
-        Lizzie.engineGame == null ? null : Lizzie.engineGame.lastSummary();
+    BatchSummary summary = Lizzie.engineGame == null ? null : Lizzie.engineGame.lastSummary();
     int firstWins = summary == null ? 0 : summary.firstWins();
     int secondWins = summary == null ? 0 : summary.secondWins();
     int firstWinAsBlack = summary == null ? 0 : summary.firstWinAsBlack();
@@ -2154,9 +2134,7 @@ public class EngineManager {
       appendEngineGameStopComment(stopClaim.wasActive);
       if (!stopClaim.wasActive) {
         if (stoppedTransaction != null) {
-          if (!mannul
-              && Lizzie.engineGame != null
-              && Lizzie.engineGame.successorPending()) {
+          if (!mannul && Lizzie.engineGame != null && Lizzie.engineGame.successorPending()) {
             scheduleProductSuccessorAfterRetirement(stoppedTransaction, stopClaim);
           } else {
             finishEngineGameTransactionRetirement(stoppedTransaction, true);
@@ -2167,30 +2145,144 @@ public class EngineManager {
         return;
       }
 
-    stopCountDown();
-    LizzieFrame.menu.toggleDoubleMenuGameStatus();
-    Lizzie.frame.hasEnginePkTitile = true;
-    Lizzie.frame.enginePkTitile = "";
-    if (mannul) {
-      markEngineGameParticipantsStopped(stoppedTransaction, plan);
-      changeEngIcoForEndPk();
-      LizzieFrame.toolbar.enableDisabelForEngineGame(true);
-      Lizzie.frame.addInput(true);
-      if (plan != null && plan.batch() && plan.gameOrdinal() > 1) {
-        File file = new File("");
-        String courseFile = "";
-        try {
-          courseFile = file.getCanonicalPath();
-        } catch (IOException e) {
-          e.printStackTrace();
+      stopCountDown();
+      LizzieFrame.menu.toggleDoubleMenuGameStatus();
+      Lizzie.frame.hasEnginePkTitile = true;
+      Lizzie.frame.enginePkTitile = "";
+      if (mannul) {
+        markEngineGameParticipantsStopped(stoppedTransaction, plan);
+        changeEngIcoForEndPk();
+        LizzieFrame.toolbar.enableDisabelForEngineGame(true);
+        Lizzie.frame.addInput(true);
+        if (plan != null && plan.batch() && plan.gameOrdinal() > 1) {
+          File file = new File("");
+          String courseFile = "";
+          try {
+            courseFile = file.getCanonicalPath();
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
+          String passandMove = "";
+          if (doublePassGames > 0)
+            passandMove =
+                resourceBundle.getString("EngineGameInfo.doublePassGame") + doublePassGames;
+          if (maxMoveGames > 0)
+            passandMove +=
+                (passandMove.equals("") ? "" : " ")
+                    + resourceBundle.getString("EngineGameInfo.outOfMoveGame")
+                    + maxMoveGames;
+          Utils.showMsgNoModal(
+              (resourceBundle.getString("EngineGameInfo.batchGameEndAndScore")
+                  + engineList.get(plan.firstIndex()).oriEnginename
+                  + "   "
+                  + firstWins
+                  + ":"
+                  + secondWins
+                  + "   "
+                  + engineList.get(plan.secondIndex()).oriEnginename
+                  + (passandMove.equals("") ? "" : " ")
+                  + passandMove
+                  + ","
+                  + resourceBundle.getString("EngineGameInfo.engineGameEndHintKifuPos")
+                  + courseFile
+                  + File.separator
+                  + "EngineGames"));
         }
+        return;
+      }
+      SGFParser.appendGameTimeAndPlayouts();
+      if ((plan != null && plan.batch()) || LizzieFrame.toolbar.AutosavePk) {
+        saveEngineGameFile(resgnEngineIndex);
+      }
+      if (plan != null && plan.batch() && stoppedTransaction != null) {
+        stoppedTransaction.resultFirst =
+            resourceBundle.getString("EngineGameInfo.engine1")
+                + "("
+                + engineList.get(plan.firstIndex()).oriEnginename
+                + "):\n"
+                + resourceBundle.getString("EngineGameInfo.allWins")
+                + ": "
+                + firstWins;
+        stoppedTransaction.resultFirst +=
+            " "
+                + resourceBundle.getString("EngineGameInfo.sgfStartBlackWin")
+                + ": "
+                + firstWinAsBlack
+                + " "
+                + resourceBundle.getString("EngineGameInfo.sgfStartWhiteWin")
+                + ": "
+                + firstWinAsWhite;
+        stoppedTransaction.resultFirst +=
+            resourceBundle.getString("EngineGameInfo.totalTime")
+                + firstTotalTimeMs / (float) 1000
+                + resourceBundle.getString("SGFParse.seconds");
+        stoppedTransaction.resultFirst +=
+            resourceBundle.getString("EngineGameInfo.result.totalVisits") + firstTotalVisits;
+
+        stoppedTransaction.resultSecond =
+            resourceBundle.getString("EngineGameInfo.engine2")
+                + "("
+                + engineList.get(plan.secondIndex()).oriEnginename
+                + "):\n"
+                + resourceBundle.getString("EngineGameInfo.allWins")
+                + ": "
+                + secondWins;
+        stoppedTransaction.resultSecond +=
+            " "
+                + resourceBundle.getString("EngineGameInfo.sgfStartBlackWin")
+                + ": "
+                + secondWinAsBlack
+                + " "
+                + resourceBundle.getString("EngineGameInfo.sgfStartWhiteWin")
+                + ": "
+                + secondWinAsWhite;
+        stoppedTransaction.resultSecond +=
+            resourceBundle.getString("EngineGameInfo.totalTime")
+                + secondTotalTimeMs / (float) 1000
+                + resourceBundle.getString("SGFParse.seconds");
+        stoppedTransaction.resultSecond +=
+            resourceBundle.getString("EngineGameInfo.result.totalVisits") + secondTotalVisits;
+
+        stoppedTransaction.resultOther =
+            resourceBundle.getString("EngineGameInfo.doublePassGame") + doublePassGames;
+        stoppedTransaction.resultOther +=
+            " " + resourceBundle.getString("EngineGameInfo.outOfMoveGame") + maxMoveGames;
+        stoppedTransaction.settingAll = formatEngineGameSettingAll(plan);
+        savePkTxt(
+            stoppedTransaction.settingFirst,
+            stoppedTransaction.settingSecond,
+            stoppedTransaction.settingAll,
+            stoppedTransaction.resultFirst,
+            stoppedTransaction.resultSecond,
+            stoppedTransaction.resultOther);
+
+        if (Lizzie.engineGame != null && Lizzie.engineGame.successorPending()) {
+          scheduleProductSuccessorAfterRetirement(stoppedTransaction, stopClaim);
+          return;
+        }
+      }
+      LizzieFrame.toolbar.enableDisabelForEngineGame(true);
+      Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
+      File file = new File("");
+      String courseFile = "";
+      try {
+        courseFile = file.getCanonicalPath();
+      } catch (IOException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+      }
+      // showmsg 多局
+      if (plan != null && plan.batch()) {
         String passandMove = "";
         if (doublePassGames > 0)
           passandMove =
-              resourceBundle.getString("EngineGameInfo.doublePassGame") + doublePassGames;
+              passandMove
+                  + resourceBundle.getString("EngineGameInfo.doublePassGame")
+                  + doublePassGames;
         if (maxMoveGames > 0)
-          passandMove +=
-              (passandMove.equals("") ? "" : " ")
+          passandMove =
+              passandMove
+                  + (passandMove.equals("") ? "" : " ")
                   + resourceBundle.getString("EngineGameInfo.outOfMoveGame")
                   + maxMoveGames;
         Utils.showMsgNoModal(
@@ -2209,159 +2301,45 @@ public class EngineManager {
                 + courseFile
                 + File.separator
                 + "EngineGames"));
-      }
-      return;
-    }
-    SGFParser.appendGameTimeAndPlayouts();
-    if ((plan != null && plan.batch()) || LizzieFrame.toolbar.AutosavePk) {
-      saveEngineGameFile(resgnEngineIndex);
-    }
-    if (plan != null && plan.batch() && stoppedTransaction != null) {
-      stoppedTransaction.resultFirst =
-          resourceBundle.getString("EngineGameInfo.engine1")
-              + "("
-              + engineList.get(plan.firstIndex()).oriEnginename
-              + "):\n"
-              + resourceBundle.getString("EngineGameInfo.allWins")
-              + ": "
-              + firstWins;
-      stoppedTransaction.resultFirst +=
-          " "
-              + resourceBundle.getString("EngineGameInfo.sgfStartBlackWin")
-              + ": "
-              + firstWinAsBlack
-              + " "
-              + resourceBundle.getString("EngineGameInfo.sgfStartWhiteWin")
-              + ": "
-              + firstWinAsWhite;
-      stoppedTransaction.resultFirst +=
-          resourceBundle.getString("EngineGameInfo.totalTime")
-              + firstTotalTimeMs / (float) 1000
-              + resourceBundle.getString("SGFParse.seconds");
-      stoppedTransaction.resultFirst +=
-          resourceBundle.getString("EngineGameInfo.result.totalVisits") + firstTotalVisits;
-
-      stoppedTransaction.resultSecond =
-          resourceBundle.getString("EngineGameInfo.engine2")
-              + "("
-              + engineList.get(plan.secondIndex()).oriEnginename
-              + "):\n"
-              + resourceBundle.getString("EngineGameInfo.allWins")
-              + ": "
-              + secondWins;
-      stoppedTransaction.resultSecond +=
-          " "
-              + resourceBundle.getString("EngineGameInfo.sgfStartBlackWin")
-              + ": "
-              + secondWinAsBlack
-              + " "
-              + resourceBundle.getString("EngineGameInfo.sgfStartWhiteWin")
-              + ": "
-              + secondWinAsWhite;
-      stoppedTransaction.resultSecond +=
-          resourceBundle.getString("EngineGameInfo.totalTime")
-              + secondTotalTimeMs / (float) 1000
-              + resourceBundle.getString("SGFParse.seconds");
-      stoppedTransaction.resultSecond +=
-          resourceBundle.getString("EngineGameInfo.result.totalVisits") + secondTotalVisits;
-
-      stoppedTransaction.resultOther =
-          resourceBundle.getString("EngineGameInfo.doublePassGame") + doublePassGames;
-      stoppedTransaction.resultOther +=
-          " " + resourceBundle.getString("EngineGameInfo.outOfMoveGame") + maxMoveGames;
-      stoppedTransaction.settingAll = formatEngineGameSettingAll(plan);
-      savePkTxt(
-          stoppedTransaction.settingFirst,
-          stoppedTransaction.settingSecond,
-          stoppedTransaction.settingAll,
-          stoppedTransaction.resultFirst,
-          stoppedTransaction.resultSecond,
-          stoppedTransaction.resultOther);
-
-      if (Lizzie.engineGame != null && Lizzie.engineGame.successorPending()) {
-        scheduleProductSuccessorAfterRetirement(stoppedTransaction, stopClaim);
-        return;
-      }
-    }
-    LizzieFrame.toolbar.enableDisabelForEngineGame(true);
-    Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
-    File file = new File("");
-    String courseFile = "";
-    try {
-      courseFile = file.getCanonicalPath();
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-    // showmsg 多局
-    if (plan != null && plan.batch()) {
-      String passandMove = "";
-      if (doublePassGames > 0)
-        passandMove =
-            passandMove
-                + resourceBundle.getString("EngineGameInfo.doublePassGame")
-                + doublePassGames;
-      if (maxMoveGames > 0)
-        passandMove =
-            passandMove
-                + (passandMove.equals("") ? "" : " ")
-                + resourceBundle.getString("EngineGameInfo.outOfMoveGame")
-                + maxMoveGames;
-      Utils.showMsgNoModal(
-          (resourceBundle.getString("EngineGameInfo.batchGameEndAndScore")
-              + engineList.get(plan.firstIndex()).oriEnginename
-              + "   "
-              + firstWins
-              + ":"
-              + secondWins
-              + "   "
-              + engineList.get(plan.secondIndex()).oriEnginename
-              + (passandMove.equals("") ? "" : " ")
-              + passandMove
-              + ","
-              + resourceBundle.getString("EngineGameInfo.engineGameEndHintKifuPos")
-              + courseFile
-              + File.separator
-              + "EngineGames"));
-    } else if (plan != null) {
-      String jg = resourceBundle.getString("EngineGameInfo.gameFinished");
-      if (engineList.get(resgnEngineIndex).outOfMoveNum)
-        jg = jg + resourceBundle.getString("EngineGameInfo.finishedByMoves");
-      else {
-        if (engineList.get(resgnEngineIndex).doublePass) {
-          jg = jg + resourceBundle.getString("EngineGameInfo.finishedByDoublePass");
-        } else if (resgnEngineIndex == plan.blackIndex()) {
-          jg =
-              jg
-                  + resourceBundle.getString("GameInfoDialog.white")
-                  + "("
-                  + engineList.get(plan.whiteIndex()).oriEnginename
-                  + ")"
-                  + resourceBundle.getString("EngineGameInfo.finishedWin");
-        } else {
-          jg =
-              jg
-                  + resourceBundle.getString("GameInfoDialog.black")
-                  + "("
-                  + engineList.get(plan.blackIndex()).oriEnginename
-                  + ")"
-                  + resourceBundle.getString("EngineGameInfo.finishedWin");
+      } else if (plan != null) {
+        String jg = resourceBundle.getString("EngineGameInfo.gameFinished");
+        if (engineList.get(resgnEngineIndex).outOfMoveNum)
+          jg = jg + resourceBundle.getString("EngineGameInfo.finishedByMoves");
+        else {
+          if (engineList.get(resgnEngineIndex).doublePass) {
+            jg = jg + resourceBundle.getString("EngineGameInfo.finishedByDoublePass");
+          } else if (resgnEngineIndex == plan.blackIndex()) {
+            jg =
+                jg
+                    + resourceBundle.getString("GameInfoDialog.white")
+                    + "("
+                    + engineList.get(plan.whiteIndex()).oriEnginename
+                    + ")"
+                    + resourceBundle.getString("EngineGameInfo.finishedWin");
+          } else {
+            jg =
+                jg
+                    + resourceBundle.getString("GameInfoDialog.black")
+                    + "("
+                    + engineList.get(plan.blackIndex()).oriEnginename
+                    + ")"
+                    + resourceBundle.getString("EngineGameInfo.finishedWin");
+          }
         }
+        if (LizzieFrame.toolbar.AutosavePk) {
+          jg =
+              jg
+                  + ","
+                  + resourceBundle.getString("EngineGameInfo.engineGameEndHintKifuPos")
+                  + courseFile
+                  + File.separator
+                  + "EngineGames";
+        }
+        Utils.showMsgNoModal(jg);
       }
-      if (LizzieFrame.toolbar.AutosavePk) {
-        jg =
-            jg
-                + ","
-                + resourceBundle.getString("EngineGameInfo.engineGameEndHintKifuPos")
-                + courseFile
-                + File.separator
-                + "EngineGames";
-      }
-      Utils.showMsgNoModal(jg);
-    }
-    markEngineGameParticipantsStopped(stoppedTransaction, plan);
-    Lizzie.frame.addInput(true);
-    changeEngIcoForEndPk();
+      markEngineGameParticipantsStopped(stoppedTransaction, plan);
+      Lizzie.frame.addInput(true);
+      changeEngIcoForEndPk();
     } catch (RuntimeException | Error stopFailure) {
       restoreOnFailure = true;
       if (stoppedTransaction != null) {
@@ -2370,7 +2348,10 @@ public class EngineManager {
       throw stopFailure;
     } finally {
       if (stoppedTransaction != null) {
-        if (mannul && stopClaim.wasActive && plan != null && plan.genmove()
+        if (mannul
+            && stopClaim.wasActive
+            && plan != null
+            && plan.genmove()
             && stoppedTransaction.gameHadUnfinishedWork) {
           Leelaz target = Lizzie.leelaz;
           Board board = Lizzie.board;
@@ -2382,7 +2363,9 @@ public class EngineManager {
                       : null;
           if (target != null && incarnation != null) {
             stoppedTransaction.foregroundHandback =
-                () -> restoreStoppedEngineGameForeground(stoppedTransaction, target, incarnation, board);
+                () ->
+                    restoreStoppedEngineGameForeground(
+                        stoppedTransaction, target, incarnation, board);
           }
         }
         finishEngineGameTransactionRetirement(stoppedTransaction, restoreOnFailure);
@@ -2491,7 +2474,7 @@ public class EngineManager {
         if (!isCurrentEngineGameTransactionLocked(gameTransaction)
             || gameTransaction.phase != EngineGamePhase.PREPARING) {
           return null;
-      }
+        }
       }
       if (currentForegroundEngine != null) {
         currentForegroundEngine.notPondering();
@@ -2514,12 +2497,11 @@ public class EngineManager {
         }
       }
 
-
-    Lizzie.frame.setResult("");
-    if (!startupLease.isCurrent()) {
-      return null;
-    }
-    if (firstTime) {
+      Lizzie.frame.setResult("");
+      if (!startupLease.isCurrent()) {
+        return null;
+      }
+      if (firstTime) {
         if (!killOtherEnginesForTransaction(gameTransaction)) {
           return null;
         }
@@ -2539,25 +2521,25 @@ public class EngineManager {
             }
             currentForegroundEngine.clearBestMoves();
           }
-      } else {
+        } else {
           if (!isEmpty && currentForegroundEngine != null) {
-          try {
+            try {
               currentForegroundEngine.normalQuit();
               if (!startupLease.isCurrent()) {
                 return null;
               }
-          } catch (Exception ex) {
+            } catch (Exception ex) {
+            }
           }
         }
       }
-    }
       if (gameAtStart != null && !gameAtStart.genmove()) {
-      // 分析模式对战
+        // 分析模式对战
         ArrayList<Movelist> startList = prepareEngineGameBoard(firstTime, true, gameAtStart);
-      if (!startupLease.isCurrent()) {
-        return null;
-      }
-      if (!firstTime) {
+        if (!startupLease.isCurrent()) {
+          return null;
+        }
+        if (!firstTime) {
           if (!runEngineGameIoStep(gameTransaction, gameTransaction.blackEngine::notPondering)) {
             return null;
           }
@@ -2570,38 +2552,38 @@ public class EngineManager {
           if (!runEngineGameIoStep(gameTransaction, gameTransaction.whiteEngine::clear)) {
             return null;
           }
-      }
-      PkEngineSynchronization blackSynchronization =
+        }
+        PkEngineSynchronization blackSynchronization =
             startEngineForPkSynchronization(
                 gameTransaction, gameTransaction.blackIndex, gameTransaction.blackEngine);
-      if (!startupLease.isCurrent()) return null;
-      PkEngineSynchronization whiteSynchronization =
+        if (!startupLease.isCurrent()) return null;
+        PkEngineSynchronization whiteSynchronization =
             startEngineForPkSynchronization(
                 gameTransaction, gameTransaction.whiteIndex, gameTransaction.whiteEngine);
-      if (!startupLease.isCurrent()) return null;
-      if (abortStartIfPkOccupancyRejected(
-          gameTransaction, blackSynchronization, whiteSynchronization)) {
-        return null;
-      }
-      Runnable runnable =
-          new Runnable() {
-            public void run() {
-              if (!finishPkEngineSynchronizations(
+        if (!startupLease.isCurrent()) return null;
+        if (abortStartIfPkOccupancyRejected(
+            gameTransaction, blackSynchronization, whiteSynchronization)) {
+          return null;
+        }
+        Runnable runnable =
+            new Runnable() {
+              public void run() {
+                if (!finishPkEngineSynchronizations(
                     gameTransaction, blackSynchronization, whiteSynchronization)) {
-                return;
-              }
-              if (startList != null) {
-                try {
-                  Thread.sleep(1000);
-                } catch (InterruptedException e) {
+                  return;
+                }
+                if (startList != null) {
+                  try {
+                    Thread.sleep(1000);
+                  } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     failEngineGameTransaction(
                         gameTransaction,
                         new IllegalStateException(
                             "Engine-game analysis startup was interrupted", e));
                     return;
+                  }
                 }
-              }
                 Leelaz blackEngine = gameTransaction.blackEngine;
                 Leelaz whiteEngine = gameTransaction.whiteEngine;
                 if (Lizzie.config.autoLoadLzsaiEngineVisits) {
@@ -2645,16 +2627,16 @@ public class EngineManager {
                     cmdNumberTemp,
                     BoardFrame.capture(Lizzie.board),
                     firstTime);
-                  }
+              }
             };
         if (System.nanoTime() >= engineGameDeadlineNanos(gameTransaction)) {
           throw new IllegalStateException("Engine-game analysis setup timed out before dispatch");
-                }
+        }
         if (!transitionEngineGameToDispatched(gameTransaction)) {
           return null;
-              }
+        }
         dispatchEngineGameWorker(gameTransaction, "engine-game-analysis-start", runnable);
-              } else {
+      } else {
         // genmove对战
         if (gameTransaction.blackEngine != null) {
           if (!runEngineGameIoStep(gameTransaction, gameTransaction.blackEngine::clearBestMoves)) {
@@ -2665,7 +2647,7 @@ public class EngineManager {
           if (!runEngineGameIoStep(gameTransaction, gameTransaction.whiteEngine::clearBestMoves)) {
             return null;
           }
-              }
+        }
         ArrayList<Movelist> startList = prepareEngineGameBoard(firstTime, false, gameAtStart);
         if (!startupLease.isCurrent()) return null;
         PkEngineSynchronization blackSynchronization =
@@ -2681,23 +2663,23 @@ public class EngineManager {
           return null;
         }
         Runnable runnable =
-                  new Runnable() {
-                    public void run() {
+            new Runnable() {
+              public void run() {
                 if (!finishPkEngineSynchronizations(
                     gameTransaction, blackSynchronization, whiteSynchronization)) {
                   return;
                 }
                 if (startList != null) {
-                        try {
+                  try {
                     Thread.sleep(1000);
-                        } catch (InterruptedException e) {
+                  } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     failEngineGameTransaction(
                         gameTransaction,
                         new IllegalStateException(
                             "Engine-game genmove startup was interrupted", e));
                     return;
-                        }
+                  }
                 }
                 AtomicBoolean activated = new AtomicBoolean();
                 Leelaz blackEngine = gameTransaction.blackEngine;
@@ -2772,15 +2754,15 @@ public class EngineManager {
                 activated.set(true);
                 if (activated.get()) {
                   publishEngineGameStartedUi(gameTransaction, true, firstTime);
-                    }
-            }
-          };
+                }
+              }
+            };
         if (System.nanoTime() >= engineGameDeadlineNanos(gameTransaction)) {
           throw new IllegalStateException("Engine-game genmove setup timed out before dispatch");
         }
         if (!transitionEngineGameToDispatched(gameTransaction)) {
           return null;
-      }
+        }
         dispatchEngineGameWorker(gameTransaction, "engine-game-genmove-start", runnable);
       }
       return gameTransaction;
@@ -2796,8 +2778,7 @@ public class EngineManager {
   private void scheduleProductSuccessorAfterRetirement(
       EngineGameOwnerTransaction stoppedTransaction, EngineGameStopClaim stopClaim) {
     EngineGameInactiveUiToken failedNextGameUi =
-        new EngineGameInactiveUiToken(
-            this, stopClaim.plan, stopClaim.invalidationEpoch, null);
+        new EngineGameInactiveUiToken(this, stopClaim.plan, stopClaim.invalidationEpoch, null);
     runAfterEngineGameTransactionRetirement(
         stoppedTransaction,
         () -> {
@@ -2820,8 +2801,7 @@ public class EngineManager {
     if (summary == null) {
       return;
     }
-    ArrayList<SgfWinLossList> rows =
-        Lizzie.frame != null ? Lizzie.frame.enginePkSgfWinLoss : null;
+    ArrayList<SgfWinLossList> rows = Lizzie.frame != null ? Lizzie.frame.enginePkSgfWinLoss : null;
     if (rows == null) {
       rows = new ArrayList<>();
     }
@@ -2874,10 +2854,10 @@ public class EngineManager {
       primaryFailure = admissionFailure;
       if (transaction != null) {
         failEngineGameTransaction(transaction, admissionFailure);
-              }
+      }
       throw admissionFailure;
     } finally {
-                try {
+      try {
         foregroundEngine.endExclusiveGtpLifecycleTransition();
       } catch (RuntimeException | Error releaseFailure) {
         if (transaction != null) {
@@ -2888,11 +2868,11 @@ public class EngineManager {
             try {
               primaryFailure.addSuppressed(releaseFailure);
             } catch (Throwable ignored) {
-                }
-              }
-              } else {
+            }
+          }
+        } else {
           throw releaseFailure;
-              }
+        }
       }
     }
   }
@@ -3016,19 +2996,13 @@ public class EngineManager {
     transaction.matchRules = state;
     state.black =
         captureMatchRulesOriginal(
-            transaction,
-            transaction.blackEngine(),
-            plan.black(),
-            transaction.blackIncarnation);
+            transaction, transaction.blackEngine(), plan.black(), transaction.blackIncarnation);
     if (!isCurrentEngineGameTransaction(transaction)) {
       return;
     }
     state.white =
         captureMatchRulesOriginal(
-            transaction,
-            transaction.whiteEngine(),
-            plan.white(),
-            transaction.whiteIncarnation);
+            transaction, transaction.whiteEngine(), plan.white(), transaction.whiteIncarnation);
     if (!isCurrentEngineGameTransaction(transaction)) {
       return;
     }
@@ -3071,8 +3045,7 @@ public class EngineManager {
     if (decision.outcome() == MatchRulesAdmission.Outcome.ADMIT_UNVERIFIED) {
       if (existing == null || !existing.sameConsent(decision.consentKey())) {
         boolean accepted =
-            Lizzie.engineGame != null
-                && Lizzie.engineGame.requestUnverifiedConsent(decision);
+            Lizzie.engineGame != null && Lizzie.engineGame.requestUnverifiedConsent(decision);
         if (!accepted) {
           publishFailedMatchRules(target, state, decision);
           if (isCurrentEngineGameTransaction(transaction)) {
@@ -3097,9 +3070,7 @@ public class EngineManager {
   }
 
   private static void publishFailedMatchRules(
-      KataGoRules target,
-      MatchRulesPrepareState state,
-      MatchRulesAdmission.Decision decision) {
+      KataGoRules target, MatchRulesPrepareState state, MatchRulesAdmission.Decision decision) {
     if (Lizzie.engineGame == null || state.black == null || state.white == null) {
       return;
     }
@@ -3172,7 +3143,8 @@ public class EngineManager {
       return;
     }
     side.modifiedOrUncertain = true;
-    Leelaz.EngineRulesOperation operation = side.engine.applyEngineRulesForMatchOwnerOperation(target);
+    Leelaz.EngineRulesOperation operation =
+        side.engine.applyEngineRulesForMatchOwnerOperation(target);
     if (!waitForMatchRulesSettlement(transaction, operation)) {
       copyEngineRulesResult(side, operation.snapshot());
       return;
@@ -3238,7 +3210,8 @@ public class EngineManager {
     if (side.incarnation != null && !side.engine.isCurrentEngineIncarnation(side.incarnation)) {
       return false;
     }
-    Leelaz.EngineRulesOperation operation = side.engine.applyEngineRulesForMatchOwnerOperation(side.original);
+    Leelaz.EngineRulesOperation operation =
+        side.engine.applyEngineRulesForMatchOwnerOperation(side.original);
     EngineRulesResult result;
     try {
       result = operation.await(TimeUnit.SECONDS.toMillis(30));
@@ -3265,10 +3238,7 @@ public class EngineManager {
       return;
     }
     requestEngineGameParticipantRecovery(
-        transaction.manager,
-        side.engine,
-        incarnation,
-        EngineGameRecoveryCause.PROCESS_EXIT);
+        transaction.manager, side.engine, incarnation, EngineGameRecoveryCause.PROCESS_EXIT);
   }
 
   private void appendEngineGameRules(EngineGameOwnerTransaction transaction) {
@@ -3356,7 +3326,7 @@ public class EngineManager {
               () -> selectedEngine.commandNumberSnapshot() != commandNumber,
               "Engine-game analysis startup timed out waiting for analysis dispatch")) {
             return;
-                }
+          }
           AtomicBoolean activated = new AtomicBoolean();
           if (!isCurrentEngineGameTransaction(transaction)) return;
           BoardFrame currentFrame = BoardFrame.capture(Lizzie.board);
@@ -3377,10 +3347,10 @@ public class EngineManager {
           activated.set(true);
           if (activated.get()) {
             publishEngineGameStartedUi(transaction, false, firstTime);
-            }
-          };
+          }
+        };
     dispatchEngineGameWorker(transaction, "engine-game-analysis-activation", activationTask);
-    }
+  }
 
   private boolean waitForEngineGameCondition(
       EngineGameOwnerTransaction transaction, BooleanSupplier condition, String timeoutDetail) {
@@ -3415,13 +3385,11 @@ public class EngineManager {
             long remaining = engineGameDeadlineNanos(transaction) - System.nanoTime();
             if (remaining <= 0L) {
               failEngineGameTransaction(
-                  transaction,
-                  new IllegalStateException("Engine-game startup deadline expired"));
+                  transaction, new IllegalStateException("Engine-game startup deadline expired"));
               return;
             }
             try {
-              TimeUnit.NANOSECONDS.sleep(
-                  Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(250L)));
+              TimeUnit.NANOSECONDS.sleep(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(250L)));
             } catch (InterruptedException interrupted) {
               Thread.currentThread().interrupt();
               if (isCurrentEngineGameTransaction(transaction)) {
@@ -3440,7 +3408,8 @@ public class EngineManager {
     return new Thread(task, name);
   }
 
-  boolean dispatchEngineGameWorker(EngineGameOwnerTransaction transaction, String name, Runnable task) {
+  boolean dispatchEngineGameWorker(
+      EngineGameOwnerTransaction transaction, String name, Runnable task) {
     return dispatchEngineGameWorker(transaction, name, task, false);
   }
 
@@ -3498,9 +3467,7 @@ public class EngineManager {
   }
 
   private void publishEngineGameStartedUi(
-      EngineGameOwnerTransaction transaction,
-      boolean genmove,
-      boolean firstTime) {
+      EngineGameOwnerTransaction transaction, boolean genmove, boolean firstTime) {
     Runnable presentation =
         () ->
             runIfCurrentEngineGameTransaction(
@@ -3523,14 +3490,12 @@ public class EngineManager {
                       runEngineGameCleanupStep(
                           failure,
                           () ->
-                              boardGameInfo.setPlayerWhite(
-                                  transaction.whiteEngine.oriEnginename));
+                              boardGameInfo.setPlayerWhite(transaction.whiteEngine.oriEnginename));
                   failure =
                       runEngineGameCleanupStep(
                           failure,
                           () ->
-                              boardGameInfo.setPlayerBlack(
-                                  transaction.blackEngine.oriEnginename));
+                              boardGameInfo.setPlayerBlack(transaction.blackEngine.oriEnginename));
                   failure = runEngineGameCleanupStep(failure, Lizzie.frame::updateTitle);
                   failure =
                       runEngineGameCleanupStep(
@@ -3582,8 +3547,7 @@ public class EngineManager {
                           () -> {
                             if (Menu.engineMenu != null) {
                               Menu.engineMenu.setText(
-                                  resourceBundle.getString(
-                                      "EngineManager.engineGamePlaying"));
+                                  resourceBundle.getString("EngineManager.engineGamePlaying"));
                             }
                           });
                   failure =
@@ -3648,7 +3612,8 @@ public class EngineManager {
 
   private void checkEngineAlive() {
     if (isEmpty || isSetupModeActive()) return;
-    if (!hasPlayingEngineGameTransaction() && Lizzie.leelaz != null
+    if (!hasPlayingEngineGameTransaction()
+        && Lizzie.leelaz != null
         && Lizzie.leelaz.hasGtpCapability()) {
       if (Lizzie.leelaz.isStarted()
           && Lizzie.leelaz.canCheckAlive
@@ -3723,10 +3688,8 @@ public class EngineManager {
       }
       probes =
           new EngineGameParticipantProbe[] {
-            new EngineGameParticipantProbe(
-                transaction.blackEngine, transaction.blackIncarnation),
-            new EngineGameParticipantProbe(
-                transaction.whiteEngine, transaction.whiteIncarnation)
+            new EngineGameParticipantProbe(transaction.blackEngine, transaction.blackIncarnation),
+            new EngineGameParticipantProbe(transaction.whiteEngine, transaction.whiteIncarnation)
           };
     }
     for (EngineGameParticipantProbe probe : probes) {
@@ -3795,8 +3758,7 @@ public class EngineManager {
     }
     Board restoreBoard = Lizzie.board;
     boolean resumePonder =
-        previousForegroundEngine != null
-            && previousForegroundEngine.isPondering();
+        previousForegroundEngine != null && previousForegroundEngine.isPondering();
     Leelaz preparedTarget = null;
     Leelaz preparedMirror = null;
     InitialEngineStartupSynchronization lifecycleSynchronization = null;
@@ -4211,10 +4173,7 @@ public class EngineManager {
     Object failedIncarnation = engine == null ? null : engine.captureEngineIncarnationFence();
     if (failedIncarnation != null
         && requestEngineGameParticipantRecovery(
-                this,
-                engine,
-                failedIncarnation,
-                EngineGameRecoveryCause.REMOTE_DISCONNECT)
+                this, engine, failedIncarnation, EngineGameRecoveryCause.REMOTE_DISCONNECT)
             == EngineGameRecoveryDisposition.HANDLED) {
       return;
     }
@@ -4507,10 +4466,16 @@ public class EngineManager {
         return false;
       }
       pending.targetEngine.cancelBenchmark();
-      cancelled = engineSwitchUiTracker.tool(
-          pending.uiToken, main, pending.targetIndex,
-          engineDisplayNameWithoutCatalogLookup(pending.targetEngine, pending.targetIndex),
-          pending.targetEngine, resourceBundle.getString("Benchmark.cancelled")).orElse(null);
+      cancelled =
+          engineSwitchUiTracker
+              .tool(
+                  pending.uiToken,
+                  main,
+                  pending.targetIndex,
+                  engineDisplayNameWithoutCatalogLookup(pending.targetEngine, pending.targetIndex),
+                  pending.targetEngine,
+                  resourceBundle.getString("Benchmark.cancelled"))
+              .orElse(null);
       finishEngineSwitchTransaction(pending);
     }
     publishEngineSwitchUiState(cancelled);
@@ -4570,12 +4535,12 @@ public class EngineManager {
       restartTarget = preparedSwitch.targetEngine;
     }
     if (preparedSwitch == null) {
-    EngineLifecycleReservations reservations =
+      EngineLifecycleReservations reservations =
           reservePreparedEngineSwitch(currentForegroundEngine, restartTarget, null);
-    if (reservations == null) {
-      showForegroundEngineLeaseInUse();
-      return;
-    }
+      if (reservations == null) {
+        showForegroundEngineLeaseInUse();
+        return;
+      }
       shutdownEngineForRestart(restartTarget);
       switchEngineInternal(
           restartEngineIndex,
@@ -4644,9 +4609,9 @@ public class EngineManager {
       targetEngine = preparedSwitch.targetEngine;
     }
     if (preparedSwitch == null) {
-    EngineLifecycleReservations reservations =
+      EngineLifecycleReservations reservations =
           reservePreparedEngineSwitch(currentForegroundEngine, targetEngine, null);
-    if (reservations == null) {
+      if (reservations == null) {
         showForegroundEngineLeaseInUse();
         return;
       }
@@ -4700,8 +4665,7 @@ public class EngineManager {
     }
     int restartEngineIndex = currentEngineNo2;
     if (rejectSameEngineSelection(restartEngineIndex, false)) return;
-    boolean restartPonderIntent =
-        Lizzie.leelaz != null && Lizzie.leelaz.isPondering();
+    boolean restartPonderIntent = Lizzie.leelaz != null && Lizzie.leelaz.isPondering();
     Leelaz secondaryTarget = engineList.get(restartEngineIndex);
     PreparedEngineSwitch preparedSwitch;
     try {
@@ -4865,8 +4829,7 @@ public class EngineManager {
   protected void showForegroundEngineLeaseInUse() {
     Leelaz engine = Lizzie.leelaz;
     long generation = engine == null ? -1L : engine.exclusiveOccupancyPromptGeneration();
-    String message =
-        Lizzie.resourceBundle.getString("AnalysisSettings.reuseStatus.existing_lease");
+    String message = Lizzie.resourceBundle.getString("AnalysisSettings.reuseStatus.existing_lease");
     SwingUtilities.invokeLater(
         () -> {
           if (engine != null && generation != engine.exclusiveOccupancyPromptGeneration()) {
@@ -4991,8 +4954,7 @@ public class EngineManager {
         try {
           startEngineForPkWithTransactionContext(transaction, newEng, index);
         } catch (IOException failure) {
-          failPkEngineSynchronization(
-              newEng, transaction, newEng.captureEngineIncarnationFence());
+          failPkEngineSynchronization(newEng, transaction, newEng.captureEngineIncarnationFence());
           failure.printStackTrace();
           lifecycleSynchronization.close();
           completion.fail();
@@ -5002,9 +4964,7 @@ public class EngineManager {
         newEng.canRestoreDymPda = false;
         if (!runEngineGameStartupCommandStep(
                 transaction,
-                () ->
-                    newEng.boardSizeForEngineGame(
-                        transaction, newEng.width, newEng.height))
+                () -> newEng.boardSizeForEngineGame(transaction, newEng.width, newEng.height))
             || !runEngineGameStartupCommandStep(
                 transaction, () -> newEng.sendCommand("komi " + newEng.komi))) {
           lifecycleSynchronization.close();
@@ -5016,8 +4976,7 @@ public class EngineManager {
       newEng.isResigning = false;
       Object synchronizationIncarnation = newEng.currentEngineIncarnation();
       if (transaction != null
-          && !bindEngineGameStartupIncarnation(
-              transaction, newEng, synchronizationIncarnation)) {
+          && !bindEngineGameStartupIncarnation(transaction, newEng, synchronizationIncarnation)) {
         lifecycleSynchronization.close();
         completion.fail();
         return completion;
@@ -5030,8 +4989,7 @@ public class EngineManager {
                 if (!runEngineGameStartupCommandStep(
                         transaction,
                         () ->
-                            newEng.boardSizeForEngineGame(
-                                transaction, newEng.width, newEng.height))
+                            newEng.boardSizeForEngineGame(transaction, newEng.width, newEng.height))
                     || !runEngineGameStartupCommandStep(
                         transaction, () -> newEng.sendCommand("komi " + newEng.komi))) {
                   frozenLifecycleSynchronization.close();
@@ -5052,8 +5010,7 @@ public class EngineManager {
                   try {
                     if (newEng.isKataGoPda) {
                       if (!runEngineGameStartupCommandStep(
-                          transaction,
-                          () -> newEng.sendCommand("dympdacap " + newEng.pdaCap))) {
+                          transaction, () -> newEng.sendCommand("dympdacap " + newEng.pdaCap))) {
                         completion.fail();
                         return;
                       }
@@ -5072,8 +5029,7 @@ public class EngineManager {
                 },
                 detail -> {
                   try {
-                    failPkEngineSynchronization(
-                        newEng, transaction, synchronizationIncarnation);
+                    failPkEngineSynchronization(newEng, transaction, synchronizationIncarnation);
                   } finally {
                     frozenLifecycleSynchronization.close();
                   }
@@ -5090,8 +5046,7 @@ public class EngineManager {
           frozenLifecycleSynchronization,
           completion);
     } catch (RuntimeException | Error failure) {
-      failPkEngineSynchronization(
-          newEng, transaction, newEng.captureEngineIncarnationFence());
+      failPkEngineSynchronization(newEng, transaction, newEng.captureEngineIncarnationFence());
       lifecycleSynchronization.close();
       completion.fail();
       return completion;
@@ -5128,8 +5083,7 @@ public class EngineManager {
     if (failure != null) {
       throw failure;
     }
-    recordEngineGameStartupIncarnation(
-        transaction, engine, engine.captureEngineIncarnationFence());
+    recordEngineGameStartupIncarnation(transaction, engine, engine.captureEngineIncarnationFence());
   }
 
   /**
@@ -5212,10 +5166,8 @@ public class EngineManager {
           return false;
         }
         if (transaction.phase == EngineGamePhase.DISPATCHED
-            && isExactCatalogSlot(
-                transaction.manager, transaction.blackIndex, blackEngine)
-            && isExactCatalogSlot(
-                transaction.manager, transaction.whiteIndex, whiteEngine)
+            && isExactCatalogSlot(transaction.manager, transaction.blackIndex, blackEngine)
+            && isExactCatalogSlot(transaction.manager, transaction.whiteIndex, whiteEngine)
             && (transaction.blackStartupIncarnation == null
                 || transaction.blackStartupIncarnation == blackIncarnation)
             && (transaction.whiteStartupIncarnation == null
@@ -5260,7 +5212,7 @@ public class EngineManager {
         }
       }
       finishAutomaticEngineGameRetirementIfQuiescent(stopClaim.transaction);
-      }
+    }
     if (!stopClaim.wasActive && !stopClaim.wasStarting) {
       return;
     }
@@ -5272,8 +5224,7 @@ public class EngineManager {
   private EngineGameInactiveUiToken inactiveUiToken(EngineGameStopClaim stopClaim) {
     return stopClaim == null
         ? null
-        : new EngineGameInactiveUiToken(
-            this, stopClaim.plan, stopClaim.invalidationEpoch, null);
+        : new EngineGameInactiveUiToken(this, stopClaim.plan, stopClaim.invalidationEpoch, null);
   }
 
   private void restoreUiAfterEngineGameStartAbort() {
@@ -5338,8 +5289,7 @@ public class EngineManager {
               failure.printStackTrace();
             }
             notifyEngineGameStartFailed(
-                resourceText(
-                    "EngineManager.engineGameStartFailed", "Engine game failed to start"));
+                resourceText("EngineManager.engineGameStartFailed", "Engine game failed to start"));
           } finally {
             try {
               if (afterRestore != null) {
@@ -5364,8 +5314,7 @@ public class EngineManager {
     }
   }
 
-  private static boolean isCurrentEngineGameInactiveUiTokenLocked(
-      EngineGameInactiveUiToken token) {
+  private static boolean isCurrentEngineGameInactiveUiTokenLocked(EngineGameInactiveUiToken token) {
     return token != null
         && token.manager != null
         && Lizzie.engineManager == token.manager
@@ -5586,9 +5535,7 @@ public class EngineManager {
                   newEng.nameCmd();
                   newEng.setResponseUpToDate();
                   EngineGamePlan livePlan =
-                      activeEngineGameTransaction == null
-                          ? null
-                          : activeEngineGameTransaction.plan;
+                      activeEngineGameTransaction == null ? null : activeEngineGameTransaction.plan;
                   if (livePlan != null && livePlan.genmove()) {
                     applyPlanTime(livePlan, newEng, index);
                     if (Lizzie.board.getHistory().isBlacksTurn()) {
@@ -5767,11 +5714,7 @@ public class EngineManager {
     }
 
     synchronized Optional<EngineSwitchUiSnapshot> succeed(
-        long token,
-        boolean main,
-        int targetIndex,
-        String targetName,
-        Leelaz targetEngine) {
+        long token, boolean main, int targetIndex, String targetName, Leelaz targetEngine) {
       return succeed(token, main, targetIndex, targetName, targetEngine, () -> {});
     }
 
@@ -5814,10 +5757,21 @@ public class EngineManager {
               && current.phase != EngineSwitchUiPhase.TOOL)) {
         return Optional.empty();
       }
-      EngineSwitchUiSnapshot next = new EngineSwitchUiSnapshot(
-          token, main, EngineSwitchUiPhase.TOOL, index, name, index, name, status,
-          current.rollbackIndex, current.rollbackName, engine, engine,
-          current.rollbackEngineIdentity);
+      EngineSwitchUiSnapshot next =
+          new EngineSwitchUiSnapshot(
+              token,
+              main,
+              EngineSwitchUiPhase.TOOL,
+              index,
+              name,
+              index,
+              name,
+              status,
+              current.rollbackIndex,
+              current.rollbackName,
+              engine,
+              engine,
+              current.rollbackEngineIdentity);
       set(main, next);
       return Optional.of(next);
     }
@@ -5920,6 +5874,7 @@ public class EngineManager {
      * required to claim the failure: a successful rollback deliberately advances PRIMARY.
      */
     private volatile Leelaz failurePresentationPrimaryEngine;
+
     private volatile long failurePresentationPrimaryGeneration = -1L;
     private volatile long failurePresentationUiToken = -1L;
     private final Object completionLock = new Object();
@@ -6157,8 +6112,7 @@ public class EngineManager {
       }
       Object current = analysisOutputBinding.get();
       return current == binding
-          || (current == null
-              && analysisOutputBinding.compareAndSet(null, binding));
+          || (current == null && analysisOutputBinding.compareAndSet(null, binding));
     }
   }
 
@@ -6376,9 +6330,7 @@ public class EngineManager {
     EngineSwitchTransaction failedTransaction = installedTransactionFor(failed);
     AtomicReference<FailedTargetSettlement> targetSettlement = new AtomicReference<>();
     runFailedSwitchCleanup(
-        () ->
-            targetSettlement.set(
-                claimAndRollbackFailedTarget(failed, failedTransaction)));
+        () -> targetSettlement.set(claimAndRollbackFailedTarget(failed, failedTransaction)));
     FailedTargetSettlement settledTarget = targetSettlement.get();
     boolean failedTargetWasSelected = settledTarget != null;
     FailedRollbackRecovery rollbackRecovery =
@@ -6418,8 +6370,7 @@ public class EngineManager {
       return null;
     }
     boolean directTarget =
-        transaction.targetEngine == failed.targetEngineIdentity
-            && transaction.main == failed.main;
+        transaction.targetEngine == failed.targetEngineIdentity && transaction.main == failed.main;
     Object expectedIncarnation =
         directTarget
             ? transaction.targetEngineIncarnation
@@ -6453,12 +6404,10 @@ public class EngineManager {
               runtimeStop = null;
             } else {
               runtimeStop =
-                  quarantineUnavailableEngineLocked(
-                      target, expectedIncarnation, failed.token);
+                  quarantineUnavailableEngineLocked(target, expectedIncarnation, failed.token);
             }
             rollbackEngineSelectionAfterFailedSwitch(failed);
-            captureFailurePresentationPrimaryAuthorityLocked(
-                transaction, failed.token);
+            captureFailurePresentationPrimaryAuthorityLocked(transaction, failed.token);
             settlement.set(new FailedTargetSettlement(runtimeStop));
           };
       if (failed.main) {
@@ -6479,8 +6428,7 @@ public class EngineManager {
           }
         }
       } else {
-        target.runIfEngineIncarnationFenceUnchanged(
-            expectedIncarnation, exactRollback);
+        target.runIfEngineIncarnationFenceUnchanged(expectedIncarnation, exactRollback);
       }
       return settlement.get();
     }
@@ -6495,8 +6443,7 @@ public class EngineManager {
       return;
     }
     Leelaz presentationPrimary = Lizzie.leelaz;
-    long presentationPrimaryGeneration =
-        Lizzie.capturePrimaryEngineGeneration(presentationPrimary);
+    long presentationPrimaryGeneration = Lizzie.capturePrimaryEngineGeneration(presentationPrimary);
     if (presentationPrimaryGeneration < 0L) {
       return;
     }
@@ -6769,8 +6716,7 @@ public class EngineManager {
     // Presentation callbacks claim a non-blocking incarnation lease before inspecting selection
     // state, but never retain the endpoint monitor while doing so. Deferring an EDT caller that
     // already owns selection state prevents either monitor from being nested in the other order.
-    if (SwingUtilities.isEventDispatchThread()
-        && !Thread.holdsLock(ENGINE_SELECTION_STATE_LOCK)) {
+    if (SwingUtilities.isEventDispatchThread() && !Thread.holdsLock(ENGINE_SELECTION_STATE_LOCK)) {
       update.run();
     } else {
       SwingUtilities.invokeLater(update);
@@ -7051,8 +6997,7 @@ public class EngineManager {
     ENGINE_GAME_ANALYSIS_OUTPUT_MUTATION_LOCK.lock();
     try {
       synchronized (ENGINE_SELECTION_STATE_LOCK) {
-        Object recoveryBinding =
-            recovery == null ? null : recovery.analysisOutputBinding.get();
+        Object recoveryBinding = recovery == null ? null : recovery.analysisOutputBinding.get();
         if (!isCurrentFailedRollbackRecoveryLocked(recovery)
             || Lizzie.leelaz != recovery.engine
             || currentEngineNo != recovery.engineIndex) {
@@ -7101,8 +7046,7 @@ public class EngineManager {
           finishFailedRollbackRecovery(
               recovery,
               null,
-              Leelaz.safeFailureDetail(
-                  schedulingFailure, "rollback recovery scheduling failed"));
+              Leelaz.safeFailureDetail(schedulingFailure, "rollback recovery scheduling failed"));
         };
     Runnable work =
         () -> {
@@ -7124,8 +7068,7 @@ public class EngineManager {
           try {
             Thread worker =
                 createFailedRollbackRecoveryWorker(
-                    work,
-                    "lizzie-failed-engine-rollback-" + recovery.failedSnapshot.token);
+                    work, "lizzie-failed-engine-rollback-" + recovery.failedSnapshot.token);
             configureFailedRollbackRecoveryWorker(worker);
             startFailedRollbackRecoveryWorker(worker);
           } catch (RuntimeException | Error schedulingFailure) {
@@ -7266,8 +7209,7 @@ public class EngineManager {
               || !recovery.engine.isCurrentLiveEngineIncarnation(recoveryBinding))) {
         failureDetail = "Previous engine died before rollback recovery was committed";
       }
-      if (failureDetail == null
-          && !publishFailedRollbackPrimary(recovery, recoveryBinding)) {
+      if (failureDetail == null && !publishFailedRollbackPrimary(recovery, recoveryBinding)) {
         failureDetail = "Primary owner changed during rollback recovery";
       }
       if (failureDetail == null) {
@@ -7403,8 +7345,8 @@ public class EngineManager {
       closeDeferredEngineGameRecoverySynchronization(recoveryBatch.current);
     }
     Lizzie.engineGame.resetForTest();
-
   }
+
   static EngineGameOwnerTransaction activeEngineGameTransactionForTest() {
     return activeEngineGameTransaction;
   }
@@ -7477,8 +7419,11 @@ public class EngineManager {
           }
           Leelaz blackEngine = catalog.get(blackIndex);
           Leelaz whiteEngine = catalog.get(whiteIndex);
-          if (blackEngine == null || whiteEngine == null || blackEngine == whiteEngine
-              || !blackEngine.hasGtpCapability() || !whiteEngine.hasGtpCapability()) {
+          if (blackEngine == null
+              || whiteEngine == null
+              || blackEngine == whiteEngine
+              || !blackEngine.hasGtpCapability()
+              || !whiteEngine.hasGtpCapability()) {
             return null;
           }
           EngineGameOwnerTransaction transaction =
@@ -7523,20 +7468,10 @@ public class EngineManager {
     int maxMoves = plan.maxMoveLimitEnabled() ? plan.maxMoves() : 0;
     ParticipantBinding black =
         ParticipantBinding.of(
-            product,
-            EngineGameSide.BLACK,
-            owner.blackIndex,
-            blackLimits,
-            playMode,
-            maxMoves);
+            product, EngineGameSide.BLACK, owner.blackIndex, blackLimits, playMode, maxMoves);
     ParticipantBinding white =
         ParticipantBinding.of(
-            product,
-            EngineGameSide.WHITE,
-            owner.whiteIndex,
-            whiteLimits,
-            playMode,
-            maxMoves);
+            product, EngineGameSide.WHITE, owner.whiteIndex, whiteLimits, playMode, maxMoves);
     owner.blackBinding = black;
     owner.whiteBinding = white;
     owner.product = product;
@@ -7554,8 +7489,7 @@ public class EngineManager {
   }
 
   /** Accepts one current-game intent; only the worker below performs protocol I/O. */
-  public static boolean reviseEngineGameKomi(
-      Object ownerToken, double target, Runnable onChange) {
+  public static boolean reviseEngineGameKomi(Object ownerToken, double target, Runnable onChange) {
     if (!(ownerToken instanceof EngineGameOwnerTransaction owner) || !Double.isFinite(target)) {
       return false;
     }
@@ -7564,7 +7498,8 @@ public class EngineManager {
     boolean start;
     owner.mutationLock.lock();
     try {
-      if (!isCurrentEngineGameTransaction(owner) || owner.phase != EngineGamePhase.ACTIVE
+      if (!isCurrentEngineGameTransaction(owner)
+          || owner.phase != EngineGamePhase.ACTIVE
           || Lizzie.board == null) {
         return false;
       }
@@ -7581,9 +7516,11 @@ public class EngineManager {
     }
     onChange.run();
     if (start) {
-      boolean dispatched = owner.manager.dispatchEngineGameWorker(
-          owner, "engine-game-komi-" + owner.epoch,
-          () -> runEngineGameKomiUpdate(owner, board, history, onChange));
+      boolean dispatched =
+          owner.manager.dispatchEngineGameWorker(
+              owner,
+              "engine-game-komi-" + owner.epoch,
+              () -> runEngineGameKomiUpdate(owner, board, history, onChange));
       if (!dispatched && owner.phase == EngineGamePhase.FAILED) {
         failEngineGameKomiUpdate(owner, "Could not schedule engine-game komi update", onChange);
       }
@@ -7597,14 +7534,16 @@ public class EngineManager {
     try {
       // The current genmove may complete. Its successor records the pending side instead of
       // starting another request because paused() includes the komi update barrier.
-      while (isCurrentEngineGameTransaction(owner) && owner.isGenmove()
+      while (isCurrentEngineGameTransaction(owner)
+          && owner.isGenmove()
           && !owner.genmovePauseSettled()) {
         Thread.sleep(10L);
       }
       if (!isCurrentEngineGameTransaction(owner)) return;
       confirmEngineGameKomiParticipants(owner, null);
-      long deadline = System.nanoTime()
-          + TimeUnit.MILLISECONDS.toNanos(owner.manager.engineGameStartupTimeoutMillis());
+      long deadline =
+          System.nanoTime()
+              + TimeUnit.MILLISECONDS.toNanos(owner.manager.engineGameStartupTimeoutMillis());
       // Drain admitted move continuations and their responses. This worker owns one lease.
       while (isCurrentEngineGameTransaction(owner) && owner.operationsInFlight.get() > 1) {
         if (System.nanoTime() >= deadline) {
@@ -7640,7 +7579,8 @@ public class EngineManager {
         try {
           if (!isCurrentEngineGameTransaction(owner)) return;
           synchronized (board) {
-            if (Lizzie.board != board || board.getHistory() != history
+            if (Lizzie.board != board
+                || board.getHistory() != history
                 || history.getCurrentHistoryNode() != node
                 || board.getContextRevision() != boardRevision) {
               throw new IllegalStateException("Engine-game position changed during komi update");
@@ -7679,21 +7619,26 @@ public class EngineManager {
         failEngineGameKomiUpdate(owner, failure.getMessage(), onChange);
       }
     } finally {
-      if (owner.komiState != null && owner.komiState.pending()
+      if (owner.komiState != null
+          && owner.komiState.pending()
           && owner.phase == EngineGamePhase.FAILED) {
         Throwable cause = owner.terminalFailure;
-        failEngineGameKomiUpdate(owner,
-            cause == null ? "Engine-game komi update failed" : cause.getMessage(), onChange);
+        failEngineGameKomiUpdate(
+            owner, cause == null ? "Engine-game komi update failed" : cause.getMessage(), onChange);
       }
       if (owner.komiUnconfirmed && !isCurrentEngineGameTransaction(owner)) {
         // This worker's operation lease keeps retirement closed while physical cleanup runs off
         // EDT.
         boolean interrupted = Thread.interrupted();
         try {
-          Throwable cleanupFailure = runEngineGameCleanupStep(null,
-              () -> owner.blackEngine.forceQuitIfCurrentIncarnation(owner.blackIncarnation));
-          cleanupFailure = runEngineGameCleanupStep(cleanupFailure,
-              () -> owner.whiteEngine.forceQuitIfCurrentIncarnation(owner.whiteIncarnation));
+          Throwable cleanupFailure =
+              runEngineGameCleanupStep(
+                  null,
+                  () -> owner.blackEngine.forceQuitIfCurrentIncarnation(owner.blackIncarnation));
+          cleanupFailure =
+              runEngineGameCleanupStep(
+                  cleanupFailure,
+                  () -> owner.whiteEngine.forceQuitIfCurrentIncarnation(owner.whiteIncarnation));
           if (cleanupFailure != null) appendEngineGameTerminalFailure(owner, cleanupFailure);
         } finally {
           if (interrupted) Thread.currentThread().interrupt();
@@ -7706,13 +7651,21 @@ public class EngineManager {
       EngineGameOwnerTransaction owner, Double target) throws InterruptedException {
     CountDownLatch completed = new CountDownLatch(2);
     AtomicReference<String> failure = new AtomicReference<>();
-    owner.blackEngine.confirmEngineGameKomi(owner, owner.blackIncarnation, target,
-        completed::countDown, detail -> {
+    owner.blackEngine.confirmEngineGameKomi(
+        owner,
+        owner.blackIncarnation,
+        target,
+        completed::countDown,
+        detail -> {
           failure.compareAndSet(null, "Black: " + detail);
           completed.countDown();
         });
-    owner.whiteEngine.confirmEngineGameKomi(owner, owner.whiteIncarnation, target,
-        completed::countDown, detail -> {
+    owner.whiteEngine.confirmEngineGameKomi(
+        owner,
+        owner.whiteIncarnation,
+        target,
+        completed::countDown,
+        detail -> {
           failure.compareAndSet(null, "White: " + detail);
           completed.countDown();
         });
@@ -7799,10 +7752,11 @@ public class EngineManager {
     EngineGameSide pending;
     owner.mutationLock.lock();
     try {
-      if (!isCurrentEngineGameTransaction(owner) || owner.phase != EngineGamePhase.ACTIVE
+      if (!isCurrentEngineGameTransaction(owner)
+          || owner.phase != EngineGamePhase.ACTIVE
           || owner.paused()) return;
-      pending = owner.product != null
-          ? owner.product.takePendingGenmoveSide() : owner.pendingGenmoveSide;
+      pending =
+          owner.product != null ? owner.product.takePendingGenmoveSide() : owner.pendingGenmoveSide;
       owner.pendingGenmoveSide = null;
       owner.genmovePauseSettled = false;
     } finally {
@@ -7814,13 +7768,14 @@ public class EngineManager {
       }
       Leelaz mover = pending == EngineGameSide.BLACK ? owner.blackEngine : owner.whiteEngine;
       String color = pending == EngineGameSide.BLACK ? "B" : "W";
-      if (!runEngineGameIoStep(owner, () -> {
-        mover.nameCmd();
-        mover.genmoveForPk(color, owner);
-      })) return;
+      if (!runEngineGameIoStep(
+          owner,
+          () -> {
+            mover.nameCmd();
+            mover.genmoveForPk(color, owner);
+          })) return;
       if (Lizzie.config != null && Lizzie.config.enginePkPonder) {
-        Leelaz opponent =
-            pending == EngineGameSide.BLACK ? owner.whiteEngine : owner.blackEngine;
+        Leelaz opponent = pending == EngineGameSide.BLACK ? owner.whiteEngine : owner.blackEngine;
         runEngineGameIoStep(owner, opponent::ponder);
       }
       return;
@@ -7877,7 +7832,6 @@ public class EngineManager {
       }
     }
   }
-
 
   static boolean runIfNoActiveEngineGameAnalysisOutput(Runnable action) {
     if (action == null) {
@@ -7987,8 +7941,7 @@ public class EngineManager {
     boolean claimed = false;
     try {
       EngineGamePrimaryContext context =
-          captureEngineGameAnalysisOutputContext(
-              transaction, participant, participantIncarnation);
+          captureEngineGameAnalysisOutputContext(transaction, participant, participantIncarnation);
       if (context == null) {
         return null;
       }
@@ -8052,8 +8005,7 @@ public class EngineManager {
       synchronized (ENGINE_SELECTION_STATE_LOCK) {
         EngineManager manager = Lizzie.engineManager;
         boolean hasBarrier = hasEngineGameAnalysisOutputBarrierLocked();
-        Object bindingRecoveryToken =
-            engine.analysisOutputRecoveryToken(expectedIncarnation);
+        Object bindingRecoveryToken = engine.analysisOutputRecoveryToken(expectedIncarnation);
         if (bindingRecoveryToken != null) {
           if (manager == null
               || recoveryToken != bindingRecoveryToken
@@ -8068,10 +8020,14 @@ public class EngineManager {
           EngineGameOwnerTransaction retiring = retiringEngineGameTransaction;
           InitialEngineStartupSynchronization handback =
               retiring == null ? null : retiring.foregroundSynchronization;
-          if (handback == null || restoreOwner != handback.lifecycleOwner
-              || handback.targetEngine != engine || Lizzie.board != handback.board
+          if (handback == null
+              || restoreOwner != handback.lifecycleOwner
+              || handback.targetEngine != engine
+              || Lizzie.board != handback.board
               || Lizzie.leelaz != engine
-              || (engine == retiring.blackEngine ? retiring.blackIncarnation : retiring.whiteIncarnation)
+              || (engine == retiring.blackEngine
+                      ? retiring.blackIncarnation
+                      : retiring.whiteIncarnation)
                   != expectedIncarnation) {
             return null;
           }
@@ -8082,10 +8038,7 @@ public class EngineManager {
       }
       claimed = true;
       return new TransactionlessAnalysisWriteLease(
-          kind,
-          kind == TransactionlessAnalysisWriteKind.RECOVERY_TOMBSTONE
-              ? recoveryToken
-              : null);
+          kind, kind == TransactionlessAnalysisWriteKind.RECOVERY_TOMBSTONE ? recoveryToken : null);
     } finally {
       if (!claimed) {
         ENGINE_GAME_ANALYSIS_OUTPUT_MUTATION_LOCK.unlock();
@@ -8110,12 +8063,10 @@ public class EngineManager {
   private boolean isExactDeferredEngineGameAnalysisRecoveryLocked(
       Leelaz engine, Object expectedIncarnation, Object recoveryToken) {
     EngineGameRecoveryBatch recoveryBatch = activeEngineGameRecoveryBatch;
-    EngineGameDeferredRecovery recovery =
-        recoveryBatch == null ? null : recoveryBatch.current;
+    EngineGameDeferredRecovery recovery = recoveryBatch == null ? null : recoveryBatch.current;
     InitialEngineStartupSynchronization synchronization =
         recovery == null ? null : recovery.synchronization;
-    Object replacementIncarnation =
-        recovery == null ? null : recovery.replacementIncarnation;
+    Object replacementIncarnation = recovery == null ? null : recovery.replacementIncarnation;
     return recovery != null
         && recoveryToken == recovery
         && recoveryBatch.transaction == recovery.transaction
@@ -8136,7 +8087,8 @@ public class EngineManager {
         && engine.analysisOutputRecoveryToken(expectedIncarnation) == recoveryToken;
   }
 
-  private static boolean isCurrentEngineGameTransactionLocked(EngineGameOwnerTransaction transaction) {
+  private static boolean isCurrentEngineGameTransactionLocked(
+      EngineGameOwnerTransaction transaction) {
     return transaction != null
         && activeEngineGameTransaction == transaction
         && engineGameTransactionSequence == transaction.epoch
@@ -8196,6 +8148,7 @@ public class EngineManager {
         || activeEngineGameRecoveryBatch != null
         || (manager != null && manager.failedRollbackRecovery.get() != null);
   }
+
   static boolean isEngineGameOutputAdmissionOpen(EngineGameOwnerTransaction transaction) {
     if (transaction == null) {
       return false;
@@ -8421,8 +8374,7 @@ public class EngineManager {
     try {
       synchronized (ENGINE_SELECTION_STATE_LOCK) {
         if (isCurrentEngineGameTransactionLocked(transaction)) {
-          transaction.gameWasActiveBeforeTerminal =
-              transaction.phase == EngineGamePhase.ACTIVE;
+          transaction.gameWasActiveBeforeTerminal = transaction.phase == EngineGamePhase.ACTIVE;
           transaction.gameWasStartingBeforeTerminal =
               transaction.phase == EngineGamePhase.PREPARING
                   || transaction.phase == EngineGamePhase.DISPATCHED;
@@ -8453,10 +8405,18 @@ public class EngineManager {
         cancellationFailure = appendEngineGameFailure(cancellationFailure, endpointFailure);
       }
       if (transaction.komiUnconfirmed) {
-        cancellationFailure = runEngineGameCleanupStep(cancellationFailure,
-            () -> transaction.blackEngine.markUnavailableIfCurrentIncarnation(transaction.blackIncarnation));
-        cancellationFailure = runEngineGameCleanupStep(cancellationFailure,
-            () -> transaction.whiteEngine.markUnavailableIfCurrentIncarnation(transaction.whiteIncarnation));
+        cancellationFailure =
+            runEngineGameCleanupStep(
+                cancellationFailure,
+                () ->
+                    transaction.blackEngine.markUnavailableIfCurrentIncarnation(
+                        transaction.blackIncarnation));
+        cancellationFailure =
+            runEngineGameCleanupStep(
+                cancellationFailure,
+                () ->
+                    transaction.whiteEngine.markUnavailableIfCurrentIncarnation(
+                        transaction.whiteIncarnation));
       }
       if (cancellationFailure != null) {
         appendEngineGameTerminalFailure(transaction, cancellationFailure);
@@ -8480,8 +8440,7 @@ public class EngineManager {
     }
     long graceMillis = ENGINE_GAME_PHYSICAL_REQUEST_FORCE_GRACE_MILLIS;
     try {
-      graceMillis =
-          Math.max(0L, transaction.manager.engineGamePhysicalRequestForceGraceMillis());
+      graceMillis = Math.max(0L, transaction.manager.engineGamePhysicalRequestForceGraceMillis());
     } catch (RuntimeException | Error graceFailure) {
       appendEngineGameTerminalFailure(transaction, graceFailure);
     }
@@ -8493,9 +8452,7 @@ public class EngineManager {
         };
     try {
       transaction.manager.scheduleEngineGamePhysicalRequestWatchdog(
-          guarded,
-          graceMillis,
-          "engine-game-physical-watchdog-" + transaction.epoch);
+          guarded, graceMillis, "engine-game-physical-watchdog-" + transaction.epoch);
     } catch (RuntimeException | Error schedulingFailure) {
       appendEngineGameTerminalFailure(transaction, schedulingFailure);
       scheduleEngineGamePhysicalRequestWatchdogFallback(
@@ -8503,8 +8460,7 @@ public class EngineManager {
     }
   }
 
-  private static boolean hasOpenEngineGamePhysicalRequest(
-      EngineGameOwnerTransaction transaction) {
+  private static boolean hasOpenEngineGamePhysicalRequest(EngineGameOwnerTransaction transaction) {
     for (EngineGamePhysicalRequestLease request : transaction.physicalRequests) {
       if (request.isOpen()) {
         return true;
@@ -8514,10 +8470,8 @@ public class EngineManager {
   }
 
   /** Claims every lease for one exact stream before issuing its single physical abort. */
-  private static void forceOpenEngineGamePhysicalRequests(
-      EngineGameOwnerTransaction transaction) {
-    List<EngineGamePhysicalRequestLease> snapshot =
-        new ArrayList<>(transaction.physicalRequests);
+  private static void forceOpenEngineGamePhysicalRequests(EngineGameOwnerTransaction transaction) {
+    List<EngineGamePhysicalRequestLease> snapshot = new ArrayList<>(transaction.physicalRequests);
     boolean[] grouped = new boolean[snapshot.size()];
     for (int index = 0; index < snapshot.size(); index++) {
       if (grouped[index]) {
@@ -8595,8 +8549,7 @@ public class EngineManager {
   private static void releaseOpenEngineGamePhysicalRequestsWithoutForce(
       EngineGameOwnerTransaction transaction) {
     Throwable releaseFailure = null;
-    for (EngineGamePhysicalRequestLease request :
-        new ArrayList<>(transaction.physicalRequests)) {
+    for (EngineGamePhysicalRequestLease request : new ArrayList<>(transaction.physicalRequests)) {
       if (!request.claimForce()) {
         continue;
       }
@@ -8611,8 +8564,7 @@ public class EngineManager {
     }
   }
 
-  private static void runDelayedEngineGamePhysicalRequestWatchdog(
-      Runnable task, long graceMillis) {
+  private static void runDelayedEngineGamePhysicalRequestWatchdog(Runnable task, long graceMillis) {
     boolean interrupted = false;
     try {
       if (graceMillis > 0L) {
@@ -8639,8 +8591,7 @@ public class EngineManager {
    */
   protected void scheduleEngineGamePhysicalRequestWatchdog(
       Runnable task, long graceMillis, String name) {
-    ENGINE_GAME_PHYSICAL_REQUEST_WATCHDOG.schedule(
-        task, graceMillis, TimeUnit.MILLISECONDS);
+    ENGINE_GAME_PHYSICAL_REQUEST_WATCHDOG.schedule(task, graceMillis, TimeUnit.MILLISECONDS);
   }
 
   private static ScheduledThreadPoolExecutor createEngineGamePhysicalRequestWatchdogExecutor() {
@@ -8663,8 +8614,7 @@ public class EngineManager {
       return;
     }
     synchronized (transaction) {
-      transaction.terminalFailure =
-          appendEngineGameFailure(transaction.terminalFailure, failure);
+      transaction.terminalFailure = appendEngineGameFailure(transaction.terminalFailure, failure);
     }
   }
 
@@ -8804,7 +8754,8 @@ public class EngineManager {
         return;
       }
       synchronization =
-          InitialEngineStartupSynchronization.capturePrepared(null, target, null, board, false, false);
+          InitialEngineStartupSynchronization.capturePrepared(
+              null, target, null, board, false, false);
       InitialEngineStartupSynchronization handback = synchronization;
       transaction.foregroundSynchronization = handback;
       handback.beforeRestore =
@@ -8818,7 +8769,8 @@ public class EngineManager {
           };
       handback.acquireReservation();
       handback.beginLifecycleCompletionClaim();
-      handback.runAfterCompletionRelease(() -> completeEngineGameTransactionRetirement(transaction));
+      handback.runAfterCompletionRelease(
+          () -> completeEngineGameTransactionRetirement(transaction));
       handback.runUntilStable();
       handback.confirmFinalBoardSynchronization(
           handback::close,
@@ -8826,7 +8778,8 @@ public class EngineManager {
             try {
               target.runIfCurrentEngineIncarnation(incarnation, () -> target.isLoaded = false);
               transaction.terminalFailure =
-                  appendEngineGameFailure(transaction.terminalFailure, new IllegalStateException(detail));
+                  appendEngineGameFailure(
+                      transaction.terminalFailure, new IllegalStateException(detail));
             } finally {
               handback.close();
             }
@@ -8842,7 +8795,8 @@ public class EngineManager {
     }
   }
 
-  private static void completeEngineGameTransactionRetirement(EngineGameOwnerTransaction transaction) {
+  private static void completeEngineGameTransactionRetirement(
+      EngineGameOwnerTransaction transaction) {
     EngineGameRecoveryBatch recoveryBatch = null;
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
       if (retiringEngineGameTransaction == transaction) {
@@ -8890,9 +8844,8 @@ public class EngineManager {
         for (EngineGameDeferredRecovery completedRecovery : recoveryBatch.recoveries) {
           if (completedRecovery.recoveredSuccessfully
               && completedRecovery.replacementIncarnation != null) {
-            completedRecovery.engine
-                .unquarantineDeferredEngineGameRecoveryIncarnation(
-                    completedRecovery.replacementIncarnation);
+            completedRecovery.engine.unquarantineDeferredEngineGameRecoveryIncarnation(
+                completedRecovery.replacementIncarnation);
           }
         }
         // Deferred endpoint recovery is part of retirement: do not publish the handoff until its
@@ -8947,7 +8900,8 @@ public class EngineManager {
     Leelaz engine = recovery.engine;
     InitialEngineStartupSynchronization synchronization = null;
     try {
-      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, recovery.failedIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(
+          recoveryBatch, recovery, recovery.failedIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
@@ -8959,26 +8913,23 @@ public class EngineManager {
       }
       synchronization =
           InitialEngineStartupSynchronization.capturePrepared(
-              null,
-              engine,
-              null,
-              restoreBoard,
-              false,
-              false);
+              null, engine, null, restoreBoard, false, false);
       recovery.synchronization = synchronization;
       synchronization.acquireReservation();
       synchronization.beginLifecycleCompletionClaim();
       final InitialEngineStartupSynchronization recoverySynchronization = synchronization;
       Leelaz.UpdateEngineStartAttempt startAttempt = engine.beginUpdateEngineStartAttempt();
       recovery.startAttempt = startAttempt;
-      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, recovery.failedIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(
+          recoveryBatch, recovery, recovery.failedIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
 
       manager.beforeDeferredEngineGameRecoveryStage(
           recovery, DeferredEngineGameRecoveryStage.START);
-      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, recovery.failedIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(
+          recoveryBatch, recovery, recovery.failedIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
@@ -8987,8 +8938,7 @@ public class EngineManager {
         return;
       }
       if (recovery.openClNativeExit
-          && !engine.prepareBundledOpenClRecoveryForFailedIncarnation(
-              recovery.failedIncarnation)) {
+          && !engine.prepareBundledOpenClRecoveryForFailedIncarnation(recovery.failedIncarnation)) {
         completeDeferredEngineGameRecovery(
             recoveryBatch,
             recovery,
@@ -9021,8 +8971,7 @@ public class EngineManager {
         return;
       }
       Object authorizedIncarnation =
-          engine.authorizeAnalysisOutputRecoveryForExactBinding(
-              replacementIncarnation, recovery);
+          engine.authorizeAnalysisOutputRecoveryForExactBinding(replacementIncarnation, recovery);
       if (authorizedIncarnation != replacementIncarnation) {
         completeDeferredEngineGameRecovery(
             recoveryBatch,
@@ -9034,8 +8983,7 @@ public class EngineManager {
       recovery.replacementIncarnation = authorizedIncarnation;
       manager.beforeDeferredEngineGameRecoveryStage(
           recovery, DeferredEngineGameRecoveryStage.READINESS);
-      if (!isDeferredEngineGameRecoveryCurrent(
-          recoveryBatch, recovery, replacementIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, replacementIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
@@ -9044,22 +8992,19 @@ public class EngineManager {
             recoveryBatch, recovery, "replacement engine did not become ready", null);
         return;
       }
-      if (!isDeferredEngineGameRecoveryCurrent(
-          recoveryBatch, recovery, replacementIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, replacementIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
 
       recoverySynchronization.runUntilStable(false);
-      if (!isDeferredEngineGameRecoveryCurrent(
-          recoveryBatch, recovery, replacementIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, replacementIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
       manager.beforeDeferredEngineGameRecoveryStage(
           recovery, DeferredEngineGameRecoveryStage.CONFIRMATION);
-      if (!isDeferredEngineGameRecoveryCurrent(
-          recoveryBatch, recovery, replacementIncarnation)) {
+      if (!isDeferredEngineGameRecoveryCurrent(recoveryBatch, recovery, replacementIncarnation)) {
         completeDeferredEngineGameRecovery(recoveryBatch, recovery, null, null);
         return;
       }
@@ -9099,8 +9044,7 @@ public class EngineManager {
                   completionFailure);
             }
           },
-          detail ->
-              completeDeferredEngineGameRecovery(recoveryBatch, recovery, detail, null));
+          detail -> completeDeferredEngineGameRecovery(recoveryBatch, recovery, detail, null));
     } catch (IOException | RuntimeException | Error recoveryFailure) {
       completeDeferredEngineGameRecovery(
           recoveryBatch,
@@ -9128,8 +9072,7 @@ public class EngineManager {
           && activeEngineGameTransaction == null
           && retiringEngineGameTransaction == null
           && recovery.transactionEpoch == recovery.transaction.epoch
-          && isExactCatalogSlot(
-              recovery.transaction.manager, recovery.engineIndex, recovery.engine)
+          && isExactCatalogSlot(recovery.transaction.manager, recovery.engineIndex, recovery.engine)
           && recovery.engine.isCurrentEngineIncarnation(expectedIncarnation);
     }
   }
@@ -9202,8 +9145,7 @@ public class EngineManager {
     Runnable settlement =
         () -> {
           if (settled.compareAndSet(false, true)) {
-            finishDeferredEngineGameRecovery(
-                recoveryBatch, recovery, failureDetail, failure);
+            finishDeferredEngineGameRecovery(recoveryBatch, recovery, failureDetail, failure);
           }
         };
     if (synchronization == null) {
@@ -9271,8 +9213,7 @@ public class EngineManager {
     }
     boolean dispatchNext = false;
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
-      if (activeEngineGameRecoveryBatch == recoveryBatch
-          && recoveryBatch.current == recovery) {
+      if (activeEngineGameRecoveryBatch == recoveryBatch && recoveryBatch.current == recovery) {
         recoveryBatch.current = null;
         dispatchNext = true;
       }
@@ -9301,8 +9242,8 @@ public class EngineManager {
     }
   }
 
-  private static InitialEngineStartupSynchronization
-      takeDeferredEngineGameRecoverySynchronization(EngineGameDeferredRecovery recovery) {
+  private static InitialEngineStartupSynchronization takeDeferredEngineGameRecoverySynchronization(
+      EngineGameDeferredRecovery recovery) {
     synchronized (recovery) {
       InitialEngineStartupSynchronization synchronization = recovery.synchronization;
       recovery.synchronization = null;
@@ -9329,9 +9270,7 @@ public class EngineManager {
   }
 
   private static void runAfterEngineGameTransactionRetirement(
-      EngineGameOwnerTransaction transaction,
-      Runnable continuation,
-      Runnable schedulingFailure) {
+      EngineGameOwnerTransaction transaction, Runnable continuation, Runnable schedulingFailure) {
     if (transaction == null || continuation == null) {
       return;
     }
@@ -9343,8 +9282,6 @@ public class EngineManager {
       dispatchEngineGameRetirementContinuation(transaction);
     }
   }
-
-
 
   private static void dispatchEngineGameRetirementContinuation(
       EngineGameOwnerTransaction transaction) {
@@ -9429,10 +9366,7 @@ public class EngineManager {
       try {
         transaction.manager.restoreUiAfterEngineGameStartAbort(
             new EngineGameInactiveUiToken(
-                transaction.manager,
-                transaction.plan,
-                transaction.inactiveEpoch,
-                transaction),
+                transaction.manager, transaction.plan, transaction.inactiveEpoch, transaction),
             afterRestore);
         return;
       } catch (Throwable cleanupFailure) {
@@ -9462,45 +9396,45 @@ public class EngineManager {
       return false;
     }
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
-        if (!isCurrentEngineGameTransactionLocked(transaction)
-            || transaction.phase != EngineGamePhase.DISPATCHED
-            || System.nanoTime() >= engineGameDeadlineNanos(transaction)
-            || (selectedIndex == transaction.blackIndex
-                ? selectedEngine != transaction.blackEngine
-                : selectedIndex == transaction.whiteIndex
-                    ? selectedEngine != transaction.whiteEngine
-                    : true)
-            || !isExactCatalogSlot(transaction.manager, selectedIndex, selectedEngine)
-            || (transaction.blackStartupIncarnation != null
-                && transaction.blackStartupIncarnation != blackIncarnation)
-            || (transaction.whiteStartupIncarnation != null
-                && transaction.whiteStartupIncarnation != whiteIncarnation)) {
-          return false;
-        }
-        AtomicBoolean activated = new AtomicBoolean();
-        boolean primaryCurrent =
-            Lizzie.runIfPrimaryEngineWithMutation(
-                transaction.previousPrimary,
-                transaction.previousPrimaryGeneration,
-                primaryMutation ->
-                    Leelaz.runIfCurrentLiveEngineIncarnations(
-                        transaction.blackEngine,
-                        blackIncarnation,
-                        transaction.whiteEngine,
-                        whiteIncarnation,
-                        () -> {
-                          if (isCurrentEngineGameTransactionLocked(transaction)
-                              && transaction.phase == EngineGamePhase.DISPATCHED) {
-                            primaryMutation.replaceWith(selectedEngine);
-                            currentEngineNo = selectedIndex;
-                            isEmpty = false;
-                            transaction.blackIncarnation = blackIncarnation;
-                            transaction.whiteIncarnation = whiteIncarnation;
-                            transaction.phase = EngineGamePhase.ACTIVE;
-                            activated.set(true);
-                          }
-                        }));
-        return primaryCurrent && activated.get();
+      if (!isCurrentEngineGameTransactionLocked(transaction)
+          || transaction.phase != EngineGamePhase.DISPATCHED
+          || System.nanoTime() >= engineGameDeadlineNanos(transaction)
+          || (selectedIndex == transaction.blackIndex
+              ? selectedEngine != transaction.blackEngine
+              : selectedIndex == transaction.whiteIndex
+                  ? selectedEngine != transaction.whiteEngine
+                  : true)
+          || !isExactCatalogSlot(transaction.manager, selectedIndex, selectedEngine)
+          || (transaction.blackStartupIncarnation != null
+              && transaction.blackStartupIncarnation != blackIncarnation)
+          || (transaction.whiteStartupIncarnation != null
+              && transaction.whiteStartupIncarnation != whiteIncarnation)) {
+        return false;
+      }
+      AtomicBoolean activated = new AtomicBoolean();
+      boolean primaryCurrent =
+          Lizzie.runIfPrimaryEngineWithMutation(
+              transaction.previousPrimary,
+              transaction.previousPrimaryGeneration,
+              primaryMutation ->
+                  Leelaz.runIfCurrentLiveEngineIncarnations(
+                      transaction.blackEngine,
+                      blackIncarnation,
+                      transaction.whiteEngine,
+                      whiteIncarnation,
+                      () -> {
+                        if (isCurrentEngineGameTransactionLocked(transaction)
+                            && transaction.phase == EngineGamePhase.DISPATCHED) {
+                          primaryMutation.replaceWith(selectedEngine);
+                          currentEngineNo = selectedIndex;
+                          isEmpty = false;
+                          transaction.blackIncarnation = blackIncarnation;
+                          transaction.whiteIncarnation = whiteIncarnation;
+                          transaction.phase = EngineGamePhase.ACTIVE;
+                          activated.set(true);
+                        }
+                      }));
+      return primaryCurrent && activated.get();
     }
   }
 
@@ -9529,7 +9463,8 @@ public class EngineManager {
     }
   }
 
-  private static void invalidateEngineGameTransactionIfCurrent(EngineGameOwnerTransaction transaction) {
+  private static void invalidateEngineGameTransactionIfCurrent(
+      EngineGameOwnerTransaction transaction) {
     claimTerminalEngineGameTransaction(transaction, EngineGamePhase.FAILED, null, false);
     finishAutomaticEngineGameRetirementIfQuiescent(transaction);
   }
@@ -9559,7 +9494,6 @@ public class EngineManager {
     }
     Lizzie.engineGame.onOwnerStartFailed(cause);
   }
-
 
   /**
    * Returns the first-stage budget for this exact pair of participants.
@@ -9592,9 +9526,7 @@ public class EngineManager {
     if (transaction == null) {
       return Long.MIN_VALUE;
     }
-    int[] participantIndexes = {
-      transaction.blackIndex, transaction.whiteIndex
-    };
+    int[] participantIndexes = {transaction.blackIndex, transaction.whiteIndex};
     for (int participant = 0; participant < participantIndexes.length; participant++) {
       Leelaz engine = exactEngineGameParticipant(transaction, participantIndexes[participant]);
       int participantBit = 1 << participant;
@@ -9618,8 +9550,7 @@ public class EngineManager {
       if ((claimed & participantBit) != 0) {
         return false;
       }
-      if (transaction.tuningBudgetParticipants.compareAndSet(
-          claimed, claimed | participantBit)) {
+      if (transaction.tuningBudgetParticipants.compareAndSet(claimed, claimed | participantBit)) {
         return true;
       }
     }
@@ -10001,8 +9932,7 @@ public class EngineManager {
         return null;
       }
       AtomicBoolean live = new AtomicBoolean();
-      participant.runIfCurrentLiveEngineIncarnation(
-          participantIncarnation, () -> live.set(true));
+      participant.runIfCurrentLiveEngineIncarnation(participantIncarnation, () -> live.set(true));
       if (!live.get()) {
         return null;
       }
@@ -10024,10 +9954,7 @@ public class EngineManager {
       Leelaz participant,
       Object participantIncarnation,
       String color) {
-    if (turn == null
-        || participant == null
-        || participantIncarnation == null
-        || color == null) {
+    if (turn == null || participant == null || participantIncarnation == null || color == null) {
       return null;
     }
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
@@ -10068,8 +9995,7 @@ public class EngineManager {
     }
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
       if (!isCurrentEngineGameMoveResponseLocked(context)
-          || !context.participant.isCurrentLiveEngineIncarnation(
-              context.participantIncarnation)) {
+          || !context.participant.isCurrentLiveEngineIncarnation(context.participantIncarnation)) {
         return null;
       }
       context.transaction.operationsInFlight.incrementAndGet();
@@ -10077,10 +10003,7 @@ public class EngineManager {
       try {
         carrierInstallation.run();
         return new EngineGamePhysicalRequestLease(
-            context.transaction,
-            context.participant,
-            context.participantIncarnation,
-            operation);
+            context.transaction, context.participant, context.participantIncarnation, operation);
       } catch (RuntimeException | Error installationFailure) {
         operation.close();
         throw installationFailure;
@@ -10107,10 +10030,7 @@ public class EngineManager {
       }
       transaction.operationsInFlight.incrementAndGet();
       return new EngineGamePhysicalRequestLease(
-          transaction,
-          endpoint,
-          endpointIncarnation,
-          new EngineGameOperationLease(transaction));
+          transaction, endpoint, endpointIncarnation, new EngineGameOperationLease(transaction));
     }
   }
 
@@ -10152,10 +10072,7 @@ public class EngineManager {
       }
       transaction.operationsInFlight.incrementAndGet();
       return new EngineGamePhysicalRequestLease(
-          transaction,
-          endpoint,
-          endpointIncarnation,
-          new EngineGameOperationLease(transaction));
+          transaction, endpoint, endpointIncarnation, new EngineGameOperationLease(transaction));
     }
   }
 
@@ -10318,16 +10235,15 @@ public class EngineManager {
         if (!isCurrentEngineGameMoveResponseLocked(response)) {
           return null;
         }
-        if (!response.genmoveMode && transaction.komiState != null
+        if (!response.genmoveMode
+            && transaction.komiState != null
             && transaction.komiState.pending()) {
           return null;
         }
         selectedIncarnation =
             selectedIndex == transaction.blackIndex
                 ? transaction.blackIncarnation
-                : selectedIndex == transaction.whiteIndex
-                    ? transaction.whiteIncarnation
-                    : null;
+                : selectedIndex == transaction.whiteIndex ? transaction.whiteIncarnation : null;
         Leelaz frozenSelected =
             selectedIndex == transaction.blackIndex
                 ? transaction.blackEngine
@@ -10409,8 +10325,7 @@ public class EngineManager {
                             }
                           }));
           if (!primaryCurrent || !published.get()) {
-            throw new IllegalStateException(
-                "Engine-game primary changed during board move commit");
+            throw new IllegalStateException("Engine-game primary changed during board move commit");
           }
         }
       } catch (RuntimeException | Error commitFailure) {
@@ -10462,8 +10377,7 @@ public class EngineManager {
     }
   }
 
-  static EngineGameClockSync claimEngineGamePostMoveClockSync(
-      EngineGamePostMoveToken token) {
+  static EngineGameClockSync claimEngineGamePostMoveClockSync(EngineGamePostMoveToken token) {
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
       if (!isCurrentEngineGamePostMoveTokenLocked(token)
           || !token.transaction.isGenmove()
@@ -10486,11 +10400,7 @@ public class EngineManager {
         // caller fails this transaction instead of silently abandoning the committed move with no
         // play/genmove successor. A plain null remains reserved for stale or duplicate callers.
         return new EngineGameClockSync(
-            token,
-            null,
-            null,
-            null,
-            "Engine-game clock lost exact participant ownership");
+            token, null, null, null, "Engine-game clock lost exact participant ownership");
       }
       String command = clock.claimTimeLeftCommand();
       return command == null
@@ -10517,8 +10427,7 @@ public class EngineManager {
     }
   }
 
-  private static boolean isCurrentEngineGamePostMoveTokenLocked(
-      EngineGamePostMoveToken token) {
+  private static boolean isCurrentEngineGamePostMoveTokenLocked(EngineGamePostMoveToken token) {
     return token != null
         && token.transaction != null
         && token.epoch == token.transaction.epoch
@@ -10534,9 +10443,7 @@ public class EngineManager {
   }
 
   static boolean publishEngineGameMovePrimaryIfCurrent(
-      EngineGameMoveResponseContext response,
-      Leelaz selectedEngine,
-      int selectedIndex) {
+      EngineGameMoveResponseContext response, Leelaz selectedEngine, int selectedIndex) {
     if (response == null || selectedEngine == null) {
       return false;
     }
@@ -10556,9 +10463,7 @@ public class EngineManager {
       Object selectedIncarnation =
           selectedIndex == response.plan.blackIndex()
               ? transaction.blackIncarnation
-              : selectedIndex == response.plan.whiteIndex()
-                  ? transaction.whiteIncarnation
-                  : null;
+              : selectedIndex == response.plan.whiteIndex() ? transaction.whiteIncarnation : null;
       if (selectedIncarnation == null) {
         return false;
       }
@@ -10756,9 +10661,7 @@ public class EngineManager {
         Object expectedIncarnation =
             participantIndex == transaction.blackIndex
                 ? transaction.blackIncarnation
-                : participantIndex == transaction.whiteIndex
-                    ? transaction.whiteIncarnation
-                    : null;
+                : participantIndex == transaction.whiteIndex ? transaction.whiteIncarnation : null;
         if (participantIndex < 0
             || participantIncarnation == null
             || participantIncarnation != expectedIncarnation
@@ -10931,9 +10834,9 @@ public class EngineManager {
   /** Called only while the selection lock is held; final callers also hold PRIMARY + endpoint. */
   private static boolean isCurrentEngineGamePrimaryPublication(
       DeferredEngineGamePrimaryPublication publication) {
-      if (!hasPlayingEngineGameTransaction()
-          || Lizzie.engineManager != publication.expectedManager
-          || publication.expectedPlan == null
+    if (!hasPlayingEngineGameTransaction()
+        || Lizzie.engineManager != publication.expectedManager
+        || publication.expectedPlan == null
         || activeEngineGameTransaction != publication.expectedTransaction
         || publication.expectedTransaction == null
         || publication.expectedTransaction.epoch != publication.expectedEpoch
@@ -10946,10 +10849,10 @@ public class EngineManager {
             && publication.expectedIndex != publication.expectedWhiteIndex)
         || (Lizzie.config != null && Lizzie.config.enginePkPonder)
             != publication.expectedPonderRouting
-          || !isExactCatalogSlot(
-              publication.expectedManager, publication.expectedIndex, publication.engine)) {
-        return false;
-      }
+        || !isExactCatalogSlot(
+            publication.expectedManager, publication.expectedIndex, publication.engine)) {
+      return false;
+    }
     Object participantIncarnation =
         publication.expectedIndex == publication.expectedBlackIndex
             ? publication.expectedTransaction.blackIncarnation
@@ -10988,10 +10891,7 @@ public class EngineManager {
   }
 
   private static boolean installProvisionalEngineSelection(
-      boolean main,
-      Leelaz expectedPrevious,
-      Leelaz target,
-      EngineSwitchTransaction transaction) {
+      boolean main, Leelaz expectedPrevious, Leelaz target, EngineSwitchTransaction transaction) {
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
       if (target != null && FAILED_ENGINE_QUARANTINES.containsKey(target)) {
         return false;
@@ -11142,8 +11042,8 @@ public class EngineManager {
         submittedToken > 0L
             ? submittedToken
             : preparedSwitch != null && preparedSwitch.engineSwitchUiToken > 0L
-            ? preparedSwitch.engineSwitchUiToken
-            : beginEngineSwitchUi(index, isMain, targetEngine);
+                ? preparedSwitch.engineSwitchUiToken
+                : beginEngineSwitchUi(index, isMain, targetEngine);
     if (preparedSwitch != null) {
       preparedSwitch.engineSwitchUiToken = token;
       preparedSwitch.lifecycleRestore.engineSwitchUiToken = token;
@@ -11231,6 +11131,7 @@ public class EngineManager {
     if (LizzieFrame.menu != null) {
       LizzieFrame.menu.applyEngineSwitchUiState(snapshot);
     }
+    Menu.requestBreadthAdmissionRefresh();
   }
 
   public void switchEngine(int index, boolean isMain) {
@@ -11432,13 +11333,7 @@ public class EngineManager {
             targetEngine == currentEngine && !foregroundActivation
                 ? releaseTransaction
                 : releaseEngineLifecycleAfterBoardSync(
-                    currentEngine,
-                    targetEngine,
-                    isMain,
-                    false,
-                    false,
-                    releaseTransaction,
-                    null);
+                    currentEngine, targetEngine, isMain, false, false, releaseTransaction, null);
         Runnable uiAwareAfterSync =
             trackEngineSwitchUiCompletion(
                 index, isMain, targetEngine, null, afterSync, submitted.token);
@@ -11451,10 +11346,8 @@ public class EngineManager {
       preparedSwitch.engineSwitchTransaction = transaction;
       preparedSwitch.lifecycleRestore.engineSwitchTransaction = transaction;
       transaction.prepareRollback(
-          lifecycleSynchronization,
-          transaction.main ? null : engineSwitchUiTracker.current(true));
-      Runnable releaseLifecycle =
-          onceEngineSwitchCleanup(lifecycleSynchronization::close);
+          lifecycleSynchronization, transaction.main ? null : engineSwitchUiTracker.current(true));
+      Runnable releaseLifecycle = onceEngineSwitchCleanup(lifecycleSynchronization::close);
       Runnable releaseTransaction =
           onceEngineSwitchCleanup(
               () -> {
@@ -11509,8 +11402,11 @@ public class EngineManager {
   }
 
   private boolean isBenchmarkParticipant(int index) {
-    return engineList != null && index >= 0 && index < engineList.size()
-        && engineList.get(index) != null && engineList.get(index).isBenchmark();
+    return engineList != null
+        && index >= 0
+        && index < engineList.size()
+        && engineList.get(index) != null
+        && engineList.get(index).isBenchmark();
   }
 
   protected void showBenchmarkGtpUnavailable() {
@@ -11552,12 +11448,11 @@ public class EngineManager {
       synchronized (ENGINE_SELECTION_STATE_LOCK) {
         if (!isCurrentEngineSwitchTransaction(transaction)
             || !engineSwitchUiTracker.isSwitching(transaction.uiToken, transaction.main)) return;
-      if (!installProvisionalEngineSelection(
-          transaction.main, previous, target, transaction)) {
-        throw new IllegalStateException("Engine selection changed before benchmark launch");
-      }
-      transaction.targetInstalled = true;
-      execution = target.startBenchmark(transaction.targetIndex, transaction.main);
+        if (!installProvisionalEngineSelection(transaction.main, previous, target, transaction)) {
+          throw new IllegalStateException("Engine selection changed before benchmark launch");
+        }
+        transaction.targetInstalled = true;
+        execution = target.startBenchmark(transaction.targetIndex, transaction.main);
         if (!isCurrentEngineSwitchTransaction(transaction)
             || !(transaction.main
                 ? commitPrimaryEngineSelection(target, transaction.targetIndex)
@@ -11569,8 +11464,9 @@ public class EngineManager {
       }
       BenchmarkExecution selectedExecution = execution;
       publishBenchmarkState(transaction, selectedExecution);
-      selectedExecution.completion().thenRun(
-          () -> publishBenchmarkState(transaction, selectedExecution));
+      selectedExecution
+          .completion()
+          .thenRun(() -> publishBenchmarkState(transaction, selectedExecution));
     } finally {
       try {
         reservations.close();
@@ -11593,9 +11489,15 @@ public class EngineManager {
     String status = benchmarkStatusText(execution.snapshot());
     if (Lizzie.gtpConsole != null) {
       Lizzie.gtpConsole.addLine(
-          "benchmark[" + (transaction.main ? "main" : "secondary") + ":"
-              + (transaction.targetIndex + 1) + "#" + execution.invocationId() + "] "
-              + status + "\n");
+          "benchmark["
+              + (transaction.main ? "main" : "secondary")
+              + ":"
+              + (transaction.targetIndex + 1)
+              + "#"
+              + execution.invocationId()
+              + "] "
+              + status
+              + "\n");
     }
     EngineSwitchUiSnapshot presentation;
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
@@ -11605,10 +11507,17 @@ public class EngineManager {
               transaction.main, transaction.targetEngine, transaction.targetIndex)) {
         return;
       }
-      presentation = engineSwitchUiTracker.tool(
-          transaction.uiToken, transaction.main, transaction.targetIndex,
-          engineDisplayNameWithoutCatalogLookup(transaction.targetEngine, transaction.targetIndex),
-          transaction.targetEngine, status).orElse(null);
+      presentation =
+          engineSwitchUiTracker
+              .tool(
+                  transaction.uiToken,
+                  transaction.main,
+                  transaction.targetIndex,
+                  engineDisplayNameWithoutCatalogLookup(
+                      transaction.targetEngine, transaction.targetIndex),
+                  transaction.targetEngine,
+                  status)
+              .orElse(null);
     }
     if (presentation != null) {
       publishEngineSwitchUiState(presentation);
@@ -11620,8 +11529,9 @@ public class EngineManager {
       case STARTING, RUNNING -> resourceBundle.getString("Benchmark.running");
       case SUCCEEDED -> resourceBundle.getString("Benchmark.succeeded");
       case CANCELLED -> resourceBundle.getString("Benchmark.cancelled");
-      case FAILED -> java.text.MessageFormat.format(
-          resourceBundle.getString("Benchmark.failed"), state.detail());
+      case FAILED ->
+          java.text.MessageFormat.format(
+              resourceBundle.getString("Benchmark.failed"), state.detail());
     };
   }
 
@@ -11897,10 +11807,7 @@ public class EngineManager {
                     engineSwitchUiToken(lifecycleRestore)));
       };
     }
-    if (!isMain
-        || current == null
-        || target == null
-        || (!explicitRestart && !readBoardRecovery)) {
+    if (!isMain || current == null || target == null || (!explicitRestart && !readBoardRecovery)) {
       return () -> {
         try {
           if (lifecycleRestore != null) {
@@ -11979,8 +11886,12 @@ public class EngineManager {
     if (lifecycleRestore != null) {
       lifecycleRestore.confirmBoardSynchronization(onSuccess, onFailure);
     } else {
-      target.withCurrentRestartBootstrapReceipt(
-          () -> target.confirmBoardSynchronization(onSuccess, detail -> onFailure.accept(target, detail))).run();
+      target
+          .withCurrentRestartBootstrapReceipt(
+              () ->
+                  target.confirmBoardSynchronization(
+                      onSuccess, detail -> onFailure.accept(target, detail)))
+          .run();
     }
   }
 
@@ -12117,8 +12028,7 @@ public class EngineManager {
           || transaction.targetEngine != targetEngine
           || transaction.main != main
           || targetEngine != (main ? Lizzie.leelaz : Lizzie.leelaz2)
-          || !engineSwitchUiTracker.isSwitching(
-              lifecycleRestore.engineSwitchUiToken, main)) {
+          || !engineSwitchUiTracker.isSwitching(lifecycleRestore.engineSwitchUiToken, main)) {
         throw new IllegalStateException("Engine switch was superseded before final commit");
       }
       Runnable exactTerminalCommit =
@@ -12163,15 +12073,12 @@ public class EngineManager {
       boolean primaryCurrent =
           !main
               || Lizzie.runIfPrimaryEngine(
-                  targetEngine,
-                  readyPublication.primaryGeneration(),
-                  commitUnderEndpointFences);
+                  targetEngine, readyPublication.primaryGeneration(), commitUnderEndpointFences);
       if (!main) {
         commitUnderEndpointFences.run();
       }
       if (!primaryCurrent || !exactIncarnations.get() || activeSnapshot.get() == null) {
-        throw new IllegalStateException(
-            "Engine incarnation changed before final switch commit");
+        throw new IllegalStateException("Engine incarnation changed before final switch commit");
       }
     }
     return () -> {
@@ -12234,24 +12141,24 @@ public class EngineManager {
         return;
       }
 
-    engineNo = index;
+      engineNo = index;
       if (rejectSameEngineSelection(index, isMain)) {
         return;
       }
       Leelaz newEng = preparedSwitch.targetEngine;
-    if (newEng == null) return;
+      if (newEng == null) return;
       if (preparedSwitch.engineSwitchUiToken <= 0L) {
         uiAwareAfterSync =
             trackEngineSwitchUiCompletion(index, isMain, newEng, preparedSwitch, uiAwareAfterSync);
       }
       InitialEngineStartupSynchronization lifecycleSynchronization =
           preparedSwitch.initialStartupSynchronization;
-    // newEng.isReadyForGenmoveGame = false;
+      // newEng.isReadyForGenmoveGame = false;
       boolean changeBoard = preparedSwitch.targetBoardSizeChanges;
       boolean changeOriBoard = preparedSwitch.targetOriginalBoardSizeChanges;
       boolean isEmptyBoard = preparedSwitch.boardEmpty;
 
-    // Lizzie.frame.menu.showPda(false);
+      // Lizzie.frame.menu.showPda(false);
       if (isEmptyBoard && changeOriBoard && isMain)
         Lizzie.board.reopenOnlyBoard(newEng.oriWidth, newEng.oriHeight);
       if (preparedSwitch.previousEngine != null) {
@@ -12322,8 +12229,7 @@ public class EngineManager {
           try {
             targetStartAttempt.startEngine(index);
           } finally {
-            if (installedTransaction != null
-                && installedTransaction.targetEngine == newEng) {
+            if (installedTransaction != null && installedTransaction.targetEngine == newEng) {
               installedTransaction.targetEngineIncarnation =
                   targetStartAttempt.publishedIncarnation();
               installedTransaction.targetEngineIncarnationCaptured = true;
@@ -12513,8 +12419,7 @@ public class EngineManager {
           suppressEngineStartCleanupFailure(primaryFailure, presentationFailure);
         }
       }
-      dispatchUpdateEngineStartFailureCleanupAfterRelease(
-          failureCleanups, Runnable::run);
+      dispatchUpdateEngineStartFailureCleanupAfterRelease(failureCleanups, Runnable::run);
     }
   }
 
@@ -12589,8 +12494,7 @@ public class EngineManager {
     }
     boolean resumePonder =
         foregroundActivation
-            || (previousEngine != null
-                && previousEngine.isPondering())
+            || (previousEngine != null && previousEngine.isPondering())
             || (!isMain
                 && Lizzie.config.isDoubleEngineMode()
                 && Lizzie.leelaz != null
@@ -12603,9 +12507,9 @@ public class EngineManager {
     InitialEngineStartupSynchronization lifecycleSynchronization =
         foregroundActivation
             ? InitialEngineStartupSynchronization.capture(
-            previousEngine,
-            targetEngine,
-            proposedRestoreMirror,
+                previousEngine,
+                targetEngine,
+                proposedRestoreMirror,
                 restoreBoard,
                 false,
                 resumePonder)
@@ -13386,8 +13290,7 @@ public class EngineManager {
           engine.currentRestartBoardSynchronizationFailureAction(
               "restart engine board synchronization failed");
       Runnable frozenRestartScopedAfterSync = restartScopedAfterSync;
-      Runnable frozenRestartBoardSynchronizationFailure =
-          restartBoardSynchronizationFailure;
+      Runnable frozenRestartBoardSynchronizationFailure = restartBoardSynchronizationFailure;
       Runnable synchronizationWork =
           () -> {
             Throwable synchronizationFailure = null;
@@ -13414,8 +13317,7 @@ public class EngineManager {
               restartScopedSynchronization.run();
             } catch (RuntimeException | Error failure) {
               synchronizationFailure = failure;
-              failureCleanups =
-                  claimUpdateEngineStartFailureCleanups(startAttempt, null, failure);
+              failureCleanups = claimUpdateEngineStartFailureCleanups(startAttempt, null, failure);
               if (startAttempt == null || failureCleanups.claimedTarget()) {
                 failurePresentation =
                     reportEngineSynchronizationFailureIfCurrent(
@@ -13434,8 +13336,7 @@ public class EngineManager {
                   if (synchronizationFailure == null) {
                     synchronizationFailure = cleanupFailure;
                     failureCleanups =
-                        claimUpdateEngineStartFailureCleanups(
-                            startAttempt, null, cleanupFailure);
+                        claimUpdateEngineStartFailureCleanups(startAttempt, null, cleanupFailure);
                     if (startAttempt == null || failureCleanups.claimedTarget()) {
                       failurePresentation =
                           reportEngineSynchronizationFailureIfCurrent(
@@ -13446,8 +13347,7 @@ public class EngineManager {
                               cleanupFailure);
                     }
                   } else {
-                    suppressEngineStartCleanupFailure(
-                        synchronizationFailure, cleanupFailure);
+                    suppressEngineStartCleanupFailure(synchronizationFailure, cleanupFailure);
                   }
                   cleanupFailure.printStackTrace();
                 }
@@ -13456,8 +13356,7 @@ public class EngineManager {
                 try {
                   failurePresentation.run();
                 } catch (RuntimeException | Error presentationFailure) {
-                  suppressEngineStartCleanupFailure(
-                      synchronizationFailure, presentationFailure);
+                  suppressEngineStartCleanupFailure(synchronizationFailure, presentationFailure);
                 }
               }
               if (failureCleanups != null) {
@@ -13483,8 +13382,7 @@ public class EngineManager {
         return;
       }
       UpdateEngineStartFailureCleanups failureCleanups =
-          claimUpdateEngineStartFailureCleanups(
-              startAttempt, null, schedulingFailure);
+          claimUpdateEngineStartFailureCleanups(startAttempt, null, schedulingFailure);
       Runnable failurePresentation = null;
       if (startAttempt == null || failureCleanups.claimedTarget()) {
         failurePresentation =
@@ -13509,8 +13407,7 @@ public class EngineManager {
             suppressEngineStartCleanupFailure(schedulingFailure, presentationFailure);
           }
         }
-        dispatchUpdateEngineStartFailureCleanupAfterRelease(
-            failureCleanups, afterLifecycleRelease);
+        dispatchUpdateEngineStartFailureCleanupAfterRelease(failureCleanups, afterLifecycleRelease);
       }
       throw schedulingFailure;
     }
@@ -13584,8 +13481,7 @@ public class EngineManager {
           () ->
               settlementLease.set(
                   failureFence.engine.claimEngineIncarnationLease(
-                      failureFence.engineIncarnation,
-                      () -> failureFence.engine.isLoaded = false)));
+                      failureFence.engineIncarnation, () -> failureFence.engine.isLoaded = false)));
     }
     return settlementLease.get();
   }
@@ -13632,14 +13528,12 @@ public class EngineManager {
           return null;
         }
         incarnationLease =
-            failureFence.engine.claimEngineIncarnationLease(
-                failureFence.engineIncarnation);
+            failureFence.engine.claimEngineIncarnationLease(failureFence.engineIncarnation);
         if (incarnationLease == null) {
           return null;
         }
         claimed = true;
-        return new EngineSynchronizationFailurePresentationLease(
-            authorityLease, incarnationLease);
+        return new EngineSynchronizationFailurePresentationLease(authorityLease, incarnationLease);
       }
     } finally {
       if (!claimed) {
@@ -13664,10 +13558,8 @@ public class EngineManager {
         && Lizzie.board == failureFence.board
         && engineList == failureFence.engineCatalog
         && engineSwitchTransaction.get() == null
-        && failureFence.engine
-            == (failureFence.main ? Lizzie.leelaz : Lizzie.leelaz2)
-        && failureFence.engineIndex
-            == (failureFence.main ? currentEngineNo : currentEngineNo2)
+        && failureFence.engine == (failureFence.main ? Lizzie.leelaz : Lizzie.leelaz2)
+        && failureFence.engineIndex == (failureFence.main ? currentEngineNo : currentEngineNo2)
         && isExactCatalogSlot(this, failureFence.engineIndex, failureFence.engine)
         && failureFence.startupStatus.isCurrent();
   }
@@ -13734,8 +13626,7 @@ public class EngineManager {
         } catch (RuntimeException | Error failure) {
           presentationFailure = failure;
         }
-        presentationFailure =
-            runLifecycleCleanupStep(presentationFailure, transferredLease::close);
+        presentationFailure = runLifecycleCleanupStep(presentationFailure, transferredLease::close);
         rethrowLifecycleCleanupFailure(presentationFailure);
       };
     } catch (RuntimeException | Error reportingFailure) {
@@ -13765,8 +13656,7 @@ public class EngineManager {
         boolean primaryCurrent = isCurrentSynchronizationFailurePrimary(failureFence);
         markSynchronizationFailureSupersededLocked(
             failureFence,
-            shouldRollbackSupersededSynchronizationFailureLocked(
-                failureFence, primaryCurrent),
+            shouldRollbackSupersededSynchronizationFailureLocked(failureFence, primaryCurrent),
             abandonedSnapshot);
         rejected = true;
       } else {
@@ -13786,8 +13676,7 @@ public class EngineManager {
         if (!primaryCurrent || settlementLease.get() == null) {
           markSynchronizationFailureSupersededLocked(
               failureFence,
-              shouldRollbackSupersededSynchronizationFailureLocked(
-                  failureFence, primaryCurrent),
+              shouldRollbackSupersededSynchronizationFailureLocked(failureFence, primaryCurrent),
               abandonedSnapshot);
           rejected = true;
         }
@@ -13814,8 +13703,7 @@ public class EngineManager {
       if (!retained) {
         markSynchronizationFailureSupersededLocked(
             failureFence,
-            shouldRollbackSupersededSynchronizationFailureLocked(
-                failureFence, primaryCurrent),
+            shouldRollbackSupersededSynchronizationFailureLocked(failureFence, primaryCurrent),
             abandonedSnapshot);
       }
     }
@@ -13829,9 +13717,7 @@ public class EngineManager {
       EngineSynchronizationFailureFence failureFence) {
     AtomicBoolean current = new AtomicBoolean(false);
     Lizzie.runIfPrimaryEngine(
-        failureFence.primaryEngine,
-        failureFence.primaryGeneration,
-        () -> current.set(true));
+        failureFence.primaryEngine, failureFence.primaryGeneration, () -> current.set(true));
     return current.get();
   }
 
@@ -13861,8 +13747,7 @@ public class EngineManager {
     }
     Optional<EngineSwitchUiSnapshot> abandoned =
         engineSwitchUiTracker.abandonPending(
-            failureFence.switchingSnapshot.token,
-            failureFence.switchingSnapshot.main);
+            failureFence.switchingSnapshot.token, failureFence.switchingSnapshot.main);
     if (Lizzie.engineManager == this) {
       abandoned.ifPresent(abandonedSnapshot::set);
     }
@@ -13878,8 +13763,7 @@ public class EngineManager {
           || transaction.uiToken <= 0L) {
         return null;
       }
-      EngineSwitchUiSnapshot switchingSnapshot =
-          engineSwitchUiTracker.current(transaction.main);
+      EngineSwitchUiSnapshot switchingSnapshot = engineSwitchUiTracker.current(transaction.main);
       if (switchingSnapshot.token != transaction.uiToken
           || switchingSnapshot.phase != EngineSwitchUiPhase.SWITCHING
           || switchingSnapshot.targetEngineIdentity != engine) {
@@ -13921,8 +13805,7 @@ public class EngineManager {
       if (!isCurrentSynchronizationFailureAuthority(failureFence)) {
         return;
       }
-      failedSnapshot =
-          engineSwitchUiTracker.current(failureFence.switchingSnapshot.main);
+      failedSnapshot = engineSwitchUiTracker.current(failureFence.switchingSnapshot.main);
       if (failedSnapshot.token != failureFence.switchingSnapshot.token
           || failedSnapshot.phase != EngineSwitchUiPhase.FAILED
           || failedSnapshot.targetEngineIdentity != failureFence.engine) {
@@ -13935,8 +13818,7 @@ public class EngineManager {
           || transaction.failurePresentationPrimaryGeneration < 0L) {
         return;
       }
-      presentationAuthority =
-          new EngineSynchronizationFailurePresentationAuthority(transaction);
+      presentationAuthority = new EngineSynchronizationFailurePresentationAuthority(transaction);
     }
     Runnable presentation =
         () -> {
@@ -13945,11 +13827,7 @@ public class EngineManager {
           }
           EngineSynchronizationFailurePresentationLease claimedPresentation =
               claimEngineSynchronizationFailurePresentation(
-                  failureFence,
-                  presentationAuthority,
-                  failedSnapshot,
-                  peerSnapshot,
-                  startupStatus);
+                  failureFence, presentationAuthority, failedSnapshot, peerSnapshot, startupStatus);
           if (claimedPresentation == null) {
             return;
           }
@@ -14000,22 +13878,16 @@ public class EngineManager {
           return null;
         }
         incarnationLease =
-            failureFence.engine.claimEngineIncarnationLease(
-                failureFence.engineIncarnation);
+            failureFence.engine.claimEngineIncarnationLease(failureFence.engineIncarnation);
         // Finish validation before releasing selection: a retry can then hold selection while
         // waiting for our authority lease, so presentation must not reacquire selection afterward.
         if (incarnationLease == null
             || !isCurrentEngineSynchronizationFailurePresentation(
-                failureFence,
-                presentationAuthority,
-                failedSnapshot,
-                peerSnapshot,
-                startupStatus)) {
+                failureFence, presentationAuthority, failedSnapshot, peerSnapshot, startupStatus)) {
           return null;
         }
         claimed = true;
-        return new EngineSynchronizationFailurePresentationLease(
-            authorityLease, incarnationLease);
+        return new EngineSynchronizationFailurePresentationLease(authorityLease, incarnationLease);
       }
     } finally {
       if (!claimed) {
@@ -14023,8 +13895,7 @@ public class EngineManager {
         Leelaz.EngineIncarnationLease incarnationToClose = incarnationLease;
         Lizzie.EngineAuthorityPresentationLease authorityToClose = authorityLease;
         if (incarnationToClose != null) {
-          failure =
-              runLifecycleCleanupStep(failure, incarnationToClose::close);
+          failure = runLifecycleCleanupStep(failure, incarnationToClose::close);
         }
         if (authorityToClose != null) {
           failure = runLifecycleCleanupStep(failure, authorityToClose::close);
@@ -14078,8 +13949,7 @@ public class EngineManager {
         && Lizzie.board == failureFence.board
         && engineList == failureFence.engineCatalog
         && (currentTransaction == null || currentTransaction == failureFence.transaction)
-        && isExactCatalogSlot(
-            this, failureFence.transaction.targetIndex, failureFence.engine);
+        && isExactCatalogSlot(this, failureFence.transaction.targetIndex, failureFence.engine);
   }
 
   private boolean isCurrentSynchronizationFailureSettlementAuthority(
@@ -14136,29 +14006,18 @@ public class EngineManager {
     Runnable synchronizationWork =
         () -> {
           try {
-            if (!waitForEngineSynchronizationReadiness(
-                    engine, transaction, expectedIncarnation)
+            if (!waitForEngineSynchronizationReadiness(engine, transaction, expectedIncarnation)
                 || (transaction != null
                     && (!isCurrentEngineGameTransaction(transaction)
                         || !engine.isCurrentStartupEngineIncarnation(expectedIncarnation)))) {
               settleFailedPkEngineSynchronization(
-                  engine,
-                  transaction,
-                  expectedIncarnation,
-                  lifecycleClose,
-                  completion,
-                  null);
+                  engine, transaction, expectedIncarnation, lifecycleClose, completion, null);
               return;
             }
             synchronization.run();
           } catch (RuntimeException | Error failure) {
             settleFailedPkEngineSynchronization(
-                engine,
-                transaction,
-                expectedIncarnation,
-                lifecycleClose,
-                completion,
-                failure);
+                engine, transaction, expectedIncarnation, lifecycleClose, completion, failure);
           }
         };
     if (transaction == null) {
@@ -14174,21 +14033,11 @@ public class EngineManager {
           synchronizationWork,
           true)) {
         settleFailedPkEngineSynchronization(
-            engine,
-            transaction,
-            expectedIncarnation,
-            lifecycleClose,
-            completion,
-            null);
+            engine, transaction, expectedIncarnation, lifecycleClose, completion, null);
       }
     } catch (RuntimeException | Error schedulingFailure) {
       settleFailedPkEngineSynchronization(
-          engine,
-          transaction,
-          expectedIncarnation,
-          lifecycleClose,
-          completion,
-          schedulingFailure);
+          engine, transaction, expectedIncarnation, lifecycleClose, completion, schedulingFailure);
     }
   }
 
@@ -14197,9 +14046,7 @@ public class EngineManager {
   }
 
   private void failPkEngineSynchronization(
-      Leelaz engine,
-      EngineGameOwnerTransaction transaction,
-      Object expectedIncarnation) {
+      Leelaz engine, EngineGameOwnerTransaction transaction, Object expectedIncarnation) {
     if (engine == null) {
       return;
     }
@@ -14207,8 +14054,7 @@ public class EngineManager {
       if (expectedIncarnation == null) {
         failPkEngineSynchronization(engine);
       } else {
-        engine.runIfCurrentEngineIncarnation(
-            expectedIncarnation, () -> engine.isLoaded = false);
+        engine.runIfCurrentEngineIncarnation(expectedIncarnation, () -> engine.isLoaded = false);
       }
       return;
     }
@@ -14216,8 +14062,7 @@ public class EngineManager {
       if (!isCurrentEngineGameTransactionLocked(transaction)) {
         return;
       }
-      engine.runIfCurrentEngineIncarnation(
-          expectedIncarnation, () -> engine.isLoaded = false);
+      engine.runIfCurrentEngineIncarnation(expectedIncarnation, () -> engine.isLoaded = false);
     }
   }
 
@@ -14252,9 +14097,7 @@ public class EngineManager {
   }
 
   private boolean waitForEngineSynchronizationReadiness(
-      Leelaz engine,
-      EngineGameOwnerTransaction transaction,
-      Object expectedIncarnation) {
+      Leelaz engine, EngineGameOwnerTransaction transaction, Object expectedIncarnation) {
     if (engine == null) {
       return false;
     }
@@ -14263,8 +14106,7 @@ public class EngineManager {
     if (transaction != null) {
       timeoutMillis = Math.max(timeoutMillis, engineGameNameRecognitionTimeoutMillis());
       long nameNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
-      long nameDeadline =
-          now > Long.MAX_VALUE - nameNanos ? Long.MAX_VALUE : now + nameNanos;
+      long nameDeadline = now > Long.MAX_VALUE - nameNanos ? Long.MAX_VALUE : now + nameNanos;
       extendEngineGameDeadline(transaction.deadlineNanos, nameDeadline);
     }
     long deadline = now + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
@@ -14304,8 +14146,7 @@ public class EngineManager {
           logEngineGameStartRefused("name-recognition-timeout");
           failEngineGameTransaction(
               transaction,
-              new IllegalStateException(
-                  "Engine-game participant name recognition timed out"));
+              new IllegalStateException("Engine-game participant name recognition timed out"));
         }
         return false;
       }
@@ -14330,12 +14171,7 @@ public class EngineManager {
       Runnable lifecycleClose) {
     PkEngineSynchronization completion = new PkEngineSynchronization();
     synchronizePkEngineWhenReady(
-        transaction,
-        engine,
-        expectedIncarnation,
-        synchronization,
-        lifecycleClose,
-        completion);
+        transaction, engine, expectedIncarnation, synchronization, lifecycleClose, completion);
     return completion;
   }
 
@@ -14428,7 +14264,6 @@ public class EngineManager {
     }
     return new EngineLifecycleReservations(currentReservation, targetReservation);
   }
-
 
   private static final class PreparedLifecycleRestore {
     private final Leelaz previousEngine;
@@ -14633,24 +14468,26 @@ public class EngineManager {
         onFailure.accept(engine, "engine was unavailable before board synchronization");
         return;
       }
-      engine.withCurrentRestartBootstrapReceipt(
-          () -> engine.confirmBoardSynchronization(onSuccess, detail -> onFailure.accept(engine, detail))).run();
+      engine
+          .withCurrentRestartBootstrapReceipt(
+              () ->
+                  engine.confirmBoardSynchronization(
+                      onSuccess, detail -> onFailure.accept(engine, detail)))
+          .run();
     }
 
     private Lizzie.PreparedEngineReadyPublication prepareAfterRestore(
         boolean isEngineGame, boolean deferPdaPresentation) {
       long primaryGeneration = Lizzie.capturePrimaryEngineGeneration(targetEngine);
       return Lizzie.prepareInitializeAfterVersionCheck(
-          isEngineGame,
-          targetEngine,
-          false,
-          primaryGeneration,
-          deferPdaPresentation);
+          isEngineGame, targetEngine, false, primaryGeneration, deferPdaPresentation);
     }
 
     private void initializeAfterExplicitRestart(boolean resumePonder) {
-      targetEngine.withCurrentRestartBootstrapReceipt(
-          () -> targetEngine.initializeAfterExplicitRestartBoardSynchronization(resumePonder)).run();
+      targetEngine
+          .withCurrentRestartBootstrapReceipt(
+              () -> targetEngine.initializeAfterExplicitRestartBoardSynchronization(resumePonder))
+          .run();
     }
 
     private void resumePonderAfterSuccessfulSynchronization(boolean primarySwitch) {
@@ -14666,10 +14503,13 @@ public class EngineManager {
           && targetEngine.isStarted()
           && targetEngine.isLoaded()
           && !targetEngine.isCheckingName) {
-        targetEngine.withCurrentRestartBootstrapReceipt(() -> {
-          targetEngine.ponder();
-          targetEngine.setResponseUpToDate();
-        }).run();
+        targetEngine
+            .withCurrentRestartBootstrapReceipt(
+                () -> {
+                  targetEngine.ponder();
+                  targetEngine.setResponseUpToDate();
+                })
+            .run();
       }
     }
   }
@@ -14732,7 +14572,6 @@ public class EngineManager {
       this.current = current;
       this.target = target;
     }
-
 
     @Override
     public void close() {
@@ -14963,8 +14802,7 @@ public class EngineManager {
               && this.targetEngine != Lizzie.leelaz;
       this.rulesPrimaryEngine = secondaryLifecycle ? this.mirrorEngine : this.targetEngine;
       this.rulesMirrorEngine = secondaryLifecycle ? this.targetEngine : this.mirrorEngine;
-      this.rulesPrimaryGeneration =
-          Lizzie.capturePrimaryEngineGeneration(this.rulesPrimaryEngine);
+      this.rulesPrimaryGeneration = Lizzie.capturePrimaryEngineGeneration(this.rulesPrimaryEngine);
       this.board = board;
       this.resumePonder = resumePonder;
       this.ensureRootReplayKomiTransport = ensureRootReplayKomiTransport;
@@ -15480,11 +15318,12 @@ public class EngineManager {
       }
     }
 
-
     private void initializeAfterRestore() {
       if (initialized.compareAndSet(false, true)) {
-        targetEngine.withCurrentRestartBootstrapReceipt(
-            () -> Lizzie.initializeAfterVersionCheck(false, targetEngine)).run();
+        targetEngine
+            .withCurrentRestartBootstrapReceipt(
+                () -> Lizzie.initializeAfterVersionCheck(false, targetEngine))
+            .run();
       }
     }
 
@@ -15801,8 +15640,7 @@ public class EngineManager {
       if (engineList.get(plan.whiteIndex()).isKatago || engineList.get(plan.whiteIndex()).isSai)
         Lizzie.board.isPkBoardKataW = true;
       else if (engineList.get(plan.blackIndex()).isKatago
-          || engineList.get(plan.blackIndex()).isSai)
-        Lizzie.board.isPkBoardKataB = true;
+          || engineList.get(plan.blackIndex()).isSai) Lizzie.board.isPkBoardKataB = true;
       Lizzie.frame.restoreWRN(plan.genmove());
     }
     Lizzie.config.chkPkStartNum = false;
@@ -15913,14 +15751,14 @@ public class EngineManager {
     synchronized (ENGINE_SELECTION_STATE_LOCK) {
       if (!isCurrentEngineGameTransactionLocked(transaction)
           || transaction.phase != EngineGamePhase.ACTIVE
-          || (transaction.komiState != null && transaction.komiState.pending()
+          || (transaction.komiState != null
+              && transaction.komiState.pending()
               && (!transaction.isGenmove() || transaction.genmovePauseSettled()))
           || Lizzie.board == null) {
         return null;
       }
       boolean blackToPlay = Lizzie.board.getHistory().isBlacksTurn();
-      EngineCountDown clock =
-          blackToPlay ? transaction.blackCountDown : transaction.whiteCountDown;
+      EngineCountDown clock = blackToPlay ? transaction.blackCountDown : transaction.whiteCountDown;
       Leelaz participant = blackToPlay ? transaction.blackEngine : transaction.whiteEngine;
       Object incarnation =
           blackToPlay ? transaction.blackIncarnation : transaction.whiteIncarnation;

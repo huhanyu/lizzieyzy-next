@@ -154,8 +154,7 @@ class RemoteComputeDialogLayoutTest {
         RemoteComputeDialog.createZhiziWebsiteCard(
             websiteButton, "Zhizi official website", "www.zhizigo.cn");
     JPanel card =
-        RemoteComputeDialog.createZhiziActionCardLayout(
-            plan, useButton, localButton, websiteCard);
+        RemoteComputeDialog.createZhiziActionCardLayout(plan, useButton, localButton, websiteCard);
 
     card.setSize(520, 417);
     layoutTree(card);
@@ -223,8 +222,7 @@ class RemoteComputeDialogLayoutTest {
             "No remote link yet?",
             "Run one command on a Linux NVIDIA GPU server to get a WSS link and QR code.");
     JPanel card =
-        RemoteComputeDialog.createCustomActionCardLayout(
-            useButton, localButton, deploymentCard);
+        RemoteComputeDialog.createCustomActionCardLayout(useButton, localButton, deploymentCard);
 
     Dimension usePreferred = useButton.getPreferredSize();
     Dimension localPreferred = localButton.getPreferredSize();

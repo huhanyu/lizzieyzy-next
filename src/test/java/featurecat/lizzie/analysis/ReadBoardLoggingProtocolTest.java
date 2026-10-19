@@ -195,9 +195,10 @@ class ReadBoardLoggingProtocolTest {
   @Test
   void privacyTokensRoundTripAndRejectUnknown() {
     assertEquals(
-        ReadBoardLoggingProtocol.Privacy.SAFE,
-        ReadBoardLoggingProtocol.tryParsePrivacy("safe"));
-    assertEquals("localPath", ReadBoardLoggingProtocol.formatPrivacy(ReadBoardLoggingProtocol.Privacy.LOCAL_PATH));
+        ReadBoardLoggingProtocol.Privacy.SAFE, ReadBoardLoggingProtocol.tryParsePrivacy("safe"));
+    assertEquals(
+        "localPath",
+        ReadBoardLoggingProtocol.formatPrivacy(ReadBoardLoggingProtocol.Privacy.LOCAL_PATH));
     assertEquals(
         ReadBoardLoggingProtocol.Privacy.LOCAL_URL,
         ReadBoardLoggingProtocol.tryParsePrivacy("localUrl"));

@@ -104,10 +104,8 @@ class OnlineDialogYikeSessionStateTest {
 
   @Test
   void newLiveRoomKeepsCurrentBoardUntilUsableSgfArrives() {
-    assertFalse(
-        OnlineDialog.shouldClearBoardBeforeSync(false, YikeUrlInfo.TYPE_NEW_LIVE_ROOM));
-    assertFalse(
-        OnlineDialog.shouldClearBoardBeforeSync(true, YikeUrlInfo.TYPE_NEW_LIVE_ROOM));
+    assertFalse(OnlineDialog.shouldClearBoardBeforeSync(false, YikeUrlInfo.TYPE_NEW_LIVE_ROOM));
+    assertFalse(OnlineDialog.shouldClearBoardBeforeSync(true, YikeUrlInfo.TYPE_NEW_LIVE_ROOM));
     assertTrue(OnlineDialog.shouldClearBoardBeforeSync(false, YikeUrlInfo.TYPE_OLD_LIVE_ROOM));
     assertFalse(OnlineDialog.shouldClearBoardBeforeSync(true, YikeUrlInfo.TYPE_OLD_LIVE_ROOM));
   }
@@ -238,17 +236,17 @@ class OnlineDialogYikeSessionStateTest {
     Stone[] stones = stonesWith(x, y, color);
     BoardData data =
         BoardData.move(
-        stones,
-        new int[] {x, y},
-        color,
-        blackToPlay,
-        new Zobrist(),
-        moveNumber,
-        moveList(x, y, moveNumber),
-        0,
-        0,
-        winrate,
-        playouts);
+            stones,
+            new int[] {x, y},
+            color,
+            blackToPlay,
+            new Zobrist(),
+            moveNumber,
+            moveList(x, y, moveNumber),
+            0,
+            0,
+            winrate,
+            playouts);
     if (playouts > 0) {
       data.engineName = "saved-analysis";
       data.analysisHeaderSlots = 3;

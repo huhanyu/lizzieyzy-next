@@ -80,8 +80,7 @@ class DeadlineTest {
 
     long started = System.nanoTime();
     try {
-      Deadline.runAll(
-          started + TimeUnit.MILLISECONDS.toNanos(300), List.of(blocked, blocked));
+      Deadline.runAll(started + TimeUnit.MILLISECONDS.toNanos(300), List.of(blocked, blocked));
       long elapsed = System.nanoTime() - started;
       assertEquals(0L, entered.getCount(), "both cleanup actions must start in parallel");
       assertTrue(elapsed <= TimeUnit.MILLISECONDS.toNanos(500), "elapsedNanos=" + elapsed);

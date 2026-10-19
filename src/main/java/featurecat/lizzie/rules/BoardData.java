@@ -3,7 +3,6 @@ package featurecat.lizzie.rules;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
-import featurecat.lizzie.gui.LizzieFrame;
 import featurecat.lizzie.logging.EngineObservation;
 import java.util.*;
 
@@ -36,18 +35,30 @@ public class BoardData {
   public List<MoveData> bestMovesOutOfRange;
   public List<MoveData> bestMoves2;
   public List<MoveData> bestMoves2OutOfRange;
+
   /** Exact root counts; -1 denotes legacy/unknown totals in the corresponding slot. */
   public int rootVisits = -1;
+
   public int rootVisits2 = -1;
   private Object analysisSource;
   private Object analysisSource2;
 
-  public enum AnalysisAdoption { REJECTED, OWNERSHIP_ONLY, FULL }
+  public enum AnalysisAdoption {
+    REJECTED,
+    OWNERSHIP_ONLY,
+    FULL
+  }
 
   /** Called only after the engine has revalidated the exact ordinary output owner. */
   public synchronized AnalysisAdoption adoptOrdinaryAnalysis(
-      List<MoveData> moves, String engineName, Leelaz engine, int totalVisits,
-      int exactRootVisits, List<Double> ownership, Object source, boolean secondary,
+      List<MoveData> moves,
+      String engineName,
+      Leelaz engine,
+      int totalVisits,
+      int exactRootVisits,
+      List<Double> ownership,
+      Object source,
+      boolean secondary,
       boolean forceFull) {
     if (moves == null || moves.isEmpty()) return AnalysisAdoption.REJECTED;
     int cached = secondary ? playouts2 : playouts;
@@ -58,17 +69,25 @@ public class BoardData {
     boolean sameSource = source != null && source == cachedSource;
     int incomingEdgeVisits = exactRootVisits < 0 ? knownRootEdgeVisits(moves) : -1;
     boolean comparable = cachedRoot < 0 || exactRootVisits >= 0 || incomingEdgeVisits >= 0;
-    int comparisonVisits = cachedRoot < 0 && exactRootVisits >= 0
-        ? MoveData.getPlayouts(moves)
-        : cachedRoot >= 0 && exactRootVisits < 0 ? incomingEdgeVisits : totalVisits;
-    boolean protectedCache = Lizzie.config.enableLizzieCache && !Lizzie.config.isAutoAna
-        && (secondary || !Lizzie.engineGame.current().playing());
-    boolean full = forceFull || !protectedCache || invalidated || cachedPda != engine.pda
-        || (comparable && comparisonVisits > cached)
-        || (sameSource && cachedRoot >= 0 && exactRootVisits >= 0 && totalVisits == cached);
+    int comparisonVisits =
+        cachedRoot < 0 && exactRootVisits >= 0
+            ? MoveData.getPlayouts(moves)
+            : cachedRoot >= 0 && exactRootVisits < 0 ? incomingEdgeVisits : totalVisits;
+    boolean protectedCache =
+        Lizzie.config.enableLizzieCache
+            && !Lizzie.config.isAutoAna
+            && (secondary || !Lizzie.engineGame.current().playing());
+    boolean full =
+        forceFull
+            || !protectedCache
+            || invalidated
+            || cachedPda != engine.pda
+            || (comparable && comparisonVisits > cached)
+            || (sameSource && cachedRoot >= 0 && exactRootVisits >= 0 && totalVisits == cached);
     if (!full) {
       List<Double> oldOwnership = secondary ? estimateArray2 : estimateArray;
-      if (ownership != null && !ownership.isEmpty()
+      if (ownership != null
+          && !ownership.isEmpty()
           && (!comparable || comparisonVisits < cached || oldOwnership == null)) {
         if (secondary) estimateArray2 = compactEstimateArray(ownership);
         else estimateArray = compactEstimateArray(ownership);
@@ -88,8 +107,7 @@ public class BoardData {
       analysisSource2 = source;
       isChanged2 = false;
     } else {
-      tryToSetBestMovesFromEngine(
-          moves, engineName, engine, totalVisits, retainedOwnership, true);
+      tryToSetBestMovesFromEngine(moves, engineName, engine, totalVisits, retainedOwnership, true);
       rootVisits = exactRootVisits;
       analysisSource = source;
       isChanged = false;
@@ -107,6 +125,7 @@ public class BoardData {
     }
     return (int) Math.min(Integer.MAX_VALUE, total);
   }
+
   public int blackCaptures;
   public int whiteCaptures;
   public boolean isChanged = false;
@@ -588,8 +607,12 @@ public class BoardData {
     List<MoveData> outOfRangeMoves = new ArrayList<>();
     featurecat.lizzie.analysis.TrackingAnalysisController.DisplaySnapshot focus =
         isMain && Lizzie.frame != null ? Lizzie.frame.trackingDisplaySnapshot() : null;
-    Set<String> attended = focus != null && Lizzie.frame.isTrackingDisplayCurrent(focus)
-        && Lizzie.frame.getDisplayNode().getData() == this ? focus.selectedPoints() : Set.of();
+    Set<String> attended =
+        focus != null
+                && Lizzie.frame.isTrackingDisplayCurrent(focus)
+                && Lizzie.frame.getDisplayNode().getData() == this
+            ? focus.selectedPoints()
+            : Set.of();
     if (Lizzie.config.limitMaxSuggestion > 0
         && !Lizzie.config.showNoSuggCircle
         && (moves.size() > Lizzie.config.limitMaxSuggestion)) {
@@ -657,8 +680,7 @@ public class BoardData {
       Leelaz sourceEngine,
       int totalplayouts,
       List<Double> estimateArray) {
-    tryToSetBestMoves2FromEngine(
-        moves, engName, true, sourceEngine, totalplayouts, estimateArray);
+    tryToSetBestMoves2FromEngine(moves, engName, true, sourceEngine, totalplayouts, estimateArray);
   }
 
   private void tryToSetBestMoves2FromEngine(
@@ -673,8 +695,13 @@ public class BoardData {
   }
 
   private synchronized void tryToSetBestMoves2FromEngine(
-      List<MoveData> moves, String engName, boolean isFromLeelaz,
-      Leelaz metadataEngine, int totalplayouts, List<Double> estimateArray, boolean forceOverride) {
+      List<MoveData> moves,
+      String engName,
+      boolean isFromLeelaz,
+      Leelaz metadataEngine,
+      int totalplayouts,
+      List<Double> estimateArray,
+      boolean forceOverride) {
     if (!forceOverride && Lizzie.config.enableLizzieCache && !Lizzie.config.isAutoAna) {
       if (!(totalplayouts > playouts2
           || isChanged2
@@ -971,7 +998,9 @@ public class BoardData {
     copyAnalysisStateFrom(data, false);
   }
 
-  /** Shares the short payload-commit lock so a save cannot mix visits and candidates from updates. */
+  /**
+   * Shares the short payload-commit lock so a save cannot mix visits and candidates from updates.
+   */
   public synchronized BoardData clone() {
     BoardData data = copyCoreData();
     data.copyCoreStateFrom(this);

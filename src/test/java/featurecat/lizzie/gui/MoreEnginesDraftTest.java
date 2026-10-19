@@ -67,10 +67,14 @@ class MoreEnginesDraftTest {
       if (editor != null) editor.finishThreadPolicyWorkers();
       SwingUtilities.invokeAndWait(this::restoreGlobals);
       SwingUtilities.invokeAndWait(
-          () -> assertTrue(editor == null || editor.threadPolicyRefreshTimer == null
-              || !editor.threadPolicyRefreshTimer.isRunning(),
-              "fixture cleanup must consume worker done() before stopping its refresh timer"));
-      assertNull(asynchronousFailure.get(),
+          () ->
+              assertTrue(
+                  editor == null
+                      || editor.threadPolicyRefreshTimer == null
+                      || !editor.threadPolicyRefreshTimer.isRunning(),
+                  "fixture cleanup must consume worker done() before stopping its refresh timer"));
+      assertNull(
+          asynchronousFailure.get(),
           () -> "Unhandled asynchronous fixture failure: " + asynchronousFailure.get());
     } finally {
       SwingUtilities.invokeAndWait(this::restoreGlobals);
@@ -261,12 +265,13 @@ class MoreEnginesDraftTest {
     @Override
     void executeThreadPolicyWorker(SwingWorker<Void, Void> worker) {
       CountDownLatch doneOnEdt = new CountDownLatch(1);
-      worker.addPropertyChangeListener(event -> {
-        if ("state".equals(event.getPropertyName())
-            && event.getNewValue() == SwingWorker.StateValue.DONE) {
-          doneOnEdt.countDown();
-        }
-      });
+      worker.addPropertyChangeListener(
+          event -> {
+            if ("state".equals(event.getPropertyName())
+                && event.getNewValue() == SwingWorker.StateValue.DONE) {
+              doneOnEdt.countDown();
+            }
+          });
       // Keep this fixture's asynchronous work behind an explicit boundary until cleanup.
       workers.add(new PendingWorker(worker, doneOnEdt));
     }
@@ -278,13 +283,15 @@ class MoreEnginesDraftTest {
         executor.shutdown();
         for (PendingWorker pending : workers) {
           pending.worker().get(5, TimeUnit.SECONDS);
-          assertTrue(pending.doneOnEdt().await(5, TimeUnit.SECONDS),
+          assertTrue(
+              pending.doneOnEdt().await(5, TimeUnit.SECONDS),
               "owned SwingWorker must finish its done() callback on the EDT");
         }
         SwingUtilities.invokeAndWait(() -> {});
       } finally {
         executor.shutdownNow();
-        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS),
+        assertTrue(
+            executor.awaitTermination(5, TimeUnit.SECONDS),
             "owned thread-policy worker must terminate");
       }
     }

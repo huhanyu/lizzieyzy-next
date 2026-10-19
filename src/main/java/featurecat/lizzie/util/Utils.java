@@ -136,7 +136,6 @@ public class Utils {
     }
   }
 
-
   public static int getRecommendedKataGoThreads() {
     int processors = Math.max(1, Runtime.getRuntime().availableProcessors());
     if (processors <= 4) {
@@ -144,7 +143,6 @@ public class Utils {
     }
     return Math.max(2, Math.min(MAX_AUTO_KATAGO_THREADS, processors - 1));
   }
-
 
   public static void persistConfigQuietly() {
     if (Lizzie.config == null) {
@@ -667,7 +665,6 @@ public class Utils {
     }
   }
 
-
   public static RemoteEngineData getAnalysisEngineRemoteEngineData() {
     RemoteEngineData remoteData = new RemoteEngineData();
     Optional<JSONObject> remoteEngineInfoOpt =
@@ -1115,16 +1112,14 @@ public class Utils {
                   if (node.getData().blackCaptures - node.previous().get().getData().blackCaptures
                       >= 3)
                     playVoice(File.separator + "sound" + File.separator + "deadStoneMore.wav");
-                  else
-                    playVoice(File.separator + "sound" + File.separator + "deadStone.wav");
+                  else playVoice(File.separator + "sound" + File.separator + "deadStone.wav");
                 } else {
                   if (node.getData().whiteCaptures
                       > node.previous().get().getData().whiteCaptures) {
                     if (node.getData().whiteCaptures - node.previous().get().getData().whiteCaptures
                         >= 3)
                       playVoice(File.separator + "sound" + File.separator + "deadStoneMore.wav");
-                    else
-                      playVoice(File.separator + "sound" + File.separator + "deadStone.wav");
+                    else playVoice(File.separator + "sound" + File.separator + "deadStone.wav");
                   } else playVoice(File.separator + "sound" + File.separator + "Stone.wav");
                 }
               } else {
@@ -1205,11 +1200,9 @@ public class Utils {
     engineDt.userName = engineInfo.optString("userName", "");
     engineDt.password = SshEnginePasswords.readFrom(engineInfo);
     engineDt.initialCommand = engineInfo.optString("initialCommand", "");
-    engineDt.gtpConfigurationProtocol =
-        engineInfo.optString("gtpConfigurationProtocol", "");
+    engineDt.gtpConfigurationProtocol = engineInfo.optString("gtpConfigurationProtocol", "");
     JSONObject profile = engineInfo.optJSONObject("gtpConfigurationProfile");
-    engineDt.gtpConfigurationProfile =
-        profile == null ? null : new JSONObject(profile.toString());
+    engineDt.gtpConfigurationProfile = profile == null ? null : new JSONObject(profile.toString());
     return engineDt;
   }
 
@@ -1414,8 +1407,7 @@ public class Utils {
   }
 
   public static void changeFontRecursive(Container root, String fontName) {
-    String resolvedFontName =
-        fontName == null || fontName.isBlank() ? Font.DIALOG : fontName;
+    String resolvedFontName = fontName == null || fontName.isBlank() ? Font.DIALOG : fontName;
     Font inheritedFont = root.getFont();
     for (Component c : root.getComponents()) {
       Font currentFont = c.getFont();

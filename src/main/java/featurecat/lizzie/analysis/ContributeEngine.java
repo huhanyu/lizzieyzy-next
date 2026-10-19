@@ -481,8 +481,7 @@ public class ContributeEngine {
         synchronized (ContributeEngine.this) {
           if (!ownsOutput(launch) || launch.terminal || launch.permanent()) return;
           normalQuit();
-          if (Lizzie.frame.contributeView != null)
-            Lizzie.frame.contributeView.setVisible(false);
+          if (Lizzie.frame.contributeView != null) Lizzie.frame.contributeView.setVisible(false);
         }
       }
     };
@@ -500,14 +499,15 @@ public class ContributeEngine {
             int ver1 = Integer.parseInt(version[0].substring(1));
             int ver2 = Integer.parseInt(version[1]);
             if (ver1 <= 1 && ver2 < 11) {
-              notification = outputNotification(
-                  launch,
-                  Lizzie.resourceBundle.getString("Contribute.version.outOfDate")
-                      + " ("
-                      + params[3]
-                      + "), "
-                      + Lizzie.resourceBundle.getString("Contribute.version.outOfDate2"),
-                  true);
+              notification =
+                  outputNotification(
+                      launch,
+                      Lizzie.resourceBundle.getString("Contribute.version.outOfDate")
+                          + " ("
+                          + params[3]
+                          + "), "
+                          + Lizzie.resourceBundle.getString("Contribute.version.outOfDate2"),
+                      true);
             }
           } catch (NumberFormatException e) {
             e.printStackTrace();
@@ -632,8 +632,9 @@ public class ContributeEngine {
     }
     if (line.contains("Exited cleanly after signal") || line.contains("All cleaned up, quitting")) {
       isNormalEnd = true;
-      notification = outputNotification(
-          launch, Lizzie.resourceBundle.getString("Contribute.tips.exitedAfterSignal"), false);
+      notification =
+          outputNotification(
+              launch, Lizzie.resourceBundle.getString("Contribute.tips.exitedAfterSignal"), false);
       Menu.engineMenu.setText(Lizzie.resourceBundle.getString("Menu.noEngine"));
       if (Lizzie.frame.contributeView != null) Lizzie.frame.contributeView.exitedAfterSignal();
     }
@@ -763,7 +764,6 @@ public class ContributeEngine {
     outputStream = new BufferedOutputStream(process.getOutputStream());
     errorStream = new BufferedReader(new InputStreamReader(process.getErrorStream()));
   }
-
 
   public boolean getJsonGameInfo(
       JSONObject jsonInfo,

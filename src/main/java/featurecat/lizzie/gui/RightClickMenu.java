@@ -15,9 +15,9 @@ import java.util.TimerTask;
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JPopupMenu;
+import javax.swing.SwingUtilities;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
-import javax.swing.SwingUtilities;
 
 public class RightClickMenu extends JPopupMenu {
   static String trackingUnavailableKey(Leelaz.MoveFocusCapability capability, boolean tooltip) {

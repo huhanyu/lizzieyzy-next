@@ -120,12 +120,7 @@ class DoubleMenuEngineCheckBoxLayoutTest {
                 menuHeight,
                 Math.max(label.getPreferredSize().height, field.getPreferredSize().height)),
         () ->
-            "group clips font/menu combination "
-                + fontSize
-                + "/"
-                + menuHeight
-                + ": "
-                + preferred);
+            "group clips font/menu combination " + fontSize + "/" + menuHeight + ": " + preferred);
     assertEquals(0, field.getX() - (label.getX() + label.getWidth()));
   }
 

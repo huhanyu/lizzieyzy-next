@@ -77,8 +77,7 @@ final class KataGoAccelerationLayout {
     area.setBackground(background);
     area.setBorder(
         BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(border),
-            BorderFactory.createEmptyBorder(6, 8, 8, 8)));
+            BorderFactory.createLineBorder(border), BorderFactory.createEmptyBorder(6, 8, 8, 8)));
     return area;
   }
 
@@ -142,8 +141,10 @@ final class KataGoAccelerationLayout {
     View view = area.getUI().getRootView(area);
     view.setSize(innerWidth, Integer.MAX_VALUE);
     int height = (int) Math.ceil(view.getPreferredSpan(View.Y_AXIS));
-    return insets.top + insets.bottom
-        + Math.max(area.getFontMetrics(area.getFont()).getHeight(), height) + 4;
+    return insets.top
+        + insets.bottom
+        + Math.max(area.getFontMetrics(area.getFont()).getHeight(), height)
+        + 4;
   }
 
   /** Preserve aligned status columns, but stack them before the value becomes unreadably narrow. */
@@ -185,11 +186,14 @@ final class KataGoAccelerationLayout {
       int valueHeight = textHeightForWidth(status, valueWidth);
       if (apply) {
         title.setBounds(0, 0, Math.min(width, titleWidth), titleHeight);
-        status.setBounds(stacked ? 0 : titleWidth + COLUMN_GAP,
-            stacked ? titleHeight + 4 : 0, valueWidth, valueHeight);
+        status.setBounds(
+            stacked ? 0 : titleWidth + COLUMN_GAP,
+            stacked ? titleHeight + 4 : 0,
+            valueWidth,
+            valueHeight);
       }
-      return new Dimension(width,
-          stacked ? titleHeight + 4 + valueHeight : Math.max(titleHeight, valueHeight));
+      return new Dimension(
+          width, stacked ? titleHeight + 4 + valueHeight : Math.max(titleHeight, valueHeight));
     }
 
     @Override
@@ -217,13 +221,14 @@ final class KataGoAccelerationLayout {
       lastWidth = width;
       if (!relayoutPending && (widthChanged || height < getPreferredSize().height)) {
         relayoutPending = true;
-        SwingUtilities.invokeLater(() -> {
-          relayoutPending = false;
-          if (getParent() != null) {
-            getParent().invalidate();
-            getParent().revalidate();
-          }
-        });
+        SwingUtilities.invokeLater(
+            () -> {
+              relayoutPending = false;
+              if (getParent() != null) {
+                getParent().invalidate();
+                getParent().revalidate();
+              }
+            });
       }
     }
   }

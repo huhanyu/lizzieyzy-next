@@ -258,7 +258,8 @@ class PlatformCredentialStoreTest {
       assertEquals(
           secret, reopened.read(CredentialStore.Kind.CHATGPT_SESSION, account).orElseThrow());
       assertEquals(
-          "independent-api-key", reopened.read(CredentialStore.Kind.API_KEY, account).orElseThrow());
+          "independent-api-key",
+          reopened.read(CredentialStore.Kind.API_KEY, account).orElseThrow());
       try (var files = Files.list(directory)) {
         for (Path file : files.toList()) {
           String encoded = Files.readString(file, StandardCharsets.US_ASCII);

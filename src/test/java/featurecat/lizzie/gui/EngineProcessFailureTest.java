@@ -235,8 +235,7 @@ public final class EngineProcessFailureTest {
     if (scenario == Scenario.QUIT_REFUSAL) {
       Path refusalPath = Path.of(records.get("evidence.old-receipt"));
       Map<String, String> refusal =
-          readRecords(
-              refusalPath, Set.of("command", "refusal", "pid", "launch.ordinal"));
+          readRecords(refusalPath, Set.of("command", "refusal", "pid", "launch.ordinal"));
       assertEquals("quit", refusal.get("command"));
       assertEquals("stay-alive", refusal.get("refusal"));
       assertEquals(Long.toString(oldPid), refusal.get("pid"));
@@ -251,38 +250,18 @@ public final class EngineProcessFailureTest {
     }
     Map<String, String> stdoutLast =
         assertBurstReceipt(
-            Path.of(records.get("evidence.burst-stdout-last")),
-            "stdout",
-            1,
-            2048,
-            oldPid,
-            1);
+            Path.of(records.get("evidence.burst-stdout-last")), "stdout", 1, 2048, oldPid, 1);
     Map<String, String> stderrLast =
         assertBurstReceipt(
-            Path.of(records.get("evidence.burst-stderr-last")),
-            "stderr",
-            1,
-            2048,
-            oldPid,
-            1);
+            Path.of(records.get("evidence.burst-stderr-last")), "stderr", 1, 2048, oldPid, 1);
     assertBurstReceipt(
         Path.of(records.get("evidence.burst-stdout-first")), "stdout", 1, 1, oldPid, 1);
     assertBurstReceipt(
-        Path.of(records.get("evidence.burst-stdout-progress")),
-        "stdout",
-        1,
-        1024,
-        oldPid,
-        1);
+        Path.of(records.get("evidence.burst-stdout-progress")), "stdout", 1, 1024, oldPid, 1);
     assertBurstReceipt(
         Path.of(records.get("evidence.burst-stderr-first")), "stderr", 1, 1, oldPid, 1);
     assertBurstReceipt(
-        Path.of(records.get("evidence.burst-stderr-progress")),
-        "stderr",
-        1,
-        1024,
-        oldPid,
-        1);
+        Path.of(records.get("evidence.burst-stderr-progress")), "stderr", 1, 1024, oldPid, 1);
     assertEquals(stdoutLast.get("bytes"), records.get("burst.stdout.bytes"));
     assertEquals(stderrLast.get("bytes"), records.get("burst.stderr.bytes"));
     assertEquals(stdoutLast.get("duration.nanos"), records.get("burst.stdout.duration-nanos"));
@@ -771,7 +750,8 @@ public final class EngineProcessFailureTest {
     recordPhase(harness, "stimulus-observed", engine, null);
 
     CountDownLatch controlResponse = new CountDownLatch(1);
-    LeelazResponseTestBridge.sendCommandWithResponse(engine.engine, "name", controlResponse::countDown);
+    LeelazResponseTestBridge.sendCommandWithResponse(
+        engine.engine, "name", controlResponse::countDown);
     await(
         () -> controlResponse.getCount() == 0,
         burstDeadline,
@@ -832,8 +812,7 @@ public final class EngineProcessFailureTest {
     details.put("evidence.burst-stderr-progress", stderrProgress.toString());
     details.put("evidence.burst-stderr-last", stderrLast.toString());
     details.put("evidence.burst-control", controlReceipt.toString());
-    return evidence(
-        harness, engine, null, stdoutLast, List.of(staged), "D4", Map.copyOf(details));
+    return evidence(harness, engine, null, stdoutLast, List.of(staged), "D4", Map.copyOf(details));
   }
 
   private static ScenarioEvidence runQuitRefusal(Harness harness) throws Exception {
@@ -841,8 +820,7 @@ public final class EngineProcessFailureTest {
     Deadline initialRestore = harness.budget.initialRestore();
     Set<Thread> existingReaders = productionReaderThreads();
     EngineRun engine =
-        addAndSwitch(
-            harness, "quit-peer", "quit-refusal", existingReaders, true, initialRestore);
+        addAndSwitch(harness, "quit-peer", "quit-refusal", existingReaders, true, initialRestore);
     awaitHealthy(harness, engine, "D4", initialRestore);
     Path staged = stagedSgf(engine.incarnation);
     recordPhase(harness, "initial-restore-complete", engine, null);
@@ -869,9 +847,7 @@ public final class EngineProcessFailureTest {
         engine.engine.forceQuit();
         await(
             () ->
-                !ProcessHandle.of(engine.incarnation.pid)
-                    .map(ProcessHandle::isAlive)
-                    .orElse(false),
+                !ProcessHandle.of(engine.incarnation.pid).map(ProcessHandle::isAlive).orElse(false),
             containment,
             "forced containment of refusing peer");
         await(engine.readers::terminated, containment, "forced reader containment");
@@ -898,9 +874,7 @@ public final class EngineProcessFailureTest {
     await(() -> !Files.exists(staged), cleanup, "refusing peer staged-file deletion");
     await(
         () ->
-            !engine.engine.isStarted()
-                && !engine.engine.isLoaded()
-                && !engine.engine.isPondering(),
+            !engine.engine.isStarted() && !engine.engine.isLoaded() && !engine.engine.isPondering(),
         cleanup,
         "terminal nonpondering application state");
     assertApplicationPosition(harness.history, harness.target, "D4", true);

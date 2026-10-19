@@ -52,8 +52,7 @@ class ThemeBlunderNodeRulesTest {
 
   @Test
   void invalidColorChannelFallsBackToTheCompleteGlobalPair() {
-    assertUsesGlobalRules(
-        themeWith(rules("[-8,100]", "[[1,2,3],[4,5,256]]"), globalRules()));
+    assertUsesGlobalRules(themeWith(rules("[-8,100]", "[[1,2,3],[4,5,256]]"), globalRules()));
   }
 
   @Test
@@ -69,8 +68,7 @@ class ThemeBlunderNodeRulesTest {
     Theme theme = themeWith(rules("[-8,100]", "[[1,2,3]]"), new JSONObject());
 
     assertEquals(DEFAULT_THRESHOLDS, theme.blunderWinrateThresholds().orElseThrow());
-    assertEquals(
-        new Color(0, 210, 210), theme.blunderNodeColors().orElseThrow().get(100.0));
+    assertEquals(new Color(0, 210, 210), theme.blunderNodeColors().orElseThrow().get(100.0));
   }
 
   @Test
@@ -90,8 +88,7 @@ class ThemeBlunderNodeRulesTest {
     Path themeDirectory = tempDir.resolve("legacy");
     Files.createDirectories(themeDirectory);
     Path themeFile = themeDirectory.resolve("theme.txt");
-    String original =
-        rules("[-8,100]", "[[1,2,3]]").toString(2) + System.lineSeparator();
+    String original = rules("[-8,100]", "[[1,2,3]]").toString(2) + System.lineSeparator();
     Files.writeString(themeFile, original, StandardCharsets.UTF_8);
     try {
       Theme.pathPrefix = tempDir.toString() + java.io.File.separator;

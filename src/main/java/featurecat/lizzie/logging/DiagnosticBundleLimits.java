@@ -14,13 +14,7 @@ public final class DiagnosticBundleLimits {
       long crashWindowHours,
       long crashCapBytes,
       long rawCapBytes) {
-    this(
-        appWindowHours,
-        appCapBytes,
-        crashWindowHours,
-        crashCapBytes,
-        rawCapBytes,
-        rawCapBytes);
+    this(appWindowHours, appCapBytes, crashWindowHours, crashCapBytes, rawCapBytes, rawCapBytes);
   }
 
   public DiagnosticBundleLimits(

@@ -35,11 +35,7 @@ class NoLegacyLoggingOutputTest {
         new DiagnosticBundleExporter(DiagnosticBundleExporter.defaultOutputDirectory(tempDir))
             .export(
                 new DiagnosticBundleRequest(
-                    runtime,
-                    EnumSet.noneOf(TraceScope.class),
-                    new JSONObject(),
-                    null,
-                    "next-dev"));
+                    runtime, EnumSet.noneOf(TraceScope.class), new JSONObject(), null, "next-dev"));
     assertTrue(Files.isRegularFile(zip));
     assertFalse(Files.exists(tempDir.resolve("LastGtpLogs.txt")));
     assertFalse(Files.exists(tempDir.resolve("LastConsoleLogs.txt")));

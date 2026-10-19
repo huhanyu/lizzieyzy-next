@@ -342,9 +342,7 @@ public final class KataGoRules {
 
   private static Map<String, KataGoRules> officialPresets() {
     Map<String, KataGoRules> presets = new LinkedHashMap<>();
-    presets.put(
-        "tromp-taylor",
-        preset("POSITIONAL", "AREA", "NONE", true, false, "0", false));
+    presets.put("tromp-taylor", preset("POSITIONAL", "AREA", "NONE", true, false, "0", false));
     presets.put("chinese", preset("SIMPLE", "AREA", "NONE", false, false, "N", true));
     presets.put("chinese-ogs", preset("POSITIONAL", "AREA", "NONE", false, false, "N", true));
     presets.put("chinese-kgs", preset("POSITIONAL", "AREA", "NONE", false, false, "N", true));

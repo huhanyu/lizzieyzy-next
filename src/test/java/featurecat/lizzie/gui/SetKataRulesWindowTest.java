@@ -11,16 +11,16 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.ConfigTestHelper;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
-import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.EngineRulesResult;
+import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryList;
 import java.awt.Color;
-import java.awt.image.BufferedImage;
-import java.awt.KeyboardFocusManager;
 import java.awt.GraphicsEnvironment;
+import java.awt.KeyboardFocusManager;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -33,8 +33,8 @@ import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
 import javax.swing.border.Border;
 import org.json.JSONObject;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class SetKataRulesWindowTest {
   @BeforeEach
@@ -254,7 +254,6 @@ class SetKataRulesWindowTest {
       closeDialog(dialog);
     }
   }
-
 
   @Test
   void delayedQueryStaysPendingUntilProtocolSettlesThenAppliesRadios() throws Exception {
@@ -584,7 +583,9 @@ class SetKataRulesWindowTest {
       Lizzie.config.uiConfig = new JSONObject();
       Lizzie.config.leelazConfig = new JSONObject();
       Lizzie.config.config =
-          new JSONObject().put("ui", Lizzie.config.uiConfig).put("leelaz", Lizzie.config.leelazConfig);
+          new JSONObject()
+              .put("ui", Lizzie.config.uiConfig)
+              .put("leelaz", Lizzie.config.leelazConfig);
       Lizzie.gtpConsole = null;
       Lizzie.frame = null;
       resetEngineGame();
@@ -614,14 +615,15 @@ class SetKataRulesWindowTest {
     @Override
     public void close() {
       try {
-        SwingUtilities.invokeAndWait(() -> {
-          for (java.awt.Window window : java.awt.Window.getWindows()) {
-            if (window instanceof SetKataRules dialog && !previousWindows.contains(window)) {
-              closeDialog(dialog);
-              window.dispose();
-            }
-          }
-        });
+        SwingUtilities.invokeAndWait(
+            () -> {
+              for (java.awt.Window window : java.awt.Window.getWindows()) {
+                if (window instanceof SetKataRules dialog && !previousWindows.contains(window)) {
+                  closeDialog(dialog);
+                  window.dispose();
+                }
+              }
+            });
       } catch (Exception failure) {
         throw new AssertionError("Could not dispose test rule windows", failure);
       } finally {

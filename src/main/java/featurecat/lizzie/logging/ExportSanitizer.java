@@ -256,7 +256,8 @@ public final class ExportSanitizer {
   private String sanitizeUntaggedString(String key, String text) {
     if ("arguments".equals(key)) {
       text =
-          ARGUMENT_ASSIGNMENT.matcher(text)
+          ARGUMENT_ASSIGNMENT
+              .matcher(text)
               .replaceAll(
                   match ->
                       Matcher.quoteReplacement(

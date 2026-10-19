@@ -675,8 +675,9 @@ public final class FunctionSearchInputTest {
       press(robot, key);
     }
   }
-  private static void typeAndAwait(
-      Robot robot, JTextField input, String text, String label) throws Exception {
+
+  private static void typeAndAwait(Robot robot, JTextField input, String text, String label)
+      throws Exception {
     for (int offset = 0; offset < text.length(); offset++) {
       String expected = text.substring(0, offset + 1);
       type(robot, text.substring(offset, offset + 1));
@@ -688,15 +689,19 @@ public final class FunctionSearchInputTest {
       } catch (AssertionError failure) {
         throw new AssertionError(
             failure.getMessage()
-                + "; expected=" + expected
-                + "; actual=" + runOnEdtUnchecked(input::getText)
-                + "; focus=" + runOnEdtUnchecked(
-                    () -> java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner()),
+                + "; expected="
+                + expected
+                + "; actual="
+                + runOnEdtUnchecked(input::getText)
+                + "; focus="
+                + runOnEdtUnchecked(
+                    () ->
+                        java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                            .getFocusOwner()),
             failure);
       }
     }
   }
-
 
   private static void press(Robot robot, int key) {
     robot.keyPress(key);

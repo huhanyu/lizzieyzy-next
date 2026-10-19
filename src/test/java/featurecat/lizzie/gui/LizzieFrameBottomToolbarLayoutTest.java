@@ -108,8 +108,7 @@ class LizzieFrameBottomToolbarLayoutTest {
   @Test
   void customStripFallbackDoesNotReserveANativeMenuBar() {
     int contentHeight =
-        LizzieFrame.resolvedContentLength(
-            0, MAXIMIZED_FRAME_HEIGHT, INSET_TOP, INSET_BOTTOM, 0);
+        LizzieFrame.resolvedContentLength(0, MAXIMIZED_FRAME_HEIGHT, INSET_TOP, INSET_BOTTOM, 0);
     LizzieFrame.MainContentLayout shown =
         layoutFor(MAXIMIZED_WIDTH, contentHeight, Menu.BOTTOM_TOOLBAR_SHOWN_HEIGHT);
 

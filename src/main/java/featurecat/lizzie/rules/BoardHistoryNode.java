@@ -282,8 +282,7 @@ public class BoardHistoryNode {
    * root-child turn repair is neither needed nor safe here: changing the parent would make an exact
    * rollback incomplete. A mismatch is rejected instead of being silently repaired.
    */
-  BoardHistoryNode addOrGotoForEngineGame(
-      BoardData data, boolean frozenNewMoveNumberInBranch) {
+  BoardHistoryNode addOrGotoForEngineGame(BoardData data, boolean frozenNewMoveNumberInBranch) {
     if (data == null || !data.isHistoryActionNode()) {
       throw new IllegalArgumentException("Engine-game history action is required");
     }
@@ -867,7 +866,6 @@ public class BoardHistoryNode {
     Lizzie.board.restoreHistoryNodeExact(this);
     return true;
   }
-
 
   private static ArrayList<ExtraStones> cloneExtraStones(ArrayList<ExtraStones> stones) {
     if (stones == null) {

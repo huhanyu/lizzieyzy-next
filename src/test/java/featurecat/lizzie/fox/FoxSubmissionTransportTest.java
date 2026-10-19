@@ -1,25 +1,30 @@
 package featurecat.lizzie.fox;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import java.net.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class FoxSubmissionTransportTest {
-  @Test void cancelledQueuedWriteCannotSendAndSuccessorCannotInheritIt() throws Exception {
+  @Test
+  void cancelledQueuedWriteCannotSendAndSuccessorCannotInheritIt() throws Exception {
     queuedWrite(false, false);
   }
 
-  @Test void directDeadlineExpiringBehindOutputLockCannotSubmit() throws Exception {
+  @Test
+  void directDeadlineExpiringBehindOutputLockCannotSubmit() throws Exception {
     queuedWrite(true, false);
   }
 
-  @Test void pdaCancelsOnlyUnwrittenQueuedMoveAndKeepsSuccessorEligible() throws Exception {
+  @Test
+  void pdaCancelsOnlyUnwrittenQueuedMoveAndKeepsSuccessorEligible() throws Exception {
     queuedWrite(false, true);
   }
 
-  @Test void physicallyClaimedMoveCannotBeCancelledOrReplacedByPda() {
+  @Test
+  void physicallyClaimedMoveCannotBeCancelledOrReplacedByPda() {
     FoxGameState game = new FoxGameState();
     game.connected();
     game.receive("FARULE,19,60,30,3,650", 0);
@@ -38,7 +43,8 @@ class FoxSubmissionTransportTest {
     assertEquals(1, game.snapshot().actions().size());
   }
 
-  @Test void concurrentClaimAndPdaCancellationAreMutuallyExclusive() throws Exception {
+  @Test
+  void concurrentClaimAndPdaCancellationAreMutuallyExclusive() throws Exception {
     ExecutorService contenders = Executors.newFixedThreadPool(2);
     try {
       for (int attempt = 0; attempt < 50; attempt++) {
@@ -52,19 +58,26 @@ class FoxSubmissionTransportTest {
         game.receive("FATIMELEFT,60,30,3", 0);
         var pending = game.prepareSubmission(game.snapshot(), 1, "D4", 1);
         CountDownLatch start = new CountDownLatch(1);
-        Future<Boolean> claim = contenders.submit(() -> {
-          start.await();
-          return game.claimSubmission(pending, 2);
-        });
-        Future<Boolean> cancel = contenders.submit(() -> {
-          start.await();
-          return game.cancelUnwrittenForPda(2);
-        });
+        Future<Boolean> claim =
+            contenders.submit(
+                () -> {
+                  start.await();
+                  return game.claimSubmission(pending, 2);
+                });
+        Future<Boolean> cancel =
+            contenders.submit(
+                () -> {
+                  start.await();
+                  return game.cancelUnwrittenForPda(2);
+                });
         start.countDown();
         boolean claimed = claim.get(2, TimeUnit.SECONDS);
         assertNotEquals(claimed, cancel.get(2, TimeUnit.SECONDS));
-        assertEquals(claimed ? FoxGameState.SubmissionOutcome.PENDING
-            : FoxGameState.SubmissionOutcome.CANCELLED, game.latestSubmission().outcome());
+        assertEquals(
+            claimed
+                ? FoxGameState.SubmissionOutcome.PENDING
+                : FoxGameState.SubmissionOutcome.CANCELLED,
+            game.latestSubmission().outcome());
         assertEquals(claimed ? pending : null, game.snapshot().pending());
       }
     } finally {
@@ -72,7 +85,8 @@ class FoxSubmissionTransportTest {
     }
   }
 
-  @Test void replacementClientIsAdmittedOnlyAfterOldDisconnectIsDelivered() throws Exception {
+  @Test
+  void replacementClientIsAdmittedOnlyAfterOldDisconnectIsDelivered() throws Exception {
     int port;
     try (ServerSocket free = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
       port = free.getLocalPort();
@@ -82,29 +96,44 @@ class FoxSubmissionTransportTest {
     CountDownLatch disconnectEntered = new CountDownLatch(1);
     CountDownLatch releaseDisconnect = new CountDownLatch(1);
     CountDownLatch secondConnected = new CountDownLatch(1);
-    try (FoxConnection transport = new FoxConnection(port, new FoxConnection.Listener() {
-      public void connected(long value) {
-        events.add("connected");
-        if (firstConnected.getCount() > 0) firstConnected.countDown(); else secondConnected.countDown();
-      }
-      public void received(long value, String body) {}
-      public void disconnected(long value) {
-        events.add("disconnected");
-        disconnectEntered.countDown();
-        try { releaseDisconnect.await(5, TimeUnit.SECONDS); }
-        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-      }
-      public void problem(String key) { events.add(key); }
-    })) {
+    try (FoxConnection transport =
+        new FoxConnection(
+            port,
+            new FoxConnection.Listener() {
+              public void connected(long value) {
+                events.add("connected");
+                if (firstConnected.getCount() > 0) firstConnected.countDown();
+                else secondConnected.countDown();
+              }
+
+              public void received(long value, String body) {}
+
+              public void disconnected(long value) {
+                events.add("disconnected");
+                disconnectEntered.countDown();
+                try {
+                  releaseDisconnect.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                }
+              }
+
+              public void problem(String key) {
+                events.add(key);
+              }
+            })) {
       Socket first = new Socket("127.0.0.1", port);
       assertTrue(firstConnected.await(2, TimeUnit.SECONDS));
       first.close();
       assertTrue(disconnectEntered.await(2, TimeUnit.SECONDS));
       try (Socket replacement = new Socket("127.0.0.1", port)) {
-        assertFalse(secondConnected.await(300, TimeUnit.MILLISECONDS),
+        assertFalse(
+            secondConnected.await(300, TimeUnit.MILLISECONDS),
             "replacement must wait until the old disconnect has been delivered");
         releaseDisconnect.countDown();
-        assertTrue(secondConnected.await(2, TimeUnit.SECONDS), "replacement is then admitted, not rejected");
+        assertTrue(
+            secondConnected.await(2, TimeUnit.SECONDS),
+            "replacement is then admitted, not rejected");
         assertEquals(java.util.List.of("connected", "disconnected", "connected"), events);
       }
     } finally {
@@ -132,22 +161,47 @@ class FoxSubmissionTransportTest {
     ExecutorService writers = Executors.newFixedThreadPool(2);
     CountDownLatch outputHeld = new CountDownLatch(1);
     CountDownLatch releaseOutput = new CountDownLatch(1);
-    try (FoxConnection transport = new FoxConnection(port, new FoxConnection.Listener() {
-      public void connected(long value) { token.set(value); connected.countDown(); }
-      public void received(long value, String body) {}
-      public void disconnected(long value) {}
-      public void problem(String key) {}
-    }); Socket peer = new Socket("127.0.0.1", port)) {
+    try (FoxConnection transport =
+            new FoxConnection(
+                port,
+                new FoxConnection.Listener() {
+                  public void connected(long value) {
+                    token.set(value);
+                    connected.countDown();
+                  }
+
+                  public void received(long value, String body) {}
+
+                  public void disconnected(long value) {}
+
+                  public void problem(String key) {}
+                });
+        Socket peer = new Socket("127.0.0.1", port)) {
       assertTrue(connected.await(2, TimeUnit.SECONDS));
       long original = token.get();
-      Future<Boolean> first = writers.submit(() -> transport.send(original, "AFSTATUS,B", () -> {
-        outputHeld.countDown();
-        try { return releaseOutput.await(2, TimeUnit.SECONDS); }
-        catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
-      }));
+      Future<Boolean> first =
+          writers.submit(
+              () ->
+                  transport.send(
+                      original,
+                      "AFSTATUS,B",
+                      () -> {
+                        outputHeld.countDown();
+                        try {
+                          return releaseOutput.await(2, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                          Thread.currentThread().interrupt();
+                          return false;
+                        }
+                      }));
       assertTrue(outputHeld.await(2, TimeUnit.SECONDS));
-      Future<Boolean> queued = writers.submit(() -> transport.send(original, pending.body(),
-          () -> game.claimSubmission(pending, expireDirectLimit ? 3_000_000_000L : 3)));
+      Future<Boolean> queued =
+          writers.submit(
+              () ->
+                  transport.send(
+                      original,
+                      pending.body(),
+                      () -> game.claimSubmission(pending, expireDirectLimit ? 3_000_000_000L : 3)));
       FoxGameState.Submission successor = null;
       if (pda) {
         long deadline = game.snapshot().submitDeadlineNanos();
@@ -165,14 +219,22 @@ class FoxSubmissionTransportTest {
       assertThrows(SocketTimeoutException.class, () -> peer.getInputStream().read());
       assertFalse(transport.send(original + 1, pending.body(), () -> true));
       assertTrue(game.snapshot().actions().isEmpty());
-      assertEquals(pda ? FoxGameState.SubmissionOutcome.CANCELLED : expireDirectLimit ? FoxGameState.SubmissionOutcome.PENDING
-          : FoxGameState.SubmissionOutcome.FAILED, game.submissions().get(0).outcome());
+      assertEquals(
+          pda
+              ? FoxGameState.SubmissionOutcome.CANCELLED
+              : expireDirectLimit
+                  ? FoxGameState.SubmissionOutcome.PENDING
+                  : FoxGameState.SubmissionOutcome.FAILED,
+          game.submissions().get(0).outcome());
       if (pda) {
-        assertSame(successor, game.snapshot().pending(), "late cancelled send does not affect successor");
+        assertSame(
+            successor, game.snapshot().pending(), "late cancelled send does not affect successor");
         assertTrue(game.claimSubmission(successor, 4));
         game.receive("FAMOVE,0,B,1^15^3^B", 5);
         game.disconnected();
-        assertTrue(game.hasCheckpoint(), "proven never-written cancellation does not poison confirmed history");
+        assertTrue(
+            game.hasCheckpoint(),
+            "proven never-written cancellation does not poison confirmed history");
       }
     } finally {
       releaseOutput.countDown();

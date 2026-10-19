@@ -44,41 +44,46 @@ class KataGoAutoSetupCatalogRegressionTest {
     set(dialog, "btnClose", close);
     set(dialog, "btnRemoteCompute", new JButton());
     set(dialog, "sectionNav", sidebar);
-    Method complete = KataGoAutoSetupDialog.class.getDeclaredMethod("setStateRefreshPending", boolean.class);
+    Method complete =
+        KataGoAutoSetupDialog.class.getDeclaredMethod("setStateRefreshPending", boolean.class);
     complete.setAccessible(true);
-    SwingUtilities.invokeAndWait(() -> {
-      refresh.setEnabled(false);
-      close.setEnabled(false);
-      sidebar.setEnabled(false);
-      try {
-        complete.invoke(dialog, false);
-      } catch (ReflectiveOperationException failure) {
-        throw new AssertionError(failure);
-      }
-      assertTrue(refresh.isEnabled(), "unavailable entries must remain refreshable");
-      assertTrue(close.isEnabled());
-      assertFalse(sidebar.isEnabled(), "saved-entry scope must never unlock other setup sections");
-    });
+    SwingUtilities.invokeAndWait(
+        () -> {
+          refresh.setEnabled(false);
+          close.setEnabled(false);
+          sidebar.setEnabled(false);
+          try {
+            complete.invoke(dialog, false);
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+          }
+          assertTrue(refresh.isEnabled(), "unavailable entries must remain refreshable");
+          assertTrue(close.isEnabled());
+          assertFalse(
+              sidebar.isEnabled(), "saved-entry scope must never unlock other setup sections");
+        });
     set(dialog, "selectedBenchmarkEntryId", "");
-    SwingUtilities.invokeAndWait(() -> {
-      try {
-        complete.invoke(dialog, false);
-      } catch (ReflectiveOperationException failure) {
-        throw new AssertionError(failure);
-      }
-      assertTrue(sidebar.isEnabled(), "normal setup navigation must still be restored");
-    });
+    SwingUtilities.invokeAndWait(
+        () -> {
+          try {
+            complete.invoke(dialog, false);
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+          }
+          assertTrue(sidebar.isEnabled(), "normal setup navigation must still be restored");
+        });
     set(dialog, "measuredTuningBusy", true);
-    SwingUtilities.invokeAndWait(() -> {
-      try {
-        complete.invoke(dialog, false);
-      } catch (ReflectiveOperationException failure) {
-        throw new AssertionError(failure);
-      }
-      assertFalse(refresh.isEnabled(), "late refresh must preserve measured-review exclusion");
-      assertFalse(sidebar.isEnabled());
-      assertTrue(close.isEnabled(), "closing must remain possible during review");
-    });
+    SwingUtilities.invokeAndWait(
+        () -> {
+          try {
+            complete.invoke(dialog, false);
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+          }
+          assertFalse(refresh.isEnabled(), "late refresh must preserve measured-review exclusion");
+          assertFalse(sidebar.isEnabled());
+          assertTrue(close.isEnabled(), "closing must remain possible during review");
+        });
   }
 
   @Test
@@ -93,42 +98,68 @@ class KataGoAutoSetupCatalogRegressionTest {
     writeHeader(weight, transformer);
     Files.setLastModifiedTime(weight, modified);
     assertEquals(size, Files.size(weight));
-    assertEquals(cnn, selected.weightCatalog.modelName(weight), "rendering still uses its snapshot");
+    assertEquals(
+        cnn, selected.weightCatalog.modelName(weight), "rendering still uses its snapshot");
     Path settings = root.resolve("config.txt");
     Files.writeString(settings, "original configuration");
     byte[] original = Files.readAllBytes(settings);
     AtomicBoolean persisted = new AtomicBoolean();
-    var error = assertThrows(KataGoAutoSetupDialog.WeightPreflightException.class,
-        () -> KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(selected, validation("1.16.0"),
-            ignored -> {
-              persisted.set(true);
-              Files.writeString(settings, "changed configuration");
-              return null;
-            }));
+    var error =
+        assertThrows(
+            KataGoAutoSetupDialog.WeightPreflightException.class,
+            () ->
+                KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(
+                    selected,
+                    validation("1.16.0"),
+                    ignored -> {
+                      persisted.set(true);
+                      Files.writeString(settings, "changed configuration");
+                      return null;
+                    }));
     assertEquals(KataGoAutoSetupDialog.WeightSelectionCheck.INCOMPATIBLE, error.check);
     assertFalse(persisted.get());
     assertArrayEquals(original, Files.readAllBytes(settings));
   }
 
   @Test
-  void compatibleReplacementStillRequiresFreshSelectionAndDeletedFileNeverWrites() throws Exception {
+  void compatibleReplacementStillRequiresFreshSelectionAndDeletedFileNeverWrites()
+      throws Exception {
     Path weight = root.resolve("selected.bin");
     writeHeader(weight, "custom_first");
     SetupSnapshot selected = snapshot(weight).scanWeightCatalog();
     writeHeader(weight, "custom_other");
-    var error = assertThrows(KataGoAutoSetupDialog.WeightPreflightException.class,
-        () -> KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(selected, validation("1.18.2"),
-            ignored -> { throw new AssertionError("stale selection must not persist"); }));
+    var error =
+        assertThrows(
+            KataGoAutoSetupDialog.WeightPreflightException.class,
+            () ->
+                KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(
+                    selected,
+                    validation("1.18.2"),
+                    ignored -> {
+                      throw new AssertionError("stale selection must not persist");
+                    }));
     assertEquals(KataGoAutoSetupDialog.WeightSelectionCheck.CHANGED, error.check);
     SetupSnapshot refreshed = selected.scanWeightCatalog();
     AtomicBoolean persisted = new AtomicBoolean();
-    KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(refreshed, validation("1.18.2"),
-        ignored -> { persisted.set(true); return null; });
+    KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(
+        refreshed,
+        validation("1.18.2"),
+        ignored -> {
+          persisted.set(true);
+          return null;
+        });
     assertTrue(persisted.get());
     Files.delete(weight);
-    var missing = assertThrows(KataGoAutoSetupDialog.WeightPreflightException.class,
-        () -> KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(refreshed, validation("1.18.2"),
-            ignored -> { throw new AssertionError("missing weight must not persist"); }));
+    var missing =
+        assertThrows(
+            KataGoAutoSetupDialog.WeightPreflightException.class,
+            () ->
+                KataGoAutoSetupDialog.applyWeightProfileAfterPreflight(
+                    refreshed,
+                    validation("1.18.2"),
+                    ignored -> {
+                      throw new AssertionError("missing weight must not persist");
+                    }));
     assertEquals(KataGoAutoSetupDialog.WeightSelectionCheck.MISSING, missing.check);
   }
 
@@ -143,7 +174,9 @@ class KataGoAutoSetupCatalogRegressionTest {
   }
 
   private static EngineValidationResult validation(String version) throws Exception {
-    var constructor = EngineValidationResult.class.getDeclaredConstructor(EngineValidationStatus.class, String.class);
+    var constructor =
+        EngineValidationResult.class.getDeclaredConstructor(
+            EngineValidationStatus.class, String.class);
     constructor.setAccessible(true);
     return constructor.newInstance(EngineValidationStatus.VALID, "KataGo v" + version);
   }
@@ -152,7 +185,8 @@ class KataGoAutoSetupCatalogRegressionTest {
     Field field = Unsafe.class.getDeclaredField("theUnsafe");
     field.setAccessible(true);
     HeadlessRefreshDialog dialog =
-        (HeadlessRefreshDialog) ((Unsafe) field.get(null)).allocateInstance(HeadlessRefreshDialog.class);
+        (HeadlessRefreshDialog)
+            ((Unsafe) field.get(null)).allocateInstance(HeadlessRefreshDialog.class);
     // Keep actual button instances when another independently tested feature adds completion UI.
     // Only the top-level native window construction is bypassed by this headless fixture.
     for (Field button : KataGoAutoSetupDialog.class.getDeclaredFields()) {
@@ -171,9 +205,17 @@ class KataGoAutoSetupCatalogRegressionTest {
   }
 
   private static final class HeadlessRefreshDialog extends KataGoAutoSetupDialog {
-    private HeadlessRefreshDialog() { super(null); }
-    @Override public void revalidate() {}
-    @Override public void repaint() {}
-    @Override public void setCursor(Cursor cursor) {}
+    private HeadlessRefreshDialog() {
+      super(null);
+    }
+
+    @Override
+    public void revalidate() {}
+
+    @Override
+    public void repaint() {}
+
+    @Override
+    public void setCursor(Cursor cursor) {}
   }
 }

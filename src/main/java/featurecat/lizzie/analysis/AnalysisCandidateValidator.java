@@ -23,13 +23,10 @@ public final class AnalysisCandidateValidator {
       return false;
     }
     int index = Board.getIndex(coordinates[0], coordinates[1]);
-    return index >= 0
-        && index < position.stones.length
-        && position.stones[index] == Stone.EMPTY;
+    return index >= 0 && index < position.stones.length && position.stones[index] == Stone.EMPTY;
   }
 
-  public static boolean allCandidatesOnEmptyPoints(
-      List<MoveData> candidates, BoardData position) {
+  public static boolean allCandidatesOnEmptyPoints(List<MoveData> candidates, BoardData position) {
     if (candidates == null || candidates.isEmpty()) {
       return true;
     }

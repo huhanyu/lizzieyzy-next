@@ -747,11 +747,13 @@ public class ContributeSavedEngineSelectionDesktopTest {
   // Test JVM launcher arguments use the Windows system code page on some JDKs. Keep the
   // harness transport ASCII while still exercising real CJK paths inside the application.
   private static String encodePath(Path path) {
-    return java.util.Base64.getUrlEncoder().encodeToString(path.toString().getBytes(StandardCharsets.UTF_8));
+    return java.util.Base64.getUrlEncoder()
+        .encodeToString(path.toString().getBytes(StandardCharsets.UTF_8));
   }
 
   private static Path decodePath(String encoded) {
-    return Path.of(new String(java.util.Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
+    return Path.of(
+        new String(java.util.Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
   }
 
   private static Set<Long> descendants() {

@@ -38,15 +38,12 @@ class KataGoExperimentalBackendInstallerTest {
     KataGoExperimentalBackendInstaller.installArchive(archive, Backend.ROCM_GFX103X, target);
 
     assertEquals("engine", Files.readString(target.resolve("katago.exe")));
-    assertEquals(
-        "rocblas", Files.readString(target.resolve("rocblas/library/table.dat")));
-    assertEquals(
-        "hipblaslt", Files.readString(target.resolve("hipblaslt/library/table.dat")));
+    assertEquals("rocblas", Files.readString(target.resolve("rocblas/library/table.dat")));
+    assertEquals("hipblaslt", Files.readString(target.resolve("hipblaslt/library/table.dat")));
     assertEquals(
         "rocm-gfx103x",
         Files.readString(target.resolve("lizzieyzy-next-engine-backend.txt")).trim());
-    String manifest =
-        Files.readString(target.resolve("lizzieyzy-next-katago-engine-manifest.txt"));
+    String manifest = Files.readString(target.resolve("lizzieyzy-next-katago-engine-manifest.txt"));
     assertTrue(manifest.contains("KataGo release: " + KataGoAssetCatalog.get().katagoReleaseTag()));
     assertTrue(manifest.contains("Asset SHA-256: " + Backend.ROCM_GFX103X.asset().sha256()));
   }

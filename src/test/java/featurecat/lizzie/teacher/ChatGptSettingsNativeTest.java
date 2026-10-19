@@ -698,7 +698,8 @@ class ChatGptSettingsNativeTest {
                     ? label.getText()
                     : child instanceof AbstractButton button ? button.getText() : null;
         if (text != null && !text.isBlank())
-          assertEquals(-1, child.getFont().canDisplayUpTo(text), locale + ": missing glyphs: " + text);
+          assertEquals(
+              -1, child.getFont().canDisplayUpTo(text), locale + ": missing glyphs: " + text);
       }
       if (child instanceof javax.swing.JTextArea && child.isShowing()) {
         assertFalse(child.getFont().isBold(), locale + ": helper text must not be bold");

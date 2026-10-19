@@ -79,14 +79,14 @@ class NewEngineGameDialogHandicapApplyTest {
   @Test
   void illegalNonEmptyHandicapDoesNotStallSilently() {
     assertThrows(
-        ParseException.class,
-        () -> NewEngineGameDialog.parseEngineGameHandicap(true, "abc"));
+        ParseException.class, () -> NewEngineGameDialog.parseEngineGameHandicap(true, "abc"));
 
     NewEngineGameDialog.EngineGameHandicapApply apply =
         NewEngineGameDialog.EngineGameHandicapApply.fromField(true, "abc");
 
     assertFalse(apply.continues(), "illegal non-empty 让子 must not continue apply()");
-    assertTrue(apply.showsVisibleError(), "illegal non-empty 让子 must show a visible in-dialog error");
+    assertTrue(
+        apply.showsVisibleError(), "illegal non-empty 让子 must show a visible in-dialog error");
     assertEquals(
         NewEngineGameDialog.EngineGameHandicapApply.ERROR_RESOURCE_KEY, apply.errorResourceKey());
   }

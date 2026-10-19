@@ -454,8 +454,7 @@ public final class ControlledGtpPeer {
             .append(move)
             .append(" visits ")
             .append(visits)
-            .append(
-                " winrate 0.55 scoreMean 1.0 scoreStdev 2.0 prior 0.1 lcb 0.5 order 0 pv");
+            .append(" winrate 0.55 scoreMean 1.0 scoreStdev 2.0 prior 0.1 lcb 0.5 order 0 pv");
     for (int index = 0; index < pvMoves; index++) {
       line.append(' ').append(move);
     }
@@ -821,10 +820,8 @@ public final class ControlledGtpPeer {
         "controlled-gtp-burst-finish",
         controlRoot.resolve("release-002-burst-finish"),
         finishRelease::countDown);
-    startBurstWriter(
-        "controlled-gtp-stdout-burst", "stdout", () -> emitStdoutBurst(finishRelease));
-    startBurstWriter(
-        "controlled-gtp-stderr-burst", "stderr", () -> emitStderrBurst(finishRelease));
+    startBurstWriter("controlled-gtp-stdout-burst", "stdout", () -> emitStdoutBurst(finishRelease));
+    startBurstWriter("controlled-gtp-stderr-burst", "stderr", () -> emitStderrBurst(finishRelease));
   }
 
   private static void startBurstWriter(String threadName, String stream, Runnable writer) {
@@ -898,8 +895,7 @@ public final class ControlledGtpPeer {
     recordBurstCompletion("stderr", bytes, started);
   }
 
-  private static void recordBurstProgress(
-      String stream, int sequence, long bytes, long started) {
+  private static void recordBurstProgress(String stream, int sequence, long bytes, long started) {
     String suffix = sequence == 1 ? "first" : sequence == BURST_MIDPOINT ? "progress" : null;
     if (suffix != null) {
       writeUnchecked(

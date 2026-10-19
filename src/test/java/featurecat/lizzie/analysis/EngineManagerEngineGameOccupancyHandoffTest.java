@@ -16,7 +16,6 @@ import featurecat.lizzie.enginegame.EngineGamePlans;
 import featurecat.lizzie.enginegame.EngineParticipantIdentity;
 import featurecat.lizzie.enginegame.StartFailure;
 import featurecat.lizzie.enginegame.StartObserver;
-
 import featurecat.lizzie.gui.BottomToolbar;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.JFontMenu;
@@ -206,7 +205,8 @@ class EngineManagerEngineGameOccupancyHandoffTest {
       assertTrue(blackEngine.isUnfinishedForegroundRestoreOccupancyHeldForTest());
 
       long generationBefore = blackEngine.exclusiveOccupancyPromptGeneration();
-      EngineManager.EngineGameOwnerTransaction[] secondGame = new EngineManager.EngineGameOwnerTransaction[1];
+      EngineManager.EngineGameOwnerTransaction[] secondGame =
+          new EngineManager.EngineGameOwnerTransaction[1];
       SwingUtilities.invokeAndWait(
           () -> {
             blackEngine.showExclusiveGtpConflictMessage();
@@ -232,11 +232,9 @@ class EngineManagerEngineGameOccupancyHandoffTest {
           EngineManager.isCurrentEngineGameTransaction(secondGame[0]),
           "warm KataGo PK start must keep the second transaction current");
       assertFalse(
-          blackSync.hasFailed(),
-          "black warm KataGo PK start must pass ordinary-command admission");
+          blackSync.hasFailed(), "black warm KataGo PK start must pass ordinary-command admission");
       assertFalse(
-          whiteSync.hasFailed(),
-          "white warm KataGo PK start must pass ordinary-command admission");
+          whiteSync.hasFailed(), "white warm KataGo PK start must pass ordinary-command admission");
       assertTrue(EngineManager.transitionEngineGameToDispatched(secondGame[0]));
       assertTrue(
           restartManager.finishPkEngineSynchronizations(secondGame[0], blackSync, whiteSync));
@@ -276,8 +274,7 @@ class EngineManagerEngineGameOccupancyHandoffTest {
   }
 
   @Test
-  void ownEdtEngineModeReservationDoesNotRejectWarmForegroundStartEngineGame()
-      throws Exception {
+  void ownEdtEngineModeReservationDoesNotRejectWarmForegroundStartEngineGame() throws Exception {
     WarmKataGoOccupancyLeelaz blackEngine = new WarmKataGoOccupancyLeelaz(true);
     WarmKataGoOccupancyLeelaz whiteEngine = new WarmKataGoOccupancyLeelaz(false);
     CountingLeaseEngineManager restartManager =
@@ -295,10 +292,8 @@ class EngineManagerEngineGameOccupancyHandoffTest {
       boolean[] started = new boolean[1];
       SwingUtilities.invokeAndWait(
           () -> {
-            Leelaz.EngineModeReservation reservation =
-                whiteEngine.beginEngineModeReservation();
-            assertTrue(
-                reservation != null, "EDT must hold the current foreground reservation");
+            Leelaz.EngineModeReservation reservation = whiteEngine.beginEngineModeReservation();
+            assertTrue(reservation != null, "EDT must hold the current foreground reservation");
             try {
               started[0] = acceptStart();
 
@@ -335,7 +330,6 @@ class EngineManagerEngineGameOccupancyHandoffTest {
     assertTrue(reservation != null);
     try {
       boolean started = acceptStart();
-
 
       assertFalse(started);
       assertFalse(EngineManager.hasActiveEngineGameTransaction());
@@ -516,8 +510,7 @@ class EngineManagerEngineGameOccupancyHandoffTest {
     private WarmKataGoOccupancyLeelaz(boolean gateRootReplayAfterKomi) throws Exception {
       super("");
       this.gateRootReplayAfterKomi = gateRootReplayAfterKomi;
-      transport =
-          ExactSnapshotRestoreProtocolFixture.install(this, this::respondToCommand);
+      transport = ExactSnapshotRestoreProtocolFixture.install(this, this::respondToCommand);
     }
 
     private ExactSnapshotRestoreProtocolFixture.Response respondToCommand(String command)

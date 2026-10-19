@@ -7,25 +7,25 @@ import java.util.Map;
  *
  * <p>Validates that a node represents the initial handicap placement for a game according to the
  * following invariants:
+ *
  * <ul>
- *   <li>The node is a snapshot node (not a genuine move, pass, or dummy node).</li>
+ *   <li>The node is a snapshot node (not a genuine move, pass, or dummy node).
  *   <li>All ancestors back to root are pre-action snapshots with no stones or setup properties
- *       (metadata-only ancestry is supported, partial setup count is rejected).</li>
- *   <li>No genuine MOVE or PASS actions appear on the ancestor path.</li>
- *   <li>Explicit HA &gt;= 2 is declared either via caller GameInfo or node/ancestor properties, with no
- *       conflicting declarations, capped at GTP area - 1.</li>
- *   <li>The board at the node has exactly HA unique valid black stones and zero white stones.</li>
- *   <li>No AW or AE properties exist on the node.</li>
- *   <li>Explicit PL must be 'W' if present (PL[B] is rejected).</li>
- *   <li>Any explicit AB coordinates must be unique, within bounds, and match black stones.</li>
+ *       (metadata-only ancestry is supported, partial setup count is rejected).
+ *   <li>No genuine MOVE or PASS actions appear on the ancestor path.
+ *   <li>Explicit HA &gt;= 2 is declared either via caller GameInfo or node/ancestor properties,
+ *       with no conflicting declarations, capped at GTP area - 1.
+ *   <li>The board at the node has exactly HA unique valid black stones and zero white stones.
+ *   <li>No AW or AE properties exist on the node.
+ *   <li>Explicit PL must be 'W' if present (PL[B] is rejected).
+ *   <li>Any explicit AB coordinates must be unique, within bounds, and match black stones.
  * </ul>
  *
  * <p>This recognizer is pure and causes no history or global state mutations.
  */
 public final class InitialHandicapSetup {
 
-  private static final String SGF_ALPHABET =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  private static final String SGF_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
   private InitialHandicapSetup() {}
 
@@ -36,7 +36,8 @@ public final class InitialHandicapSetup {
    * @param declaredHandicap the handicap declared in GameInfo (0 if unavailable)
    * @param width the board width
    * @param height the board height
-   * @return {@code true} if {@code node} satisfies initial handicap invariants, {@code false} otherwise
+   * @return {@code true} if {@code node} satisfies initial handicap invariants, {@code false}
+   *     otherwise
    */
   public static boolean isInitialHandicap(
       BoardHistoryNode node, int declaredHandicap, int width, int height) {
@@ -80,7 +81,9 @@ public final class InitialHandicapSetup {
       }
       Map<String, String> currProps = currData.getProperties();
       if (currProps != null) {
-        if (currProps.containsKey("AB") || currProps.containsKey("AW") || currProps.containsKey("AE")) {
+        if (currProps.containsKey("AB")
+            || currProps.containsKey("AW")
+            || currProps.containsKey("AE")) {
           return false;
         }
         String currPl = currProps.get("PL");

@@ -1760,7 +1760,8 @@ public class KataGoAutoSetupDialog extends JDialog {
     statusRow.add(lblBenchmarkReportStatus, BorderLayout.EAST);
     JPanel reportHeader = new JPanel(new BorderLayout(0, 6));
     reportHeader.setOpaque(false);
-    benchmarkModelNotice = new B11SpeedNoticePanel(Lizzie.resourceBundle, new JFontLabel().getFont());
+    benchmarkModelNotice =
+        new B11SpeedNoticePanel(Lizzie.resourceBundle, new JFontLabel().getFont());
     benchmarkModelNotice.setVisible(false);
     reportHeader.add(benchmarkModelNotice, BorderLayout.NORTH);
     reportHeader.add(statusRow, BorderLayout.SOUTH);
@@ -3281,7 +3282,9 @@ public class KataGoAutoSetupDialog extends JDialog {
     KataGoRuntimeHelper.BenchmarkResult result =
         KataGoRuntimeHelper.getStoredBenchmarkResult(targetEntry);
     String environment =
-        targetEntry == null ? "" : featurecat.lizzie.util.EngineThreadPolicy.environmentStatus(targetEntry);
+        targetEntry == null
+            ? ""
+            : featurecat.lizzie.util.EngineThreadPolicy.environmentStatus(targetEntry);
     boolean benchmarkResultIsHistorical = result != null && !environment.isBlank();
     BenchmarkDisplayState displayState = benchmarkDisplayState;
     if (displayState == BenchmarkDisplayState.IDLE && !unavailableReason.isBlank()) {
@@ -3473,7 +3476,9 @@ public class KataGoAutoSetupDialog extends JDialog {
     if (source == null || source.weightCatalog != null || source.activeWeightPath == null) return;
     // Benchmark admission creates a fresh snapshot without a catalog. Read only its header off EDT.
     createUiBackgroundWorker(
-            () -> B11ModelNotice.isB11(KataGoAutoSetupHelper.readWeightModelName(source.activeWeightPath)),
+            () ->
+                B11ModelNotice.isB11(
+                    KataGoAutoSetupHelper.readWeightModelName(source.activeWeightPath)),
             b11 -> {
               if (generation != benchmarkNoticeGeneration || source != snapshot) return;
               benchmarkModelNotice.setVisible(b11);
@@ -7194,7 +7199,8 @@ public class KataGoAutoSetupDialog extends JDialog {
 
     private int metricHeight() {
       return Math.max(
-          150, Math.max(nnMetric.getPreferredSize().height, visitsMetric.getPreferredSize().height));
+          150,
+          Math.max(nnMetric.getPreferredSize().height, visitsMetric.getPreferredSize().height));
     }
 
     @Override

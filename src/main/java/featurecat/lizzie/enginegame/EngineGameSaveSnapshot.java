@@ -3,8 +3,8 @@ package featurecat.lizzie.enginegame;
 import java.util.Objects;
 
 /**
- * One-shot immutable save input for an in-progress history. Producing this snapshot does not
- * update batch totals.
+ * One-shot immutable save input for an in-progress history. Producing this snapshot does not update
+ * batch totals.
  */
 public record EngineGameSaveSnapshot(
     EngineGameRecordContext context,

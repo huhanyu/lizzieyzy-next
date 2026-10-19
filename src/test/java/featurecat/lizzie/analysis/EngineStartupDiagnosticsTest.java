@@ -9,10 +9,12 @@ import org.junit.jupiter.api.Test;
 class EngineStartupDiagnosticsTest {
   @Test
   void basicFailureRetainsCredentialArgumentBoundaries() {
-    for (String secret : List.of("CANARY space&suffix;end", "CANARY\"quote suffix", "CANARY\\path suffix")) {
+    for (String secret :
+        List.of("CANARY space&suffix;end", "CANARY\"quote suffix", "CANARY\\path suffix")) {
       var command = List.of("plink", "-pw", secret, "remote-engine");
       for (String missingCommand : new String[] {null, "", "   "}) {
-        String shared = EngineStartupDiagnostic.basic(command, missingCommand, "fixture failure").shareText();
+        String shared =
+            EngineStartupDiagnostic.basic(command, missingCommand, "fixture failure").shareText();
         assertFalse(shared.contains("CANARY"), shared);
         assertFalse(shared.contains("suffix"), shared);
         assertTrue(shared.contains("remote-engine"), shared);
@@ -23,7 +25,8 @@ class EngineStartupDiagnosticsTest {
 
   @Test
   void sharedFailureRetainsCredentialArgumentBoundaries() {
-    for (String secret : List.of("CANARY space&suffix;end", "CANARY\"quote suffix", "CANARY\\path suffix")) {
+    for (String secret :
+        List.of("CANARY space&suffix;end", "CANARY\"quote suffix", "CANARY\\path suffix")) {
       try (var service =
           new EngineStartupDiagnostics(EngineStartupDiagnostics.Policy.production(), null)) {
         var command = List.of("plink", "-pw", secret, "remote-engine");

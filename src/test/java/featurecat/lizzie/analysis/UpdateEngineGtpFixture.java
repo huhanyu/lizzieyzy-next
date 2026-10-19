@@ -39,10 +39,7 @@ public final class UpdateEngineGtpFixture {
         if (parsed.command.startsWith("loadsgf ")) {
           loadSgfCount++;
           Path sgf = Path.of(parsed.command.substring("loadsgf ".length()));
-          append(
-              log,
-              "SGF:"
-                  + stripTrailingNewlines(readWithRetry(sgf)));
+          append(log, "SGF:" + stripTrailingNewlines(readWithRetry(sgf)));
           if (Files.isRegularFile(loadSgfFailure)) {
             writeResponse(output, parsed.id, false, "controlled restore failure");
             continue;
@@ -125,8 +122,8 @@ public final class UpdateEngineGtpFixture {
     }
   }
 
-  private static void writeResponse(
-      BufferedWriter output, String id, boolean success, String body) throws Exception {
+  private static void writeResponse(BufferedWriter output, String id, boolean success, String body)
+      throws Exception {
     output.write(success ? '=' : '?');
     output.write(id);
     if (!body.isEmpty()) {

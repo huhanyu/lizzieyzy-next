@@ -38,6 +38,7 @@ public class GetFoxRequest {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
           + "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
   private static final String CGI_USER_AGENT = "okhttp/3.12.12";
+
   /** Marks a failure payload whose nickname lookup found no Fox account (vs. transport errors). */
   public static final String USER_NOT_FOUND_ERROR = "user_not_found";
 

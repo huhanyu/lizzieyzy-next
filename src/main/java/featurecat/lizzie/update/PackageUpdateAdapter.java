@@ -16,11 +16,7 @@ final class PackageUpdateAdapter implements UpdateDiscovery.PlatformAdapter {
   }
 
   private PackageUpdateAdapter(
-      boolean supported,
-      boolean useDetectedTarget,
-      String platform,
-      String arch,
-      String flavor) {
+      boolean supported, boolean useDetectedTarget, String platform, String arch, String flavor) {
     this.supported = supported;
     this.useDetectedTarget = useDetectedTarget;
     this.platform = platform;

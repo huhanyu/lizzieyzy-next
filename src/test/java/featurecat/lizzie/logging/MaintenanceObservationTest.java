@@ -151,10 +151,7 @@ class MaintenanceObservationTest {
         "C:\\Users\\Jake Smith\\AppData\\Local\\Lizzie\\engine\\nvidia-runtime\\downloads\\katago-trt.zip";
     String unixSpaced = "/home/Jake Smith/.local/share/Lizzie/weights/model.bin.gz";
     String reason =
-        "TensorRT install failed: "
-            + windowsSpaced
-            + " (sharing violation) also "
-            + unixSpaced;
+        "TensorRT install failed: " + windowsSpaced + " (sharing violation) also " + unixSpaced;
 
     MaintenanceObservation.record(
         MaintenanceObservation.OPERATION_TENSORRT_SETUP,

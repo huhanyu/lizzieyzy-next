@@ -1,7 +1,7 @@
 package featurecat.lizzie.gui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -33,8 +33,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -180,8 +180,7 @@ class HumanSlGameControllerIntegrationTest {
               new BlockingHumanSlRunner(),
               coachConfig(HumanSlTrainingConfig.PlayerColor.BLACK),
               new HumanSlTrainingSession());
-      controller.setExitLifecycleForTesting(
-          Runnable::run, Runnable::run, () -> true, null);
+      controller.setExitLifecycleForTesting(Runnable::run, Runnable::run, () -> true, null);
       engine.pondering = true;
       ForegroundAnalysisPause pause =
           ForegroundAnalysisPause.acquire(
@@ -281,8 +280,7 @@ class HumanSlGameControllerIntegrationTest {
                   .moveTimeSeconds(2)
                   .build(),
               new HumanSlTrainingSession());
-      controller.setExitLifecycleForTesting(
-          Runnable::run, Runnable::run, () -> true, null);
+      controller.setExitLifecycleForTesting(Runnable::run, Runnable::run, () -> true, null);
 
       controller.start(ForegroundAnalysisPause.RestoreLease.inactive());
 
@@ -301,8 +299,7 @@ class HumanSlGameControllerIntegrationTest {
     ThrowingPreparationRunner startRunner = new ThrowingPreparationRunner(startFailure, null);
 
     NewHumanSlGameDialog.RunnerPreparationOutcome startOutcome =
-        NewHumanSlGameDialog.prepareRunner(
-            startRunner, null, "rank_1d", Duration.ofSeconds(1));
+        NewHumanSlGameDialog.prepareRunner(startRunner, null, "rank_1d", Duration.ofSeconds(1));
 
     assertFalse(startOutcome.ready());
     assertSame(startFailure, startOutcome.failure());
@@ -313,8 +310,7 @@ class HumanSlGameControllerIntegrationTest {
         new ThrowingPreparationRunner(null, readinessFailure);
 
     NewHumanSlGameDialog.RunnerPreparationOutcome readinessOutcome =
-        NewHumanSlGameDialog.prepareRunner(
-            readinessRunner, null, "rank_1d", Duration.ofSeconds(1));
+        NewHumanSlGameDialog.prepareRunner(readinessRunner, null, "rank_1d", Duration.ofSeconds(1));
 
     assertFalse(readinessOutcome.ready());
     assertSame(readinessFailure, readinessOutcome.failure());
@@ -326,8 +322,7 @@ class HumanSlGameControllerIntegrationTest {
     for (int failingStage = 0; failingStage < 5; failingStage++) {
       int failureIndex = failingStage;
       List<Integer> handoffStages = new ArrayList<>();
-      RuntimeException runtimeFailure =
-          new IllegalStateException("handoff stage " + failingStage);
+      RuntimeException runtimeFailure = new IllegalStateException("handoff stage " + failingStage);
       AssertionError errorFailure = new AssertionError("handoff stage " + failingStage);
       Throwable injected = failingStage % 2 == 0 ? runtimeFailure : errorFailure;
       Runnable[] handoff = new Runnable[5];
@@ -348,8 +343,7 @@ class HumanSlGameControllerIntegrationTest {
       assertSame(injected, captured);
       assertEquals(failingStage + 1, handoffStages.size());
       List<String> cleanupStages = new ArrayList<>();
-      NewHumanSlGameDialog.LifecycleAction[] cleanup =
-          new NewHumanSlGameDialog.LifecycleAction[6];
+      NewHumanSlGameDialog.LifecycleAction[] cleanup = new NewHumanSlGameDialog.LifecycleAction[6];
       for (int stage = 0; stage < cleanup.length; stage++) {
         int currentStage = stage;
         cleanup[stage] =
@@ -363,8 +357,7 @@ class HumanSlGameControllerIntegrationTest {
       }
 
       Throwable aggregate =
-          assertDoesNotThrow(
-              () -> NewHumanSlGameDialog.runCleanupLifecycle(captured, cleanup));
+          assertDoesNotThrow(() -> NewHumanSlGameDialog.runCleanupLifecycle(captured, cleanup));
 
       assertSame(injected, aggregate);
       assertEquals(6, cleanupStages.size(), "no cleanup stage may be skipped after an Error");
@@ -392,16 +385,14 @@ class HumanSlGameControllerIntegrationTest {
                   throw new AssertionError("invokeLater rejected");
                 }));
 
-    assertEquals(
-        List.of("runner-close-complete", "edt-dispatch", "restore-foreground"), events);
+    assertEquals(List.of("runner-close-complete", "edt-dispatch", "restore-foreground"), events);
     assertNotNull(completionFailure.get());
     assertEquals("invokeLater rejected", completionFailure.get().getMessage());
   }
 
   @Test
   void closeRequestAndReadinessCompletionCannotBothClaimRunnerCleanup() throws Exception {
-    NewHumanSlGameDialog.RunnerCleanupClaim claim =
-        new NewHumanSlGameDialog.RunnerCleanupClaim();
+    NewHumanSlGameDialog.RunnerCleanupClaim claim = new NewHumanSlGameDialog.RunnerCleanupClaim();
     CountDownLatch ready = new CountDownLatch(2);
     CountDownLatch start = new CountDownLatch(1);
     AtomicInteger winners = new AtomicInteger();
@@ -483,8 +474,7 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
-  void failedControllerHandoffClosesRunnerBeforeReturningRetryableLease()
-      throws Exception {
+  void failedControllerHandoffClosesRunnerBeforeReturningRetryableLease() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       Lizzie.frame = allocate(ThrowingStartCoachFrame.class);
       List<String> events = new ArrayList<>();
@@ -509,9 +499,7 @@ class HumanSlGameControllerIntegrationTest {
               });
       HumanSlGameController controller =
           new HumanSlGameController(
-              runner,
-              coachConfig(HumanSlTrainingConfig.PlayerColor.BLACK),
-              session);
+              runner, coachConfig(HumanSlTrainingConfig.PlayerColor.BLACK), session);
 
       IllegalStateException failure =
           assertThrows(
@@ -541,8 +529,7 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
-  void failedNewGameStartRestoresTheExactKifuDimensionsMetadataAndZobristState()
-      throws Exception {
+  void failedNewGameStartRestoresTheExactKifuDimensionsMetadataAndZobristState() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       Board.boardWidth = 5;
       Board.boardHeight = 4;
@@ -867,8 +854,7 @@ class HumanSlGameControllerIntegrationTest {
               },
               () -> events.add("ui-complete"));
           controller.start(pause.transferRestoreResponsibility());
-          Stone next =
-              Lizzie.board.getHistory().isBlacksTurn() ? Stone.BLACK : Stone.WHITE;
+          Stone next = Lizzie.board.getHistory().isBlacksTurn() ? Stone.BLACK : Stone.WHITE;
           // Mutate only the history in this headless fixture. Board.place() also touches the real
           // renderer, which is intentionally absent here; the exit contract only needs the exact
           // final position that must be replayed before foreground analysis resumes.
@@ -1083,11 +1069,9 @@ class HumanSlGameControllerIntegrationTest {
     AtomicInteger executions = new AtomicInteger();
     AtomicInteger recaptures = new AtomicInteger();
     ScriptedPrimaryResyncAttempt settlesOnSecondReplay =
-        new ScriptedPrimaryResyncAttempt(
-            List.of(false, true), 0, executions, recaptures, true);
+        new ScriptedPrimaryResyncAttempt(List.of(false, true), 0, executions, recaptures, true);
 
-    assertTrue(
-        HumanSlGameController.executeStablePrimaryEngineResync(settlesOnSecondReplay, 3));
+    assertTrue(HumanSlGameController.executeStablePrimaryEngineResync(settlesOnSecondReplay, 3));
     assertEquals(2, executions.get());
     assertEquals(1, recaptures.get());
 
@@ -1153,14 +1137,12 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
-  void navigationWhileRunnerCloseIsBlockedReplaysLatestBoardBeforeLeaseAndUi()
-      throws Exception {
+  void navigationWhileRunnerCloseIsBlockedReplaysLatestBoardBeforeLeaseAndUi() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       Board board = Lizzie.board;
       List<String> events = new CopyOnWriteArrayList<>();
       List<String> exactSnapshots = new CopyOnWriteArrayList<>();
-      ExactReplayTrackingLeelaz engine =
-          new ExactReplayTrackingLeelaz(events, exactSnapshots);
+      ExactReplayTrackingLeelaz engine = new ExactReplayTrackingLeelaz(events, exactSnapshots);
       Lizzie.setPrimaryEngine(engine);
       BoardHistoryList history = board.getHistory();
       history.place(0, 0, Stone.BLACK);
@@ -1269,10 +1251,7 @@ class HumanSlGameControllerIntegrationTest {
       assertFalse(events.contains("resume"), events.toString());
 
       controller.setExitLifecyclePreparationForTesting(
-          Runnable::run,
-          Runnable::run,
-          freezeWithoutAdmission,
-          () -> events.add("ui-complete"));
+          Runnable::run, Runnable::run, freezeWithoutAdmission, () -> events.add("ui-complete"));
       assertDoesNotThrow(controller::abort);
 
       assertFalse(controller.isExitRecoveryPending());
@@ -1285,8 +1264,7 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
-  void closeFailureBeforeResyncDoesNotHoldAdmissionAndSecondAbortCanRecover()
-      throws Exception {
+  void closeFailureBeforeResyncDoesNotHoldAdmissionAndSecondAbortCanRecover() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       List<String> events = new ArrayList<>();
       AtomicBoolean admissionActive = new AtomicBoolean();
@@ -1372,8 +1350,7 @@ class HumanSlGameControllerIntegrationTest {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
       AtomicReference<Runnable> exitWorker = new AtomicReference<>();
-      controller.setExitLifecycleForTesting(
-          exitWorker::set, Runnable::run, () -> true, null);
+      controller.setExitLifecycleForTesting(exitWorker::set, Runnable::run, () -> true, null);
       ModeTransitionFrame frame = allocate(ModeTransitionFrame.class);
       frame.events = new CopyOnWriteArrayList<String>();
       frame.newGameDialog = allocate(CancelledNewGameDialog.class);
@@ -1405,8 +1382,7 @@ class HumanSlGameControllerIntegrationTest {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
       AtomicReference<Runnable> exitWorker = new AtomicReference<>();
-      controller.setExitLifecycleForTesting(
-          exitWorker::set, Runnable::run, () -> true, null);
+      controller.setExitLifecycleForTesting(exitWorker::set, Runnable::run, () -> true, null);
       SgfCompletionFrame frame = allocate(SgfCompletionFrame.class);
       frame.humanSlGame = controller;
       Lizzie.frame = frame;
@@ -1486,8 +1462,7 @@ class HumanSlGameControllerIntegrationTest {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
       AtomicReference<Runnable> exitWorker = new AtomicReference<>();
-      controller.setExitLifecycleForTesting(
-          exitWorker::set, Runnable::run, () -> true, null);
+      controller.setExitLifecycleForTesting(exitWorker::set, Runnable::run, () -> true, null);
       SgfCompletionFrame frame = allocate(SgfCompletionFrame.class);
       frame.humanSlGame = controller;
       Lizzie.frame = frame;
@@ -1500,12 +1475,7 @@ class HumanSlGameControllerIntegrationTest {
           () ->
               assertTrue(
                   frame.loadDownloadedSgfString(
-                      "(;FF[4]SZ[3];B[aa])",
-                      0,
-                      false,
-                      false,
-                      null,
-                      completions::add)));
+                      "(;FF[4]SZ[3];B[aa])", 0, false, false, null, completions::add)));
 
       assertEquals(List.of(false), completions);
       assertEquals(0, Lizzie.board.getHistory().getMoveNumber());
@@ -1549,8 +1519,7 @@ class HumanSlGameControllerIntegrationTest {
       Lizzie.frame = frame;
       Lizzie.config.genmoveGameNoTime = true;
 
-      SwingUtilities.invokeAndWait(
-          () -> frame.continueAiPlayingReserved(true, false, true, false));
+      SwingUtilities.invokeAndWait(() -> frame.continueAiPlayingReserved(true, false, true, false));
 
       assertTrue(
           frame.continueModeCompleted.await(2, TimeUnit.SECONDS),
@@ -1766,8 +1735,7 @@ class HumanSlGameControllerIntegrationTest {
     }
 
     @Override
-    public boolean verifyReady(
-        BoardHistoryNode positionNode, String profile, Duration timeout) {
+    public boolean verifyReady(BoardHistoryNode positionNode, String profile, Duration timeout) {
       verifyCalled.set(true);
       throwUnchecked(readinessFailure);
       return true;
@@ -2239,8 +2207,7 @@ class HumanSlGameControllerIntegrationTest {
         BlockingHumanSlRunner runner, HumanSlTrainingConfig.PlayerColor playerColor) {
       HumanSlGameController controller =
           new HumanSlGameController(runner, coachConfig(playerColor), new HumanSlTrainingSession());
-      controller.setExitLifecycleForTesting(
-          Runnable::run, Runnable::run, () -> true, null);
+      controller.setExitLifecycleForTesting(Runnable::run, Runnable::run, () -> true, null);
       controller.start();
       assertFalse(controller.isFinished());
       return controller;
