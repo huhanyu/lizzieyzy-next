@@ -12273,6 +12273,33 @@ public class Leelaz {
     }
   }
 
+  /**
+   * Whether the current reader advertised KataGo's {@code set_position}, which restores an
+   * arbitrary static position in-band when the engine cannot read host snapshot files.
+   */
+  final boolean supportsSetPositionSnapshotRestore(ExactSnapshotRestoreAdmission admission) {
+    requireExactSnapshotRestoreAdmission(admission);
+    ReaderStreamBinding binding = currentReaderStreamBinding();
+    if (binding.terminated) {
+      throw new ExactSnapshotEngineRestore.Failure(
+          ExactSnapshotEngineRestore.FailureCategory.ADMISSION_STALE,
+          "Exact snapshot restore engine process is no longer current.");
+    }
+    synchronized (engineArbitrationLock()) {
+      return endGetCommandList
+          && commandListBinding == binding
+          && commandLists.contains("set_position");
+    }
+  }
+
+  /**
+   * Whether analysis and move commands name the side to play ({@code kata-analyze W ...}), so a
+   * restored position does not need a move history to tell the engine whose turn it is.
+   */
+  final boolean namesSideToPlayInCommands() {
+    return canAddPlayer && !useRemoteCompute;
+  }
+
   void advertiseCommandsForTest(List<String> commands) {
     synchronized (engineArbitrationLock()) {
       ReaderStreamBinding binding = currentReaderStreamBinding();

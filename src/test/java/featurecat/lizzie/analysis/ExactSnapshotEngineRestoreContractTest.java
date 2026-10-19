@@ -108,6 +108,121 @@ class ExactSnapshotEngineRestoreContractTest {
   }
 
   @Test
+  void scriptOrSshEngineAdvertisingSetPositionRestoresAnArbitrarySetupInBand() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]KM[7.5]AB[aa][bb]AW[cc]PL[B])", true);
+      Leelaz engine = new Leelaz("");
+      engine.useJavaSSH = true;
+      engine.canAddPlayer = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      engine.advertiseCommandsForTest(List.of("loadsgf", "set_position"));
+
+      ExactSnapshotEngineRestore.freezeHistoryPosition(history.getStart(), 0, 7.5)
+          .prepare(engine.captureBoardSyncExactSnapshotRestoreAdmission())
+          .execute();
+
+      assertEquals(
+          List.of("clear_board", "boardsize 3", "komi 7.5", "set_position B A3 B B2 W C1"),
+          transport.commands());
+      assertFalse(
+          transport.commands().stream().anyMatch(command -> command.startsWith("loadsgf")),
+          "no host snapshot file is offered to an engine that cannot read it");
+    }
+  }
+
+  @Test
+  void setPositionRestoreReplaysTheRealTailAfterTheSetup() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]KM[7.5]AB[aa]AW[cc];B[bb])", true);
+      BoardHistoryNode target = history.getStart().next().orElseThrow();
+      Leelaz engine = new Leelaz("");
+      engine.useJavaSSH = true;
+      engine.canAddPlayer = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      engine.advertiseCommandsForTest(List.of("set_position"));
+
+      ExactSnapshotEngineRestore.freezeHistoryPosition(target, 0, 7.5)
+          .prepare(engine.captureBoardSyncExactSnapshotRestoreAdmission())
+          .execute();
+
+      assertEquals(
+          List.of("clear_board", "boardsize 3", "komi 7.5", "set_position B A3 W C1", "play B B2"),
+          transport.commands());
+    }
+  }
+
+  @Test
+  void whiteToPlaySetupWithoutTailNeedsAnEngineThatIsToldTheSideToPlay() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]KM[7.5]AB[aa][bb]AW[cc]PL[W])", true);
+      Leelaz katago = new Leelaz("");
+      katago.useJavaSSH = true;
+      katago.canAddPlayer = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              katago, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      katago.advertiseCommandsForTest(List.of("set_position"));
+
+      ExactSnapshotEngineRestore.freezeHistoryPosition(history.getStart(), 0, 7.5)
+          .prepare(katago.captureBoardSyncExactSnapshotRestoreAdmission())
+          .execute();
+
+      assertTrue(transport.commands().contains("set_position B A3 B B2 W C1"));
+    }
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]KM[7.5]AB[aa][bb]AW[cc]PL[W])", true);
+      Leelaz plainGtp = new Leelaz("");
+      plainGtp.useJavaSSH = true;
+      plainGtp.canAddPlayer = false;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              plainGtp, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      plainGtp.advertiseCommandsForTest(List.of("set_position"));
+      ExactSnapshotEngineRestore.PreparedRestore prepared =
+          ExactSnapshotEngineRestore.freezeHistoryPosition(history.getStart(), 0, 7.5)
+              .prepare(plainGtp.captureBoardSyncExactSnapshotRestoreAdmission());
+
+      ExactSnapshotEngineRestore.Failure failure =
+          assertThrows(ExactSnapshotEngineRestore.Failure.class, prepared::execute);
+
+      assertEquals(
+          ExactSnapshotEngineRestore.FailureCategory.UNSUPPORTED_REMOTE_POSITION,
+          failure.category());
+      assertTrue(transport.commands().isEmpty(), transport.commands().toString());
+    }
+  }
+
+  @Test
+  void scriptOrSshEngineWithoutSetPositionStillFailsBeforeAnyBoardMutation() throws Exception {
+    try (TestHarness harness = TestHarness.open(false)) {
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[3]KM[7.5]AB[aa][bb]AW[cc]PL[B])", true);
+      Leelaz engine = new Leelaz("");
+      engine.useJavaSSH = true;
+      engine.canAddPlayer = true;
+      ExactSnapshotRestoreProtocolFixture.Transport transport =
+          ExactSnapshotRestoreProtocolFixture.install(
+              engine, command -> ExactSnapshotRestoreProtocolFixture.Response.success());
+      engine.advertiseCommandsForTest(List.of("loadsgf"));
+      ExactSnapshotEngineRestore.PreparedRestore prepared =
+          ExactSnapshotEngineRestore.freezeHistoryPosition(history.getStart(), 0, 7.5)
+              .prepare(engine.captureBoardSyncExactSnapshotRestoreAdmission());
+
+      ExactSnapshotEngineRestore.Failure failure =
+          assertThrows(ExactSnapshotEngineRestore.Failure.class, prepared::execute);
+
+      assertEquals(
+          ExactSnapshotEngineRestore.FailureCategory.SNAPSHOT_PREPARATION, failure.category());
+      assertEquals(
+          ExactSnapshotEngineRestore.UNSUPPORTED_SNAPSHOT_TRANSPORT_DETAIL, failure.getMessage());
+      assertTrue(transport.commands().isEmpty());
+    }
+  }
+
+  @Test
   void exactSnapshotRestoreHistoryTargetReplaysOnlyRealActionsAfterNearestSnapshot()
       throws Exception {
     try (TestHarness harness = TestHarness.open(false)) {
