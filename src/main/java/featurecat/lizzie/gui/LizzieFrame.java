@@ -99,6 +99,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Consumer;
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -603,6 +604,10 @@ public class LizzieFrame extends JFrame {
   private volatile TrackingAnalysisController trackingAnalysisController;
   private TrackingAnalysisController.Context trackingVisibilityContext;
   private java.util.Set<String> trackingVisibilityPoints = java.util.Set.of();
+  private static final AtomicIntegerFieldUpdater<LizzieFrame> OFF_EVENT_THREAD_REFRESH =
+      AtomicIntegerFieldUpdater.newUpdater(LizzieFrame.class, "offEventThreadRefreshQueued");
+  // A primitive flag on purpose: tests allocate frames without running field initializers.
+  private volatile int offEventThreadRefreshQueued;
   private boolean redrawWinratePaneOnly = false;
   private boolean redrawBoardSurfacesOnly = false;
   private boolean redrawVariationTreeOnly;
@@ -8070,6 +8075,18 @@ public class LizzieFrame extends JFrame {
   }
 
   public void refresh() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      // Engine reader threads refresh after analysis output, but comments, board data and Swing
+      // state belong to the event thread; a burst of such calls needs only one pass there.
+      if (OFF_EVENT_THREAD_REFRESH.compareAndSet(this, 0, 1)) {
+        SwingUtilities.invokeLater(
+            () -> {
+              OFF_EVENT_THREAD_REFRESH.set(this, 0);
+              refresh();
+            });
+      }
+      return;
+    }
     // 分开各部分刷新,1代表来自info move的刷新
     redrawWinratePaneOnly = false;
     redrawBoardSurfacesOnly = false;
