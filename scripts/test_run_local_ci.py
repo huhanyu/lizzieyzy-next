@@ -51,6 +51,8 @@ class RunLocalCiTest(unittest.TestCase):
             for name in (
                 "run_local_ci.py",
                 "check_line_endings.py",
+                "check_architecture_budget.py",
+                "architecture_budget.json",
                 "list_untranslated_strings.py",
                 "untranslated_baseline.json",
             ):

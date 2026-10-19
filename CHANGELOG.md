@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Add an architecture budget to CI: the largest classes, references to the global `Lizzie.*` fields and engine-to-UI package references may no longer grow (`scripts/check_architecture_budget.py`, ADR 0004). Add `AGENTS.md` with the build, threading, security, test and localization rules for coding agents, and design notes for the engine-session refactor, on-demand browser/readboard components and slimmer release assets.
 - Fix the KataGo rules editor sometimes staying open after the engine confirmed the new rules: the status watcher could read the confirmed result a moment before the rules operation completed, then never look again.
 - Format all Java sources once with google-java-format and check formatting in CI (`fmt:check` in the java-linux job). The formatting commit is listed in `.git-blame-ignore-revs`.
 - Restore the toolbar breadth checkbox and value field after ordinary KataGo startup, restart and engine switching, without opening the Fox AI dialog. Breadth no longer requires unrelated flash-analysis commands; exclusive-task, failed-restoration and genmove restrictions remain in force.
