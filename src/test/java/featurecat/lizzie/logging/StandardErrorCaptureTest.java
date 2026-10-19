@@ -37,7 +37,9 @@ class StandardErrorCaptureTest {
     err.println("line");
     err.println();
 
-    assertEquals("first line\nsecond line\n\n", console.toString(StandardCharsets.UTF_8));
+    String newline = System.lineSeparator();
+    assertEquals(
+        "first line\nsecond line" + newline + newline, console.toString(StandardCharsets.UTF_8));
     assertEquals(List.of("stderr: first line", "stderr: second line"), formatted(events));
   }
 
