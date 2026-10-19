@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Record everything the app prints to standard error in `logs/app.log` as well. Hundreds of older error paths only call `printStackTrace()`, which a packaged app without a console used to lose, so those failures were missing from exported diagnostic bundles.
 - Analyze pasted or imported setup positions with engines that cannot read local snapshot files, such as KataGo started from a `.bat`/script launcher or over SSH (#627): when the engine advertises KataGo's `set_position`, the position is restored in-band and real moves are replayed, without writing a host file. White-to-play setups without later moves use this path only for engines that are told the side to play in each analysis command; other engines still stop with the existing explanation.
 - Run frame refreshes requested by engine output threads on the Swing event thread, coalescing bursts into one pass, so appending engine winrates to comments and other UI updates no longer race the event thread.
 - Update the embedded browser (JCEF) from Chromium 127 (July 2024) to Chromium 152.0.7977.83 (jcefmaven 152.0.6), and accept Yike sync messages only from the main frame of a Yike window on yikeweiqi.com, so other pages or embedded frames cannot inject games. Every JCEF version and checksum pin in the packaging scripts and release workflows is now checked against the bundle helper by a script test.
