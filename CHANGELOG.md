@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Move KataGo heat-map (`kata-raw-nn`) parsing out of `Leelaz` into `analysis.gtp.KataRawNnResponse`, the first step of the engine-session refactor, with tests that lock the existing heat-map behaviour; the pass probability is no longer read as a policy row on 2-wide boards.
 - Run frame refreshes requested by engine output threads on the Swing event thread, coalescing bursts into one pass, so appending engine winrates to comments and other UI updates no longer race the event thread.
 - Update the embedded browser (JCEF) from Chromium 127 (July 2024) to Chromium 152.0.7977.83 (jcefmaven 152.0.6), and accept Yike sync messages only from the main frame of a Yike window on yikeweiqi.com, so other pages or embedded frames cannot inject games. Every JCEF version and checksum pin in the packaging scripts and release workflows is now checked against the bundle helper by a script test.
 - Remove the retired lizzieyzy.cn kifu-sharing features (account login, SGF upload and editing, private and public kifu search). The server no longer resolves, yet function search could still send the saved account to it over raw TCP with a key published in the source; the domain is due to expire on 2026-12-24. Existing configurations drop the plaintext share account and share labels; Ctrl+E and Alt+B stay unbound.
