@@ -14,6 +14,12 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<skipTests>false</skipTests>
 		<surefire.reportsDirectory>${project.build.directory}/surefire-reports</surefire.reportsDirectory>
+		<!-- Tests run in one JVM by default. For a ~2x faster local run use one fresh JVM per test
+			class on half the cores: -Dsurefire.forkCount=0.5C -Dsurefire.reuseForks=false (a JVM per
+			class keeps the shared Lizzie.* statics independent of execution order). Some
+			timing-sensitive tests are still flaky under that load, so CI stays sequential for now. -->
+		<surefire.forkCount>1</surefire.forkCount>
+		<surefire.reuseForks>true</surefire.reuseForks>
 	</properties>
 
 	<build>
@@ -64,6 +70,8 @@
 				<version>3.5.2</version>
 				<configuration>
 					<useFile>false</useFile>
+					<forkCount>${surefire.forkCount}</forkCount>
+					<reuseForks>${surefire.reuseForks}</reuseForks>
 					<reportsDirectory>${surefire.reportsDirectory}</reportsDirectory>
 					<skipTests>${skipTests}</skipTests>
 				</configuration>
@@ -222,7 +230,7 @@
 		<dependency>
 			<groupId>me.friwi</groupId>
 			<artifactId>jcefmaven</artifactId>
-			<version>127.3.1</version>
+			<version>152.0.6</version>
 			<exclusions>
 				<!-- JOGL is only referenced by JCEF's off-screen-rendering classes
 					(org.cef.browser.CefBrowserOsr / CefRenderer, jdeps-verified). This app always
@@ -263,13 +271,6 @@
 			<groupId>org.apache.sshd</groupId>
 			<artifactId>sshd-core</artifactId>
 			<version>2.20.0</version>
-		</dependency>
-
-		<!-- https://mvnrepository.com/artifact/org.swinglabs.swingx/swingx-core -->
-		<dependency>
-			<groupId>org.swinglabs.swingx</groupId>
-			<artifactId>swingx-core</artifactId>
-			<version>1.6.4</version>
 		</dependency>
 
 		<!-- https://code.google.com/archive/p/juniversalchardet -->

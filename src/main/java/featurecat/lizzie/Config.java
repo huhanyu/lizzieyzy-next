@@ -15,6 +15,7 @@ import featurecat.lizzie.util.BundledKataGoProfile;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.LocaleFontSupport;
 import featurecat.lizzie.util.NetworkProxy;
+import featurecat.lizzie.util.OsPlatform;
 import featurecat.lizzie.util.Utils;
 import java.awt.Color;
 import java.awt.Frame;
@@ -27,7 +28,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
 import javax.swing.*;
-import org.jdesktop.swingx.util.OS;
 import org.json.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -242,7 +242,6 @@ public class Config {
   public boolean badMoves = false;
   public boolean autoPlay = true;
   public boolean deleteMove = true;
-  public boolean share = false;
   public boolean flashAnalyze = false;
   public boolean enableLizzieCache = true;
   public boolean showQuickLinks = false;
@@ -356,7 +355,7 @@ public class Config {
     if (appRoot == null) {
       return false;
     }
-    String binaryName = OS.isWindows() ? "katago.exe" : "katago";
+    String binaryName = OsPlatform.isWindows() ? "katago.exe" : "katago";
     Path katagoRoot = appRoot.resolve(BUNDLED_ENGINE_ROOT).resolve("katago");
     return Files.isRegularFile(katagoRoot.resolve(detectBundledPlatformDir()).resolve(binaryName))
         && Files.isRegularFile(appRoot.resolve(BUNDLED_WEIGHT_ROOT).resolve(BUNDLED_WEIGHT_NAME))
@@ -578,7 +577,7 @@ public class Config {
     }
 
     Path appRoot = appRootOpt.get();
-    String binaryName = OS.isWindows() ? "katago.exe" : "katago";
+    String binaryName = OsPlatform.isWindows() ? "katago.exe" : "katago";
     Path enginePath =
         appRoot
             .resolve(BUNDLED_ENGINE_ROOT)
@@ -859,15 +858,6 @@ public class Config {
   public int suggestionColorRatio = 2;
   public boolean showBestMovesGraph = false;
   public boolean showBestMovesList = true;
-  public String uploadUser = "";
-  public String uploadPassWd = "";
-
-  public String shareLabel1 = "";
-  public String shareLabel2 = "";
-  public String shareLabel3 = "";
-  public String shareLabel4 = "";
-  public String shareLabel5 = "";
-  public boolean sharePublic = true;
 
   // public boolean autoCheckVersion = true;
   public String autoCheckDate = "";
@@ -1644,7 +1634,7 @@ public class Config {
     showPureEstimateNotOnlive = uiConfig.optBoolean("show-pure-estimate-not-on-live", false);
     showPureEstimateSmall = uiConfig.optBoolean("show-pure-estimate-small", false);
 
-    useJavaLooks = uiConfig.optBoolean("use-java-looks", !OS.isWindows());
+    useJavaLooks = uiConfig.optBoolean("use-java-looks", !OsPlatform.isWindows());
     showNextMoveBlunder = uiConfig.optBoolean("show-next-move-blunder", true);
     batchAnalysisPlayouts = uiConfig.optInt("batch-analysis-playouts", 100);
     wholeGameAnalysisDeepVisits =
@@ -1930,7 +1920,6 @@ public class Config {
     autoPlay = uiConfig.optBoolean("autoPlay", true);
     showQuickLinks = uiConfig.optBoolean("show-quick-links", false);
     liveButton = uiConfig.optBoolean("liveButton", true);
-    // share = uiConfig.optBoolean("share", true);
     flashAnalyze =
         uiConfig.optBoolean("flash-analyze", showDoubleMenu && showTopToolBar ? false : true);
     badMoves = uiConfig.optBoolean("badMoves", showDoubleMenu && showTopToolBar ? false : true);
@@ -1964,11 +1953,7 @@ public class Config {
     suggestionColorRatio = uiConfig.optInt("suggestion-color-ratio", 2);
     showBestMovesGraph = uiConfig.optBoolean("show-bestmoves-graph", false);
     showBestMovesList = uiConfig.optBoolean("show-bestmoves-list", true);
-    uploadUser = uiConfig.optString("up-load-user", "");
-    uploadPassWd = uiConfig.optString("up-load-passwd", "");
-    shareLabel4 = uiConfig.optString("share-label-4", "");
-    shareLabel5 = uiConfig.optString("share-label-5", "");
-    sharePublic = uiConfig.optBoolean("share-public", true);
+    forgetRetiredLizzieyzyCnAccount();
     // autoCheckVersion = uiConfig.optBoolean("auto-check-version", true);
     autoCheckDate = uiConfig.optString("auto-check-date", "");
     //  ignoreVersion = uiConfig.optInt("ignore-version", 0);
@@ -3217,16 +3202,6 @@ public class Config {
       persistedUi.put("ctrl-position", ctrlPos);
     }
 
-    if (Lizzie.frame.search != null) {
-      JSONArray searchPos = new JSONArray();
-
-      searchPos.put(Lizzie.frame.search.getX());
-      searchPos.put(Lizzie.frame.search.getY());
-      searchPos.put(Lizzie.frame.search.getWidth());
-      searchPos.put(Lizzie.frame.search.getHeight());
-
-      persistedUi.put("public-kifu-search", searchPos);
-    }
     if (Lizzie.frame.moveListFrame != null) {
       JSONArray badmoveslistPos = new JSONArray();
 
@@ -3953,6 +3928,26 @@ public class Config {
 
   public boolean isNormalMode() {
     return extraMode == ExtraMode.Normal;
+  }
+
+  /**
+   * The upstream kifu-sharing service at lizzieyzy.cn is gone; drop the account it kept here in
+   * plaintext, together with its share labels.
+   */
+  void forgetRetiredLizzieyzyCnAccount() {
+    for (String key :
+        List.of(
+            "up-load-user",
+            "up-load-passwd",
+            "share-label-1",
+            "share-label-2",
+            "share-label-3",
+            "share-label-4",
+            "share-label-5",
+            "share-public",
+            "share")) {
+      uiConfig.remove(key);
+    }
   }
 
   void migrateLegacyConsoleLogging() {

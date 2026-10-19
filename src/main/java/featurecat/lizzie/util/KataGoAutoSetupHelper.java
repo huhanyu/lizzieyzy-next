@@ -41,7 +41,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
-import org.jdesktop.swingx.util.OS;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -3580,7 +3579,7 @@ public final class KataGoAutoSetupHelper {
   }
 
   private static Path detectEngineBinary(Path workingDir, Path appRoot) {
-    String binaryName = OS.isWindows() ? "katago.exe" : "katago";
+    String binaryName = OsPlatform.isWindows() ? "katago.exe" : "katago";
     String platformDir = detectPlatformDir();
     List<Path> directCandidates = new ArrayList<>();
     directCandidates.add(

@@ -275,6 +275,7 @@ DIRECT_PYTHON_TESTS = (
     "scripts/test_windows_launcher_packaging.py",
     "scripts/test_summarize_measured_analysis.py",
     "scripts/test_check_architecture_budget.py",
+    "scripts/test_list_untranslated_strings.py",
 )
 
 UNITTEST_MODULES = (
@@ -463,6 +464,11 @@ def windows_steps(maven: str, powershell: str) -> list[Step]:
             (python, "scripts/check_architecture_budget.py"),
             group="repository",
         ),
+        Step(
+            "Verify no new untranslated strings",
+            (python, "scripts/list_untranslated_strings.py", "--check"),
+            group="repository",
+        ),
         Step("Verify bundled JCEF logic", (python, "scripts/test_prepare_bundled_jcef.py")),
         Step("Verify CPU acceptance provisioning", (python, "scripts/test_prepare_cpu_engine_acceptance.py")),
         Step("Verify acceptance runner outcomes", (python, "scripts/test_run_acceptance.py")),
@@ -522,6 +528,11 @@ def portable_steps(maven: str, bash: str) -> list[Step]:
         Step(
             "Verify architecture budget",
             (python, "scripts/check_architecture_budget.py"),
+            group="repository",
+        ),
+        Step(
+            "Verify no new untranslated strings",
+            (python, "scripts/list_untranslated_strings.py", "--check"),
             group="repository",
         ),
         Step("Compile release helper Python", (python, "-m", "py_compile", *PY_COMPILE_FILES)),
@@ -608,6 +619,9 @@ def build_steps(
                     "-Djacoco.skip=true",
                     "-Djava.awt.headless=false",
                     "-Dlizzie.desktop.required=true",
+                    # Focus-sensitive desktop tests share one display: keep them in one JVM.
+                    "-Dsurefire.forkCount=1",
+                    "-Dsurefire.reuseForks=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
                     "-Dtest=TensorRtRepairAcceptanceTest#englishRepairFlow+chineseRepairFlow",
@@ -629,6 +643,9 @@ def build_steps(
                     "-Dfmt.skip=true",
                     "-Djava.awt.headless=false",
                     "-Dlizzie.desktop.required=true",
+                    # Focus-sensitive desktop tests share one display: keep them in one JVM.
+                    "-Dsurefire.forkCount=1",
+                    "-Dsurefire.reuseForks=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
                     "-Dtest=FunctionSearchNavigationTest,ConfigDialog2NavigationTest,EngineProcessSmokeTest,FunctionSearchInputTest,OfflineBoardAcceptanceTest,CheckUpdateDialogTest,UpdatePauseRecoveryTest,SetKataRulesWindowTest,RulesDialogLayoutTest",
@@ -658,6 +675,9 @@ def build_steps(
                     "-Dfmt.skip=true",
                     "-Djava.awt.headless=false",
                     "-Dlizzie.desktop.required=true",
+                    # Focus-sensitive desktop tests share one display: keep them in one JVM.
+                    "-Dsurefire.forkCount=1",
+                    "-Dsurefire.reuseForks=true",
                     f"-Dlizzie.desktop.evidence.dir={evidence_dir}",
                     f"-Dsurefire.reportsDirectory={reports_dir}",
                     test_selection,

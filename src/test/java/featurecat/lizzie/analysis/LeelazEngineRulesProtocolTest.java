@@ -13,8 +13,8 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.enginegame.EngineGamePlans;
 import featurecat.lizzie.gui.GtpConsolePane;
 import featurecat.lizzie.gui.LizzieFrame;
-import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.gui.Menu;
+import featurecat.lizzie.rules.Board;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -28,6 +28,10 @@ import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 
 class LeelazEngineRulesProtocolTest {
+  // Short enough to keep the timeout tests quick, long enough that the queued command is
+  // written before it expires even on a loaded CI runner (50 ms was not).
+  private static final long SHORT_RULES_TIMEOUT_MILLIS = 500L;
+
   private static final String CHINESE =
       "{\"ko\":\"SIMPLE\",\"scoring\":\"AREA\",\"tax\":\"NONE\",\"suicide\":false,"
           + "\"hasButton\":false,\"whiteHandicapBonus\":\"N\",\"friendlyPassOk\":true}";
@@ -250,7 +254,8 @@ class LeelazEngineRulesProtocolTest {
   void timeoutRetiresSetAndLateAckCannotLaunchReadback() throws Exception {
     try (Fixture fixture = Fixture.ordinary()) {
       Leelaz.EngineRulesOperation operation =
-          fixture.engine.applyEngineRulesOperation(KataGoRules.parse("chinese").orElseThrow(), 50L);
+          fixture.engine.applyEngineRulesOperation(
+              KataGoRules.parse("chinese").orElseThrow(), SHORT_RULES_TIMEOUT_MILLIS);
       int setId = commandIdFor(fixture.output.toString(), "kata-set-rules");
       EngineRulesResult settled = operation.await(TimeUnit.SECONDS.toMillis(2));
 
@@ -271,7 +276,8 @@ class LeelazEngineRulesProtocolTest {
   @Test
   void timeoutRetiresQueryAndLateReadbackCannotBecomeConfirmed() throws Exception {
     try (Fixture fixture = Fixture.ordinary()) {
-      Leelaz.EngineRulesOperation operation = fixture.engine.queryEngineRulesOperation(50L);
+      Leelaz.EngineRulesOperation operation =
+          fixture.engine.queryEngineRulesOperation(SHORT_RULES_TIMEOUT_MILLIS);
       int queryId = commandIdFor(fixture.output.toString(), "kata-get-rules");
       EngineRulesResult settled = operation.await(TimeUnit.SECONDS.toMillis(2));
 
@@ -519,7 +525,7 @@ class LeelazEngineRulesProtocolTest {
       assertFalse(fixture.output.toString().contains("kata-get-rules"));
       assertEquals(EngineRulesResult.Status.PENDING, fixture.engine.engineRulesResult().status());
       ready.setBoolean(fixture.engine, true);
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       while (System.nanoTime() < deadline
           && !fixture.output.toString().contains("kata-get-rules")) {
         Thread.sleep(20L);

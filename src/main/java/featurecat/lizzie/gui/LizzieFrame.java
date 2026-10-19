@@ -59,6 +59,7 @@ import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.util.GraphicsDriverDiagnostics;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
+import featurecat.lizzie.util.OsPlatform;
 import featurecat.lizzie.util.Utils;
 import featurecat.lizzie.util.YikeSyncDebugLog;
 import java.awt.*;
@@ -99,6 +100,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Consumer;
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -115,7 +117,6 @@ import javax.swing.table.TableModel;
 import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
 import javax.swing.text.html.StyleSheet;
-import org.jdesktop.swingx.util.OS;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -531,12 +532,7 @@ public class LizzieFrame extends JFrame {
   String weightText2 = "";
   public static boolean isSavingRaw = false;
   public static boolean isSavingRawComment = false;
-  public static boolean isShareing = false;
-  //  private long shareTime = -1;
-  public ShareFrame shareFrame;
-  public BatchShareFrame batchShareFrame;
   SetKataRules setkatarules;
-  public PublicKifuSearch search;
 
   public boolean isEnginePKSgfStart = false;
   public int enginePKSgfNum = 0;
@@ -608,6 +604,10 @@ public class LizzieFrame extends JFrame {
   private volatile TrackingAnalysisController trackingAnalysisController;
   private TrackingAnalysisController.Context trackingVisibilityContext;
   private java.util.Set<String> trackingVisibilityPoints = java.util.Set.of();
+  private static final AtomicIntegerFieldUpdater<LizzieFrame> OFF_EVENT_THREAD_REFRESH =
+      AtomicIntegerFieldUpdater.newUpdater(LizzieFrame.class, "offEventThreadRefreshQueued");
+  // A primitive flag on purpose: tests allocate frames without running field initializers.
+  private volatile int offEventThreadRefreshQueued;
   private boolean redrawWinratePaneOnly = false;
   private boolean redrawBoardSurfacesOnly = false;
   private boolean redrawVariationTreeOnly;
@@ -2825,7 +2825,7 @@ public class LizzieFrame extends JFrame {
   }
 
   protected boolean isNativeBoardSyncSupported() {
-    return OS.isWindows();
+    return OsPlatform.isWindows();
   }
 
   protected boolean isNativeReadBoardAvailable() {
@@ -8075,6 +8075,18 @@ public class LizzieFrame extends JFrame {
   }
 
   public void refresh() {
+    if (!SwingUtilities.isEventDispatchThread()) {
+      // Engine reader threads refresh after analysis output, but comments, board data and Swing
+      // state belong to the event thread; a burst of such calls needs only one pass there.
+      if (OFF_EVENT_THREAD_REFRESH.compareAndSet(this, 0, 1)) {
+        SwingUtilities.invokeLater(
+            () -> {
+              OFF_EVENT_THREAD_REFRESH.set(this, 0);
+              refresh();
+            });
+      }
+      return;
+    }
     // 分开各部分刷新,1代表来自info move的刷新
     redrawWinratePaneOnly = false;
     redrawBoardSurfacesOnly = false;
@@ -13091,21 +13103,6 @@ public class LizzieFrame extends JFrame {
     timer.start();
   }
 
-  public void openPublicKifuSearch() {
-    search = new PublicKifuSearch();
-    search.setVisible(true);
-  }
-
-  public void shareSGF() {
-    //    shareFrame = new ShareFrame();
-    //    shareFrame.setVisible(true);
-  }
-
-  public void batchShareSGF() {
-    //    batchShareFrame = new BatchShareFrame();
-    //    batchShareFrame.setVisible(true);
-  }
-
   public void setLzSaiEngine() {
     if (EngineManager.isEmpty || !Lizzie.leelaz.isLoaded()) {
       Utils.showMsg(Lizzie.resourceBundle.getString("LizzieFrame.setParamNoEngineHint"));
@@ -15105,23 +15102,6 @@ public class LizzieFrame extends JFrame {
         }
       }
       super.paintComponent(g);
-    }
-  }
-
-  public void openPrivateKifuSearch() {
-    if (!Lizzie.config.uploadUser.equals("") && !Lizzie.config.uploadPassWd.equals("")) {
-      SocketLoggin login = new SocketLoggin();
-      String result = login.SocketLoggin(Lizzie.config.uploadUser, Lizzie.config.uploadPassWd);
-      if (result.startsWith("success")) {
-        PrivateKifuSearch search = new PrivateKifuSearch();
-        search.setVisible(true);
-      } else {
-        Loggin loggin = new Loggin(null, true);
-        loggin.setVisible(true);
-      }
-    } else {
-      Loggin loggin = new Loggin(null, true);
-      loggin.setVisible(true);
     }
   }
 
@@ -21905,7 +21885,7 @@ public class LizzieFrame extends JFrame {
   }
 
   private void openInVisibleFrame() {
-    if (OS.isWindows()) {
+    if (OsPlatform.isWindows()) {
       String clockHelperJarName = "invisibleFrame.jar";
       File clockHelperJar = new File("clockHelper" + File.separator + clockHelperJarName);
       if (!clockHelperJar.exists()) Utils.copyClockHelper();

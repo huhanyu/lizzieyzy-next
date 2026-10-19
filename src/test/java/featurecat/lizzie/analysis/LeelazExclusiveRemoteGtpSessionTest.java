@@ -3037,7 +3037,7 @@ class LeelazExclusiveRemoteGtpSessionTest {
   }
 
   private static void waitForState(Thread thread, Thread.State expected) {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
     while (thread.getState() != expected && System.nanoTime() < deadline) {
       Thread.onSpinWait();
     }

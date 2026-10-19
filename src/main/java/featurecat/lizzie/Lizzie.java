@@ -23,6 +23,7 @@ import featurecat.lizzie.logging.CrashHandlers;
 import featurecat.lizzie.logging.EdtHangWatchdog;
 import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.logging.LoggingRuntime;
+import featurecat.lizzie.logging.StandardErrorCapture;
 import featurecat.lizzie.logging.WorkDirectoryResolution;
 import featurecat.lizzie.logging.WorkDirectoryResolver;
 import featurecat.lizzie.rules.Board;
@@ -32,6 +33,7 @@ import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupSnapshot;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.LocaleFontSupport;
 import featurecat.lizzie.util.NetworkProxy;
+import featurecat.lizzie.util.OsPlatform;
 import featurecat.lizzie.util.Utils;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
@@ -59,7 +61,6 @@ import java.util.function.Supplier;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.plaf.FontUIResource;
-import org.jdesktop.swingx.util.OS;
 import org.json.JSONException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -344,7 +345,7 @@ public class Lizzie {
   public static Float sysScaleFactor = initialSystemScaleFactor();
 
   static float initialSystemScaleFactor() {
-    if (!OS.isWindows() || GraphicsEnvironment.isHeadless()) {
+    if (!OsPlatform.isWindows() || GraphicsEnvironment.isHeadless()) {
       return 1.0f;
     }
     return java.awt.Toolkit.getDefaultToolkit().getScreenResolution() / 96.0f;
@@ -363,6 +364,7 @@ public class Lizzie {
       System.setProperty("swing.aatext", "true");
     }
     bootstrapLogging();
+    StandardErrorCapture.install();
     config = new Config();
     LoggingRuntime.current().ifPresent(runtime -> runtime.applySettings(config.loggingSettings));
     logPersistedLoggingSettingsApplied();
@@ -436,15 +438,6 @@ public class Lizzie {
         LocaleFontSupport.resolveConfiguredFontName(
             config.fontName, appLocale, Config.sysDefaultFontName);
     Utils.loadFonts(config.uiFontName, config.fontName, config.winrateFontName);
-    config.shareLabel1 =
-        config.uiConfig.optString(
-            "share-label-1", resourceBundle.getString("ShareFrame.shareLabel1"));
-    config.shareLabel2 =
-        config.uiConfig.optString(
-            "share-label-2", resourceBundle.getString("ShareFrame.shareLabel2"));
-    config.shareLabel3 =
-        config.uiConfig.optString(
-            "share-label-3", resourceBundle.getString("ShareFrame.shareLabel3"));
     setLookAndFeel();
     Locale.setDefault(Locale.ENGLISH);
     boolean noConfiguredEngine = !hasConfiguredEngine();
