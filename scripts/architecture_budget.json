@@ -1,0 +1,43 @@
+{
+  "_comment": "Upper bounds that may only go down. Run `python3 scripts/check_architecture_budget.py --tighten` after shrinking code; see AGENTS.md.",
+  "max_unlisted_file_lines": 2000,
+  "max_lines": {
+    "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25679,
+    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 22157,
+    "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15941,
+    "src/main/java/featurecat/lizzie/gui/Menu.java": 11308,
+    "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8340,
+    "src/main/java/featurecat/lizzie/gui/KataGoAutoSetupDialog.java": 8299,
+    "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 8055,
+    "src/main/java/featurecat/lizzie/rules/Board.java": 7401,
+    "src/main/java/featurecat/lizzie/analysis/ReadBoard.java": 6942,
+    "src/main/java/featurecat/lizzie/gui/ConfigDialog2.java": 6887,
+    "src/main/java/featurecat/lizzie/gui/BottomToolbar.java": 5383,
+    "src/main/java/featurecat/lizzie/rules/SGFParser.java": 5101,
+    "src/main/java/featurecat/lizzie/gui/BoardRenderer.java": 4822,
+    "src/main/java/featurecat/lizzie/gui/OnlineDialog.java": 4562,
+    "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4317,
+    "src/main/java/featurecat/lizzie/Config.java": 4071,
+    "src/main/java/featurecat/lizzie/gui/WinrateGraph.java": 3251,
+    "src/main/java/featurecat/lizzie/analysis/AnalysisEngine.java": 3244,
+    "src/main/java/featurecat/lizzie/gui/RemoteComputeDialog.java": 3056,
+    "src/main/java/featurecat/lizzie/gui/FloatBoardRenderer.java": 3028,
+    "src/main/java/featurecat/lizzie/logging/DiagnosticBundleExporter.java": 2668,
+    "src/main/java/featurecat/lizzie/analysis/PlayerStrengthEstimator.java": 2171,
+    "src/main/java/featurecat/lizzie/search/FunctionCatalog.java": 2165,
+    "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 2008
+  },
+  "max_static_references": {
+    "Lizzie.config": 7108,
+    "Lizzie.frame": 3277,
+    "Lizzie.board": 1968,
+    "Lizzie.leelaz": 1094,
+    "Lizzie.leelaz2": 115,
+    "Lizzie.engineManager": 156
+  },
+  "max_cross_package_references": {
+    "featurecat.lizzie.analysis -> featurecat.lizzie.gui": 34,
+    "featurecat.lizzie.rules -> featurecat.lizzie.gui": 5,
+    "featurecat.lizzie.update -> featurecat.lizzie.gui": 6
+  }
+}

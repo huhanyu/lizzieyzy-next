@@ -48,7 +48,12 @@ class RunLocalCiTest(unittest.TestCase):
             root = Path(temporary)
             scripts = root / "scripts"
             scripts.mkdir()
-            for name in ("run_local_ci.py", "check_line_endings.py"):
+            for name in (
+                "run_local_ci.py",
+                "check_line_endings.py",
+                "check_architecture_budget.py",
+                "architecture_budget.json",
+            ):
                 shutil.copy2(run_local_ci.REPO_ROOT / "scripts" / name, scripts / name)
             subprocess.run(["git", "init", "-q", str(root)], check=True)
             subprocess.run(
