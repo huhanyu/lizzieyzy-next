@@ -243,7 +243,8 @@ class SetKataRulesWindowTest {
       int readbackId = commandIdFor(fixture.output.toString(), "kata-get-rules");
       dispatch(fixture.engine, "=" + readbackId + " " + JAPANESE);
       awaitConfirmedReadback(dialog);
-      Thread.sleep(100L);
+      // The status watcher polls every 50 ms and closes the editor on the event thread.
+      awaitHidden(dialog);
 
       BoardHistoryList.SessionRulesTarget published = history.captureSessionRules();
       assertEquals(original.revision() + 1L, published.revision());
@@ -469,6 +470,18 @@ class SetKataRulesWindowTest {
       Thread.sleep(20L);
     }
     throw new AssertionError("Confirmed readback did not settle: " + dialog.statusText());
+  }
+
+  private static void awaitHidden(SetKataRules dialog) throws Exception {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (System.nanoTime() < deadline) {
+      boolean[] visible = new boolean[1];
+      SwingUtilities.invokeAndWait(() -> visible[0] = dialog.isVisible());
+      if (!visible[0]) {
+        return;
+      }
+      Thread.sleep(20L);
+    }
   }
 
   private static void awaitStatus(SetKataRules dialog, String fragment) throws Exception {
