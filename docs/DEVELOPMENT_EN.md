@@ -65,6 +65,15 @@ mvn -B -q com.spotify.fmt:fmt-maven-plugin:format
 
 The whole repository was formatted once, so this only rewrites files you changed. That commit is listed in `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once so local `git blame` skips it (GitHub's blame view skips it automatically).
 
+To run the unit tests faster locally, give each test class its own JVM and use half the CPU cores
+(about twice as fast; the default, also used in CI, is one sequential JVM):
+
+```bash
+mvn -B -Dfmt.skip=true -Djava.awt.headless=true -Dsurefire.forkCount=0.5C -Dsurefire.reuseForks=false test
+```
+
+A few timing-sensitive tests can still flake under that load; the sequential run and CI are authoritative.
+
 If you changed packaging, engine paths, first-launch behavior, or the Fox fetch flow, do the relevant manual verification too.
 
 Desktop smoke tests include board editing and SGF import after engine startup failure.

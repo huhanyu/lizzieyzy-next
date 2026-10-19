@@ -164,7 +164,7 @@ class LeelazBoardSynchronizationConfirmationTest {
 
       assertTrue(failed.await(1, TimeUnit.SECONDS));
       assertTrue(detail.get().contains("timeout"));
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       while (!pendingResponses(engine).isEmpty() && System.nanoTime() < deadline) {
         Thread.sleep(1L);
       }

@@ -48,14 +48,16 @@ class CrashPersistenceBarrierTest {
     waiter.start();
 
     try {
-      assertTrue(entered.await(3, TimeUnit.SECONDS));
+      // Generous: the first event also starts the logging pipeline, which is slow on loaded
+      // runners.
+      assertTrue(entered.await(10, TimeUnit.SECONDS));
       Thread.sleep(150);
       assertFalse(returned.get(), "barrier returned during dequeue handoff");
       hold.countDown();
-      waiter.join(4_000);
+      waiter.join(10_000);
     } finally {
       hold.countDown();
-      waiter.join(4_000);
+      waiter.join(10_000);
     }
     assertTrue(returned.get(), "barrier did not complete after handoff release");
     runtime.awaitIdle();

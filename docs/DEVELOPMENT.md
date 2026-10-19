@@ -79,6 +79,24 @@ CPU 准备器按 `src/main/resources/katago-assets.json` 校验 Linux Eigen 引�
 
 同一 checkout 的 Maven 调用应串行运行。此入口不改变现有 CI 分组，也不替代原生 Windows、GPU、IME 或发布包验收。
 
+## 本地快速跑测试
+
+日常改动可以先只跑相关测试，并把工作目录指到临时目录：
+
+```bash
+mvn -B -q -Dfmt.skip=true -Djava.awt.headless=true -Dlizzie.work.dir="$(mktemp -d)" \
+  -Dtest='SomeTest' -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+完整单测默认在一个 JVM 里串行执行（与 CI 相同）。想更快地本地跑全量，可以每个测试类用一个独立 JVM、
+占用一半 CPU 核心并行（约快一倍）：
+
+```bash
+mvn -B -Dfmt.skip=true -Djava.awt.headless=true -Dsurefire.forkCount=0.5C -Dsurefire.reuseForks=false test
+```
+
+少数依赖时序的测试在高负载下仍可能偶发失败；以串行结果和 CI 为准。
+
 ## 本地一键 CI 预检
 
 提交前建议运行与 GitHub Actions 同源的本地预检。它会校验 JDK 21、执行完整
