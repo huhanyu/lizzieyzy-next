@@ -29,9 +29,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class LeelazLoadSgfResponseBindingTest {
-
-
-
+  // Silent-engine tests wait for the snapshot-load no-response timeout; 5 s in production.
+  private static final long FAST_NO_RESPONSE_TIMEOUT_MILLIS = 1_500L;
 
   @Test
   void mirroredLoadSgfErrorWaitsForAlreadyDispatchedPeerBeforeCleanup() throws Exception {
@@ -157,6 +156,7 @@ class LeelazLoadSgfResponseBindingTest {
   void queuedLoadSgfTimedOutBeforeSendIsDroppedAndNeverSentLater() throws Exception {
     try (TestHarness harness = TestHarness.open()) {
       Leelaz engine = new Leelaz("");
+      engine.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = engine;
       engine.requireResponseBeforeSend = true;
 
@@ -224,6 +224,7 @@ class LeelazLoadSgfResponseBindingTest {
   void loadSgfNoResponseTimeoutRetiresOutstandingAndIsolatesLateResponse() throws Exception {
     try (TestHarness harness = TestHarness.open()) {
       Leelaz engine = new Leelaz("");
+      engine.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = engine;
       engine.isKatago = false;
       RecordingOutputStream output = new RecordingOutputStream();
@@ -268,6 +269,7 @@ class LeelazLoadSgfResponseBindingTest {
   void loadSgfNoResponseTimeoutAutoSendsAlreadyQueuedCommand() throws Exception {
     try (TestHarness harness = TestHarness.open()) {
       Leelaz engine = new Leelaz("");
+      engine.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = engine;
       engine.requireResponseBeforeSend = true;
       RecordingOutputStream output = new RecordingOutputStream();

@@ -704,7 +704,7 @@ public class ContributeSavedEngineSelectionDesktopTest {
   }
 
   private static void foreground(Path commands) throws Exception {
-    Files.writeString(Path.of(commands + ".pid"), Long.toString(ProcessHandle.current().pid()));
+    publishPid(Path.of(commands + ".pid"));
     try (BufferedReader input = new BufferedReader(new InputStreamReader(System.in))) {
       String line;
       while ((line = input.readLine()) != null) {
@@ -829,5 +829,12 @@ public class ContributeSavedEngineSelectionDesktopTest {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
     while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(20);
     assertTrue(condition.getAsBoolean(), "Timed out waiting for controlled UI/process state");
+  }
+
+  /** Writes the pid in one step so a polling parent never reads an empty file. */
+  private static void publishPid(Path path) throws Exception {
+    Path staged = path.resolveSibling(path.getFileName() + ".tmp");
+    Files.writeString(staged, Long.toString(ProcessHandle.current().pid()));
+    Files.move(staged, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
   }
 }
