@@ -39,6 +39,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class ExactSnapshotEngineRestoreContractTest {
+  // Silent-engine tests wait for the snapshot-load no-response timeout; 5 s in production.
+  private static final long FAST_NO_RESPONSE_TIMEOUT_MILLIS = 1_500L;
+
   private static final int BOARD_SIZE = 3;
   private static final int BOARD_AREA = BOARD_SIZE * BOARD_SIZE;
   private static final String AUTO_ID_RESPONSE = "__auto-id-response__";
@@ -274,6 +277,8 @@ class ExactSnapshotEngineRestoreContractTest {
       String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
 
       Leelaz engine = new Leelaz("");
+
+      engine.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       engine.useRemoteCompute = true;
       ExactSnapshotRestoreProtocolFixture.Transport transport =
           ExactSnapshotRestoreProtocolFixture.install(
@@ -414,6 +419,7 @@ class ExactSnapshotEngineRestoreContractTest {
       BoardData position = snapshotRoot(true);
       position.komi = 6.5;
       Leelaz engine = new Leelaz("");
+      engine.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       engine.useRemoteCompute = true;
       engine.komi = 7.5f;
       engine.width = 19;
@@ -626,6 +632,7 @@ class ExactSnapshotEngineRestoreContractTest {
       Lizzie.board = board;
       String tailCommand = "play B " + Board.convertCoordinatesToName(2, 2);
       Leelaz engine = new Leelaz("");
+      engine.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       engine.komi = 7.5f;
       ExactSnapshotRestoreProtocolFixture.Transport transport =
           ExactSnapshotRestoreProtocolFixture.install(
@@ -2292,7 +2299,9 @@ class ExactSnapshotEngineRestoreContractTest {
       throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
       Leelaz primary = new Leelaz("");
+      primary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Leelaz secondary = new Leelaz("");
+      secondary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = primary;
       Lizzie.leelaz2 = secondary;
 
@@ -2320,7 +2329,9 @@ class ExactSnapshotEngineRestoreContractTest {
       throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
       Leelaz primary = new Leelaz("");
+      primary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Leelaz secondary = new Leelaz("");
+      secondary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = primary;
       Lizzie.leelaz2 = secondary;
 
@@ -2370,7 +2381,9 @@ class ExactSnapshotEngineRestoreContractTest {
       throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
       Leelaz primary = new Leelaz("");
+      primary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Leelaz secondary = new Leelaz("");
+      secondary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = primary;
       Lizzie.leelaz2 = secondary;
 
@@ -2405,7 +2418,9 @@ class ExactSnapshotEngineRestoreContractTest {
   void exactSnapshotRestoreFailsAndCleansWhenAllDispatchedEnginesStaySilent() throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
       Leelaz primary = new Leelaz("");
+      primary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Leelaz secondary = new Leelaz("");
+      secondary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = primary;
       Lizzie.leelaz2 = secondary;
 
@@ -2486,7 +2501,9 @@ class ExactSnapshotEngineRestoreContractTest {
   void lateLoadSgfResponseAfterFailureCleanupDoesNotConsumeNextCommandHandler() throws Exception {
     try (TestHarness harness = TestHarness.open(true)) {
       Leelaz primary = new Leelaz("");
+      primary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Leelaz secondary = new Leelaz("");
+      secondary.setLoadSgfNoResponseTimeoutForTest(FAST_NO_RESPONSE_TIMEOUT_MILLIS);
       Lizzie.leelaz = primary;
       RecordingOutputStream primaryOutput = new RecordingOutputStream(null);
       RecordingOutputStream secondaryOutput = new RecordingOutputStream("loadsgf ");
