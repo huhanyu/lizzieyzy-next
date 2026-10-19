@@ -6,6 +6,7 @@ import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.LeelazEngineCommandSink;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
+import featurecat.lizzie.analysis.remote.SshEnginePasswords;
 import featurecat.lizzie.enginegame.EngineGameModule;
 import featurecat.lizzie.enginegame.EngineGameSnapshot;
 import featurecat.lizzie.gui.AppleStyleSupport;
@@ -369,6 +370,7 @@ public class Lizzie {
     resourceBundle = AppLocale.loadBundle(config.useLanguage);
     NetworkProxy.installSystemProxyPropertyFromSavedConfig();
     Utils.applyMaintainedDefaultSettings();
+    moveLegacySshPasswordsToCredentialStore();
     // -Dsun.java2d.uiScale.enabled=false
     // -Dsun.java2d.win.uiScaleX=1.25 -Dsun.java2d.win.uiScaleY=1.25
     // -Dsun.java2d.win.uiScaleX=125% -Dsun.java2d.win.uiScaleY=125%
@@ -481,6 +483,17 @@ public class Lizzie {
     scheduleAutoSetupSmokeProbe();
     scheduleYikeWebSmokeProbe();
     scheduleRemoteComputeSmokeProbe();
+  }
+
+  /** One-time move of SSH engine passwords from the configuration file into the OS store. */
+  private static void moveLegacySshPasswordsToCredentialStore() {
+    try {
+      if (SshEnginePasswords.migrateLegacyPasswords(config.leelazConfig)) {
+        config.save();
+      }
+    } catch (IOException | RuntimeException e) {
+      APP.warn("Unable to move saved SSH engine passwords to the credential store", e);
+    }
   }
 
   public static WorkDirectoryResolution bootstrapLogging() {

@@ -1,6 +1,7 @@
 package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.remote.SshEnginePasswords;
 import featurecat.lizzie.util.Utils;
 import java.awt.BorderLayout;
 import java.awt.Container;
@@ -103,7 +104,7 @@ public class RemoteEngineSettings extends JDialog {
     txtIP.setText(remoteEngineData.ip);
     txtPort.setText(remoteEngineData.port);
     txtUserName.setText(remoteEngineData.userName);
-    txtPassword.setText(Utils.doDecrypt(remoteEngineData.password));
+    txtPassword.setText(SshEnginePasswords.revealForDisplay(remoteEngineData.password));
     chkUsePassword.setSelected(!remoteEngineData.useKeyGen);
     chkUseKeyGen.setSelected(remoteEngineData.useKeyGen);
     if (chkUsePassword.isSelected()) {
@@ -197,7 +198,12 @@ public class RemoteEngineSettings extends JDialog {
             remoteEngineData.ip = txtIP.getText();
             remoteEngineData.port = txtPort.getText();
             remoteEngineData.userName = txtUserName.getText();
-            remoteEngineData.password = Utils.doEncrypt(new String(txtPassword.getPassword()));
+            remoteEngineData.password =
+                SshEnginePasswords.remember(
+                    remoteEngineData.ip,
+                    remoteEngineData.port,
+                    remoteEngineData.userName,
+                    new String(txtPassword.getPassword()));
             remoteEngineData.keyGenPath = keyGenPath;
             remoteEngineData.useKeyGen = chkUseKeyGen.isSelected();
             if (analysisEngineDataConsumer != null)
