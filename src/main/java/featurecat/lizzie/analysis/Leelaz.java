@@ -18,6 +18,7 @@ import featurecat.lizzie.gui.EngineFailedMessage;
 import featurecat.lizzie.gui.JFontCheckBox;
 import featurecat.lizzie.gui.JFontLabel;
 import featurecat.lizzie.gui.LizzieFrame;
+import featurecat.lizzie.gui.Menu;
 import featurecat.lizzie.gui.Message;
 import featurecat.lizzie.logging.EngineObservation;
 import featurecat.lizzie.rules.Board;
@@ -14743,6 +14744,7 @@ public class Leelaz {
     session.wasPondering = !(owner instanceof FoxEngineSession) && isPondering();
     session.readerBinding = readerStreamBinding;
     exclusiveGtpSession = session;
+    Menu.requestBreadthAdmissionRefresh();
     return session;
   }
 
@@ -14903,6 +14905,30 @@ public class Leelaz {
   }
 
   private ExclusiveGtpLeaseAvailability intrinsicExclusiveGtpLeaseAvailability() {
+    ExclusiveGtpLeaseAvailability ordinary = ordinaryKataGoAvailabilityLocked();
+    if (ordinary != ExclusiveGtpLeaseAvailability.AVAILABLE) {
+      return ordinary;
+    }
+    if (!endGetCommandList) {
+      return ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY;
+    }
+    if (!commandLists.containsAll(FLASH_ANALYSIS_GTP_COMMANDS)) {
+      return ExclusiveGtpLeaseAvailability.MISSING_CAPABILITY;
+    }
+    if (Board.boardWidth != Board.boardHeight && !commandLists.contains("rectangular_boardsize")) {
+      return ExclusiveGtpLeaseAvailability.MISSING_CAPABILITY;
+    }
+    if (exclusiveGtpSession != null) {
+      return ExclusiveGtpLeaseAvailability.EXISTING_LEASE;
+    }
+    return ExclusiveGtpLeaseAvailability.AVAILABLE;
+  }
+
+  /**
+   * The checks every KataGo command needs, before any flash-analysis requirement: GTP capability,
+   * restored state, no ReadBoard GMA reservation, no lifecycle change, a running KataGo process.
+   */
+  private ExclusiveGtpLeaseAvailability ordinaryKataGoAvailabilityLocked() {
     if (!hasGtpCapability()) {
       return ExclusiveGtpLeaseAvailability.MISSING_CAPABILITY;
     }
@@ -14921,24 +14947,25 @@ public class Leelaz {
     if (!isKatago) {
       return ExclusiveGtpLeaseAvailability.NOT_KATAGO;
     }
-    if (!endGetCommandList) {
-      return ExclusiveGtpLeaseAvailability.ENGINE_NOT_READY;
-    }
-    if (!commandLists.containsAll(FLASH_ANALYSIS_GTP_COMMANDS)) {
-      return ExclusiveGtpLeaseAvailability.MISSING_CAPABILITY;
-    }
-    if (Board.boardWidth != Board.boardHeight && !commandLists.contains("rectangular_boardsize")) {
-      return ExclusiveGtpLeaseAvailability.MISSING_CAPABILITY;
-    }
-    if (exclusiveGtpSession != null) {
-      return ExclusiveGtpLeaseAvailability.EXISTING_LEASE;
-    }
     return ExclusiveGtpLeaseAvailability.AVAILABLE;
   }
 
   public ExclusiveGtpLeaseAvailability previewExclusiveGtpLeaseAvailability() {
     synchronized (engineArbitrationLock()) {
       return intrinsicExclusiveGtpLeaseAvailability();
+    }
+  }
+
+  /**
+   * Whether the toolbar breadth ({@code kata-set-param analysisWideRootNoise}) can be changed now.
+   * It goes through the ordinary command queue, so unlike the flash-analysis lease it does not need
+   * the flash-analysis command set; it does wait for exclusive work and restores to finish.
+   */
+  public boolean canSetAnalysisWideRootNoise() {
+    synchronized (engineArbitrationLock()) {
+      return ordinaryKataGoAvailabilityLocked() == ExclusiveGtpLeaseAvailability.AVAILABLE
+          && exclusiveGtpSession == null
+          && !foregroundRestoreInProgress;
     }
   }
 
@@ -14991,6 +15018,7 @@ public class Leelaz {
       exclusiveGtpSession = null;
       engineArbitrationLock().notifyAll();
     }
+    Menu.requestBreadthAdmissionRefresh();
     if (advanceOrdinaryQueue) {
       try {
         trySendCommandFromQueue();
@@ -15302,6 +15330,7 @@ public class Leelaz {
       }
     }
     if (ended) {
+      Menu.requestBreadthAdmissionRefresh();
       trySendCommandFromQueue();
     }
   }
@@ -16532,6 +16561,7 @@ public class Leelaz {
     synchronized (engineArbitrationLock()) {
       finishForegroundRestoreLifecycleLocked();
     }
+    Menu.requestBreadthAdmissionRefresh();
   }
 
   private void finishForegroundRestoreLifecycleLocked() {
@@ -18580,6 +18610,7 @@ public class Leelaz {
       if (!endpointsReleased.compareAndSet(false, true)) {
         return;
       }
+      Menu.requestBreadthAdmissionRefresh();
       List<Runnable> callbacks;
       synchronized (this) {
         callbacks = new ArrayList<>(afterEndpointRelease);
