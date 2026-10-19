@@ -30,7 +30,8 @@ final class LoggingChildProcess {
     List<String> command = new ArrayList<>();
     command.add(java);
     command.add("-Djava.awt.headless=true");
-    command.add("-D" + WorkDirectoryEnvironment.WORK_DIR_PROPERTY + "=" + workDirectory.toAbsolutePath());
+    command.add(
+        "-D" + WorkDirectoryEnvironment.WORK_DIR_PROPERTY + "=" + workDirectory.toAbsolutePath());
     command.add("-cp");
     command.add(classPath);
     for (String extra : extraVmAndArgs) {

@@ -304,7 +304,6 @@ public class GtpConsolePane extends JDialog {
     setDocs(engineName + "> " + command + "\n", Color.WHITE, true, Config.frameFontSize);
   }
 
-
   public void addLineReadBoard(String line) {
     if (line == null || line.trim().length() == 0) {
       return;
@@ -397,7 +396,7 @@ public class GtpConsolePane extends JDialog {
         Lizzie.leelaz.toggleHeatmap(false);
       } else if (commandToLower.startsWith("kata-raw")) {
         if (Lizzie.leelaz.sendRawConsoleCommand(command)) {
-        Lizzie.leelaz.setHeatmap();
+          Lizzie.leelaz.setHeatmap();
         }
       } else if (commandToLower.startsWith("boardsize")) {
         String cmdParams[] = command.split(" ");

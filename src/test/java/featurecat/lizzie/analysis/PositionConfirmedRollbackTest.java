@@ -68,14 +68,14 @@ class PositionConfirmedRollbackTest {
   void rejectedOrdinaryPredecessorCannotBeForgottenBySyncRollback() throws Exception {
     try (Harness harness = Harness.open();
         ExactSnapshotRestoreProtocolFixture.Transport transport =
-          ExactSnapshotRestoreProtocolFixture.installAsync(
-              harness.engine,
-              command ->
-                  // Defer undo's ACK so flush() cannot reenter response routing concurrently
-                  // with the predecessor rejection delivered by this test thread.
-                  command.equals("play W D4") || command.equals("undo")
-                      ? null
-                      : ExactSnapshotRestoreProtocolFixture.Response.success())) {
+            ExactSnapshotRestoreProtocolFixture.installAsync(
+                harness.engine,
+                command ->
+                    // Defer undo's ACK so flush() cannot reenter response routing concurrently
+                    // with the predecessor rejection delivered by this test thread.
+                    command.equals("play W D4") || command.equals("undo")
+                        ? null
+                        : ExactSnapshotRestoreProtocolFixture.Response.success())) {
       harness.engine.playMoveNoPonder(Stone.BLACK, "Q16");
       harness.engine.ponder();
       awaitRawCommand(transport, "kata-analyze", 0);
@@ -322,9 +322,10 @@ class PositionConfirmedRollbackTest {
       ExactSnapshotRestoreProtocolFixture.Transport transport =
           ExactSnapshotRestoreProtocolFixture.install(
               harness.engine,
-              command -> command.startsWith("play ")
-                  ? null
-                  : ExactSnapshotRestoreProtocolFixture.Response.success());
+              command ->
+                  command.startsWith("play ")
+                      ? null
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
       harness.engine.ponder();
       awaitRawCommand(transport, "kata-analyze", 0);
       harness.acceptSnapshot(new BoardHistoryNode(expected));
@@ -392,7 +393,8 @@ class PositionConfirmedRollbackTest {
         harness.frame.scheduledResume.run();
         long deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
         while (harness.engine.isLoaded && System.nanoTime() < deadline) Thread.sleep(5L);
-        assertFalse(harness.engine.isLoaded, "failed sync must retire its unavailable engine target");
+        assertFalse(
+            harness.engine.isLoaded, "failed sync must retire its unavailable engine target");
         transport.respond("=" + undo.substring(0, undo.indexOf(' ')));
         transport.awaitResponses();
         harness.frame.scheduledResume.run();
@@ -464,8 +466,8 @@ class PositionConfirmedRollbackTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void disablingReadBoardAnalysisBeforeConfirmationKeepsAcceptedPositionWithoutResume(boolean autoPlay)
-      throws Exception {
+  void disablingReadBoardAnalysisBeforeConfirmationKeepsAcceptedPositionWithoutResume(
+      boolean autoPlay) throws Exception {
     try (Harness harness = Harness.open()) {
       harness.setAutoPlay(autoPlay);
       ExactSnapshotRestoreProtocolFixture.Transport transport =
@@ -495,9 +497,10 @@ class PositionConfirmedRollbackTest {
       ExactSnapshotRestoreProtocolFixture.Transport transport =
           ExactSnapshotRestoreProtocolFixture.install(
               harness.engine,
-              command -> command.equals("undo")
-                  ? null
-                  : ExactSnapshotRestoreProtocolFixture.Response.success());
+              command ->
+                  command.equals("undo")
+                      ? null
+                      : ExactSnapshotRestoreProtocolFixture.Response.success());
       harness.acceptEmptySnapshot();
       String undo = awaitRawCommand(transport, "undo", 0);
       Runnable oldResume = harness.frame.scheduledResume;
@@ -828,7 +831,6 @@ class PositionConfirmedRollbackTest {
       replacement.isLoaded = false;
     }
   }
-
 
   @Test
   void rulesTargetCannotChangeDuringAnalysisQueueAdmission() throws Exception {
@@ -1386,8 +1388,7 @@ class PositionConfirmedRollbackTest {
   @ParameterizedTest
   @ValueSource(
       strings = {"keep", "exit-before-notification", "exit-after-notification", "exit-after-wait"})
-  void localRestartReconfirmsImportAfterComparisonModeChoice(String modeChoice)
-      throws Exception {
+  void localRestartReconfirmsImportAfterComparisonModeChoice(String modeChoice) throws Exception {
     try (Harness harness = Harness.open()) {
       boolean previousCanGo = LizzieFrame.canGoAfterload;
       Leelaz mirror = new Leelaz("");
@@ -1485,7 +1486,8 @@ class PositionConfirmedRollbackTest {
                 }
                 case "rules" -> harness.board.getHistory().publishExternalRules("Japanese");
                 case "engine" -> Lizzie.setPrimaryEngine(null);
-                case "restart" -> tracker.begin(true, 0, "old", harness.engine, 0, "new", harness.engine);
+                case "restart" ->
+                    tracker.begin(true, 0, "old", harness.engine, 0, "new", harness.engine);
                 case "shutdown" -> harness.frame.shutdownKifuEngineSyncCoordinator();
                 default -> throw new AssertionError(replacement);
               }
@@ -1582,9 +1584,13 @@ class PositionConfirmedRollbackTest {
 
   private static long beginKifuRestart(
       Harness harness, EngineManager.EngineSwitchUiTracker tracker) {
-    long token = tracker.begin(true, 0, "old", harness.engine, 0, "restart", harness.engine).token();
+    long token =
+        tracker.begin(true, 0, "old", harness.engine, 0, "restart", harness.engine).token();
     harness.frame.continueKifuSyncAfterLocalRestart(
-        harness.engine, Lizzie.capturePrimaryEngineGeneration(harness.engine), Lizzie.engineManager, token);
+        harness.engine,
+        Lizzie.capturePrimaryEngineGeneration(harness.engine),
+        Lizzie.engineManager,
+        token);
     return token;
   }
 
@@ -1605,7 +1611,8 @@ class PositionConfirmedRollbackTest {
     Field executorField = coordinator.getClass().getDeclaredField("executor");
     executorField.setAccessible(true);
     ((java.util.concurrent.ScheduledExecutorService) executorField.get(coordinator))
-        .submit(() -> {}).get(2, TimeUnit.SECONDS);
+        .submit(() -> {})
+        .get(2, TimeUnit.SECONDS);
     javax.swing.SwingUtilities.invokeAndWait(() -> {});
   }
 
@@ -2842,24 +2849,24 @@ class PositionConfirmedRollbackTest {
       } catch (Exception failure) {
         throw new AssertionError("sync worker did not finish before fixture teardown", failure);
       } finally {
-      engine.started = false;
-      engine.isLoaded = false;
-      EngineManager.resetEngineGameTransactionStateForTest();
-      Lizzie.engineManager = previousManager;
-      EngineManager.isEmpty = previousEngineEmpty;
-      Lizzie.setPrimaryEngine(previousPrimary);
-      Lizzie.leelaz2 = previousSecondary;
-      Lizzie.config = previousConfig;
-      Lizzie.board = previousBoard;
-      Lizzie.frame = previousFrame;
-      LizzieFrame.menu = previousMenu;
-      LizzieFrame.toolbar = previousToolbar;
-      LizzieFrame.isKeepForcing = previousKeepForcing;
-      LizzieFrame.allowcoords = previousAllowCoords;
-      LizzieFrame.avoidcoords = previousAvoidCoords;
-      Board.boardWidth = previousBoardWidth;
-      Board.boardHeight = previousBoardHeight;
-      Zobrist.init();
+        engine.started = false;
+        engine.isLoaded = false;
+        EngineManager.resetEngineGameTransactionStateForTest();
+        Lizzie.engineManager = previousManager;
+        EngineManager.isEmpty = previousEngineEmpty;
+        Lizzie.setPrimaryEngine(previousPrimary);
+        Lizzie.leelaz2 = previousSecondary;
+        Lizzie.config = previousConfig;
+        Lizzie.board = previousBoard;
+        Lizzie.frame = previousFrame;
+        LizzieFrame.menu = previousMenu;
+        LizzieFrame.toolbar = previousToolbar;
+        LizzieFrame.isKeepForcing = previousKeepForcing;
+        LizzieFrame.allowcoords = previousAllowCoords;
+        LizzieFrame.avoidcoords = previousAvoidCoords;
+        Board.boardWidth = previousBoardWidth;
+        Board.boardHeight = previousBoardHeight;
+        Zobrist.init();
       }
     }
   }

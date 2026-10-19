@@ -6,8 +6,8 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.gtp.KataRawNnResponse;
 import featurecat.lizzie.analysis.gtpconfig.GtpConfigurationProbe;
 import featurecat.lizzie.analysis.remote.EngineTransport;
-import featurecat.lizzie.analysis.remote.ZhiziGtpTransport;
 import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
+import featurecat.lizzie.analysis.remote.ZhiziGtpTransport;
 import featurecat.lizzie.enginegame.EngineGamePlayMode;
 import featurecat.lizzie.enginegame.EngineGameSide;
 import featurecat.lizzie.enginegame.EngineGameSideLimits;
@@ -147,7 +147,6 @@ public class Leelaz {
     }
   }
 
-
   private static final List<String> FLASH_ANALYSIS_GTP_COMMANDS =
       List.of(
           "stop",
@@ -241,7 +240,6 @@ public class Leelaz {
     SEND_FAILED
   }
 
-
   // private static final long MINUTE = 60 * 1000; // number of milliseconds in a minute
   private static final Runnable NO_OP_RESPONSE_HANDLER = () -> {};
   private static final int NO_RESPONSE_COMMAND_ID = -1;
@@ -278,12 +276,14 @@ public class Leelaz {
       new ThreadLocal<>();
   private static final ThreadLocal<EngineManager.EngineGameOwnerTransaction>
       engineGameStartupCommandContext = new ThreadLocal<>();
+
   /**
    * Cold-start PK bootstrap stays unnumbered until 引擎对局参与者名称识别完成. Only name/version/list_commands
    * GTP errors are ignored; later setup commands still fail the transaction.
    */
   private static final ThreadLocal<Boolean> ordinaryEngineGameBootstrapCommands =
       new ThreadLocal<>();
+
   /** Isolates a retired match participant restart from ordinary foreground startup presentation. */
   private static final ThreadLocal<Boolean> deferredEngineGameRecoveryStartupContext =
       new ThreadLocal<>();
@@ -300,8 +300,7 @@ public class Leelaz {
   private final AtomicInteger readBoardGmaResponseCommandIds = new AtomicInteger(700000000);
   private final AtomicInteger engineGameResponseCommandIds = new AtomicInteger(600000000);
   private final AtomicInteger exclusiveGtpResponseCommandIds = new AtomicInteger(800000000);
-  private final AtomicInteger boardSynchronizationResponseCommandIds =
-      new AtomicInteger(900000000);
+  private final AtomicInteger boardSynchronizationResponseCommandIds = new AtomicInteger(900000000);
   private volatile long runtimeSearchThreadsTimeoutMillis = TimeUnit.SECONDS.toMillis(8);
   private final long engineArbitrationOrder = ENGINE_ARBITRATION_ORDER_SEQUENCE.incrementAndGet();
   private volatile boolean currentCommandResponseError;
@@ -317,9 +316,12 @@ public class Leelaz {
    * Admission generations keep delayed local state publication from overwriting a newer command.
    */
   private volatile long komiAdmissionGeneration;
+
   private volatile long boardSizeAdmissionGeneration;
+
   /** Serializes an admission-generation check with its corresponding local state publication. */
   private volatile Object statefulOrdinaryPublicationLock = new Object();
+
   private final ThreadLocal<UpdateEngineStartAttempt> updateEngineStartAttemptContext =
       new ThreadLocal<>();
   private final ThreadLocal<Object> analysisOutputRecoveryTokenContext = new ThreadLocal<>();
@@ -331,15 +333,18 @@ public class Leelaz {
   private Object exclusiveGtpLifecycleOwner;
   private int exclusiveGtpLifecycleDepth;
   private final Object foregroundRestoreLifecycleOwner = new Object();
+
   /**
    * Shared across engine instances so a successful later occupancy claim drops a delayed exclusive
    * prompt scheduled by a previous game's retirement/restore on a different engine.
    */
   private static final AtomicLong exclusiveOccupancyPromptGeneration = new AtomicLong();
+
   private final AtomicLong restartBootstrapAttemptIds = new AtomicLong();
   private final ThreadLocal<RestartBootstrapReceipt> restartBootstrapReceiptContext =
       new ThreadLocal<>();
   private RestartBootstrapReceipt restartBootstrapReceipt;
+
   /** Serializes constructor-bypassing/test instances whose endpoint order token is identical. */
   private static final Object LIFECYCLE_COMPLETION_PAIR_TIE_LOCK = new Object();
 
@@ -389,11 +394,12 @@ public class Leelaz {
   private final Object parameterReadLock = new Object();
   private ParameterRead activeParameterRead;
   public volatile String recentRulesLine = "";
+
   /** Display summary of the last observed engine rules; null until a rules line is parsed. */
   public volatile KataGoRules.Summary rulesSummary;
+
   private final Object engineRulesLock = new Object();
-  private final ThreadLocal<EngineRulesOperation> engineRulesOperationContext =
-      new ThreadLocal<>();
+  private final ThreadLocal<EngineRulesOperation> engineRulesOperationContext = new ThreadLocal<>();
   private long engineRulesGeneration;
   private volatile EngineRulesResult engineRulesResult = EngineRulesResult.idle();
   private EngineRulesOperation activeEngineRulesOperation;
@@ -434,7 +440,8 @@ public class Leelaz {
   private volatile String foxPdaCompatibility = "Fox.pdaUnknown";
 
   public String foxPdaUnavailableReason() {
-    return isKataGoPda || isDymPda ? "Fox.pdaDynamic"
+    return isKataGoPda || isDymPda
+        ? "Fox.pdaDynamic"
         : isKatagoCustom ? "Fox.pdaUnknown" : foxPdaCompatibility;
   }
 
@@ -442,6 +449,7 @@ public class Leelaz {
     pda = value;
     pdaBeforeGame = value;
   }
+
   public boolean startAutoAna = false;
   // for Multiple Engine
   public String oriEngineCommand = "";
@@ -624,8 +632,10 @@ public class Leelaz {
   private volatile ReadBoardGmaPreparation readBoardGmaPreparation;
   private volatile ReadBoardGmaResponseBinding readBoardGmaResponseBinding;
   private volatile boolean engineStateUnrestored;
+
   /** Automatic foreground-lease failure that left one exact primary reader unrestored. */
   private volatile UnrestoredForegroundLease unrestoredForegroundLease;
+
   private volatile int currentTotalPlayouts;
   private int currentRootVisits = -1;
   private ParsedAnalysisInfo currentOrdinaryPayload;
@@ -633,7 +643,12 @@ public class Leelaz {
   public boolean supportMovesOwnership = false;
   private boolean supportRootInfo;
 
-  public enum MoveFocusCapability { UNKNOWN, PROBING, SUPPORTED, UNSUPPORTED }
+  public enum MoveFocusCapability {
+    UNKNOWN,
+    PROBING,
+    SUPPORTED,
+    UNSUPPORTED
+  }
 
   private volatile ReaderStreamBinding moveFocusCapabilityBinding;
   private volatile MoveFocusCapability moveFocusCapability = MoveFocusCapability.UNKNOWN;
@@ -660,8 +675,10 @@ public class Leelaz {
     }
 
     boolean targetCurrent() {
-      return readerStreamBinding == binding && !binding.terminated
-          && generation == analysisOutputGeneration.get() && isCurrentAnalysisInfoTarget(target);
+      return readerStreamBinding == binding
+          && !binding.terminated
+          && generation == analysisOutputGeneration.get()
+          && isCurrentAnalysisInfoTarget(target);
     }
 
     boolean current() {
@@ -708,8 +725,12 @@ public class Leelaz {
     volatile boolean retired;
     volatile boolean paused;
 
-    MoveFocusState(TrackingAnalysisController owner, TrackingAnalysisController.Context context,
-        ReaderStreamBinding binding, AnalysisInfoTarget target, String baseCommand) {
+    MoveFocusState(
+        TrackingAnalysisController owner,
+        TrackingAnalysisController.Context context,
+        ReaderStreamBinding binding,
+        AnalysisInfoTarget target,
+        String baseCommand) {
       this.owner = owner;
       this.context = context;
       this.binding = binding;
@@ -719,15 +740,19 @@ public class Leelaz {
     }
 
     boolean current() {
-      return moveFocusState == this && !retired && readerStreamBinding == binding
-          && !binding.terminated && generation == analysisOutputGeneration.get()
+      return moveFocusState == this
+          && !retired
+          && readerStreamBinding == binding
+          && !binding.terminated
+          && generation == analysisOutputGeneration.get()
           && isCurrentAnalysisInfoTarget(target);
     }
   }
 
   public MoveFocusCapability moveFocusCapability() {
     return moveFocusCapabilityBinding == currentReaderStreamBinding()
-        ? moveFocusCapability : MoveFocusCapability.UNKNOWN;
+        ? moveFocusCapability
+        : MoveFocusCapability.UNKNOWN;
   }
 
   public boolean canStartMoveFocus() {
@@ -739,72 +764,99 @@ public class Leelaz {
           && isEligibleLocalKataGoForReadBoardTracking()
           && confirmedReadBoardTrackingIncarnation() == binding.incarnation
           && ordinaryFocusBaseCommand != null
-          && outputOwner != null && outputOwner.isOrdinary()
+          && outputOwner != null
+          && outputOwner.isOrdinary()
           && exclusiveGtpSession == null
-          && readBoardGmaReservation == null && !foregroundRestoreInProgress
+          && readBoardGmaReservation == null
+          && !foregroundRestoreInProgress
           && !isWebTrialEngineBusy()
-          && Lizzie.frame != null && !Lizzie.frame.isPlayingAgainstLeelaz
+          && Lizzie.frame != null
+          && !Lizzie.frame.isPlayingAgainstLeelaz
           && !Lizzie.frame.isAnaPlayingAgainstLeelaz;
     }
   }
 
-  List<MoveData> beginMoveFocus(TrackingAnalysisController owner,
-      TrackingAnalysisController.Context context, java.util.function.BooleanSupplier validator) {
+  List<MoveData> beginMoveFocus(
+      TrackingAnalysisController owner,
+      TrackingAnalysisController.Context context,
+      java.util.function.BooleanSupplier validator) {
     if (!canStartMoveFocus()) return null;
     ReaderStreamBinding binding = currentReaderStreamBinding();
     synchronized (engineArbitrationLock()) {
-    if (!canStartMoveFocus()) return null;
-    binding.analysisOutputMutationLock.lock();
-    try {
-      if (binding != readerStreamBinding || binding.terminated
-          || (validator != null && !validator.getAsBoolean())) return null;
-      AnalysisInfoTarget target = captureAnalysisInfoTarget();
-      if (!isCurrentAnalysisInfoTarget(target)
-          || context.engine() != this || context.engineIncarnation() != binding.incarnation
-          || context.displayNodeIdentity() != target.displayNode
-          || context.historyIdentity() != target.board.getHistory()) return null;
-      MoveFocusState state = moveFocusState;
-      if (state != null && state.current() && (state.owner != owner || state.context != context)) {
-        return null;
-      }
-      if (state == null || !state.current()) {
-        String base = ordinaryFocusBaseCommand;
-        if (base == null) base = "kata-analyze " + maybeAddPlayer() + getInterval() + addKataTag();
-        state = new MoveFocusState(owner, context, binding, target, base);
-        moveFocusState = state;
-      }
-      state.pendingAdoption = true;
-      synchronized (analysisInfoMutationLock()) {
-        AnalysisOutputOwnership source = binding.analysisOutputOwnership.get();
-        if (source != null && source.isOrdinary()
-            && currentOrdinaryPayload != null && currentOrdinaryPayload.moves == bestMoves
-            && currentOrdinaryPayloadSource == source
-            && analysisInfoPayloadTarget != null
-            && isCurrentAnalysisInfoTarget(analysisInfoPayloadTarget)
-            && analysisInfoPayloadTarget.displayNode == target.displayNode
-            && currentRootVisits >= 0 && !bestMoves.isEmpty()
-            && AnalysisCandidateValidator.allCandidatesOnEmptyPoints(bestMoves, target.displayNode.getData())) {
-          target.displayNode.getData().adoptOrdinaryAnalysis(new ArrayList<>(bestMoves),
-              bestMovesEnginename, this, currentRootVisits, currentRootVisits,
-              currentOrdinaryPayload.estimateArray,
-              state.treeSource, target.secondarySlot, true);
-          state.adopted = true;
-          state.pendingAdoption = false;
-          return bestMoves;
+      if (!canStartMoveFocus()) return null;
+      binding.analysisOutputMutationLock.lock();
+      try {
+        if (binding != readerStreamBinding
+            || binding.terminated
+            || (validator != null && !validator.getAsBoolean())) return null;
+        AnalysisInfoTarget target = captureAnalysisInfoTarget();
+        if (!isCurrentAnalysisInfoTarget(target)
+            || context.engine() != this
+            || context.engineIncarnation() != binding.incarnation
+            || context.displayNodeIdentity() != target.displayNode
+            || context.historyIdentity() != target.board.getHistory()) return null;
+        MoveFocusState state = moveFocusState;
+        if (state != null
+            && state.current()
+            && (state.owner != owner || state.context != context)) {
+          return null;
         }
+        if (state == null || !state.current()) {
+          String base = ordinaryFocusBaseCommand;
+          if (base == null)
+            base = "kata-analyze " + maybeAddPlayer() + getInterval() + addKataTag();
+          state = new MoveFocusState(owner, context, binding, target, base);
+          moveFocusState = state;
+        }
+        state.pendingAdoption = true;
+        synchronized (analysisInfoMutationLock()) {
+          AnalysisOutputOwnership source = binding.analysisOutputOwnership.get();
+          if (source != null
+              && source.isOrdinary()
+              && currentOrdinaryPayload != null
+              && currentOrdinaryPayload.moves == bestMoves
+              && currentOrdinaryPayloadSource == source
+              && analysisInfoPayloadTarget != null
+              && isCurrentAnalysisInfoTarget(analysisInfoPayloadTarget)
+              && analysisInfoPayloadTarget.displayNode == target.displayNode
+              && currentRootVisits >= 0
+              && !bestMoves.isEmpty()
+              && AnalysisCandidateValidator.allCandidatesOnEmptyPoints(
+                  bestMoves, target.displayNode.getData())) {
+            target
+                .displayNode
+                .getData()
+                .adoptOrdinaryAnalysis(
+                    new ArrayList<>(bestMoves),
+                    bestMovesEnginename,
+                    this,
+                    currentRootVisits,
+                    currentRootVisits,
+                    currentOrdinaryPayload.estimateArray,
+                    state.treeSource,
+                    target.secondarySlot,
+                    true);
+            state.adopted = true;
+            state.pendingAdoption = false;
+            return bestMoves;
+          }
+        }
+        return List.of();
+      } finally {
+        binding.analysisOutputMutationLock.unlock();
       }
-      return List.of();
-    } finally {
-      binding.analysisOutputMutationLock.unlock();
-    }
     }
   }
 
-  boolean updateMoveFocus(TrackingAnalysisController owner,
-      TrackingAnalysisController.Context context, Set<String> points, long revision,
+  boolean updateMoveFocus(
+      TrackingAnalysisController owner,
+      TrackingAnalysisController.Context context,
+      Set<String> points,
+      long revision,
       boolean retireUnconsumed) {
     MoveFocusState state = moveFocusState;
-    if (state == null || state.owner != owner || state.context != context || !state.current()) return false;
+    if (state == null || state.owner != owner || state.context != context || !state.current())
+      return false;
     state.binding.analysisOutputMutationLock.lock();
     try {
       if (!state.current()) return false;
@@ -848,7 +900,8 @@ public class Leelaz {
     COMMAND_DISPATCH_EXECUTOR.execute(() -> state.owner.onFocusStopped(state.context, true));
   }
 
-  void retireMoveFocus(TrackingAnalysisController owner, TrackingAnalysisController.Context context) {
+  void retireMoveFocus(
+      TrackingAnalysisController owner, TrackingAnalysisController.Context context) {
     MoveFocusState state = moveFocusState;
     if (state == null || state.owner != owner || state.context != context) return;
     state.pendingAdoption = false;
@@ -860,11 +913,15 @@ public class Leelaz {
 
   private void cancelUnwrittenMoveFocusUpdate(MoveFocusState state) {
     MoveFocusResponse pending = moveFocusBoundary;
-    if (pending == null || pending.state != state || !pending.analyze || pending.probe
+    if (pending == null
+        || pending.state != state
+        || !pending.analyze
+        || pending.probe
         || pending.command == null) return;
     QueuedCommand command = pending.command;
     synchronized (commandQueue()) {
-      if (!command.cancelBeforeOutputWrite(new IllegalStateException("Focus selection changed"))) return;
+      if (!command.cancelBeforeOutputWrite(new IllegalStateException("Focus selection changed")))
+        return;
       pending.superseded = true;
       commandQueue().remove(command);
       if (command.claimCommandCountRetirement()) cmdNumber = Math.max(1, cmdNumber - 1);
@@ -886,7 +943,8 @@ public class Leelaz {
       sendMoveFocusCommand(command, next);
     } else {
       moveFocusBoundary = null;
-      COMMAND_DISPATCH_EXECUTOR.execute(() -> state.owner.onFocusStopped(state.context, state.retired));
+      COMMAND_DISPATCH_EXECUTOR.execute(
+          () -> state.owner.onFocusStopped(state.context, state.retired));
       trySendCommandFromQueue();
     }
   }
@@ -933,23 +991,32 @@ public class Leelaz {
   private boolean startMoveFocusProbeWhenAnalysisAllowed(
       boolean addPlayer, boolean blackToPlay, long pauseGeneration) {
     LifecycleCompletionClaim completing = lifecycleCompletionCommandContext.get();
-    if (completing != null && completing == lifecycleCompletionClaim
-        && moveFocusCapability() == MoveFocusCapability.UNKNOWN && isKatago) {
+    if (completing != null
+        && completing == lifecycleCompletionClaim
+        && moveFocusCapability() == MoveFocusCapability.UNKNOWN
+        && isKatago) {
       ReaderStreamBinding binding = currentReaderStreamBinding();
       AnalysisInfoTarget target = captureAnalysisInfoTarget();
       completing.deferredInitializationAnalysisBinding = binding;
-      completing.runAfterEndpointRelease(() -> {
-        if (readerStreamBinding == binding && !binding.terminated
-            && isCurrentAnalysisInfoTarget(target) && pauseGeneration == moveFocusPauseGeneration) {
-          if (!startMoveFocusProbeIfAnalysisAllowed(addPlayer, blackToPlay)) ponderIfAnalysisControlAllows();
-        }
-      });
+      completing.runAfterEndpointRelease(
+          () -> {
+            if (readerStreamBinding == binding
+                && !binding.terminated
+                && isCurrentAnalysisInfoTarget(target)
+                && pauseGeneration == moveFocusPauseGeneration) {
+              if (!startMoveFocusProbeIfAnalysisAllowed(addPlayer, blackToPlay))
+                ponderIfAnalysisControlAllows();
+            }
+          });
       return true;
     }
-    if (moveFocusCapability() != MoveFocusCapability.UNKNOWN || isPondering
+    if (moveFocusCapability() != MoveFocusCapability.UNKNOWN
+        || isPondering
         || !isEligibleLocalKataGoForReadBoardTracking()
-        || confirmedReadBoardTrackingIncarnation() < 0 || exclusiveGtpSession != null
-        || readBoardGmaReservation != null || foregroundRestoreInProgress) return false;
+        || confirmedReadBoardTrackingIncarnation() < 0
+        || exclusiveGtpSession != null
+        || readBoardGmaReservation != null
+        || foregroundRestoreInProgress) return false;
     ReaderStreamBinding binding = currentReaderStreamBinding();
     if (moveFocusProbe != null && moveFocusProbe.binding == binding) return false;
     synchronized (engineArbitrationLock()) {
@@ -969,13 +1036,14 @@ public class Leelaz {
     }
     MoveFocusResponse probe = new MoveFocusResponse(null, true, true);
     moveFocusBoundary = probe;
-    Runnable send = () -> sendMoveFocusCommand(
-        "kata-analyze " + getInterval() + " rootInfo true focus pass 0", probe);
+    Runnable send =
+        () ->
+            sendMoveFocusCommand(
+                "kata-analyze " + getInterval() + " rootInfo true focus pass 0", probe);
     // Physical write admission must never wait while holding the user-pause monitor.
     if (SwingUtilities.isEventDispatchThread() || Thread.holdsLock(analysisControlPonderLock())) {
       COMMAND_DISPATCH_EXECUTOR.execute(send);
-    }
-    else send.run();
+    } else send.run();
     return true;
   }
 
@@ -989,7 +1057,8 @@ public class Leelaz {
         deferredMoveFocusProbe = null;
       }
     }
-    if (deferred != null && deferred.targetCurrent()
+    if (deferred != null
+        && deferred.targetCurrent()
         && deferred.pauseGeneration == moveFocusPauseGeneration) {
       startMoveFocusProbeIfAnalysisAllowed(deferred.addPlayer, deferred.blackToPlay);
     }
@@ -1028,11 +1097,15 @@ public class Leelaz {
     }
 
     boolean validBeforeWrite() {
-      return !analyze || (probe ? probeContext.current()
-          && probeContext.pauseGeneration == moveFocusPauseGeneration
-          && (Lizzie.frame == null || !Lizzie.frame.isUserAnalysisPaused())
-          : state.current() && !state.paused && state.revision == revision
-              && state.desired.equals(points));
+      return !analyze
+          || (probe
+              ? probeContext.current()
+                  && probeContext.pauseGeneration == moveFocusPauseGeneration
+                  && (Lizzie.frame == null || !Lizzie.frame.isUserAnalysisPaused())
+              : state.current()
+                  && !state.paused
+                  && state.revision == revision
+                  && state.desired.equals(points));
     }
 
     MoveFocusResponse(MoveFocusState state, boolean probe, boolean analyze) {
@@ -1043,7 +1116,14 @@ public class Leelaz {
       this.analyze = analyze;
       this.points = state == null ? Set.of() : state.desired;
       this.revision = state == null ? 0 : state.revision;
-      timeout.schedule(new TimerTask() { @Override public void run() { fail(); } }, 5000);
+      timeout.schedule(
+          new TimerTask() {
+            @Override
+            public void run() {
+              fail();
+            }
+          },
+          5000);
     }
 
     void fail() {
@@ -1053,7 +1133,10 @@ public class Leelaz {
 
     private void failClaimed() {
       timeout.cancel();
-      if (superseded) { finishSuperseded(); return; }
+      if (superseded) {
+        finishSuperseded();
+        return;
+      }
       failed = true;
       if (binding != readerStreamBinding || binding.terminated) return;
       engineStateUnrestored = true;
@@ -1070,17 +1153,24 @@ public class Leelaz {
       String payload = gtpResponsePayload(currentCommandResponseLine()).trim();
       if (payload.equalsIgnoreCase("unknown analyze option focus")) return true;
       // Older official KataGo reports the exact rejected argument list, not a version gate.
-      return command != null && command.command.startsWith("kata-analyze ")
-          && payload.equals("Could not parse analyze arguments or arguments out of range: '"
-              + command.command.substring("kata-analyze ".length()) + "'");
+      return command != null
+          && command.command.startsWith("kata-analyze ")
+          && payload.equals(
+              "Could not parse analyze arguments or arguments out of range: '"
+                  + command.command.substring("kata-analyze ".length())
+                  + "'");
     }
 
-    @Override public void run() {
+    @Override
+    public void run() {
       if (!terminalClaimed.compareAndSet(false, true)) return;
       timeout.cancel();
       if (failed || superseded || binding != readerStreamBinding || binding.terminated) return;
       boolean error = currentCommandResponseError;
-      if (error && !(probe && analyze)) { failClaimed(); return; }
+      if (error && !(probe && analyze)) {
+        failClaimed();
+        return;
+      }
       if (probe && analyze) {
         if (error) {
           if (explicitlyRejectsFocus()) probeContext.finish(MoveFocusCapability.UNSUPPORTED);
@@ -1099,10 +1189,11 @@ public class Leelaz {
       if (analyze) {
         state.installed = points;
         moveFocusBoundary = null;
-        COMMAND_DISPATCH_EXECUTOR.execute(() -> {
-          state.owner.onFocusUpdateConfirmed(state.context, revision, points);
-          if (state.current() && !state.desired.equals(points)) sendMoveFocusStop(state, false);
-        });
+        COMMAND_DISPATCH_EXECUTOR.execute(
+            () -> {
+              state.owner.onFocusUpdateConfirmed(state.context, revision, points);
+              if (state.current() && !state.desired.equals(points)) sendMoveFocusStop(state, false);
+            });
       } else {
         continueMoveFocusAfterStop(state);
       }
@@ -1474,9 +1565,7 @@ public class Leelaz {
           if (startupDiagnosticAttempt != null)
             startupDiagnosticAttempt.fail("runtime-preflight", e.toString());
           TensorRtRepairContext repairContext =
-              e instanceof TensorRtRuntimeException
-                  ? ((TensorRtRuntimeException) e).context
-                  : null;
+              e instanceof TensorRtRuntimeException ? ((TensorRtRuntimeException) e).context : null;
           storePendingTensorRtRepairContext(repairContext);
           closeBundledStartupDialog();
           String err = e.getLocalizedMessage();
@@ -1530,8 +1619,12 @@ public class Leelaz {
       modelLaunchCommands = List.copyOf(launchCommands);
       CommandLaunchHelper.configureProcessBuilder(processBuilder, launchSpec);
       KataGoRuntimeHelper.configureBundledProcessBuilder(processBuilder, engineExecutable);
-      foxPdaCompatibility = FoxPdaCompatibility.inspect(launchCommands,
-          processBuilder.directory() == null ? Path.of("").toAbsolutePath() : processBuilder.directory().toPath());
+      foxPdaCompatibility =
+          FoxPdaCompatibility.inspect(
+              launchCommands,
+              processBuilder.directory() == null
+                  ? Path.of("").toAbsolutePath()
+                  : processBuilder.directory().toPath());
       processBuilder.redirectErrorStream(false);
       if (startupDiagnosticAttempt != null) startupDiagnosticAttempt.capture(processBuilder);
       try {
@@ -1539,7 +1632,10 @@ public class Leelaz {
         if (startupDiagnosticAttempt != null) startupDiagnosticAttempt.attachProcess(process);
         recordUpdateEngineStartProcess(process);
         AnalysisResourceCoordinator.processStarted(
-            this, AnalysisResourceCoordinator.Purpose.MAIN_BOARD, engineCommand, process,
+            this,
+            AnalysisResourceCoordinator.Purpose.MAIN_BOARD,
+            engineCommand,
+            process,
             startupDiagnosticAttempt != null);
       } catch (IOException e) {
         if (startupDiagnosticAttempt != null)
@@ -1596,8 +1692,7 @@ public class Leelaz {
     RestartBootstrapReceipt startupReceipt = currentRestartBootstrapReceipt();
     requireCurrentEngineGameStartupTransaction(engineGameStartupTransaction);
     if (!isSSH) {
-      dispatchStartupBootstrapCommands(
-          engineGameStartupTransaction, startupReceipt, false);
+      dispatchStartupBootstrapCommands(engineGameStartupTransaction, startupReceipt, false);
     }
     if (engineGameStartupTransaction == null
         && !deferredEngineGameRecovery
@@ -1606,8 +1701,7 @@ public class Leelaz {
       Lizzie.board.getHistory().getGameInfo().setKomi(komi);
     }
     if (isSSH) {
-      dispatchStartupBootstrapCommands(
-          engineGameStartupTransaction, startupReceipt, true);
+      dispatchStartupBootstrapCommands(engineGameStartupTransaction, startupReceipt, true);
     }
     // if(width!=19||height!=19)
 
@@ -1620,7 +1714,8 @@ public class Leelaz {
           B11ModelNotice.known(B11ModelNotice.isZhiziB11(zhizi.modelIdentifier()));
     } else if (!useRemoteCompute && !useJavaSSH && !isSSH && !modelLaunchCommands.isEmpty()) {
       startedReaderStreamBinding.speedModelLookup =
-          B11ModelNotice.local(modelLaunchCommands, startedReaderStreamBinding.processWorkingDirectory);
+          B11ModelNotice.local(
+              modelLaunchCommands, startedReaderStreamBinding.processWorkingDirectory);
     }
     ScheduledExecutorService stdoutExecutor = Executors.newSingleThreadScheduledExecutor();
     ScheduledExecutorService stderrExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -1628,8 +1723,7 @@ public class Leelaz {
       return;
     }
 
-    publishEngineStartupPresentation(
-        engineGameStartupTransaction, startedReaderStreamBinding);
+    publishEngineStartupPresentation(engineGameStartupTransaction, startedReaderStreamBinding);
   }
 
   protected EngineTransport createRemoteTransport() throws IOException {
@@ -1669,10 +1763,10 @@ public class Leelaz {
   public boolean hasGtpCapability() {
     return !isBenchmark();
   }
+
   public boolean isRulesCapabilityDiscoveryComplete() {
     return started && endGetCommandList;
   }
-
 
   public BenchmarkExecution benchmarkExecution() {
     return currentBenchmarkExecution;
@@ -1788,8 +1882,7 @@ public class Leelaz {
           try {
             runStartupBootstrapCommands(transaction, startupReceipt, sshBootstrap);
           } catch (RuntimeException | Error failure) {
-            if (transaction != null
-                && !EngineManager.isCurrentEngineGameTransaction(transaction)) {
+            if (transaction != null && !EngineManager.isCurrentEngineGameTransaction(transaction)) {
               return;
             }
             throw failure;
@@ -1898,9 +1991,7 @@ public class Leelaz {
   }
 
   private static boolean isNameRecognitionBootstrapCommand(String command) {
-    return "name".equals(command)
-        || "version".equals(command)
-        || "list_commands".equals(command);
+    return "name".equals(command) || "version".equals(command) || "list_commands".equals(command);
   }
 
   private void sendEngineBootstrapCommand(
@@ -1943,8 +2034,7 @@ public class Leelaz {
     }
   }
 
-  private void prepareEngineBootstrapState(
-      EngineManager.EngineGameOwnerTransaction transaction) {
+  private void prepareEngineBootstrapState(EngineManager.EngineGameOwnerTransaction transaction) {
     Runnable mutation =
         () -> {
           isCheckingVersion = true;
@@ -1986,8 +2076,7 @@ public class Leelaz {
   private void publishEngineStartupPresentation(
       EngineManager.EngineGameOwnerTransaction transaction, Object startedReaderStreamBinding) {
     beforeEngineGameBootstrapPresentationForTest(transaction);
-    if (transaction != null
-        || suppressesGlobalEnginePresentation(startedReaderStreamBinding)) {
+    if (transaction != null || suppressesGlobalEnginePresentation(startedReaderStreamBinding)) {
       return;
     }
     EngineManager.publishStartedEngineIconIfCurrent(this, startedReaderStreamBinding);
@@ -2120,7 +2209,9 @@ public class Leelaz {
    * returned opaque attempt atomically owns its frozen round, reservation, barriers and completion
    * claim; callers may either start it once or abandon it with {@link AutoCloseable#close()}.
    */
-  public AutomaticRestartAttempt beginAutomaticEngineRestartAttempt() { return beginAutomaticRestartAttempt(false); }
+  public AutomaticRestartAttempt beginAutomaticEngineRestartAttempt() {
+    return beginAutomaticRestartAttempt(false);
+  }
 
   private AutomaticRestartAttempt beginAutomaticRestartAttempt(boolean allowUnrestoredState) {
     if (!allowUnrestoredState
@@ -2179,7 +2270,8 @@ public class Leelaz {
       if (!engine.isStarted() || engine.isDownWithError || engine.isNormalEnd) {
         return false;
       }
-      if (automaticRestartReady(engine.isLoaded(), engine.isCheckingName, engine.endGetCommandList)) {
+      if (automaticRestartReady(
+          engine.isLoaded(), engine.isCheckingName, engine.endGetCommandList)) {
         return true;
       }
       now = System.nanoTime();
@@ -2193,8 +2285,7 @@ public class Leelaz {
       if (now >= deadline) {
         return false;
       }
-      long remainingMillis =
-          Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline - now));
+      long remainingMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline - now));
       try {
         Thread.sleep(Math.min(100L, remainingMillis));
       } catch (InterruptedException ex) {
@@ -2228,8 +2319,7 @@ public class Leelaz {
   }
 
   void resumeClosedEngineAfterBoardSynchronization(boolean resumePonder) {
-    Lizzie.initializeAfterVersionCheck(
-        false, this, resumePonder, startupPrimaryEngineGeneration);
+    Lizzie.initializeAfterVersionCheck(false, this, resumePonder, startupPrimaryEngineGeneration);
   }
 
   void bindCurrentPrimaryEngineGeneration() {
@@ -2244,9 +2334,9 @@ public class Leelaz {
   }
 
   void initializeAfterExplicitRestartBoardSynchronization(boolean resumePonder) {
-    Lizzie.initializeAfterVersionCheck(
-        false, this, resumePonder, startupPrimaryEngineGeneration);
+    Lizzie.initializeAfterVersionCheck(false, this, resumePonder, startupPrimaryEngineGeneration);
   }
+
   void completeSecondaryExplicitRestartBoardSynchronization() {
     notPondering();
     canRestoreDymPda = true;
@@ -2292,16 +2382,13 @@ public class Leelaz {
     Board restoreBoard = Lizzie.board;
     AutomaticRestartOwner owner = new AutomaticRestartOwner(allowUnrestoredState);
     if (restoreBoard == null) {
-      return AutomaticRestartRound.capture(
-          this, null, owner, null, null, null, isPondering);
+      return AutomaticRestartRound.capture(this, null, owner, null, null, null, isPondering);
     }
     synchronized (restoreBoard) {
       BoardHistoryList history = restoreBoard.getHistory();
       BoardHistoryNode target = history == null ? null : history.getCurrentHistoryNode();
       Double komi =
-          history == null || history.getGameInfo() == null
-              ? null
-              : history.getGameInfo().getKomi();
+          history == null || history.getGameInfo() == null ? null : history.getGameInfo().getKomi();
       return AutomaticRestartRound.capture(
           this,
           restoreBoard,
@@ -2324,6 +2411,7 @@ public class Leelaz {
   private boolean hasLifecycleCompletionLocked() {
     return lifecycleCompletionClaim != null;
   }
+
   private boolean shouldRejectCommandDuringLifecycleCompletion() {
     return shouldRejectCommandDuringLifecycleCompletion(null);
   }
@@ -2378,8 +2466,7 @@ public class Leelaz {
     synchronized (readBoardGmaLock()) {
       engineStateUnrestored = true;
     }
-    rememberRecentLine(
-        recentStderrLines, "ReadBoard GMA recovery confirmation failed: " + detail);
+    rememberRecentLine(recentStderrLines, "ReadBoard GMA recovery confirmation failed: " + detail);
     resetGtpCommandStateAfterRestoreFailure(detail);
   }
 
@@ -2462,8 +2549,7 @@ public class Leelaz {
       if (readerStreamBinding != binding) {
         return null;
       }
-      Throwable preparationFailure =
-          runEngineCleanupStep(null, this::notPondering);
+      Throwable preparationFailure = runEngineCleanupStep(null, this::notPondering);
       executors = requestReaderShutdown(binding, true);
       stoppedObservation = markReaderBindingStoppedLocked(binding, executors);
       if (preparationFailure != null) {
@@ -2517,9 +2603,7 @@ public class Leelaz {
   }
 
   void finishExactNormalQuitClaim(ExactNormalQuitClaim claim) {
-    if (claim == null
-        || claim.owner != this
-        || !claim.finished.compareAndSet(false, true)) {
+    if (claim == null || claim.owner != this || !claim.finished.compareAndSet(false, true)) {
       return;
     }
     finishClaimedNormalQuit(claim.binding, claim.executors, claim.stoppedObservation);
@@ -2549,13 +2633,10 @@ public class Leelaz {
   }
 
   void finishExactForceQuitClaim(ExactForceQuitClaim claim) {
-    if (claim == null
-        || claim.owner != this
-        || !claim.finished.compareAndSet(false, true)) {
+    if (claim == null || claim.owner != this || !claim.finished.compareAndSet(false, true)) {
       return;
     }
-    finishClaimedForceQuit(
-        claim.binding, claim.executors, claim.stoppedObservation);
+    finishClaimedForceQuit(claim.binding, claim.executors, claim.stoppedObservation);
   }
 
   static final class ExactForceQuitClaim {
@@ -2703,8 +2784,7 @@ public class Leelaz {
     void complete() {
       synchronized (engineArbitrationLock()) {
         if (completionClaim != null || !canCompleteLocked()) {
-          throw new IllegalStateException(
-              "Cannot complete a stale or unsuccessful engine start");
+          throw new IllegalStateException("Cannot complete a stale or unsuccessful engine start");
         }
         settleCompleteLocked();
       }
@@ -3089,8 +3169,7 @@ public class Leelaz {
         boolean current = readerStreamBinding == binding;
         Throwable preparationFailure = null;
         if (current) {
-          preparationFailure =
-              runEngineCleanupStep(preparationFailure, Leelaz.this::notPondering);
+          preparationFailure = runEngineCleanupStep(preparationFailure, Leelaz.this::notPondering);
         }
         executors = requestReaderShutdown(binding, true);
         if (current) {
@@ -3106,8 +3185,7 @@ public class Leelaz {
         }
       } else if (isCurrentUnboundUpdateStartResource(attempt)) {
         Throwable preparationFailure = null;
-        preparationFailure =
-            runEngineCleanupStep(preparationFailure, Leelaz.this::notPondering);
+        preparationFailure = runEngineCleanupStep(preparationFailure, Leelaz.this::notPondering);
         preparationFailure =
             runEngineCleanupStep(preparationFailure, Leelaz.this::leela0110StopPonder);
         unboundObservation = markEngineStoppedLocked(preparationFailure, true);
@@ -3157,15 +3235,13 @@ public class Leelaz {
                       cleanup.binding, cleanup.executors, cleanup.stoppedObservation));
     }
     if (cleanup.extraRemoteTransport != null) {
-      cleanupFailure =
-          runEngineCleanupStep(cleanupFailure, cleanup.extraRemoteTransport::close);
+      cleanupFailure = runEngineCleanupStep(cleanupFailure, cleanup.extraRemoteTransport::close);
     }
     if (cleanup.extraJavaSsh != null) {
       cleanupFailure = runEngineCleanupStep(cleanupFailure, cleanup.extraJavaSsh::close);
     }
     if (cleanup.extraProcess != null) {
-      cleanupFailure =
-          runEngineCleanupStep(cleanupFailure, cleanup.extraProcess::destroyForcibly);
+      cleanupFailure = runEngineCleanupStep(cleanupFailure, cleanup.extraProcess::destroyForcibly);
     }
     appendEngineCleanupFailure(cleanup.primaryFailure, cleanupFailure);
   }
@@ -3217,18 +3293,14 @@ public class Leelaz {
           runEngineCleanupStep(
               cleanupFailure, () -> closeClaimedReaderBindingTransport(binding, executors));
       cleanupFailure =
-          runEngineCleanupStep(
-              cleanupFailure, () -> shutdownExecutor(executors.stdoutExecutor));
+          runEngineCleanupStep(cleanupFailure, () -> shutdownExecutor(executors.stdoutExecutor));
       cleanupFailure =
-          runEngineCleanupStep(
-              cleanupFailure, () -> shutdownExecutor(executors.stderrExecutor));
+          runEngineCleanupStep(cleanupFailure, () -> shutdownExecutor(executors.stderrExecutor));
     } else {
       cleanupFailure =
-          runEngineCleanupStep(
-              cleanupFailure, () -> shutdownExecutor(executors.stdoutExecutor));
+          runEngineCleanupStep(cleanupFailure, () -> shutdownExecutor(executors.stdoutExecutor));
       cleanupFailure =
-          runEngineCleanupStep(
-              cleanupFailure, () -> shutdownExecutor(executors.stderrExecutor));
+          runEngineCleanupStep(cleanupFailure, () -> shutdownExecutor(executors.stderrExecutor));
       cleanupFailure =
           runEngineCleanupStep(
               cleanupFailure, () -> closeClaimedReaderBindingTransport(binding, executors));
@@ -3250,18 +3322,15 @@ public class Leelaz {
       }
     }
 
-    notifyClaimedProcessStopped(
-        binding.process, executors.ownsPhysicalClose, stoppedObservation);
+    notifyClaimedProcessStopped(binding.process, executors.ownsPhysicalClose, stoppedObservation);
     Throwable cleanupFailure =
         stoppedObservation == null ? null : stoppedObservation.preparationFailure;
     cleanupFailure =
         runEngineCleanupStep(cleanupFailure, () -> forceCloseClaimedReaderBinding(binding));
     cleanupFailure =
-        runEngineCleanupStep(
-            cleanupFailure, () -> shutdownExecutor(executors.stdoutExecutor));
+        runEngineCleanupStep(cleanupFailure, () -> shutdownExecutor(executors.stdoutExecutor));
     cleanupFailure =
-        runEngineCleanupStep(
-            cleanupFailure, () -> shutdownExecutor(executors.stderrExecutor));
+        runEngineCleanupStep(cleanupFailure, () -> shutdownExecutor(executors.stderrExecutor));
     cleanupFailure =
         runEngineCleanupStep(cleanupFailure, () -> clearOutputStreamIfCurrent(binding));
     rethrowEngineCleanupFailure(cleanupFailure);
@@ -3295,8 +3364,7 @@ public class Leelaz {
       ReaderStreamBinding binding,
       ReaderExecutorSnapshot executors,
       EngineStopObservation stoppedObservation) {
-    notifyClaimedProcessStopped(
-        binding.process, executors.ownsTransportClose, stoppedObservation);
+    notifyClaimedProcessStopped(binding.process, executors.ownsTransportClose, stoppedObservation);
   }
 
   private void notifyClaimedProcessStopped(
@@ -3408,8 +3476,7 @@ public class Leelaz {
           engineId = null;
         }
       } catch (RuntimeException | Error observationFailure) {
-        preparationFailure =
-            appendEngineCleanupFailure(preparationFailure, observationFailure);
+        preparationFailure = appendEngineCleanupFailure(preparationFailure, observationFailure);
         engineId = null;
       }
     }
@@ -3554,8 +3621,7 @@ public class Leelaz {
         : withEngineArbitrationLocks(second, first, action);
   }
 
-  private static <T> T withEngineArbitrationLocks(
-      Leelaz lower, Leelaz upper, Supplier<T> action) {
+  private static <T> T withEngineArbitrationLocks(Leelaz lower, Leelaz upper, Supplier<T> action) {
     synchronized (lower.engineArbitrationLock()) {
       synchronized (upper.engineArbitrationLock()) {
         return action.get();
@@ -3608,9 +3674,7 @@ public class Leelaz {
   }
 
   private EngineRuntimeUiLease claimEngineRuntimeUiLeaseIfCurrent(
-      Object expectedIncarnation,
-      boolean requireGlobalPresentation,
-      boolean requireParserReady) {
+      Object expectedIncarnation, boolean requireGlobalPresentation, boolean requireParserReady) {
     if (!(expectedIncarnation instanceof ReaderStreamBinding)) {
       return null;
     }
@@ -3681,8 +3745,8 @@ public class Leelaz {
               .deferredEngineGameRecoveryPresentationSuppressed) {
         return false;
       }
-      ((ReaderStreamBinding) expectedIncarnation)
-          .deferredEngineGameRecoveryPresentationSuppressed = false;
+      ((ReaderStreamBinding) expectedIncarnation).deferredEngineGameRecoveryPresentationSuppressed =
+          false;
       return true;
     }
   }
@@ -3849,8 +3913,7 @@ public class Leelaz {
   }
 
   /** Clears a failed/stale capability while retaining fail-closed parser quarantine. */
-  void abandonAnalysisOutputRecovery(
-      Object expectedIncarnation, Object recoveryToken) {
+  void abandonAnalysisOutputRecovery(Object expectedIncarnation, Object recoveryToken) {
     if (!(expectedIncarnation instanceof ReaderStreamBinding) || recoveryToken == null) {
       return;
     }
@@ -4096,8 +4159,7 @@ public class Leelaz {
     }
     GtpCommandStateReset reset;
     synchronized (engineArbitrationLock()) {
-      if (readerStreamBinding != expectedBinding
-          || expectedBinding.engineGameCommandStateRetired) {
+      if (readerStreamBinding != expectedBinding || expectedBinding.engineGameCommandStateRetired) {
         return false;
       }
       synchronized (commandQueue()) {
@@ -4197,8 +4259,7 @@ public class Leelaz {
     }
   }
 
-  private static ForceReaderExecutorSnapshot claimReaderForceClose(
-      ReaderStreamBinding binding) {
+  private static ForceReaderExecutorSnapshot claimReaderForceClose(ReaderStreamBinding binding) {
     synchronized (binding.readerExecutorLock) {
       if (binding.startupDiagnostic != null) binding.startupDiagnostic.cancel();
       if (binding.forceCloseClaimed) {
@@ -4272,8 +4333,7 @@ public class Leelaz {
         stoppedObservation == null ? null : stoppedObservation.preparationFailure;
     if (binding.javaSSH != null) {
       if (executors.ownsTransportClose) {
-        cleanupFailure =
-            runEngineCleanupStep(cleanupFailure, () -> binding.javaSSH.close());
+        cleanupFailure = runEngineCleanupStep(cleanupFailure, () -> binding.javaSSH.close());
       }
     } else if (binding.remoteTransport != null) {
       if (executors.ownsTransportClose) {
@@ -4311,14 +4371,11 @@ public class Leelaz {
         stoppedObservation == null ? null : stoppedObservation.preparationFailure;
     if (executors.ownsTransportClose) {
       if (binding.javaSSH != null) {
-        cleanupFailure =
-            runEngineCleanupStep(cleanupFailure, binding.javaSSH::close);
+        cleanupFailure = runEngineCleanupStep(cleanupFailure, binding.javaSSH::close);
       } else if (binding.remoteTransport != null) {
-        cleanupFailure =
-            runEngineCleanupStep(cleanupFailure, binding.remoteTransport::close);
+        cleanupFailure = runEngineCleanupStep(cleanupFailure, binding.remoteTransport::close);
       } else if (binding.process != null) {
-        cleanupFailure =
-            runEngineCleanupStep(cleanupFailure, binding.process::destroyForcibly);
+        cleanupFailure = runEngineCleanupStep(cleanupFailure, binding.process::destroyForcibly);
       }
     }
     cleanupFailure =
@@ -4394,8 +4451,7 @@ public class Leelaz {
           || isUpdateEngineStartCompletionClaimedLocked()
           || engineIncarnationLeaseDepth > 0
           || (readerStreamBinding != null && readerStreamBinding.linesInProgress > 0)
-          || (readerStreamBinding != null
-              && readerStreamBinding.startupPostActionsInProgress > 0)
+          || (readerStreamBinding != null && readerStreamBinding.startupPostActionsInProgress > 0)
           || (readerStreamBinding != null
               && readerStreamBinding.runtimeUiPresentationsInProgress > 0)) {
         try {
@@ -4541,7 +4597,6 @@ public class Leelaz {
     }
   }
 
-
   private void noteEngineStarted() {
     try {
       String id = EngineObservation.identityFor(this);
@@ -4609,8 +4664,6 @@ public class Leelaz {
     String id = loggingEngineId;
     return id != null ? id : EngineObservation.identityFor(this);
   }
-
-
 
   private boolean isUpdateEngineStartCompletionClaimedLocked() {
     return activeUpdateEngineStartAttempt != null
@@ -4849,7 +4902,6 @@ public class Leelaz {
     }
   }
 
-
   private boolean isCurrentReaderStreamBinding(ReaderStreamBinding binding) {
     ReaderStreamBinding current = readerStreamBinding;
     return current == binding && !binding.terminated;
@@ -5008,10 +5060,13 @@ public class Leelaz {
     private long runtimeThreadWriteSequence;
     private long confirmedRuntimeThreadSequence;
     private long startupPrimaryEngineGeneration;
+
     /** Bootstrap-only quarantine; released solely by deferred engine-game recovery settlement. */
     private volatile boolean deferredEngineGameRecoveryPresentationSuppressed;
+
     /** Analysis-output ownership quarantine; released solely by a fresh physical owner. */
     private volatile boolean suppressGlobalEnginePresentation;
+
     private final Object readerExecutorLock = new Object();
     private ScheduledExecutorService stdoutExecutor;
     private ScheduledExecutorService stderrExecutor;
@@ -5020,8 +5075,10 @@ public class Leelaz {
     private boolean forceCloseClaimed;
     private volatile boolean normalExitRequested;
     private RestartBootstrapReceipt restartBootstrapReceipt;
+
     /** Serializes ownership replacement with one short parser-side state publication. */
     private final ReentrantLock analysisOutputMutationLock = new ReentrantLock();
+
     private final AtomicReference<AnalysisOutputOwnership> analysisOutputOwnership =
         new AtomicReference<>();
     private volatile AnalysisStateLineage analysisStateLineage = new AnalysisStateLineage();
@@ -5032,8 +5089,10 @@ public class Leelaz {
     private AnalysisStateLineage queuedAnalysisStateLineage;
     private Throwable terminalFailure;
     private boolean terminalCleanupStarted;
+
     /** The dead carrier's command leases were settled before deferred engine-game recovery. */
     private boolean engineGameCommandStateRetired;
+
     private volatile boolean terminated;
 
     private ReaderStreamBinding(
@@ -5213,8 +5272,7 @@ public class Leelaz {
           suppressGlobalEnginePresentationUntilOwned = true;
           return;
         }
-        if (binding.analysisOutputOwnership.compareAndSet(
-            publishedOwnership, previousOwnership)) {
+        if (binding.analysisOutputOwnership.compareAndSet(publishedOwnership, previousOwnership)) {
           binding.suppressGlobalEnginePresentation = previousBindingSuppression;
           suppressGlobalEnginePresentationUntilOwned = previousPersistentSuppression;
         }
@@ -5238,8 +5296,7 @@ public class Leelaz {
     private final EngineManager.EngineGameMoveResponseContext genmoveContext;
 
     private AnalysisOutputRoute(
-        AnalysisOutputRouteKind kind,
-        EngineManager.EngineGamePrimaryContext activeExactContext) {
+        AnalysisOutputRouteKind kind, EngineManager.EngineGamePrimaryContext activeExactContext) {
       this(kind, activeExactContext, null, null, null);
     }
 
@@ -5395,7 +5452,8 @@ public class Leelaz {
         List<MoveData> moves,
         int totalPlayouts,
         List<Double> estimateArray,
-        boolean kata, int rootVisits) {
+        boolean kata,
+        int rootVisits) {
       this.moves = List.copyOf(moves);
       this.totalPlayouts = totalPlayouts;
       this.estimateArray = estimateArray == null ? null : List.copyOf(estimateArray);
@@ -5411,10 +5469,7 @@ public class Leelaz {
     private final AnalysisInfoTarget target;
 
     private AnalysisInfoSnapshot(
-        List<MoveData> moves,
-        int totalPlayouts,
-        long epoch,
-        AnalysisInfoTarget target) {
+        List<MoveData> moves, int totalPlayouts, long epoch, AnalysisInfoTarget target) {
       this.moves = moves;
       this.totalPlayouts = totalPlayouts;
       this.epoch = epoch;
@@ -5478,8 +5533,11 @@ public class Leelaz {
     if (kata) {
       KataGoAnalysisPayload parsed = KataGoAnalysisPayload.parse(payload);
       return new ParsedAnalysisInfo(
-          parsed.moves, parsed.totalVisits(),
-          Lizzie.config.showKataGoEstimate ? parsed.ownership : null, true, parsed.rootVisits);
+          parsed.moves,
+          parsed.totalVisits(),
+          Lizzie.config.showKataGoEstimate ? parsed.ownership : null,
+          true,
+          parsed.rootVisits);
     } else if (isSai) {
       parsedMoves = parseInfoSai(payload);
     } else {
@@ -5496,7 +5554,8 @@ public class Leelaz {
    */
   private void publishAnalysisInfoToDisplay(
       ParsedAnalysisInfo parsed, AnalysisInfoTarget target, Object source) {
-    publishAnalysisDisplayNonFatal(() -> publishAnalysisInfoToDisplayUnsafe(parsed, target, source));
+    publishAnalysisDisplayNonFatal(
+        () -> publishAnalysisInfoToDisplayUnsafe(parsed, target, source));
   }
 
   private void publishAnalysisDisplayNonFatal(Runnable publication) {
@@ -5528,8 +5587,7 @@ public class Leelaz {
     if (!secondaryDisplay
         && EngineManager.hasPlayingEngineGameTransaction()
         && Lizzie.config.enginePkPonder) {
-      EngineManager.EngineGamePrimaryContext game =
-          EngineManager.captureEngineGamePrimaryContext();
+      EngineManager.EngineGamePrimaryContext game = EngineManager.captureEngineGamePrimaryContext();
       engineGameParticipantToMove =
           game != null
               && ((Lizzie.board.getHistory().isBlacksTurn() && this == game.blackEngine)
@@ -5541,11 +5599,16 @@ public class Leelaz {
     List<MoveData> boardMoves = new ArrayList<>(parsed.moves);
     if (parsed.kata) {
       displayData.adoptOrdinaryAnalysis(
-          boardMoves, bestMovesEnginename, this, parsed.totalPlayouts, parsed.rootVisits,
+          boardMoves,
+          bestMovesEnginename,
+          this,
+          parsed.totalPlayouts,
+          parsed.rootVisits,
           parsed.estimateArray,
           moveFocusState != null && moveFocusState.current() ? moveFocusState.treeSource : source,
           secondaryDisplay,
-          moveFocusState != null && moveFocusState.current()
+          moveFocusState != null
+              && moveFocusState.current()
               && (moveFocusState.pendingAdoption || moveFocusState.adopted));
     } else if (secondaryDisplay) {
       displayData.tryToSetBestMoves2FromEngine(
@@ -5566,9 +5629,10 @@ public class Leelaz {
         activeFocus.pendingAdoption = false;
         activeFocus.paused = true;
         isPondering = false;
-        COMMAND_DISPATCH_EXECUTOR.execute(() -> {
-          if (activeFocus.current()) stopMoveFocusForPause();
-        });
+        COMMAND_DISPATCH_EXECUTOR.execute(
+            () -> {
+              if (activeFocus.current()) stopMoveFocusForPause();
+            });
         return false;
       }
     }
@@ -5584,16 +5648,21 @@ public class Leelaz {
     currentOrdinaryPayload = parsed;
     currentOrdinaryPayloadSource = source;
     MoveFocusState focus = moveFocusState;
-    if (focus != null && focus.current() && parsed.rootVisits >= 0
-        && AnalysisCandidateValidator.allCandidatesOnEmptyPoints(parsed.moves, target.displayNode.getData())) {
+    if (focus != null
+        && focus.current()
+        && parsed.rootVisits >= 0
+        && AnalysisCandidateValidator.allCandidatesOnEmptyPoints(
+            parsed.moves, target.displayNode.getData())) {
       if (focus.pendingAdoption) {
         focus.adopted = true;
         focus.pendingAdoption = false;
       }
       List<MoveData> accepted = parsed.moves;
-      COMMAND_DISPATCH_EXECUTOR.execute(() -> {
-        if (focus.current() && !focus.paused) focus.owner.onFocusAnalysis(focus.context, accepted);
-      });
+      COMMAND_DISPATCH_EXECUTOR.execute(
+          () -> {
+            if (focus.current() && !focus.paused)
+              focus.owner.onFocusAnalysis(focus.context, accepted);
+          });
     }
     return true;
   }
@@ -5673,14 +5742,12 @@ public class Leelaz {
     }
     EngineManager.EngineGameMoveResponseContext moveResponseContext =
         moveResponseHandler == null ? null : moveResponseHandler.context;
-    long startupPrimaryGenerationAtParse =
-        captureStartupPrimaryGeneration(sourceEngineIncarnation);
+    long startupPrimaryGenerationAtParse = captureStartupPrimaryGeneration(sourceEngineIncarnation);
     EngineManager.EngineGameMoveResponseLease responseLease =
         EngineManager.claimEngineGameMoveResponse(moveResponseContext);
     if (responseLease == null) {
       // Retired responses retain their exact pending handler but have no game side effects.
-      if (moveResponseHandler != null
-          && parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID) {
+      if (moveResponseHandler != null && parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID) {
         processCommandResponseLine(line, sourceEngineIncarnation);
         isCommandLine = false;
       } else if (analyzeTerminal != null) {
@@ -5700,295 +5767,287 @@ public class Leelaz {
       return;
     }
     try {
-    if (line.startsWith("?") && parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID) {
-      // A current exact error is terminal for this move request. The pending handler performs the
-      // once-only transaction failure and releases the physical carrier/retirement lease.
-      processCommandResponseLine(line, sourceEngineIncarnation);
-      afterEngineGameResponseSettledForTest();
-      isCommandLine = false;
-      return;
-    }
-    // Lizzie.gtpConsole.addLineforce(line);
-
-    if (line.startsWith("info")) {
-      AnalysisOutputRoute ingressRoute =
-          analysisOutputRoute(sourceEngineIncarnation, line);
-      long expectedAnalysisInfoEpoch = analysisInfoEpochSnapshot();
-      AnalysisInfoTarget analysisInfoTarget = captureAnalysisInfoTarget();
-      boolean responseUpToDate = isAnalysisResponseUpToDateSnapshot(ingressRoute);
-      afterAnalysisOutputRouteCapturedForTest(ingressRoute.kind.name());
-      AnalysisOutputRoute currentRoute =
-          analysisOutputRoute(sourceEngineIncarnation, line);
-      if (!ingressRoute.acceptsInfoLine()
-          || !ingressRoute.hasSameOwner(currentRoute)
-          || !currentRoute.acceptsInfoLine()) {
-        return;
-      }
-      afterAnalysisInfoAdmissionSnapshotCapturedForTest();
-      final ParsedAnalysisInfo parsedInfo;
-      try {
-        parsedInfo = parseAnalysisInfoPayload(line.substring(5));
-      } catch (RuntimeException malformedInfo) {
-        // Diagnostic analysis output is not a GTP response frame. A malformed payload must not
-        // settle or fail the exact genmove carrier that happens to own this reader.
-        return;
-      }
-      AtomicBoolean infoCommitted = new AtomicBoolean();
-      runIfCurrentAnalysisOutputRoute(
-          ingressRoute,
-          () -> {
-            synchronized (analysisInfoMutationLock()) {
-              if (analysisInfoEpoch != expectedAnalysisInfoEpoch
-                  || this == Lizzie.leelaz
-                  || !responseUpToDate
-                  || !isCurrentAnalysisInfoTarget(analysisInfoTarget)) {
-                return;
-              }
-              if (!publishParsedAnalysisInfoLocked(parsedInfo, analysisInfoTarget, ingressRoute.ownerToken)) return;
-              infoCommitted.set(true);
-            }
-          });
-      if (infoCommitted.get()) {
-        if (parsedInfo.kata && this == Lizzie.leelaz) {
-          AnalysisResourceCoordinator.foregroundPlayoutSample(
-              this, parsedInfo.totalPlayouts);
-        }
-        if (parsedInfo.kata) {
-          logTrialKataInfo(parsedInfo.moves, parsedInfo.totalPlayouts);
-        }
-        Lizzie.frame.requestAnalysisRefresh();
-      }
-      return;
-    } else if (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp || !this.isLoaded)
-      Lizzie.gtpConsole.addLine(line + "\n");
-    if (isCheckingPda) {
-      if (line.startsWith("pda:")) {
-        isDymPda = true;
-        String[] params = line.trim().split(" ");
-        if (params.length == 2) pda = Double.parseDouble(params[1]);
-        LizzieFrame.menu.txtPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
-        if (LizzieFrame.menu.setPda != null)
-          LizzieFrame.menu.setPda.curPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
-        if (Lizzie.config.chkAutoPDA) {
-          sendCommand(Lizzie.config.AutoPDA);
-          if (Lizzie.config.chkDymPDA) {
-            this.pdaCap = Double.parseDouble(Lizzie.config.dymPDACap.trim());
-            if (LizzieFrame.menu.setPda != null)
-              LizzieFrame.menu.setPda.txtDymCap.setText(Lizzie.config.dymPDACap);
-          }
-          if (Lizzie.config.chkStaticPDA) {
-            LizzieFrame.menu.txtPDA.setText(Lizzie.config.staticPDAcur);
-            this.pda = Double.parseDouble(Lizzie.config.staticPDAcur.trim());
-            isStaticPda = true;
-          } else {
-            isStaticPda = false;
-          }
-        }
-      }
-      if (line.startsWith("PDACap:")) {
-        String[] params = line.trim().split(" ");
-        if (params.length == 2) {
-          //	if(pdaCap==0)
-          pdaCap = Double.parseDouble(params[1]);
-          if (pdaCap != 0 && !isStaticPda) {
-            isStaticPda = false;
-            Runnable syncDymPda =
-                new Runnable() {
-                  public void run() {
-                    int i = 0;
-                    while (!canRestoreDymPda) {
-                      try {
-                        i++;
-                        if (i > 19) break;
-                        Thread.sleep(50);
-                      } catch (InterruptedException e) {
-                        // TODO Auto-generated catch block
-                        e.printStackTrace();
-                      }
-                    }
-                    canRestoreDymPda = false;
-                    if (Lizzie.config.chkAutoPDA) sendCommand(Lizzie.config.AutoPDA);
-                    else sendCommand("dympdacap " + pdaCap);
-                    if (isPondering()) ponder();
-                  }
-                };
-            Thread syncDymPdaTh = new Thread(syncDymPda);
-            syncDymPdaTh.start();
-          } else {
-            isStaticPda = true;
-          }
-          if (LizzieFrame.menu.setPda != null)
-            LizzieFrame.menu.setPda.txtDymCap.setText(String.valueOf(pdaCap));
-        }
-      }
-    }
-
-    boolean passingContinuation =
-        moveResponseHandler != null && moveResponseHandler.awaitingPassingCoordinate;
-    if (line.startsWith("=") || line.startsWith("play") || passingContinuation) {
-      isCommandLine = true;
-      String[] params =
-          passingContinuation
-              ? new String[] {"=", line.trim()}
-              : line.trim().split(" ");
-      // currentCmdNum = Integer.parseInt(params[0].substring(1).trim());
-      if (params.length <= 1) {
-        if (parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID) {
-          processCommandResponseLine(line, sourceEngineIncarnation);
-          afterEngineGameResponseSettledForTest();
-        }
-        EngineManager.failEngineGameTransaction(
-            moveResponseContext.transaction,
-            new IllegalStateException("Engine-game genmove returned an empty success response"));
+      if (line.startsWith("?") && parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID) {
+        // A current exact error is terminal for this move request. The pending handler performs the
+        // once-only transaction failure and releases the physical carrier/retirement lease.
+        processCommandResponseLine(line, sourceEngineIncarnation);
+        afterEngineGameResponseSettledForTest();
         isCommandLine = false;
         return;
       }
-      if (params.length >= 2) {
-        ParticipantBinding binding =
-            moveResponseContext.transaction.bindingFor(moveResponseContext.participant);
-        boolean moverIsBlack = binding != null && binding.isBlack();
-        int selectedIndex =
-            binding != null ? binding.catalogIndex() : moveResponseContext.participantIndex;
-        int maxGameMoves =
-            binding != null
-                ? binding.maxGameMoves(Board.boardWidth, Board.boardHeight)
-                : moveResponseContext.plan.resolvedMaxMoves();
-        if (parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID
-            && !params[1].startsWith("Passing")) {
-          processCommandResponseLine(line, sourceEngineIncarnation);
-          afterEngineGameResponseSettledForTest();
+      // Lizzie.gtpConsole.addLineforce(line);
+
+      if (line.startsWith("info")) {
+        AnalysisOutputRoute ingressRoute = analysisOutputRoute(sourceEngineIncarnation, line);
+        long expectedAnalysisInfoEpoch = analysisInfoEpochSnapshot();
+        AnalysisInfoTarget analysisInfoTarget = captureAnalysisInfoTarget();
+        boolean responseUpToDate = isAnalysisResponseUpToDateSnapshot(ingressRoute);
+        afterAnalysisOutputRouteCapturedForTest(ingressRoute.kind.name());
+        AnalysisOutputRoute currentRoute = analysisOutputRoute(sourceEngineIncarnation, line);
+        if (!ingressRoute.acceptsInfoLine()
+            || !ingressRoute.hasSameOwner(currentRoute)
+            || !currentRoute.acceptsInfoLine()) {
+          return;
+        }
+        afterAnalysisInfoAdmissionSnapshotCapturedForTest();
+        final ParsedAnalysisInfo parsedInfo;
+        try {
+          parsedInfo = parseAnalysisInfoPayload(line.substring(5));
+        } catch (RuntimeException malformedInfo) {
+          // Diagnostic analysis output is not a GTP response frame. A malformed payload must not
+          // settle or fail the exact genmove carrier that happens to own this reader.
+          return;
+        }
+        AtomicBoolean infoCommitted = new AtomicBoolean();
+        runIfCurrentAnalysisOutputRoute(
+            ingressRoute,
+            () -> {
+              synchronized (analysisInfoMutationLock()) {
+                if (analysisInfoEpoch != expectedAnalysisInfoEpoch
+                    || this == Lizzie.leelaz
+                    || !responseUpToDate
+                    || !isCurrentAnalysisInfoTarget(analysisInfoTarget)) {
+                  return;
+                }
+                if (!publishParsedAnalysisInfoLocked(
+                    parsedInfo, analysisInfoTarget, ingressRoute.ownerToken)) return;
+                infoCommitted.set(true);
+              }
+            });
+        if (infoCommitted.get()) {
+          if (parsedInfo.kata && this == Lizzie.leelaz) {
+            AnalysisResourceCoordinator.foregroundPlayoutSample(this, parsedInfo.totalPlayouts);
+          }
+          if (parsedInfo.kata) {
+            logTrialKataInfo(parsedInfo.moves, parsedInfo.totalPlayouts);
+          }
+          Lizzie.frame.requestAnalysisRefresh();
+        }
+        return;
+      } else if (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp || !this.isLoaded)
+        Lizzie.gtpConsole.addLine(line + "\n");
+      if (isCheckingPda) {
+        if (line.startsWith("pda:")) {
+          isDymPda = true;
+          String[] params = line.trim().split(" ");
+          if (params.length == 2) pda = Double.parseDouble(params[1]);
+          LizzieFrame.menu.txtPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
+          if (LizzieFrame.menu.setPda != null)
+            LizzieFrame.menu.setPda.curPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
+          if (Lizzie.config.chkAutoPDA) {
+            sendCommand(Lizzie.config.AutoPDA);
+            if (Lizzie.config.chkDymPDA) {
+              this.pdaCap = Double.parseDouble(Lizzie.config.dymPDACap.trim());
+              if (LizzieFrame.menu.setPda != null)
+                LizzieFrame.menu.setPda.txtDymCap.setText(Lizzie.config.dymPDACap);
+            }
+            if (Lizzie.config.chkStaticPDA) {
+              LizzieFrame.menu.txtPDA.setText(Lizzie.config.staticPDAcur);
+              this.pda = Double.parseDouble(Lizzie.config.staticPDAcur.trim());
+              isStaticPda = true;
+            } else {
+              isStaticPda = false;
+            }
+          }
+        }
+        if (line.startsWith("PDACap:")) {
+          String[] params = line.trim().split(" ");
+          if (params.length == 2) {
+            //	if(pdaCap==0)
+            pdaCap = Double.parseDouble(params[1]);
+            if (pdaCap != 0 && !isStaticPda) {
+              isStaticPda = false;
+              Runnable syncDymPda =
+                  new Runnable() {
+                    public void run() {
+                      int i = 0;
+                      while (!canRestoreDymPda) {
+                        try {
+                          i++;
+                          if (i > 19) break;
+                          Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                          // TODO Auto-generated catch block
+                          e.printStackTrace();
+                        }
+                      }
+                      canRestoreDymPda = false;
+                      if (Lizzie.config.chkAutoPDA) sendCommand(Lizzie.config.AutoPDA);
+                      else sendCommand("dympdacap " + pdaCap);
+                      if (isPondering()) ponder();
+                    }
+                  };
+              Thread syncDymPdaTh = new Thread(syncDymPda);
+              syncDymPdaTh.start();
+            } else {
+              isStaticPda = true;
+            }
+            if (LizzieFrame.menu.setPda != null)
+              LizzieFrame.menu.setPda.txtDymCap.setText(String.valueOf(pdaCap));
+          }
+        }
+      }
+
+      boolean passingContinuation =
+          moveResponseHandler != null && moveResponseHandler.awaitingPassingCoordinate;
+      if (line.startsWith("=") || line.startsWith("play") || passingContinuation) {
+        isCommandLine = true;
+        String[] params =
+            passingContinuation ? new String[] {"=", line.trim()} : line.trim().split(" ");
+        // currentCmdNum = Integer.parseInt(params[0].substring(1).trim());
+        if (params.length <= 1) {
+          if (parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID) {
+            processCommandResponseLine(line, sourceEngineIncarnation);
+            afterEngineGameResponseSettledForTest();
+          }
+          EngineManager.failEngineGameTransaction(
+              moveResponseContext.transaction,
+              new IllegalStateException("Engine-game genmove returned an empty success response"));
           isCommandLine = false;
-          if (!responseLease.isCurrent()) return;
-        } else if (moveResponseHandler != null
-            && moveResponseHandler.acceptsUnnumberedAnalyzePlay(line)
-            && !params[1].startsWith("Passing")) {
-          int pendingId = pendingResponseCommandIdFor(moveResponseHandler);
-          if (pendingId != NO_RESPONSE_COMMAND_ID) {
-            processCommandResponseLine(
-                "=" + pendingId + " " + params[1], sourceEngineIncarnation);
+          return;
+        }
+        if (params.length >= 2) {
+          ParticipantBinding binding =
+              moveResponseContext.transaction.bindingFor(moveResponseContext.participant);
+          boolean moverIsBlack = binding != null && binding.isBlack();
+          int selectedIndex =
+              binding != null ? binding.catalogIndex() : moveResponseContext.participantIndex;
+          int maxGameMoves =
+              binding != null
+                  ? binding.maxGameMoves(Board.boardWidth, Board.boardHeight)
+                  : moveResponseContext.plan.resolvedMaxMoves();
+          if (parseResponseCommandId(line) != NO_RESPONSE_COMMAND_ID
+              && !params[1].startsWith("Passing")) {
+            processCommandResponseLine(line, sourceEngineIncarnation);
             afterEngineGameResponseSettledForTest();
             isCommandLine = false;
             if (!responseLease.isCurrent()) return;
+          } else if (moveResponseHandler != null
+              && moveResponseHandler.acceptsUnnumberedAnalyzePlay(line)
+              && !params[1].startsWith("Passing")) {
+            int pendingId = pendingResponseCommandIdFor(moveResponseHandler);
+            if (pendingId != NO_RESPONSE_COMMAND_ID) {
+              processCommandResponseLine(
+                  "=" + pendingId + " " + params[1], sourceEngineIncarnation);
+              afterEngineGameResponseSettledForTest();
+              isCommandLine = false;
+              if (!responseLease.isCurrent()) return;
+            }
           }
-        }
-        if (this.isZen) {
-          if (!publishExactZenEngineGameBestMoves(moveResponseContext)) {
+          if (this.isZen) {
+            if (!publishExactZenEngineGameBestMoves(moveResponseContext)) {
+              return;
+            }
+          }
+          if (params[1].toLowerCase().contains("resign")) {
+            if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
+            finishExactEngineGameAnalysis(moveResponseContext, AnalysisGameTerminal.RESIGN);
             return;
           }
-        }
-        if (params[1].toLowerCase().contains("resign")) {
-          if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
-          finishExactEngineGameAnalysis(moveResponseContext, AnalysisGameTerminal.RESIGN);
-          return;
-        }
-        if (moveResponseContext.moveNumber > maxGameMoves) {
-          if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
-          finishExactEngineGameAnalysis(moveResponseContext, AnalysisGameTerminal.MAX_MOVES);
-          return;
-        }
-        if (EngineManager.isExactEngineGameBoardFull(moveResponseContext)) {
-          if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
-          finishExactEngineGameAnalysis(moveResponseContext, AnalysisGameTerminal.MAX_MOVES);
-          return;
-        }
-        boolean isPassingLose = false;
-        if (params[1].startsWith("Passing")) {
-          moveResponseHandler.awaitingPassingCoordinate = true;
-          isCommandLine = false;
-          return;
-        }
-        if (!isPassingLose && params[1].startsWith("pass")) {
-          if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
-          boolean doublePassNow = moveResponseContext.boardNode.getData().isPassNode();
-          Leelaz selectedEngine =
-              moverIsBlack ? moveResponseContext.blackEngine : moveResponseContext.whiteEngine;
-          EngineManager.EngineGamePostMoveToken postMove =
-              EngineManager.commitEngineGameMove(
-                  moveResponseContext, null, null, selectedEngine, selectedIndex);
-          if (postMove == null) return;
-          if (!resetExactEngineGameMoveTimes(postMove, moveResponseContext)) return;
-          if (doublePassNow) {
-            finishExactEngineGameAnalysis(
-                postMove, moveResponseContext.participantIndex, AnalysisGameTerminal.DOUBLE_PASS);
+          if (moveResponseContext.moveNumber > maxGameMoves) {
+            if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
+            finishExactEngineGameAnalysis(moveResponseContext, AnalysisGameTerminal.MAX_MOVES);
             return;
           }
-          continueEngineGameAfterCommittedMove(
-              moveResponseContext, postMove, moverIsBlack, "pass");
-          return;
-        } else {
-          //	try {
-          Optional<int[]> coords;
-          coords = Board.asCoordinates(params[1]);
-          if (!coords.isPresent()) {
+          if (EngineManager.isExactEngineGameBoardFull(moveResponseContext)) {
+            if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
+            finishExactEngineGameAnalysis(moveResponseContext, AnalysisGameTerminal.MAX_MOVES);
+            return;
+          }
+          boolean isPassingLose = false;
+          if (params[1].startsWith("Passing")) {
+            moveResponseHandler.awaitingPassingCoordinate = true;
+            isCommandLine = false;
+            return;
+          }
+          if (!isPassingLose && params[1].startsWith("pass")) {
+            if (!recordExactEngineGameMoveTime(moveResponseContext, false)) return;
+            boolean doublePassNow = moveResponseContext.boardNode.getData().isPassNode();
+            Leelaz selectedEngine =
+                moverIsBlack ? moveResponseContext.blackEngine : moveResponseContext.whiteEngine;
+            EngineManager.EngineGamePostMoveToken postMove =
+                EngineManager.commitEngineGameMove(
+                    moveResponseContext, null, null, selectedEngine, selectedIndex);
+            if (postMove == null) return;
+            if (!resetExactEngineGameMoveTimes(postMove, moveResponseContext)) return;
+            if (doublePassNow) {
+              finishExactEngineGameAnalysis(
+                  postMove, moveResponseContext.participantIndex, AnalysisGameTerminal.DOUBLE_PASS);
+              return;
+            }
+            continueEngineGameAfterCommittedMove(
+                moveResponseContext, postMove, moverIsBlack, "pass");
+            return;
+          } else {
+            //	try {
+            Optional<int[]> coords;
+            coords = Board.asCoordinates(params[1]);
+            if (!coords.isPresent()) {
+              if (passingContinuation) {
+                completeEngineGamePassingResponse(
+                    moveResponseHandler, sourceEngineIncarnation, params[1]);
+                isCommandLine = false;
+              }
+              EngineManager.failEngineGameTransaction(
+                  moveResponseContext.transaction,
+                  new IllegalStateException(
+                      "Engine-game genmove returned an invalid coordinate: " + params[1]));
+              return;
+            }
+            if (!recordExactEngineGameMoveTime(moveResponseContext, true)) return;
+            Leelaz selectedEngine =
+                moverIsBlack ? moveResponseContext.blackEngine : moveResponseContext.whiteEngine;
+            int moveX = coords.get()[0];
+            int moveY = coords.get()[1];
+            EngineManager.EngineGamePostMoveToken postMove =
+                EngineManager.commitEngineGameMove(
+                    moveResponseContext, moveX, moveY, selectedEngine, selectedIndex);
+            if (postMove == null) return;
+            if (!resetExactEngineGameMoveTimes(postMove, moveResponseContext)) return;
+            if (EngineManager.isExactEngineGameBoardFull(postMove)) {
+              finishExactEngineGameAnalysis(
+                  postMove, moveResponseContext.participantIndex, AnalysisGameTerminal.MAX_MOVES);
+              return;
+            }
             if (passingContinuation) {
               completeEngineGamePassingResponse(
                   moveResponseHandler, sourceEngineIncarnation, params[1]);
               isCommandLine = false;
+              if (!EngineManager.isCurrentEngineGamePostMoveToken(postMove)) return;
             }
-            EngineManager.failEngineGameTransaction(
-                moveResponseContext.transaction,
-                new IllegalStateException(
-                    "Engine-game genmove returned an invalid coordinate: " + params[1]));
-            return;
-          }
-          if (!recordExactEngineGameMoveTime(moveResponseContext, true)) return;
-          Leelaz selectedEngine =
-              moverIsBlack ? moveResponseContext.blackEngine : moveResponseContext.whiteEngine;
-          int moveX = coords.get()[0];
-          int moveY = coords.get()[1];
-          EngineManager.EngineGamePostMoveToken postMove =
-              EngineManager.commitEngineGameMove(
-                  moveResponseContext,
-                  moveX,
-                  moveY,
-                  selectedEngine,
-                  selectedIndex);
-          if (postMove == null) return;
-          if (!resetExactEngineGameMoveTimes(postMove, moveResponseContext)) return;
-          if (EngineManager.isExactEngineGameBoardFull(postMove)) {
-            finishExactEngineGameAnalysis(
-                postMove, moveResponseContext.participantIndex, AnalysisGameTerminal.MAX_MOVES);
-            return;
-          }
-          if (passingContinuation) {
-            completeEngineGamePassingResponse(
-                moveResponseHandler, sourceEngineIncarnation, params[1]);
-            isCommandLine = false;
-            if (!EngineManager.isCurrentEngineGamePostMoveToken(postMove)) return;
-          }
 
-          //					}
-          //					catch (Exception e)
-          //					{
-          //						return;
-          //					}
-          String coordsString = Board.convertCoordinatesToName(coords.get()[0], coords.get()[1]);
-          continueEngineGameAfterCommittedMove(
-              moveResponseContext, postMove, moverIsBlack, coordsString);
+            //					}
+            //					catch (Exception e)
+            //					{
+            //						return;
+            //					}
+            String coordsString = Board.convertCoordinatesToName(coords.get()[0], coords.get()[1]);
+            continueEngineGameAfterCommittedMove(
+                moveResponseContext, postMove, moverIsBlack, coordsString);
+            return;
+          }
+        }
+        runStartupCommandAction(
+            checkNameAndVersion(
+                params, startupPrimaryGenerationAtParse, sourceEngineIncarnation, null));
+      } else if (line.startsWith("?")) {
+        isCommandLine = true;
+        if (consumeReadBoardGmaEngineErrorLine(line)) {
+          return;
+        }
+        if (line.startsWith("? unacceptable komi")) {
+          illegalKomi();
+        }
+      } else if (line.startsWith("PDA:")) {
+        try {
+          parsePDALine(line);
+        } catch (RuntimeException malformedDiagnostic) {
+          // PDA output is an unnumbered diagnostic, not the terminal response for this exact turn.
+          // Malformed content or presentation failure must neither settle nor fail the numbered
+          // genmove carrier.
           return;
         }
       }
-      runStartupCommandAction(
-          checkNameAndVersion(
-              params, startupPrimaryGenerationAtParse, sourceEngineIncarnation, null));
-    } else if (line.startsWith("?")) {
-      isCommandLine = true;
-      if (consumeReadBoardGmaEngineErrorLine(line)) {
-        return;
-      }
-      if (line.startsWith("? unacceptable komi")) {
-        illegalKomi();
-      }
-    } else if (line.startsWith("PDA:")) {
-      try {
-        parsePDALine(line);
-      } catch (RuntimeException malformedDiagnostic) {
-        // PDA output is an unnumbered diagnostic, not the terminal response for this exact turn.
-        // Malformed content or presentation failure must neither settle nor fail the numbered
-        // genmove carrier.
-        return;
-      }
-    }
     } catch (RuntimeException | Error responseFailure) {
       EngineManager.failEngineGameTransaction(moveResponseContext.transaction, responseFailure);
       throw responseFailure;
@@ -6003,8 +6062,7 @@ public class Leelaz {
    * the next framed line to the exact active handler.
    */
   @SuppressWarnings("unused")
-  private void parseLineForGenmovePk(String line, BufferedReader ignoredReader)
-      throws IOException {
+  private void parseLineForGenmovePk(String line, BufferedReader ignoredReader) throws IOException {
     ReaderStreamBinding binding = currentReaderStreamBinding();
     parseLineForGenmovePk(line, binding, engineGameResponseHandlerForLine(line, binding));
   }
@@ -6096,7 +6154,8 @@ public class Leelaz {
             int completedPlayouts = MoveData.getPlayouts(completedMoves);
             publishAnalysisDisplayNonFatal(
                 () ->
-                    response.boardHistory
+                    response
+                        .boardHistory
                         .getData()
                         .tryToSetBestMovesFromEngine(
                             new ArrayList<>(completedMoves),
@@ -6155,8 +6214,7 @@ public class Leelaz {
     if (!beginReaderLine(binding)) {
       return StartupCommandAction.NONE;
     }
-    AtomicReference<StartupCommandAction> action =
-        new AtomicReference<>(StartupCommandAction.NONE);
+    AtomicReference<StartupCommandAction> action = new AtomicReference<>(StartupCommandAction.NONE);
     Throwable failure = null;
     try {
       Runnable exactClassifier =
@@ -6309,7 +6367,8 @@ public class Leelaz {
             int major = Integer.parseInt(ver[0]);
             int minor = Integer.parseInt(ver[1]);
             int patch = ver.length > 2 ? Integer.parseInt(ver[2].split("[^0-9]", 2)[0]) : 0;
-            supportRootInfo = major > 1 || (major == 1 && (minor > 16 || (minor == 16 && patch >= 4)));
+            supportRootInfo =
+                major > 1 || (major == 1 && (minor > 16 || (minor == 16 && patch >= 4)));
           } catch (Exception ex) {
             ex.printStackTrace();
             supportMovesOwnership = false;
@@ -6362,8 +6421,7 @@ public class Leelaz {
   }
 
   private void runStartupCommandAction(StartupCommandAction action) {
-    if (action.kind == StartupCommandKind.KATA
-        || action.kind == StartupCommandKind.LEELA_SAI) {
+    if (action.kind == StartupCommandKind.KATA || action.kind == StartupCommandKind.LEELA_SAI) {
       dispatchStartupEnginePostAction(action);
       return;
     }
@@ -6377,8 +6435,7 @@ public class Leelaz {
       // checkNameAndVersion may run under parseLine's object monitor. PRIMARY -> endpoint is the
       // canonical lifecycle order, so publish bundled readiness only after that parser monitor is
       // released and engine-specific startup post-work has committed.
-      closeBundledStartupDialog(
-          action.expectedPrimaryGeneration, action.expectedEngineIncarnation);
+      closeBundledStartupDialog(action.expectedPrimaryGeneration, action.expectedEngineIncarnation);
     }
   }
 
@@ -6559,8 +6616,7 @@ public class Leelaz {
       }
       // Engine-game startup owns its own terminal presentation. Parser-specific READY icon/dialog
       // callbacks must never escape after the transaction has stopped or been superseded.
-      if (action.engineGameTransaction != null
-          || action.suppressGlobalEnginePresentation) {
+      if (action.engineGameTransaction != null || action.suppressGlobalEnginePresentation) {
         return;
       }
       if (action.publishReadyIcon) {
@@ -6661,8 +6717,7 @@ public class Leelaz {
     return finishTerminalCleanup;
   }
 
-  private void markStartupPostActionFailedLocked(
-      ReaderStreamBinding binding, Throwable failure) {
+  private void markStartupPostActionFailedLocked(ReaderStreamBinding binding, Throwable failure) {
     if (readerStreamBinding != binding || binding.terminated) {
       return;
     }
@@ -6674,8 +6729,7 @@ public class Leelaz {
     cancelParameterRead();
     try {
       rememberRecentLine(
-          recentStderrLines,
-          safeFailureDetail(failure, "engine startup post-action failed"));
+          recentStderrLines, safeFailureDetail(failure, "engine startup post-action failed"));
     } catch (RuntimeException | Error diagnosticFailure) {
       appendEngineCleanupFailure(failure, diagnosticFailure);
     }
@@ -6958,14 +7012,11 @@ public class Leelaz {
       // physical write because analysis-mode ownership is intentionally unavailable in genmove.
       return false;
     }
-    if (!isLeela0110
-        || !command.command.trim().toLowerCase(Locale.ROOT).startsWith("time_left ")) {
+    if (!isLeela0110 || !command.command.trim().toLowerCase(Locale.ROOT).startsWith("time_left ")) {
       return true;
     }
     EngineManager.EngineGamePrimaryContext currentGame =
-        transaction == null
-            ? EngineManager.captureEngineGamePrimaryContext(this, binding)
-            : null;
+        transaction == null ? EngineManager.captureEngineGamePrimaryContext(this, binding) : null;
     return !((transaction != null && transaction.isGenmove())
         || (currentGame != null && currentGame.plan.genmove()));
   }
@@ -7039,11 +7090,7 @@ public class Leelaz {
     suppressGlobalEnginePresentationUntilOwned = false;
     binding.analysisOutputOwnership.set(replacement);
     return new AnalysisOutputOwnershipPublication(
-        binding,
-        previous,
-        replacement,
-        previousBindingSuppression,
-        previousPersistentSuppression);
+        binding, previous, replacement, previousBindingSuppression, previousPersistentSuppression);
   }
 
   private AnalysisOutputRoute analysisOutputRoute(Object sourceEngineIncarnation) {
@@ -7069,8 +7116,7 @@ public class Leelaz {
         || (line.startsWith("MALKOVICH:") && line.contains("PDA"));
   }
 
-  private AnalysisOutputRoute analysisOutputRoute(
-      Object sourceEngineIncarnation, String line) {
+  private AnalysisOutputRoute analysisOutputRoute(Object sourceEngineIncarnation, String line) {
     if (!(sourceEngineIncarnation instanceof ReaderStreamBinding)) {
       return new AnalysisOutputRoute(AnalysisOutputRouteKind.EXACT_RETIRED, null);
     }
@@ -7097,11 +7143,7 @@ public class Leelaz {
     AnalysisOutputOwnership ownership = binding.analysisOutputOwnership.get();
     if (ownership == null) {
       return new AnalysisOutputRoute(
-          AnalysisOutputRouteKind.EXACT_RETIRED,
-          null,
-          binding,
-          null,
-          null);
+          AnalysisOutputRouteKind.EXACT_RETIRED, null, binding, null, null);
     }
     if (ownership.hasFailedAnalysisStateLineage()) {
       return new AnalysisOutputRoute(
@@ -7185,8 +7227,7 @@ public class Leelaz {
    * replacing the owner, without ever nesting endpoint, selection, UI, or output work under the
    * binding lock.
    */
-  private boolean runIfCurrentAnalysisOutputRoute(
-      AnalysisOutputRoute expected, Runnable mutation) {
+  private boolean runIfCurrentAnalysisOutputRoute(AnalysisOutputRoute expected, Runnable mutation) {
     if (expected == null || mutation == null || !expected.acceptsInfoLine()) {
       return false;
     }
@@ -7418,71 +7459,72 @@ public class Leelaz {
       return outcome;
     }
     runIfCurrentAnalysisOutputRoute(
-            route,
-            () -> {
-              synchronized (analysisInfoMutationLock()) {
-                if (analysisInfoEpoch != expectedAnalysisInfoEpoch
-                    || !isCurrentAnalysisInfoTarget(analysisInfoTarget)) {
-                  return;
-                }
-                if (!publishParsedAnalysisInfoLocked(parsedInfo, analysisInfoTarget, route.ownerToken)) return;
-                outcome.parsedInfo = parsedInfo;
-                outcome.acceptedSnapshot =
-                    new AnalysisInfoSnapshot(
-                        this.bestMoves,
-                        this.currentTotalPlayouts,
-                        analysisInfoEpoch,
-                        analysisInfoTarget);
-                if (useRemoteCompute && remoteTransport != null) {
-                  outcome.remoteProgressTransport = remoteTransport;
-                  outcome.acceptedRemotePlayouts = parsedInfo.totalPlayouts;
-                }
-                if (treatCurrentInfoAsPrimary) {
-                  YikeSyncDebugLog.log("Leelaz parseLine bestMoves size=" + this.bestMoves.size());
-                }
-                if (!this.bestMoves.isEmpty()) {
-                  outcome.notifyAutoPk = route.acceptsExactEngineGameOutput();
-                  outcome.notifyAutoPlay = route.acceptsOrdinaryOutput();
-                  if (outcome.notifyAutoPlay && Lizzie.config.isAutoAna) {
-                    outcome.autoAnalyzeMode =
-                        Lizzie.frame.isAutoAnalyzingDiffNode
-                            ? 1
-                            : Lizzie.config.analyzeAllBranch ? 2 : 3;
-                  }
-                }
-                outcome.requestAnalysisRefresh =
-                    !EngineManager.hasPlayingEngineGameTransaction()
-                        || route.acceptsExactEngineGameOutput()
-                        || (!played && treatCurrentInfoAsPrimary);
-                outcome.requestAnalysisTitleUpdate = !outcome.requestAnalysisRefresh;
-                // don't follow the maxAnalyzeTime rule if we are in game
-                if (!Lizzie.frame.isPlayingAgainstLeelaz
-                    && !Lizzie.frame.isAnaPlayingAgainstLeelaz
-                    && !EngineManager.hasPlayingEngineGameTransaction()
-                    && !Lizzie.config.isAutoAna) {
-                  boolean emptyBoard = Lizzie.board.getHistory().noStoneBoard();
-                  if (!outOfPlayoutsLimit
-                      && ((Lizzie.config.limitPlayout
-                              && getBestMovesPlayouts() > Lizzie.config.limitPlayouts)
-                          || (Lizzie.config.stopAtEmptyBoard && emptyBoard))) {
-                    stopByLimit = true;
-                    stopByPlayouts = true;
-                    isPondering = !isPondering;
-                    outcome.sendStopCommand = true;
-                    outcome.showStopTips = !Lizzie.config.stopAtEmptyBoard && !emptyBoard;
-                  } else if (Lizzie.config.limitTime
-                      && System.currentTimeMillis() - startPonderTime
-                          > Lizzie.config.maxAnalyzeTimeMillis) {
-                    stopByLimit = true;
-                    isPondering = !isPondering;
-                    outcome.sendStopCommand = true;
-                    outcome.showStopTips = true;
-                  }
-                }
-                this.canCheckAlive = true;
-                outcome.committed = true;
+        route,
+        () -> {
+          synchronized (analysisInfoMutationLock()) {
+            if (analysisInfoEpoch != expectedAnalysisInfoEpoch
+                || !isCurrentAnalysisInfoTarget(analysisInfoTarget)) {
+              return;
+            }
+            if (!publishParsedAnalysisInfoLocked(parsedInfo, analysisInfoTarget, route.ownerToken))
+              return;
+            outcome.parsedInfo = parsedInfo;
+            outcome.acceptedSnapshot =
+                new AnalysisInfoSnapshot(
+                    this.bestMoves,
+                    this.currentTotalPlayouts,
+                    analysisInfoEpoch,
+                    analysisInfoTarget);
+            if (useRemoteCompute && remoteTransport != null) {
+              outcome.remoteProgressTransport = remoteTransport;
+              outcome.acceptedRemotePlayouts = parsedInfo.totalPlayouts;
+            }
+            if (treatCurrentInfoAsPrimary) {
+              YikeSyncDebugLog.log("Leelaz parseLine bestMoves size=" + this.bestMoves.size());
+            }
+            if (!this.bestMoves.isEmpty()) {
+              outcome.notifyAutoPk = route.acceptsExactEngineGameOutput();
+              outcome.notifyAutoPlay = route.acceptsOrdinaryOutput();
+              if (outcome.notifyAutoPlay && Lizzie.config.isAutoAna) {
+                outcome.autoAnalyzeMode =
+                    Lizzie.frame.isAutoAnalyzingDiffNode
+                        ? 1
+                        : Lizzie.config.analyzeAllBranch ? 2 : 3;
               }
-            });
+            }
+            outcome.requestAnalysisRefresh =
+                !EngineManager.hasPlayingEngineGameTransaction()
+                    || route.acceptsExactEngineGameOutput()
+                    || (!played && treatCurrentInfoAsPrimary);
+            outcome.requestAnalysisTitleUpdate = !outcome.requestAnalysisRefresh;
+            // don't follow the maxAnalyzeTime rule if we are in game
+            if (!Lizzie.frame.isPlayingAgainstLeelaz
+                && !Lizzie.frame.isAnaPlayingAgainstLeelaz
+                && !EngineManager.hasPlayingEngineGameTransaction()
+                && !Lizzie.config.isAutoAna) {
+              boolean emptyBoard = Lizzie.board.getHistory().noStoneBoard();
+              if (!outOfPlayoutsLimit
+                  && ((Lizzie.config.limitPlayout
+                          && getBestMovesPlayouts() > Lizzie.config.limitPlayouts)
+                      || (Lizzie.config.stopAtEmptyBoard && emptyBoard))) {
+                stopByLimit = true;
+                stopByPlayouts = true;
+                isPondering = !isPondering;
+                outcome.sendStopCommand = true;
+                outcome.showStopTips = !Lizzie.config.stopAtEmptyBoard && !emptyBoard;
+              } else if (Lizzie.config.limitTime
+                  && System.currentTimeMillis() - startPonderTime
+                      > Lizzie.config.maxAnalyzeTimeMillis) {
+                stopByLimit = true;
+                isPondering = !isPondering;
+                outcome.sendStopCommand = true;
+                outcome.showStopTips = true;
+              }
+            }
+            this.canCheckAlive = true;
+            outcome.committed = true;
+          }
+        });
     if (outcome.committed) {
       runAnalysisInfoMutationEffects(route, outcome);
     }
@@ -7492,8 +7534,7 @@ public class Leelaz {
   private void runAnalysisInfoMutationEffects(
       AnalysisOutputRoute route, AnalysisInfoMutationOutcome outcome) {
     if (outcome.parsedInfo != null && outcome.parsedInfo.kata && this == Lizzie.leelaz) {
-      AnalysisResourceCoordinator.foregroundPlayoutSample(
-          this, outcome.parsedInfo.totalPlayouts);
+      AnalysisResourceCoordinator.foregroundPlayoutSample(this, outcome.parsedInfo.totalPlayouts);
     }
     if (outcome.parsedInfo != null && outcome.parsedInfo.kata) {
       logTrialKataInfo(outcome.parsedInfo.moves, outcome.parsedInfo.totalPlayouts);
@@ -7669,8 +7710,7 @@ public class Leelaz {
                   : Lizzie.frame.isAutoAnalyzingDiffNode
                       ? 1
                       : Lizzie.config.analyzeAllBranch ? 2 : 3;
-          routeOrdinaryAnalysisOutput(
-              false, autoAnalyzeMode, route, acceptedSnapshot.get());
+          routeOrdinaryAnalysisOutput(false, autoAnalyzeMode, route, acceptedSnapshot.get());
         }
       }
     }
@@ -7726,8 +7766,7 @@ public class Leelaz {
     EngineManager.EngineGameOwnerTransaction engineGameStartupTransactionAtParse =
         engineGameStartupTransactionForLine(line, sourceEngineIncarnation);
     if (engineGameStartupTransactionAtParse != null
-        && !EngineManager.isCurrentEngineGameTransaction(
-            engineGameStartupTransactionAtParse)) {
+        && !EngineManager.isCurrentEngineGameTransaction(engineGameStartupTransactionAtParse)) {
       // The exact pending handler still owns protocol settlement, but a retired match must not
       // enter the ordinary name/version classifier or mutate a reused endpoint/configuration.
       isCommandLine = line != null && (line.startsWith("=") || line.startsWith("?"));
@@ -7736,8 +7775,7 @@ public class Leelaz {
     if (engineGameStartupTransactionAtParse != null) {
       // Test seam sits deliberately after the optimistic ingress check. The classifier itself
       // still reclaims the transaction mutation lock and revalidates immediately before commit.
-      afterEngineGameStartupResponseOwnershipCapturedForTest(
-          engineGameStartupTransactionAtParse);
+      afterEngineGameStartupResponseOwnershipCapturedForTest(engineGameStartupTransactionAtParse);
     }
     boolean analysisSignalLine =
         line != null && (line.startsWith("info") || line.startsWith("| ST"));
@@ -7751,8 +7789,7 @@ public class Leelaz {
             : analysisInfoTargetForRoute(analysisOutputRouteAtParse);
     if (analysisOutputRouteAtParse != null) {
       afterAnalysisOutputRouteCapturedForTest(analysisOutputRouteAtParse.kind.name());
-      AnalysisOutputRoute currentRoute =
-          analysisOutputRoute(sourceEngineIncarnation, line);
+      AnalysisOutputRoute currentRoute = analysisOutputRoute(sourceEngineIncarnation, line);
       if (!analysisOutputRouteAtParse.acceptsInfoLine()
           || !analysisOutputRouteAtParse.hasSameOwner(currentRoute)
           || !currentRoute.acceptsInfoLine()) {
@@ -7826,61 +7863,45 @@ public class Leelaz {
         engineGameContextAtParse != null && engineGameContextAtParse.ponderRouting;
     Leelaz primaryAtParse = Lizzie.leelaz;
     long primaryGenerationAtParse = Lizzie.capturePrimaryEngineGeneration(primaryAtParse);
-    long startupPrimaryGenerationAtParse =
-        captureStartupPrimaryGeneration(sourceEngineIncarnation);
+    long startupPrimaryGenerationAtParse = captureStartupPrimaryGeneration(sourceEngineIncarnation);
     if (line.startsWith("info")) {
-        EngineObservation.traceRawStream(loggingEngineId, null, line);
-        boolean upToDate = isAnalysisResponseUpToDateSnapshot(analysisOutputRouteAtParse);
-        afterAnalysisInfoAdmissionSnapshotCapturedForTest();
-        treatCurrentInfoAsPrimary = this == primaryAtParse && primaryGenerationAtParse >= 0L;
-        if (this == Lizzie.leelaz) {
-          int[] responseWatermark = commandWatermarkSnapshot();
-          YikeSyncDebugLog.log(
-              "Leelaz parseLine info upToDate="
-                  + upToDate
-                  + " currentCmd="
-                  + responseWatermark[1]
-                  + " cmd="
-                  + responseWatermark[0]
-                  + " isPondering="
-                  + isPondering);
-        }
-        if ((upToDate)) {
-          if (engineGameContextAtParse != null
-              && engineManagerAtParse != null
-              && Lizzie.engineManager == engineManagerAtParse
-              && EngineManager.isCurrentEngineGameTransaction(
-                  engineGameContextAtParse.transaction)
-              && engineGameContextAtParse.blackEngine != null
-              && engineGameContextAtParse.whiteEngine != null) {
-            if (engineGamePonderRoutingAtParse) {
-              Leelaz toMove =
+      EngineObservation.traceRawStream(loggingEngineId, null, line);
+      boolean upToDate = isAnalysisResponseUpToDateSnapshot(analysisOutputRouteAtParse);
+      afterAnalysisInfoAdmissionSnapshotCapturedForTest();
+      treatCurrentInfoAsPrimary = this == primaryAtParse && primaryGenerationAtParse >= 0L;
+      if (this == Lizzie.leelaz) {
+        int[] responseWatermark = commandWatermarkSnapshot();
+        YikeSyncDebugLog.log(
+            "Leelaz parseLine info upToDate="
+                + upToDate
+                + " currentCmd="
+                + responseWatermark[1]
+                + " cmd="
+                + responseWatermark[0]
+                + " isPondering="
+                + isPondering);
+      }
+      if ((upToDate)) {
+        if (engineGameContextAtParse != null
+            && engineManagerAtParse != null
+            && Lizzie.engineManager == engineManagerAtParse
+            && EngineManager.isCurrentEngineGameTransaction(engineGameContextAtParse.transaction)
+            && engineGameContextAtParse.blackEngine != null
+            && engineGameContextAtParse.whiteEngine != null) {
+          if (engineGamePonderRoutingAtParse) {
+            Leelaz toMove =
+                engineGameBlackToPlayAtParse
+                    ? engineGameContextAtParse.blackEngine
+                    : engineGameContextAtParse.whiteEngine;
+            if (this == toMove) {
+              int expectedIndex =
                   engineGameBlackToPlayAtParse
-                      ? engineGameContextAtParse.blackEngine
-                      : engineGameContextAtParse.whiteEngine;
-              if (this == toMove) {
-                int expectedIndex =
-                    engineGameBlackToPlayAtParse
-                        ? engineGameContextAtParse.blackIndex
-                        : engineGameContextAtParse.whiteIndex;
-                primaryPublicationAfterInfo =
-                    EngineManager.prepareEngineGamePrimaryPublication(
-                        engineGameContextAtParse,
-                        expectedIndex,
-                        this,
-                        primaryAtParse,
-                        primaryGenerationAtParse,
-                        sourceEngineIncarnation,
-                        engineGameBoardAtParse,
-                        engineGameBoardRevisionAtParse,
-                        engineGameBlackToPlayAtParse);
-                treatCurrentInfoAsPrimary = primaryPublicationAfterInfo != null;
-              }
-            } else {
+                      ? engineGameContextAtParse.blackIndex
+                      : engineGameContextAtParse.whiteIndex;
               primaryPublicationAfterInfo =
                   EngineManager.prepareEngineGamePrimaryPublication(
                       engineGameContextAtParse,
-                      currentEngineN,
+                      expectedIndex,
                       this,
                       primaryAtParse,
                       primaryGenerationAtParse,
@@ -7890,319 +7911,333 @@ public class Leelaz {
                       engineGameBlackToPlayAtParse);
               treatCurrentInfoAsPrimary = primaryPublicationAfterInfo != null;
             }
+          } else {
+            primaryPublicationAfterInfo =
+                EngineManager.prepareEngineGamePrimaryPublication(
+                    engineGameContextAtParse,
+                    currentEngineN,
+                    this,
+                    primaryAtParse,
+                    primaryGenerationAtParse,
+                    sourceEngineIncarnation,
+                    engineGameBoardAtParse,
+                    engineGameBoardRevisionAtParse,
+                    engineGameBlackToPlayAtParse);
+            treatCurrentInfoAsPrimary = primaryPublicationAfterInfo != null;
           }
-          // Clear switching prompt
-          // switching = false;
+        }
+        // Clear switching prompt
+        // switching = false;
 
-          AnalysisInfoMutationOutcome outcome =
-              commitAnalysisInfoLine(
-                  analysisOutputRouteAtParse,
-                  line,
-                  treatCurrentInfoAsPrimary,
-                  analysisInfoEpochAtParse,
-                  analysisInfoTargetAtParse);
-          if (!outcome.committed) {
-            return;
-          }
-          notifyAutoPKAfterInfo = outcome.notifyAutoPk;
-          notifyAutoPlayAfterInfo = outcome.notifyAutoPlay;
-          autoAnalyzeAfterInfo = outcome.autoAnalyzeMode;
-          acceptedAnalysisInfoAfterInfo = outcome.acceptedSnapshot;
-        } else {
-          if (!clearOutOfDateAnalysisInfo(analysisOutputRouteAtParse)) {
-            return;
-          }
-        }
-        handledInfoLine = true;
-      } else {
-        synchronized (this) {
-        if (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp || !this.isLoaded)
-          Lizzie.gtpConsole.addLine(line + "\n");
-      //			if (Lizzie.engineManager.isEngineGame && this.isPondering) {
-      //				Lizzie.engineManager.startInfoTime = System.currentTimeMillis();
-      //			}
-      if (isCheckingPda) {
-        if (line.startsWith("pda:")) {
-          isDymPda = true;
-          String[] params = line.trim().split(" ");
-          if (params.length == 2) {
-            pda = Double.parseDouble(params[1]);
-            LizzieFrame.menu.txtPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
-            if (LizzieFrame.menu.setPda != null)
-              LizzieFrame.menu.setPda.curPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
-            if (Lizzie.config.chkAutoPDA) {
-              sendCommand(Lizzie.config.AutoPDA);
-              if (Lizzie.config.chkDymPDA) {
-                this.pdaCap = Double.parseDouble(Lizzie.config.dymPDACap.trim());
-                if (LizzieFrame.menu.setPda != null)
-                  LizzieFrame.menu.setPda.txtDymCap.setText(Lizzie.config.dymPDACap);
-              }
-              if (Lizzie.config.chkStaticPDA) {
-                LizzieFrame.menu.txtPDA.setText(Lizzie.config.staticPDAcur);
-                isStaticPda = true;
-                this.pda = Double.parseDouble(Lizzie.config.staticPDAcur.trim());
-              } else {
-                isStaticPda = false;
-              }
-            }
-          }
-          if (!EngineManager.hasPlayingEngineGameTransaction() && this == Lizzie.leelaz) ponder();
-        }
-        if (line.startsWith("PDACap:")) {
-          String[] params = line.trim().split(" ");
-          if (params.length == 2) {
-            // if(pdaCap==0)
-            pdaCap = Double.parseDouble(params[1]);
-            if (pdaCap != 0 && !isStaticPda) {
-              isStaticPda = false;
-              Runnable syncDymPda =
-                  new Runnable() {
-                    public void run() {
-                      int i = 0;
-                      while (!canRestoreDymPda) {
-                        try {
-                          i++;
-                          if (i > 19) break;
-                          Thread.sleep(50);
-                        } catch (InterruptedException e) {
-                          // TODO Auto-generated catch block
-                          e.printStackTrace();
-                        }
-                      }
-                      canRestoreDymPda = false;
-                      if (Lizzie.config.chkAutoPDA) sendCommand(Lizzie.config.AutoPDA);
-                      else sendCommand("dympdacap " + pdaCap);
-                      if (isPondering() || Lizzie.config.isDoubleEngineMode()) ponder();
-                    }
-                  };
-              Thread syncDymPdaTh = new Thread(syncDymPda);
-              syncDymPdaTh.start();
-            } else {
-              isStaticPda = true;
-            }
-            if (LizzieFrame.menu.setPda != null)
-              LizzieFrame.menu.setPda.txtDymCap.setText(String.valueOf(pdaCap));
-          }
-        }
-      }
-      if (this.isKatago) {
-        if (line.startsWith("PDA:")) {
-          parsePDALine(line);
-        }
-      }
-      // if (!this.isScreen&&line.startsWith("play")) {
-      if (line.startsWith("play")) {
-        // In lz-genmove_analyze
-        String[] params = line.trim().split(" ");
-        boolean shouldStopPonder =
-            !isInputCommand && params.length == 2 && shouldStopPonderAfterEnginePlayLine();
-        YikeSyncDebugLog.log(
-            "Leelaz parse play line="
-                + line
-                + " isInputCommand="
-                + isInputCommand
-                + " isPonderingBefore="
-                + isPondering
-                + " shouldStopPonder="
-                + shouldStopPonder
-                + " playingAgainst="
-                + (Lizzie.frame != null && Lizzie.frame.isPlayingAgainstLeelaz)
-                + " autoPlaying="
-                + (Lizzie.frame != null && Lizzie.frame.isAnaPlayingAgainstLeelaz)
-                + " engineGame="
-                + EngineManager.occupiesEngineGameAdmission());
-        ReadBoardGmaResponseBinding readBoardGmaBinding = currentReadBoardGmaResponseBinding();
-        ReadBoard readBoardGmaOwner =
-            readBoardGmaBinding == null ? null : readBoardGmaBinding.owner;
-        if (!isInputCommand
-            && params.length == 2
-            && readBoardGmaOwner != null
-            && readBoardGmaOwner.handleReadBoardGmaEnginePlay(
-                readBoardGmaBinding.identity, readBoardGmaBinding.generation, params[1])) {
-          boolean retainReadBoardNativePonder =
-              readBoardGmaOwner.consumeReadBoardGmaNativePonderRetention();
-          processCommandResponseLine(line);
-          readBoardGmaOwner.afterReadBoardGmaTerminalResponseConsumed("play-terminal");
-          clearReadBoardGmaResponseOwner(
-              readBoardGmaOwner, readBoardGmaBinding.identity, readBoardGmaBinding.generation);
-          isCommandLine = false;
-          if (shouldStopPonder && !retainReadBoardNativePonder) {
-            isPondering = false;
-            YikeSyncDebugLog.log("Leelaz marked isPondering=false after ReadBoard GMA play line");
-          }
-          isThinking = false;
+        AnalysisInfoMutationOutcome outcome =
+            commitAnalysisInfoLine(
+                analysisOutputRouteAtParse,
+                line,
+                treatCurrentInfoAsPrimary,
+                analysisInfoEpochAtParse,
+                analysisInfoTargetAtParse);
+        if (!outcome.committed) {
           return;
         }
-        if (isInputCommand) {
-          //	getGenmoveInfoPrevious = true;
-          Lizzie.board.place(params[1]);
-          if (isPondering) ponder();
-          else {
-            nameCmdfornoponder();
-          }
+        notifyAutoPKAfterInfo = outcome.notifyAutoPk;
+        notifyAutoPlayAfterInfo = outcome.notifyAutoPlay;
+        autoAnalyzeAfterInfo = outcome.autoAnalyzeMode;
+        acceptedAnalysisInfoAfterInfo = outcome.acceptedSnapshot;
+      } else {
+        if (!clearOutOfDateAnalysisInfo(analysisOutputRouteAtParse)) {
+          return;
         }
-        if (Lizzie.frame.isPlayingAgainstLeelaz && isResponseUpToDate()) {
-          if (params.length > 1) {
-            if (params[1].toLowerCase().startsWith("resign")) {
-              if (Lizzie.frame.playerIsBlack) {
-
-                if (msg == null || !msg.isVisible()) {
-                  msg = new Message();
-                  msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.blackWinAiResign"));
-                  //     msg.setVisible(true);
+      }
+      handledInfoLine = true;
+    } else {
+      synchronized (this) {
+        if (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp || !this.isLoaded)
+          Lizzie.gtpConsole.addLine(line + "\n");
+        //			if (Lizzie.engineManager.isEngineGame && this.isPondering) {
+        //				Lizzie.engineManager.startInfoTime = System.currentTimeMillis();
+        //			}
+        if (isCheckingPda) {
+          if (line.startsWith("pda:")) {
+            isDymPda = true;
+            String[] params = line.trim().split(" ");
+            if (params.length == 2) {
+              pda = Double.parseDouble(params[1]);
+              LizzieFrame.menu.txtPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
+              if (LizzieFrame.menu.setPda != null)
+                LizzieFrame.menu.setPda.curPDA.setText(String.format(Locale.ENGLISH, "%.3f", pda));
+              if (Lizzie.config.chkAutoPDA) {
+                sendCommand(Lizzie.config.AutoPDA);
+                if (Lizzie.config.chkDymPDA) {
+                  this.pdaCap = Double.parseDouble(Lizzie.config.dymPDACap.trim());
+                  if (LizzieFrame.menu.setPda != null)
+                    LizzieFrame.menu.setPda.txtDymCap.setText(Lizzie.config.dymPDACap);
                 }
-                GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
-                gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
-                Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
-
-              } else {
-                if (msg == null || !msg.isVisible()) {
-                  msg = new Message();
-                  msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.whiteWinAiResign"));
-                  //     msg.setVisible(true);
+                if (Lizzie.config.chkStaticPDA) {
+                  LizzieFrame.menu.txtPDA.setText(Lizzie.config.staticPDAcur);
+                  isStaticPda = true;
+                  this.pda = Double.parseDouble(Lizzie.config.staticPDAcur.trim());
+                } else {
+                  isStaticPda = false;
                 }
-                GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
-                gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
-                Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
               }
-              togglePonder();
-              return;
             }
-
-            if (params[1].startsWith("pass")) {
-              // getGenmoveInfoPrevious = true;
-              Lizzie.board.pass();
-              LizzieFrame.menu.toggleEngineMenuStatus(false, false);
-            } else {
-              // getGenmoveInfoPrevious = true;
-              Lizzie.board.place(params[1]);
-              LizzieFrame.menu.toggleEngineMenuStatus(false, false);
+            if (!EngineManager.hasPlayingEngineGameTransaction() && this == Lizzie.leelaz) ponder();
+          }
+          if (line.startsWith("PDACap:")) {
+            String[] params = line.trim().split(" ");
+            if (params.length == 2) {
+              // if(pdaCap==0)
+              pdaCap = Double.parseDouble(params[1]);
+              if (pdaCap != 0 && !isStaticPda) {
+                isStaticPda = false;
+                Runnable syncDymPda =
+                    new Runnable() {
+                      public void run() {
+                        int i = 0;
+                        while (!canRestoreDymPda) {
+                          try {
+                            i++;
+                            if (i > 19) break;
+                            Thread.sleep(50);
+                          } catch (InterruptedException e) {
+                            // TODO Auto-generated catch block
+                            e.printStackTrace();
+                          }
+                        }
+                        canRestoreDymPda = false;
+                        if (Lizzie.config.chkAutoPDA) sendCommand(Lizzie.config.AutoPDA);
+                        else sendCommand("dympdacap " + pdaCap);
+                        if (isPondering() || Lizzie.config.isDoubleEngineMode()) ponder();
+                      }
+                    };
+                Thread syncDymPdaTh = new Thread(syncDymPda);
+                syncDymPdaTh.start();
+              } else {
+                isStaticPda = true;
+              }
+              if (LizzieFrame.menu.setPda != null)
+                LizzieFrame.menu.setPda.txtDymCap.setText(String.valueOf(pdaCap));
             }
           }
-          if (!Lizzie.config.playponder) Lizzie.leelaz.nameCmdfornoponder();
         }
-        if (shouldStopPonder) {
-          isPondering = false;
-          YikeSyncDebugLog.log("Leelaz marked isPondering=false after engine play line");
-        }
-        isThinking = false;
-        if (isInputCommand) {
-          isInputCommand = false;
-        }
-      } else if (line.startsWith("=")) {
-        isCommandLine = true;
-        String[] params = line.trim().split(" ");
-        if (params.length == 1) return;
-        if (!endGetCommandList
-            && ((params.length == 2 && params[1].equals("protocol_version"))
-                || (params.length > 1 && params[params.length - 1].equals("protocol_version")))) {
-          ReaderStreamBinding currentBinding = currentReaderStreamBinding();
-          if (sourceEngineIncarnation == null || sourceEngineIncarnation == currentBinding) {
-            synchronized (engineArbitrationLock()) {
-              startGetCommandList = true;
-              commandListPendingBinding = currentBinding;
-              commandListBinding = null;
-              commandLists.clear();
-            }
+        if (this.isKatago) {
+          if (line.startsWith("PDA:")) {
+            parsePDALine(line);
           }
         }
-        if (isInputCommand) {
-          //	getGenmoveInfoPrevious = true;
-          Lizzie.board.place(params[1]);
-          if (isPondering) ponder();
-          else this.nameCmdfornoponder();
-          isInputCommand = false;
-          isThinking = false;
-        }
-        if (isSettingHandicap) {
-          Lizzie.board.hasStartStone = true;
-          for (int i = 1; i < params.length; i++) {
-            Optional<int[]> coordsOpt = Board.asCoordinates(params[i]);
-            if (coordsOpt.isPresent()) {
-              int[] coords = coordsOpt.get();
-              Lizzie.board.getHistory().setStone(coords, Stone.BLACK);
-              Lizzie.board.getHistory().getData().blackToPlay = false;
-              Lizzie.board.setStartListStone(coords, true);
+        // if (!this.isScreen&&line.startsWith("play")) {
+        if (line.startsWith("play")) {
+          // In lz-genmove_analyze
+          String[] params = line.trim().split(" ");
+          boolean shouldStopPonder =
+              !isInputCommand && params.length == 2 && shouldStopPonderAfterEnginePlayLine();
+          YikeSyncDebugLog.log(
+              "Leelaz parse play line="
+                  + line
+                  + " isInputCommand="
+                  + isInputCommand
+                  + " isPonderingBefore="
+                  + isPondering
+                  + " shouldStopPonder="
+                  + shouldStopPonder
+                  + " playingAgainst="
+                  + (Lizzie.frame != null && Lizzie.frame.isPlayingAgainstLeelaz)
+                  + " autoPlaying="
+                  + (Lizzie.frame != null && Lizzie.frame.isAnaPlayingAgainstLeelaz)
+                  + " engineGame="
+                  + EngineManager.occupiesEngineGameAdmission());
+          ReadBoardGmaResponseBinding readBoardGmaBinding = currentReadBoardGmaResponseBinding();
+          ReadBoard readBoardGmaOwner =
+              readBoardGmaBinding == null ? null : readBoardGmaBinding.owner;
+          if (!isInputCommand
+              && params.length == 2
+              && readBoardGmaOwner != null
+              && readBoardGmaOwner.handleReadBoardGmaEnginePlay(
+                  readBoardGmaBinding.identity, readBoardGmaBinding.generation, params[1])) {
+            boolean retainReadBoardNativePonder =
+                readBoardGmaOwner.consumeReadBoardGmaNativePonderRetention();
+            processCommandResponseLine(line);
+            readBoardGmaOwner.afterReadBoardGmaTerminalResponseConsumed("play-terminal");
+            clearReadBoardGmaResponseOwner(
+                readBoardGmaOwner, readBoardGmaBinding.identity, readBoardGmaBinding.generation);
+            isCommandLine = false;
+            if (shouldStopPonder && !retainReadBoardNativePonder) {
+              isPondering = false;
+              YikeSyncDebugLog.log("Leelaz marked isPondering=false after ReadBoard GMA play line");
             }
+            isThinking = false;
+            return;
           }
-          isSettingHandicap = false;
-          Lizzie.frame.allowPlaceStone = true;
-          if (Lizzie.frame.isAnaPlayingAgainstLeelaz) {
-            if (Lizzie.config.UsePureNetInGame && !Lizzie.leelaz.isheatmap)
-              Lizzie.leelaz.toggleHeatmap(false);
-            Lizzie.leelaz.Pondering();
-            if (Lizzie.config.playponder
-                || (Lizzie.board.getHistory().isBlacksTurn() && !Lizzie.frame.playerIsBlack)
-                || (!Lizzie.board.getHistory().isBlacksTurn() && Lizzie.frame.playerIsBlack)) {
-              Lizzie.leelaz.ponder();
-            }
-          }
-          Lizzie.frame.refresh();
-        } else if (isThinking && !isPondering) {
           if (isInputCommand) {
+            //	getGenmoveInfoPrevious = true;
             Lizzie.board.place(params[1]);
-            togglePonder();
-          }
-          if (Lizzie.frame.isPlayingAgainstLeelaz && isResponseUpToPreDate()) {
-            if (params[1].startsWith("resign")) {
-              if (Lizzie.frame.playerIsBlack) {
-
-                if (msg == null || !msg.isVisible()) {
-                  msg = new Message();
-                  msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.blackWinAiResign"));
-                }
-                GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
-                gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
-                Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
-
-              } else {
-                if (msg == null || !msg.isVisible()) {
-                  msg = new Message();
-                  msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.whiteWinAiResign"));
-                }
-                GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
-                gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
-                Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
-              }
-              togglePonder();
-              return;
+            if (isPondering) ponder();
+            else {
+              nameCmdfornoponder();
             }
-            if (params[1].toLowerCase().startsWith("pass")) {
-              Lizzie.board.pass();
-              LizzieFrame.menu.toggleEngineMenuStatus(false, false);
-            } else {
-              Optional<int[]> coords = Board.asCoordinates(params[1]);
-              if (coords.isPresent()) {
-                Lizzie.board.place(coords.get()[0], coords.get()[1]);
+          }
+          if (Lizzie.frame.isPlayingAgainstLeelaz && isResponseUpToDate()) {
+            if (params.length > 1) {
+              if (params[1].toLowerCase().startsWith("resign")) {
+                if (Lizzie.frame.playerIsBlack) {
+
+                  if (msg == null || !msg.isVisible()) {
+                    msg = new Message();
+                    msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.blackWinAiResign"));
+                    //     msg.setVisible(true);
+                  }
+                  GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
+                  gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
+                  Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
+
+                } else {
+                  if (msg == null || !msg.isVisible()) {
+                    msg = new Message();
+                    msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.whiteWinAiResign"));
+                    //     msg.setVisible(true);
+                  }
+                  GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
+                  gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
+                  Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
+                }
+                togglePonder();
+                return;
+              }
+
+              if (params[1].startsWith("pass")) {
+                // getGenmoveInfoPrevious = true;
+                Lizzie.board.pass();
+                LizzieFrame.menu.toggleEngineMenuStatus(false, false);
+              } else {
+                // getGenmoveInfoPrevious = true;
+                Lizzie.board.place(params[1]);
                 LizzieFrame.menu.toggleEngineMenuStatus(false, false);
               }
             }
             if (!Lizzie.config.playponder) Lizzie.leelaz.nameCmdfornoponder();
           }
+          if (shouldStopPonder) {
+            isPondering = false;
+            YikeSyncDebugLog.log("Leelaz marked isPondering=false after engine play line");
+          }
           isThinking = false;
           if (isInputCommand) {
             isInputCommand = false;
           }
+        } else if (line.startsWith("=")) {
+          isCommandLine = true;
+          String[] params = line.trim().split(" ");
+          if (params.length == 1) return;
+          if (!endGetCommandList
+              && ((params.length == 2 && params[1].equals("protocol_version"))
+                  || (params.length > 1 && params[params.length - 1].equals("protocol_version")))) {
+            ReaderStreamBinding currentBinding = currentReaderStreamBinding();
+            if (sourceEngineIncarnation == null || sourceEngineIncarnation == currentBinding) {
+              synchronized (engineArbitrationLock()) {
+                startGetCommandList = true;
+                commandListPendingBinding = currentBinding;
+                commandListBinding = null;
+                commandLists.clear();
+              }
+            }
+          }
+          if (isInputCommand) {
+            //	getGenmoveInfoPrevious = true;
+            Lizzie.board.place(params[1]);
+            if (isPondering) ponder();
+            else this.nameCmdfornoponder();
+            isInputCommand = false;
+            isThinking = false;
+          }
+          if (isSettingHandicap) {
+            Lizzie.board.hasStartStone = true;
+            for (int i = 1; i < params.length; i++) {
+              Optional<int[]> coordsOpt = Board.asCoordinates(params[i]);
+              if (coordsOpt.isPresent()) {
+                int[] coords = coordsOpt.get();
+                Lizzie.board.getHistory().setStone(coords, Stone.BLACK);
+                Lizzie.board.getHistory().getData().blackToPlay = false;
+                Lizzie.board.setStartListStone(coords, true);
+              }
+            }
+            isSettingHandicap = false;
+            Lizzie.frame.allowPlaceStone = true;
+            if (Lizzie.frame.isAnaPlayingAgainstLeelaz) {
+              if (Lizzie.config.UsePureNetInGame && !Lizzie.leelaz.isheatmap)
+                Lizzie.leelaz.toggleHeatmap(false);
+              Lizzie.leelaz.Pondering();
+              if (Lizzie.config.playponder
+                  || (Lizzie.board.getHistory().isBlacksTurn() && !Lizzie.frame.playerIsBlack)
+                  || (!Lizzie.board.getHistory().isBlacksTurn() && Lizzie.frame.playerIsBlack)) {
+                Lizzie.leelaz.ponder();
+              }
+            }
+            Lizzie.frame.refresh();
+          } else if (isThinking && !isPondering) {
+            if (isInputCommand) {
+              Lizzie.board.place(params[1]);
+              togglePonder();
+            }
+            if (Lizzie.frame.isPlayingAgainstLeelaz && isResponseUpToPreDate()) {
+              if (params[1].startsWith("resign")) {
+                if (Lizzie.frame.playerIsBlack) {
+
+                  if (msg == null || !msg.isVisible()) {
+                    msg = new Message();
+                    msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.blackWinAiResign"));
+                  }
+                  GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
+                  gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
+                  Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.blackWin"));
+
+                } else {
+                  if (msg == null || !msg.isVisible()) {
+                    msg = new Message();
+                    msg.setMessage(Lizzie.resourceBundle.getString("Leelaz.whiteWinAiResign"));
+                  }
+                  GameInfo gameInfo = Lizzie.board.getHistory().getGameInfo();
+                  gameInfo.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
+                  Lizzie.frame.setResult(Lizzie.resourceBundle.getString("Leelaz.whiteWin"));
+                }
+                togglePonder();
+                return;
+              }
+              if (params[1].toLowerCase().startsWith("pass")) {
+                Lizzie.board.pass();
+                LizzieFrame.menu.toggleEngineMenuStatus(false, false);
+              } else {
+                Optional<int[]> coords = Board.asCoordinates(params[1]);
+                if (coords.isPresent()) {
+                  Lizzie.board.place(coords.get()[0], coords.get()[1]);
+                  LizzieFrame.menu.toggleEngineMenuStatus(false, false);
+                }
+              }
+              if (!Lizzie.config.playponder) Lizzie.leelaz.nameCmdfornoponder();
+            }
+            isThinking = false;
+            if (isInputCommand) {
+              isInputCommand = false;
+            }
+          }
+          startupCommandAction =
+              mergeStartupCommandAction(
+                  startupCommandAction,
+                  checkNameAndVersion(
+                      params,
+                      startupPrimaryGenerationAtParse,
+                      sourceEngineIncarnation,
+                      engineGameStartupTransactionAtParse));
+        } else if (line.startsWith("?")) {
+          isCommandLine = true;
+          if (consumeReadBoardGmaEngineErrorLine(line)) {
+            return;
+          }
+          if (line.startsWith("? unacceptable komi")) {
+            illegalKomi();
+          }
         }
-        startupCommandAction =
-            mergeStartupCommandAction(
-                startupCommandAction,
-                checkNameAndVersion(
-                    params,
-                    startupPrimaryGenerationAtParse,
-                    sourceEngineIncarnation,
-                    engineGameStartupTransactionAtParse));
-      } else if (line.startsWith("?")) {
-        isCommandLine = true;
-        if (consumeReadBoardGmaEngineErrorLine(line)) {
-          return;
-        }
-        if (line.startsWith("? unacceptable komi")) {
-          illegalKomi();
-        }
+        parseHeatMap(line);
       }
-      parseHeatMap(line);
-    }
     }
     if (primaryPublicationAfterInfo != null) {
       // Local info mutation has already released both the manager admission and this object's
@@ -8269,9 +8304,7 @@ public class Leelaz {
   }
 
   private void routeExactAnalysisOutput(
-      boolean playImmediately,
-      AnalysisOutputRoute route,
-      AnalysisInfoSnapshot acceptedInfo) {
+      boolean playImmediately, AnalysisOutputRoute route, AnalysisInfoSnapshot acceptedInfo) {
     if (route == null || !route.acceptsExactEngineGameOutput()) {
       return;
     }
@@ -8291,9 +8324,7 @@ public class Leelaz {
   }
 
   private void routeExactAnalysisSideEffect(AnalysisOutputRoute route, Runnable action) {
-    if (route == null
-        || action == null
-        || !route.acceptsExactEngineGameOutput()) {
+    if (route == null || action == null || !route.acceptsExactEngineGameOutput()) {
       return;
     }
     runIfCurrentAnalysisOutputRoute(route, action);
@@ -8367,8 +8398,7 @@ public class Leelaz {
         });
   }
 
-  private void routeOrdinaryAnalysisSideEffect(
-      AnalysisOutputRoute route, Runnable action) {
+  private void routeOrdinaryAnalysisSideEffect(AnalysisOutputRoute route, Runnable action) {
     if (route == null || action == null || !route.acceptsOrdinaryOutput()) {
       return;
     }
@@ -8483,10 +8513,8 @@ public class Leelaz {
     }
   }
 
-  private void notifyAutoPlay(
-      boolean playImmediately, AnalysisInfoSnapshot acceptedInfo) {
-    List<MoveData> acceptedMoves =
-        acceptedInfo == null ? List.of() : acceptedInfo.moves;
+  private void notifyAutoPlay(boolean playImmediately, AnalysisInfoSnapshot acceptedInfo) {
+    List<MoveData> acceptedMoves = acceptedInfo == null ? List.of() : acceptedInfo.moves;
     int acceptedPlayouts = acceptedInfo == null ? 0 : acceptedInfo.totalPlayouts;
     if (this != Lizzie.leelaz) return;
     if (Lizzie.frame != null
@@ -8529,8 +8557,7 @@ public class Leelaz {
         boolean playNow = false;
         if (playImmediately) playNow = true;
         if (firstPlayouts > 0) {
-          if (!acceptedMoves.isEmpty()
-              && acceptedMoves.get(0).playouts >= firstPlayouts) {
+          if (!acceptedMoves.isEmpty() && acceptedMoves.get(0).playouts >= firstPlayouts) {
             playNow = true;
           }
         }
@@ -8552,8 +8579,7 @@ public class Leelaz {
               && Lizzie.config.enableAnaGameRamdonStart
               && Lizzie.board.getHistory().getMoveNumber() <= Lizzie.config.anaGameRandomMove)
             playMove =
-                this.randomBestmove(
-                    acceptedMoves, Lizzie.config.anaGameRandomWinrateDiff, true);
+                this.randomBestmove(acceptedMoves, Lizzie.config.anaGameRandomWinrateDiff, true);
           else playMove = acceptedMoves.get(0);
 
           int coords[] = Board.convertNameToCoordinates(playMove.coordinate);
@@ -8609,8 +8635,7 @@ public class Leelaz {
 
   private void nofityDiffAna(AnalysisInfoSnapshot acceptedInfo) {
     // TODO Auto-generated method stub
-    List<MoveData> acceptedMoves =
-        acceptedInfo == null ? List.of() : acceptedInfo.moves;
+    List<MoveData> acceptedMoves = acceptedInfo == null ? List.of() : acceptedInfo.moves;
     int acceptedPlayouts = acceptedInfo == null ? 0 : acceptedInfo.totalPlayouts;
     if (this != Lizzie.leelaz) return;
     if (Lizzie.config.autoAnaDiffFirstPlayouts > 0) {
@@ -8645,8 +8670,7 @@ public class Leelaz {
   }
 
   private void notifyAutoAnaAllBranch(AnalysisInfoSnapshot acceptedInfo) {
-    List<MoveData> acceptedMoves =
-        acceptedInfo == null ? List.of() : acceptedInfo.moves;
+    List<MoveData> acceptedMoves = acceptedInfo == null ? List.of() : acceptedInfo.moves;
     int acceptedPlayouts = acceptedInfo == null ? 0 : acceptedInfo.totalPlayouts;
     if (this != Lizzie.leelaz) return;
     if (Lizzie.board.getHistory().isBlacksTurn() && !Lizzie.config.anaBlack) {
@@ -8693,8 +8717,7 @@ public class Leelaz {
   }
 
   private void notifyAutoAna(AnalysisInfoSnapshot acceptedInfo) {
-    List<MoveData> acceptedMoves =
-        acceptedInfo == null ? List.of() : acceptedInfo.moves;
+    List<MoveData> acceptedMoves = acceptedInfo == null ? List.of() : acceptedInfo.moves;
     int acceptedPlayouts = acceptedInfo == null ? 0 : acceptedInfo.totalPlayouts;
     if (this != Lizzie.leelaz) return;
     if (Lizzie.config.autoAnaEndMove != -1) {
@@ -8752,12 +8775,23 @@ public class Leelaz {
               BoardData data = Lizzie.board.getHistory().getData();
               if (isKatago) {
                 data.adoptOrdinaryAnalysis(
-                    new ArrayList<>(acceptedMoves), bestMovesEnginename, this,
-                    acceptedPlayouts, acceptedRootVisits, null, null, false, false);
+                    new ArrayList<>(acceptedMoves),
+                    bestMovesEnginename,
+                    this,
+                    acceptedPlayouts,
+                    acceptedRootVisits,
+                    null,
+                    null,
+                    false,
+                    false);
               } else {
                 data.tryToSetBestMovesFromEngine(
-                    new ArrayList<>(acceptedMoves), bestMovesEnginename, this,
-                    acceptedPlayouts, null, false);
+                    new ArrayList<>(acceptedMoves),
+                    bestMovesEnginename,
+                    this,
+                    acceptedPlayouts,
+                    null,
+                    false);
               }
             });
       }
@@ -8835,13 +8869,11 @@ public class Leelaz {
       finishExactEngineGameAnalysis(moveContext, AnalysisGameTerminal.RESIGN);
       return;
     }
-    if (game.moveNumber
-        > binding.maxGameMoves(Board.boardWidth, Board.boardHeight)) {
+    if (game.moveNumber > binding.maxGameMoves(Board.boardWidth, Board.boardHeight)) {
       finishExactEngineGameAnalysis(moveContext, AnalysisGameTerminal.MAX_MOVES);
       return;
     }
-    List<MoveData> acceptedMoves =
-        acceptedInfo == null ? List.of() : acceptedInfo.moves;
+    List<MoveData> acceptedMoves = acceptedInfo == null ? List.of() : acceptedInfo.moves;
     int acceptedPlayouts = acceptedInfo == null ? 0 : acceptedInfo.totalPlayouts;
     MoveData best;
     try {
@@ -8902,8 +8934,7 @@ public class Leelaz {
     }
     Optional<int[]> coordinate = Board.asCoordinates(chosen.coordinate);
     boolean pass = chosen.coordinate.equalsIgnoreCase("pass");
-    if (!pass
-        && (!coordinate.isPresent() || coordinate.get()[0] < 0 || coordinate.get()[1] < 0)) {
+    if (!pass && (!coordinate.isPresent() || coordinate.get()[0] < 0 || coordinate.get()[1] < 0)) {
       EngineManager.failEngineGameTransaction(
           game.transaction,
           new IllegalStateException(
@@ -8920,8 +8951,7 @@ public class Leelaz {
     if (postMove == null) {
       return;
     }
-    boolean doublePassNow =
-        pass && game.boardNode != null && game.boardNode.getData().isPassNode();
+    boolean doublePassNow = pass && game.boardNode != null && game.boardNode.getData().isPassNode();
     EngineManager.runIfCurrentEngineGameTransaction(
         game.transaction,
         () -> {
@@ -9032,12 +9062,9 @@ public class Leelaz {
 
   public void boardSize(int width, int height) {
     String command =
-        width != height
-            ? "rectangular_boardsize " + width + " " + height
-            : "boardsize " + width;
+        width != height ? "rectangular_boardsize " + width + " " + height : "boardsize " + width;
     long admission =
-        sendStatefulOrdinaryCommands(
-            List.of(command), StatefulOrdinaryMutationKind.BOARD_SIZE);
+        sendStatefulOrdinaryCommands(List.of(command), StatefulOrdinaryMutationKind.BOARD_SIZE);
     if (admission < 0L) return;
     publishCurrentStatefulOrdinaryAdmission(
         StatefulOrdinaryMutationKind.BOARD_SIZE,
@@ -9157,9 +9184,7 @@ public class Leelaz {
     List<String> commands =
         komiCommand == null ? List.of("clear_board") : List.of("clear_board", komiCommand);
     StatefulOrdinaryMutationKind mutationKind =
-        komiCommand == null
-            ? StatefulOrdinaryMutationKind.NONE
-            : StatefulOrdinaryMutationKind.KOMI;
+        komiCommand == null ? StatefulOrdinaryMutationKind.NONE : StatefulOrdinaryMutationKind.KOMI;
     long admission = sendStatefulOrdinaryCommands(commands, mutationKind);
     if (admission < 0L) {
       return false;
@@ -9252,7 +9277,7 @@ public class Leelaz {
         if (binding.startupDiagnostic != null) binding.startupDiagnostic.output("stderr", line);
         if (!beginReaderLine(binding)) {
           if (binding.startupDiagnostic == null || !binding.startupDiagnostic.collectingOutput())
-          return;
+            return;
           continue;
         }
         try {
@@ -9319,9 +9344,7 @@ public class Leelaz {
         analysisOutputRouteAtParse.activeExactContext;
     boolean engineGameSignal = isAnalysisOutputSignalLine(line);
     EngineManager.EngineGameMoveResponseLease engineGameResponseLease =
-        engineGameSignal
-            ? EngineManager.claimEngineGameMoveResponse(engineGameResponse)
-            : null;
+        engineGameSignal ? EngineManager.claimEngineGameMoveResponse(engineGameResponse) : null;
     if (engineGameSignal && engineGameResponseLease == null) {
       afterAnalysisOutputRouteCapturedForTest(analysisOutputRouteAtParse.kind.name());
       AnalysisOutputRoute currentRoute = analysisOutputRoute(binding, line);
@@ -9332,334 +9355,315 @@ public class Leelaz {
       }
     }
     try {
-    if (isZen) {
-      boolean exactAnalysisGame =
-          analysisOutputRouteAtParse.acceptsExactEngineGameOutput();
-      boolean ordinaryAutoPlay =
-          analysisOutputRouteAtParse.acceptsOrdinaryOutput() && LizzieFrame.toolbar.isAutoPlay;
-      if (exactAnalysisGame || ordinaryAutoPlay) {
-        if (analysisResponseUpToDateAtParse) {
-          if (line.contains("Nodes:")) {
-            AnalysisInfoSnapshot terminalInfo =
-                currentAnalysisInfoSnapshot(analysisInfoEpochAtParse);
-            if (terminalInfo == null
-                || !isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)) {
-              return;
-            }
-            if (!terminalInfo.moves.isEmpty()) {
-              if (exactAnalysisGame) {
-                routeExactAnalysisOutput(
-                    true, analysisOutputRouteAtParse, terminalInfo);
-              } else {
-                routeOrdinaryAnalysisOutput(
-                    true, 0, analysisOutputRouteAtParse, terminalInfo);
+      if (isZen) {
+        boolean exactAnalysisGame = analysisOutputRouteAtParse.acceptsExactEngineGameOutput();
+        boolean ordinaryAutoPlay =
+            analysisOutputRouteAtParse.acceptsOrdinaryOutput() && LizzieFrame.toolbar.isAutoPlay;
+        if (exactAnalysisGame || ordinaryAutoPlay) {
+          if (analysisResponseUpToDateAtParse) {
+            if (line.contains("Nodes:")) {
+              AnalysisInfoSnapshot terminalInfo =
+                  currentAnalysisInfoSnapshot(analysisInfoEpochAtParse);
+              if (terminalInfo == null || !isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)) {
+                return;
               }
-            } else {
+              if (!terminalInfo.moves.isEmpty()) {
+                if (exactAnalysisGame) {
+                  routeExactAnalysisOutput(true, analysisOutputRouteAtParse, terminalInfo);
+                } else {
+                  routeOrdinaryAnalysisOutput(true, 0, analysisOutputRouteAtParse, terminalInfo);
+                }
+              } else {
+                if (exactAnalysisGame) {
+                  EngineManager.EngineGamePrimaryContext frozenContext = analysisGameContext;
+                  routeExactAnalysisSideEffect(
+                      analysisOutputRouteAtParse, () -> playPassInEngineGame(frozenContext));
+                } else {
+                  routeOrdinaryAnalysisSideEffect(
+                      analysisOutputRouteAtParse, () -> Lizzie.board.pass());
+                }
+              }
+            } else if (line.contains("I pass")) {
               if (exactAnalysisGame) {
                 EngineManager.EngineGamePrimaryContext frozenContext = analysisGameContext;
                 routeExactAnalysisSideEffect(
-                    analysisOutputRouteAtParse,
-                    () -> playPassInEngineGame(frozenContext));
+                    analysisOutputRouteAtParse, () -> playPassInEngineGame(frozenContext));
               } else {
                 routeOrdinaryAnalysisSideEffect(
                     analysisOutputRouteAtParse, () -> Lizzie.board.pass());
               }
+            } else if (line.toLowerCase().contains("resign")) {
+              if (exactAnalysisGame) {
+                EngineManager.EngineGamePrimaryContext frozenContext = analysisGameContext;
+                routeExactAnalysisSideEffect(
+                    analysisOutputRouteAtParse,
+                    () ->
+                        finishExactEngineGameAnalysis(frozenContext, AnalysisGameTerminal.RESIGN));
+              } else {
+                routeOrdinaryAnalysisSideEffect(
+                    analysisOutputRouteAtParse, () -> notifyAnaResign(true, List.of()));
+              }
             }
-          } else if (line.contains("I pass")) {
-            if (exactAnalysisGame) {
-              EngineManager.EngineGamePrimaryContext frozenContext = analysisGameContext;
-              routeExactAnalysisSideEffect(
-                  analysisOutputRouteAtParse,
-                  () -> playPassInEngineGame(frozenContext));
-            } else {
-              routeOrdinaryAnalysisSideEffect(
-                  analysisOutputRouteAtParse, () -> Lizzie.board.pass());
+          }
+        }
+        if (line.startsWith("info") && isLoaded) {
+          if (analysisOutputRouteAtParse.acceptsOrdinaryOutput()) {
+            runIfCurrentAnalysisOutputRoute(
+                analysisOutputRouteAtParse,
+                () -> {
+                  isLoaded = false;
+                  if (Lizzie.frame != null && Lizzie.frame.isDisplayable()) {
+                    SwingUtilities.invokeLater(
+                        () ->
+                            Utils.showHtmlMessage(
+                                Lizzie.resourceBundle.getString("Message.title"),
+                                Lizzie.resourceBundle.getString("Leelaz.updateZenGtp"),
+                                Lizzie.frame));
+                  }
+                  terminateReaderIncarnation(binding, null);
+                });
+          }
+          return;
+        }
+        if (engineGameResponseLease != null && engineGameResponse.plan.genmove()) {
+          if (line.contains("->")) {
+            MoveData parsedMove = null;
+            try {
+              parsedMove = MoveData.fromSummaryZen(line);
+            } catch (RuntimeException malformedSummary) {
+              Lizzie.gtpConsole.addLine("genmovepk summary err");
             }
-          } else if (line.toLowerCase().contains("resign")) {
-            if (exactAnalysisGame) {
-              EngineManager.EngineGamePrimaryContext frozenContext = analysisGameContext;
-              routeExactAnalysisSideEffect(
+            if (parsedMove != null) {
+              MoveData acceptedMove = parsedMove;
+              runIfCurrentAnalysisOutputRoute(
                   analysisOutputRouteAtParse,
-                  () ->
-                      finishExactEngineGameAnalysis(
-                          frozenContext, AnalysisGameTerminal.RESIGN));
-            } else {
-              routeOrdinaryAnalysisSideEffect(
+                  () -> {
+                    synchronized (analysisInfoMutationLock()) {
+                      if (analysisInfoEpoch == analysisInfoEpochAtParse
+                          && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)) {
+                        MoveData mv = acceptedMove;
+                        List<MoveData> updatedMoves = new ArrayList<>(bestMoves);
+                        mv.order = updatedMoves.size();
+                        updatedMoves.add(mv);
+                        List<MoveData> publishedMoves = List.copyOf(updatedMoves);
+                        currentTotalPlayouts = MoveData.getPlayouts(publishedMoves);
+                        currentRootVisits = -1;
+                        analysisInfoPayloadTarget = analysisInfoTargetAtParse;
+                        bestMoves = publishedMoves;
+                      }
+                    }
+                  });
+            }
+          }
+        }
+
+        if ((Lizzie.frame.isPlayingAgainstLeelaz || isInputCommand)
+            && analysisOutputRouteAtParse.acceptsOrdinaryOutput()) {
+          if (line.contains("->")) {
+            int k =
+                (Lizzie.config.limitMaxSuggestion > 0 && !Lizzie.config.showNoSuggCircle
+                    ? Lizzie.config.limitMaxSuggestion
+                    : 361);
+            MoveData parsedMove = null;
+            try {
+              parsedMove = MoveData.fromSummaryZen(line);
+            } catch (RuntimeException malformedSummary) {
+              // Malformed diagnostic output is ignored without failing the current owner.
+            }
+            if (parsedMove != null) {
+              MoveData acceptedMove = parsedMove;
+              runIfCurrentAnalysisOutputRoute(
                   analysisOutputRouteAtParse,
-                  () -> notifyAnaResign(true, List.of()));
+                  () -> {
+                    synchronized (analysisInfoMutationLock()) {
+                      if (analysisInfoEpoch == analysisInfoEpochAtParse
+                          && analysisResponseUpToDateAtParse
+                          && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)
+                          && bestMoves.size() < k) {
+                        MoveData mv = acceptedMove;
+                        List<MoveData> updatedMoves = new ArrayList<>(bestMoves);
+                        mv.order = updatedMoves.size();
+                        updatedMoves.add(mv);
+                        int updatedPlayouts = MoveData.getPlayouts(updatedMoves);
+                        publishAnalysisDisplayNonFatal(
+                            () ->
+                                analysisInfoTargetAtParse
+                                    .displayNode
+                                    .getData()
+                                    .tryToSetBestMovesFromEngine(
+                                        new ArrayList<>(updatedMoves),
+                                        bestMovesEnginename,
+                                        this,
+                                        updatedPlayouts,
+                                        null,
+                                        false));
+                        List<MoveData> publishedMoves = List.copyOf(updatedMoves);
+                        currentTotalPlayouts = updatedPlayouts;
+                        currentRootVisits = -1;
+                        analysisInfoPayloadTarget = analysisInfoTargetAtParse;
+                        bestMoves = publishedMoves;
+                      }
+                    }
+                  });
             }
           }
         }
       }
-      if (line.startsWith("info") && isLoaded) {
-        if (analysisOutputRouteAtParse.acceptsOrdinaryOutput()) {
-          runIfCurrentAnalysisOutputRoute(
-              analysisOutputRouteAtParse,
-              () -> {
-                isLoaded = false;
-                if (Lizzie.frame != null && Lizzie.frame.isDisplayable()) {
-                  SwingUtilities.invokeLater(
-                      () ->
-                          Utils.showHtmlMessage(
-                              Lizzie.resourceBundle.getString("Message.title"),
-                              Lizzie.resourceBundle.getString("Leelaz.updateZenGtp"),
-                              Lizzie.frame));
-                }
-                terminateReaderIncarnation(binding, null);
-              });
-        }
-        return;
-      }
-      if (engineGameResponseLease != null && engineGameResponse.plan.genmove()) {
-        if (line.contains("->")) {
-          MoveData parsedMove = null;
+      if ((isLeela || isSai) && Lizzie.frame.isPlayingAgainstLeelaz && canGetSummaryInfo) {
+        int k =
+            (Lizzie.config.limitMaxSuggestion > 0 && !Lizzie.config.showNoSuggCircle
+                ? Lizzie.config.limitMaxSuggestion
+                : 361);
+        MoveData parsedSummary = null;
+        if (line.contains("->") && analysisResponseUpToDateAtParse) {
           try {
-            parsedMove = MoveData.fromSummaryZen(line);
+            parsedSummary = isSai ? MoveData.fromSummarySai(line) : MoveData.fromSummary(line);
           } catch (RuntimeException malformedSummary) {
             Lizzie.gtpConsole.addLine("genmovepk summary err");
           }
-          if (parsedMove != null) {
-            MoveData acceptedMove = parsedMove;
-            runIfCurrentAnalysisOutputRoute(
-                analysisOutputRouteAtParse,
-                () -> {
-                  synchronized (analysisInfoMutationLock()) {
-                    if (analysisInfoEpoch == analysisInfoEpochAtParse
-                        && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)) {
-                      MoveData mv = acceptedMove;
-                      List<MoveData> updatedMoves = new ArrayList<>(bestMoves);
-                      mv.order = updatedMoves.size();
-                      updatedMoves.add(mv);
-                      List<MoveData> publishedMoves = List.copyOf(updatedMoves);
-                      currentTotalPlayouts = MoveData.getPlayouts(publishedMoves);
-                      currentRootVisits = -1;
-                      analysisInfoPayloadTarget = analysisInfoTargetAtParse;
-                      bestMoves = publishedMoves;
-                    }
+        }
+        if (parsedSummary != null) {
+          MoveData acceptedSummary = parsedSummary;
+          Board summaryBoard = Lizzie.board;
+          BoardHistoryNode summaryTarget =
+              summaryBoard == null ? null : summaryBoard.getHistory().getCurrentHistoryNode();
+          runIfCurrentAnalysisOutputRoute(
+              analysisOutputRouteAtParse,
+              () -> {
+                synchronized (previousAnalysisSummaryLock) {
+                  AnalysisSummaryBatch batch = previousAnalysisSummaryBatch;
+                  if (batch == null
+                      || !batch.route.hasSameOwner(analysisOutputRouteAtParse)
+                      || batch.analysisInfoEpoch != analysisInfoEpochAtParse
+                      || batch.board != summaryBoard
+                      || batch.targetNode != summaryTarget) {
+                    batch =
+                        new AnalysisSummaryBatch(
+                            analysisOutputRouteAtParse,
+                            analysisInfoEpochAtParse,
+                            summaryBoard,
+                            summaryTarget,
+                            List.of());
                   }
-                });
-          }
-        }
-      }
-
-      if ((Lizzie.frame.isPlayingAgainstLeelaz || isInputCommand)
-          && analysisOutputRouteAtParse.acceptsOrdinaryOutput()) {
-        if (line.contains("->")) {
-          int k =
-              (Lizzie.config.limitMaxSuggestion > 0 && !Lizzie.config.showNoSuggCircle
-                  ? Lizzie.config.limitMaxSuggestion
-                  : 361);
-          MoveData parsedMove = null;
-          try {
-            parsedMove = MoveData.fromSummaryZen(line);
-          } catch (RuntimeException malformedSummary) {
-            // Malformed diagnostic output is ignored without failing the current owner.
-          }
-          if (parsedMove != null) {
-            MoveData acceptedMove = parsedMove;
-            runIfCurrentAnalysisOutputRoute(
-                analysisOutputRouteAtParse,
-                () -> {
-                  synchronized (analysisInfoMutationLock()) {
-                    if (analysisInfoEpoch == analysisInfoEpochAtParse
-                        && analysisResponseUpToDateAtParse
-                        && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)
-                        && bestMoves.size() < k) {
-                      MoveData mv = acceptedMove;
-                      List<MoveData> updatedMoves = new ArrayList<>(bestMoves);
-                      mv.order = updatedMoves.size();
-                      updatedMoves.add(mv);
-                      int updatedPlayouts = MoveData.getPlayouts(updatedMoves);
-                      publishAnalysisDisplayNonFatal(
-                          () ->
-                              analysisInfoTargetAtParse
-                                  .displayNode
-                                  .getData()
-                                  .tryToSetBestMovesFromEngine(
-                                      new ArrayList<>(updatedMoves),
-                                      bestMovesEnginename,
-                                      this,
-                                      updatedPlayouts,
-                                      null,
-                                      false));
-                      List<MoveData> publishedMoves = List.copyOf(updatedMoves);
-                      currentTotalPlayouts = updatedPlayouts;
-                      currentRootVisits = -1;
-                      analysisInfoPayloadTarget = analysisInfoTargetAtParse;
-                      bestMoves = publishedMoves;
-                    }
+                  if (batch.moves.size() >= k) {
+                    previousAnalysisSummaryBatch = batch;
+                    return;
                   }
-                });
-          }
-        }
-      }
-    }
-    if ((isLeela || isSai) && Lizzie.frame.isPlayingAgainstLeelaz && canGetSummaryInfo) {
-      int k =
-          (Lizzie.config.limitMaxSuggestion > 0 && !Lizzie.config.showNoSuggCircle
-              ? Lizzie.config.limitMaxSuggestion
-              : 361);
-      MoveData parsedSummary = null;
-      if (line.contains("->") && analysisResponseUpToDateAtParse) {
-        try {
-          parsedSummary = isSai ? MoveData.fromSummarySai(line) : MoveData.fromSummary(line);
-        } catch (RuntimeException malformedSummary) {
-          Lizzie.gtpConsole.addLine("genmovepk summary err");
-        }
-      }
-      if (parsedSummary != null) {
-        MoveData acceptedSummary = parsedSummary;
-        Board summaryBoard = Lizzie.board;
-        BoardHistoryNode summaryTarget =
-            summaryBoard == null
-                ? null
-                : summaryBoard.getHistory().getCurrentHistoryNode();
-        runIfCurrentAnalysisOutputRoute(
-            analysisOutputRouteAtParse,
-            () -> {
-              synchronized (previousAnalysisSummaryLock) {
-                AnalysisSummaryBatch batch = previousAnalysisSummaryBatch;
-                if (batch == null
-                    || !batch.route.hasSameOwner(analysisOutputRouteAtParse)
-                    || batch.analysisInfoEpoch != analysisInfoEpochAtParse
-                    || batch.board != summaryBoard
-                    || batch.targetNode != summaryTarget) {
-                  batch =
+                  List<MoveData> updatedMoves = new ArrayList<>(batch.moves);
+                  acceptedSummary.order = updatedMoves.size();
+                  updatedMoves.add(acceptedSummary);
+                  previousAnalysisSummaryBatch =
                       new AnalysisSummaryBatch(
-                          analysisOutputRouteAtParse,
-                          analysisInfoEpochAtParse,
-                          summaryBoard,
-                          summaryTarget,
-                          List.of());
+                          batch.route,
+                          batch.analysisInfoEpoch,
+                          batch.board,
+                          batch.targetNode,
+                          List.copyOf(updatedMoves));
                 }
-                if (batch.moves.size() >= k) {
-                  previousAnalysisSummaryBatch = batch;
-                  return;
-                }
-                List<MoveData> updatedMoves = new ArrayList<>(batch.moves);
-                acceptedSummary.order = updatedMoves.size();
-                updatedMoves.add(acceptedSummary);
-                previousAnalysisSummaryBatch =
-                    new AnalysisSummaryBatch(
-                        batch.route,
-                        batch.analysisInfoEpoch,
-                        batch.board,
-                        batch.targetNode,
-                        List.copyOf(updatedMoves));
-              }
-            });
-      }
-    }
-    if (handleLeela0110AnalysisSignal(
-        analysisOutputRouteAtParse,
-        line,
-        analysisInfoEpochAtParse,
-        analysisInfoTargetAtParse)) {
-      return;
-    }
-    if (isLeela0110) {
-      if (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp || !this.isLoaded) {
-        Lizzie.gtpConsole.addErrorLine(line + "\n");
-      }
-    }
-    if (!this.isKatago) {
-      if (line.startsWith("NN eval")) {
-        runIfCurrentAnalysisOutputRoute(
-            analysisOutputRouteAtParse,
-            () -> {
-              String[] params = line.trim().split("=");
-              heatwinrate =
-                  Double.valueOf(
-                      params[1].length() > 5 ? params[1].substring(0, 5) : params[1]);
-            });
-      }
-      if (line.startsWith("root eval")) {
-        runIfCurrentAnalysisOutputRoute(
-            analysisOutputRouteAtParse,
-            () -> {
-              String[] params = line.trim().split("=");
-              heatwinrate =
-                  Double.valueOf(
-                      params[1].length() > 5 ? params[1].substring(0, 5) : params[1]);
-            });
-      }
-
-      if (line.endsWith("nodes")) {
-        AnalysisInfoSnapshot terminalInfo =
-            currentAnalysisInfoSnapshot(analysisInfoEpochAtParse);
-        if (terminalInfo != null
-            && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)
-            && !terminalInfo.moves.isEmpty()) {
-          if (analysisOutputRouteAtParse.acceptsExactEngineGameOutput()
-              && analysisResponseUpToDateAtParse
-              && !isGamePaused) {
-            routeExactAnalysisOutput(
-                true, analysisOutputRouteAtParse, terminalInfo);
-          } else if (analysisOutputRouteAtParse.acceptsOrdinaryOutput()
-              && Lizzie.frame.isAnaPlayingAgainstLeelaz
-              && !isGamePaused) {
-            routeOrdinaryAnalysisOutput(
-                true, 0, analysisOutputRouteAtParse, terminalInfo);
-          }
+              });
         }
       }
-      if (line.startsWith("| ST")) {
-        String[] params = line.trim().split(" ");
-        if (params.length == 13) {
-          Integer parsedStage = null;
-          Float parsedKomi = null;
-          try {
-            parsedStage =
-                Integer.parseInt(params[3].substring(0, params[3].length() - 1));
-            parsedKomi = Float.parseFloat(params[6].substring(0, params[6].length() - 1));
-          } catch (RuntimeException malformedStatus) {
-            // Malformed stderr diagnostics are ignored without failing the current response.
+      if (handleLeela0110AnalysisSignal(
+          analysisOutputRouteAtParse, line, analysisInfoEpochAtParse, analysisInfoTargetAtParse)) {
+        return;
+      }
+      if (isLeela0110) {
+        if (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp || !this.isLoaded) {
+          Lizzie.gtpConsole.addErrorLine(line + "\n");
+        }
+      }
+      if (!this.isKatago) {
+        if (line.startsWith("NN eval")) {
+          runIfCurrentAnalysisOutputRoute(
+              analysisOutputRouteAtParse,
+              () -> {
+                String[] params = line.trim().split("=");
+                heatwinrate =
+                    Double.valueOf(params[1].length() > 5 ? params[1].substring(0, 5) : params[1]);
+              });
+        }
+        if (line.startsWith("root eval")) {
+          runIfCurrentAnalysisOutputRoute(
+              analysisOutputRouteAtParse,
+              () -> {
+                String[] params = line.trim().split("=");
+                heatwinrate =
+                    Double.valueOf(params[1].length() > 5 ? params[1].substring(0, 5) : params[1]);
+              });
+        }
+
+        if (line.endsWith("nodes")) {
+          AnalysisInfoSnapshot terminalInfo = currentAnalysisInfoSnapshot(analysisInfoEpochAtParse);
+          if (terminalInfo != null
+              && isCurrentAnalysisInfoTarget(analysisInfoTargetAtParse)
+              && !terminalInfo.moves.isEmpty()) {
+            if (analysisOutputRouteAtParse.acceptsExactEngineGameOutput()
+                && analysisResponseUpToDateAtParse
+                && !isGamePaused) {
+              routeExactAnalysisOutput(true, analysisOutputRouteAtParse, terminalInfo);
+            } else if (analysisOutputRouteAtParse.acceptsOrdinaryOutput()
+                && Lizzie.frame.isAnaPlayingAgainstLeelaz
+                && !isGamePaused) {
+              routeOrdinaryAnalysisOutput(true, 0, analysisOutputRouteAtParse, terminalInfo);
+            }
           }
-          if (parsedStage != null && parsedKomi != null) {
-            int acceptedStage = parsedStage;
-            float acceptedKomi = parsedKomi;
-            boolean committed =
-                runIfCurrentAnalysisOutputRoute(
-                    analysisOutputRouteAtParse,
-                    () -> {
-                      isColorEngine = true;
-                      stage = acceptedStage;
-                      komi = acceptedKomi;
-                    });
-            if (committed && (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp)) {
-              Lizzie.gtpConsole.addLine(oriEnginename + ": " + line);
+        }
+        if (line.startsWith("| ST")) {
+          String[] params = line.trim().split(" ");
+          if (params.length == 13) {
+            Integer parsedStage = null;
+            Float parsedKomi = null;
+            try {
+              parsedStage = Integer.parseInt(params[3].substring(0, params[3].length() - 1));
+              parsedKomi = Float.parseFloat(params[6].substring(0, params[6].length() - 1));
+            } catch (RuntimeException malformedStatus) {
+              // Malformed stderr diagnostics are ignored without failing the current response.
+            }
+            if (parsedStage != null && parsedKomi != null) {
+              int acceptedStage = parsedStage;
+              float acceptedKomi = parsedKomi;
+              boolean committed =
+                  runIfCurrentAnalysisOutputRoute(
+                      analysisOutputRouteAtParse,
+                      () -> {
+                        isColorEngine = true;
+                        stage = acceptedStage;
+                        komi = acceptedKomi;
+                      });
+              if (committed && (Lizzie.gtpConsole.isVisible() || Lizzie.config.alwaysGtp)) {
+                Lizzie.gtpConsole.addLine(oriEnginename + ": " + line);
+              }
+            }
+          }
+        }
+      } else {
+        if ((Lizzie.frame.isPlayingAgainstLeelaz || EngineManager.hasPlayingEngineGameTransaction())
+            && line.startsWith("MALKOVICH:")) {
+          if (line.contains("PDA")) {
+            Double parsedPda = null;
+            try {
+              String value = line.substring(line.indexOf("PDA") + 4);
+              value = value.substring(0, value.indexOf(")"));
+              parsedPda = Double.parseDouble(value);
+            } catch (RuntimeException malformedPda) {
+              // A malformed diagnostic line is not an engine-game protocol failure.
+            }
+            if (parsedPda != null) {
+              double acceptedPda = parsedPda;
+              runIfCurrentAnalysisOutputRoute(
+                  analysisOutputRouteAtParse, () -> this.pda = acceptedPda);
             }
           }
         }
       }
-    } else {
-      if ((Lizzie.frame.isPlayingAgainstLeelaz || EngineManager.hasPlayingEngineGameTransaction())
-          && line.startsWith("MALKOVICH:")) {
-        if (line.contains("PDA")) {
-          Double parsedPda = null;
-          try {
-            String value = line.substring(line.indexOf("PDA") + 4);
-            value = value.substring(0, value.indexOf(")"));
-            parsedPda = Double.parseDouble(value);
-          } catch (RuntimeException malformedPda) {
-            // A malformed diagnostic line is not an engine-game protocol failure.
-          }
-          if (parsedPda != null) {
-            double acceptedPda = parsedPda;
-            runIfCurrentAnalysisOutputRoute(
-                analysisOutputRouteAtParse, () -> this.pda = acceptedPda);
-          }
+      if (!isLoaded) {
+        if (line.startsWith("Started OpenCL SGEMM")
+            || line.startsWith("Tuning xGemmDirect")
+            || line.contains("long time")) {
+          isTuning = true;
         }
       }
-    }
-    if (!isLoaded) {
-      if (line.startsWith("Started OpenCL SGEMM")
-          || line.startsWith("Tuning xGemmDirect")
-          || line.contains("long time")) {
-        isTuning = true;
-      }
-    }
-    parseHeatMap(line);
+      parseHeatMap(line);
     } finally {
       if (engineGameResponseLease != null) {
         engineGameResponseLease.close();
@@ -9677,13 +9681,11 @@ public class Leelaz {
     boolean blackParticipant =
         binding != null ? binding.isBlack() : game.participantIndex == game.blackIndex;
     EngineManager.EngineGamePostMoveToken postMove =
-        EngineManager.commitEngineGameMove(
-            moveContext, null, null, this, game.participantIndex);
+        EngineManager.commitEngineGameMove(moveContext, null, null, this, game.participantIndex);
     if (postMove == null) {
       return;
     }
-    boolean doublePassNow =
-        game.boardNode != null && game.boardNode.getData().isPassNode();
+    boolean doublePassNow = game.boardNode != null && game.boardNode.getData().isPassNode();
     EngineManager.runIfCurrentEngineGameTransaction(game.transaction, () -> played = true);
     if (doublePassNow) {
       finishExactEngineGameAnalysis(
@@ -9699,7 +9701,6 @@ public class Leelaz {
       opponent.playEngineGameAnalysisMove(color, "pass", postMove, true);
     }
   }
-
 
   private enum StatefulOrdinaryMutationKind {
     NONE,
@@ -9738,8 +9739,7 @@ public class Leelaz {
       return -1L;
     }
 
-    Leelaz mirroredEngine =
-        startupTransaction == null ? resolveDefaultCommandMirrorEngine() : null;
+    Leelaz mirroredEngine = startupTransaction == null ? resolveDefaultCommandMirrorEngine() : null;
     // The legacy secondary Leela 0.11.0 path rejects ordinary default mirroring and drives its
     // own ponder protocol. Preserve that contract while still making every supported mirror
     // participate in the atomic admission below.
@@ -9799,8 +9799,7 @@ public class Leelaz {
     if (admissionGeneration < 0L) {
       if (startupTransaction != null) {
         throw new IllegalStateException(
-            "Engine-game startup state batch was rejected before enqueue: "
-                + capturedCommands);
+            "Engine-game startup state batch was rejected before enqueue: " + capturedCommands);
       }
       rejectNewExclusiveWorkDuringGtpLease();
       return -1L;
@@ -9837,32 +9836,17 @@ public class Leelaz {
         mirroredEngine == null ? null : mirroredEngine.positionRestoreBindingContext.get();
     for (String command : commands) {
       if (!canAdmitOrdinaryCommandLocked(
-          command,
-          true,
-          commandBinding,
-          null,
-          bootstrapReceipt,
-          startupTransaction)) {
+          command, true, commandBinding, null, bootstrapReceipt, startupTransaction)) {
         return -1L;
       }
       if (mirroredEngine != null
           && !mirroredEngine.canAdmitOrdinaryCommandLocked(
-              command,
-              true,
-              mirroredCommandBinding,
-              null,
-              mirroredBootstrapReceipt,
-              null)) {
+              command, true, mirroredCommandBinding, null, mirroredBootstrapReceipt, null)) {
         return -1L;
       }
     }
     enqueueStatefulOrdinaryCommandsLocked(
-        commands,
-        startupTransaction,
-        commandBinding,
-        bootstrapReceipt,
-        effects,
-        admitted);
+        commands, startupTransaction, commandBinding, bootstrapReceipt, effects, admitted);
     if ("clear_board".equals(commands.get(0))) {
       // Bind the legacy clear watermark adjustment to this exact admission. Doing it in the
       // caller after transport/callback work could accidentally acknowledge a newer concurrent
@@ -9878,8 +9862,7 @@ public class Leelaz {
           mirroredEffects,
           mirroredAdmitted);
     }
-    installStatefulOrdinaryBatchFailureLinks(
-        admitted, mirroredEngine, mirroredAdmitted);
+    installStatefulOrdinaryBatchFailureLinks(admitted, mirroredEngine, mirroredAdmitted);
     return advanceStatefulOrdinaryAdmissionLocked(mutationKind);
   }
 
@@ -9975,8 +9958,7 @@ public class Leelaz {
   }
 
   /** Requires this command queue. */
-  private long advanceStatefulOrdinaryAdmissionLocked(
-      StatefulOrdinaryMutationKind mutationKind) {
+  private long advanceStatefulOrdinaryAdmissionLocked(StatefulOrdinaryMutationKind mutationKind) {
     if (mutationKind == StatefulOrdinaryMutationKind.KOMI) {
       return ++komiAdmissionGeneration;
     }
@@ -9998,15 +9980,12 @@ public class Leelaz {
   }
 
   private boolean publishCurrentStatefulOrdinaryAdmission(
-      StatefulOrdinaryMutationKind mutationKind,
-      long admissionGeneration,
-      Runnable publication) {
+      StatefulOrdinaryMutationKind mutationKind, long admissionGeneration, Runnable publication) {
     synchronized (statefulOrdinaryPublicationLock()) {
       if (!isCurrentStatefulOrdinaryAdmission(mutationKind, admissionGeneration)) {
         return false;
       }
-      afterCurrentStatefulOrdinaryAdmissionCheckForTest(
-          mutationKind.name(), admissionGeneration);
+      afterCurrentStatefulOrdinaryAdmissionCheckForTest(mutationKind.name(), admissionGeneration);
       publication.run();
       return true;
     }
@@ -10042,7 +10021,6 @@ public class Leelaz {
       pairedCommand.notifySendFailure(failure);
     }
   }
-
 
   private void parseHeatMap(String line) {
     if (isheatmap) {
@@ -10119,7 +10097,8 @@ public class Leelaz {
                 || batch.board != Lizzie.board
                 || batch.targetNode == null
                 || batch.board.getHistory().getCurrentHistoryNode() == null
-                || batch.board
+                || batch
+                    .board
                     .getHistory()
                     .getCurrentHistoryNode()
                     .previous()
@@ -10129,7 +10108,8 @@ public class Leelaz {
             }
             publishAnalysisDisplayNonFatal(
                 () ->
-                    batch.targetNode
+                    batch
+                        .targetNode
                         .getData()
                         .tryToSetBestMovesFromEngine(
                             new ArrayList<>(batch.moves),
@@ -10378,10 +10358,7 @@ public class Leelaz {
     if (!binding.normalExitRequested && Lizzie.engineManager != null) {
       EngineManager.EngineGameRecoveryDisposition disposition =
           EngineManager.requestEngineGameParticipantRecovery(
-              Lizzie.engineManager,
-              this,
-              binding,
-              classifyEngineGameRecoveryCause(binding));
+              Lizzie.engineManager, this, binding, classifyEngineGameRecoveryCause(binding));
       if (disposition == EngineManager.EngineGameRecoveryDisposition.HANDLED) {
         isDownWithError = true;
         if (binding.remoteTransport != null) {
@@ -10409,7 +10386,6 @@ public class Leelaz {
     }
     return null;
   }
-
 
   private void shutdownReaderTransport(ReaderStreamBinding binding) {
     ReaderExecutorSnapshot executors = requestReaderShutdown(binding);
@@ -10713,15 +10689,7 @@ public class Leelaz {
     boolean accepted;
     try {
       accepted =
-          sendCommand(
-              command,
-              onResponse,
-              onSendFailure,
-              true,
-              false,
-              delivery,
-              false,
-              binding);
+          sendCommand(command, onResponse, onSendFailure, true, false, delivery, false, binding);
     } catch (RuntimeException | Error admissionFailure) {
       RuntimeException failure =
           admissionFailure instanceof RuntimeException
@@ -10905,8 +10873,10 @@ public class Leelaz {
 
   /** Test seam after cancellation ownership and before the cancelled command leaves its queue. */
   void afterStartupCommandCancellationClaimBeforeQueueRemoval() {}
+
   /** Test seam immediately before an engine-rules command claims physical output. */
   void beforeEngineRulesCommandPhysicalWrite(String command) {}
+
   /** Test seam after matching an engine-rules response handler, before response dispatch. */
   void afterEngineRulesResponseHandlerPeek() {}
 
@@ -10968,8 +10938,7 @@ public class Leelaz {
 
   private void dispatchStartupTransportAbort(ReaderStreamBinding binding) {
     if (binding.rawOutput != null) {
-      dispatchStartupTransportAbortStep(
-          "output", () -> closeOutput(binding.rawOutput));
+      dispatchStartupTransportAbortStep("output", () -> closeOutput(binding.rawOutput));
     }
   }
 
@@ -11032,8 +11001,7 @@ public class Leelaz {
     sendCommand(command);
   }
 
-  boolean installLeela0110PonderStateForTest(
-      EngineManager.EngineGameOwnerTransaction transaction) {
+  boolean installLeela0110PonderStateForTest(EngineManager.EngineGameOwnerTransaction transaction) {
     return prepareLeela0110PonderState(transaction);
   }
 
@@ -11045,13 +11013,10 @@ public class Leelaz {
     }
     runWithEngineGameStartupCommandContext(
         transaction,
-        () ->
-            sendCommandNoLeelaz2(
-                command, null, commandOwner.binding, commandOwner.stateToken));
+        () -> sendCommandNoLeelaz2(command, null, commandOwner.binding, commandOwner.stateToken));
   }
 
-  boolean hasLeela0110PonderStateForTest(
-      EngineManager.EngineGameOwnerTransaction transaction) {
+  boolean hasLeela0110PonderStateForTest(EngineManager.EngineGameOwnerTransaction transaction) {
     synchronized (leela0110PonderStateLock) {
       return leela0110PonderingTimer != null
           && leela0110PonderingBoardData != null
@@ -11126,11 +11091,8 @@ public class Leelaz {
   }
 
   void sendEngineGameStartupCommandWithResponseForTest(
-      String command,
-      EngineManager.EngineGameOwnerTransaction transaction,
-      Runnable onResponse) {
-    runWithEngineGameStartupCommandContext(
-        transaction, () -> sendCommand(command, onResponse));
+      String command, EngineManager.EngineGameOwnerTransaction transaction, Runnable onResponse) {
+    runWithEngineGameStartupCommandContext(transaction, () -> sendCommand(command, onResponse));
   }
 
   void retireTimedOutNormalCommandForTest(Runnable onResponse) {
@@ -11195,10 +11157,9 @@ public class Leelaz {
 
   void installFreshCommandOutputForTest(OutputStream stream) {
     initializeStreams(
-        new ByteArrayInputStream(new byte[0]),
-        stream,
-        new ByteArrayInputStream(new byte[0]));
+        new ByteArrayInputStream(new byte[0]), stream, new ByteArrayInputStream(new byte[0]));
   }
+
   void installFreshCommandOutputForTest(OutputStream stream, Path processWorkingDirectory) {
     initializeStreams(
         new ByteArrayInputStream(new byte[0]),
@@ -11252,8 +11213,7 @@ public class Leelaz {
       }
       if (isCommandLine) {
         runWithRestartBootstrapReceipt(
-            binding.restartBootstrapReceipt,
-            () -> processCommandResponseLine(line, binding));
+            binding.restartBootstrapReceipt, () -> processCommandResponseLine(line, binding));
       }
     } finally {
       isCommandLine = false;
@@ -11303,8 +11263,6 @@ public class Leelaz {
   public boolean sendRawConsoleCommand(String command) {
     return sendCommand(command, null, null, false, true);
   }
-
-
 
   private void sendCommand(String command, Runnable onResponse) {
     sendCommand(command, onResponse, null, false, true);
@@ -11373,8 +11331,7 @@ public class Leelaz {
         throw new IllegalStateException(
             "Engine-game startup command has no live reader binding: " + command);
       }
-      boolean ordinaryBootstrap =
-          Boolean.TRUE.equals(ordinaryEngineGameBootstrapCommands.get());
+      boolean ordinaryBootstrap = Boolean.TRUE.equals(ordinaryEngineGameBootstrapCommands.get());
       settlement =
           new EngineGameStartupCommandPermit(
               this,
@@ -11726,12 +11683,7 @@ public class Leelaz {
                   bootstrapReceipt,
                   startupTransactionAtAdmission)
               || !mirroredEngine.canAdmitOrdinaryCommandLocked(
-                  mirroredCommand,
-                  true,
-                  null,
-                  null,
-                  mirroredBootstrapReceipt,
-                  null)) {
+                  mirroredCommand, true, null, null, mirroredBootstrapReceipt, null)) {
             return false;
           }
           QueuedCommand primaryCommand =
@@ -11797,7 +11749,6 @@ public class Leelaz {
         engineGameStartupCommandContext.get();
     if (Thread.holdsLock(currentQueue)
         && exclusiveGtpSession == null
-       
         && settlement == null
         && readBoardGmaResponseBinding == null
         && expectedLeela0110StateToken == null) {
@@ -11927,7 +11878,6 @@ public class Leelaz {
     private final List<QueuedCommand> coalescedCommands = new ArrayList<>();
   }
 
-
   /** Requires endpoint arbitration followed by the command-queue monitor. */
   private boolean canAdmitOrdinaryCommandLocked(
       String command,
@@ -11968,7 +11918,6 @@ public class Leelaz {
                     || exclusiveGtpLifecycleOwner == Thread.currentThread())
                 && exclusiveGtpSession == null));
   }
-
 
   /** Requires endpoint arbitration followed by the command-queue monitor and prior admission. */
   private QueuedCommand enqueueAdmittedOrdinaryCommandLocked(
@@ -12126,7 +12075,6 @@ public class Leelaz {
                 || command.startsWith("analyze")
                 || command.startsWith("heatmap")));
   }
-
 
   private Leelaz resolveDefaultCommandMirrorEngine() {
     if (Lizzie.config == null || !Lizzie.config.isDoubleEngineMode()) {
@@ -12351,7 +12299,6 @@ public class Leelaz {
         });
   }
 
-
   final void restoreInBandForExactSnapshotRestore(
       String command,
       Leelaz mirroredEngine,
@@ -12380,7 +12327,6 @@ public class Leelaz {
     restoreExactSnapshotCommands(
         capturedCommands, null, mirroredEngine, admission, afterConsumed, onDispatchStarted);
   }
-
 
   private void restoreExactSnapshotCommands(
       List<String> commands,
@@ -12415,11 +12361,7 @@ public class Leelaz {
       Runnable afterConsumed,
       ExactSnapshotRestoreAdmission admission) {
     loadTrackedSnapshotCommand(
-        "loadsgf " + sgfFile.toAbsolutePath(),
-        sgfFile,
-        mirroredEngine,
-        afterConsumed,
-        admission);
+        "loadsgf " + sgfFile.toAbsolutePath(), sgfFile, mirroredEngine, afterConsumed, admission);
   }
 
   private void loadTrackedSnapshotCommand(
@@ -12452,8 +12394,7 @@ public class Leelaz {
       }
       if (mirroredEngine != null) {
         RuntimeException mirroredSendFailure =
-            sendTrackedSnapshotCommand(
-                mirroredEngine, command, sgfFile, null, dispatch, admission);
+            sendTrackedSnapshotCommand(mirroredEngine, command, sgfFile, null, dispatch, admission);
         if (sendFailure == null) {
           sendFailure = mirroredSendFailure;
         }
@@ -12519,8 +12460,7 @@ public class Leelaz {
     }
   }
 
-  private static String snapshotRestoreResponseDescription(
-      List<String> commands, Path sgfFile) {
+  private static String snapshotRestoreResponseDescription(List<String> commands, Path sgfFile) {
     if (sgfFile != null) {
       return "loadsgf";
     }
@@ -12568,12 +12508,7 @@ public class Leelaz {
       Runnable onResponse,
       CommandSendFailureHandler onSendFailure) {
     sendSnapshotRestoreCommand(
-        targetEngine,
-        "loadsgf " + sgfFile.toAbsolutePath(),
-        onResponse,
-        onSendFailure,
-        null,
-        null);
+        targetEngine, "loadsgf " + sgfFile.toAbsolutePath(), onResponse, onSendFailure, null, null);
   }
 
   private void sendSnapshotRestoreCommand(
@@ -12726,6 +12661,7 @@ public class Leelaz {
             : this == admission.mirror ? admission.mirrorIncarnation : null;
     return incarnation instanceof ReaderStreamBinding binding ? binding : null;
   }
+
   private boolean sendExactSnapshotRestoreCommand(
       String command,
       Runnable onResponse,
@@ -12752,27 +12688,20 @@ public class Leelaz {
                     () ->
                         sent[0] =
                             sendExactSnapshotRestoreCommandAdmitted(
-                                command,
-                                onResponse,
-                                onSendFailure,
-                                admission,
-                                expectedBinding)));
+                                command, onResponse, onSendFailure, admission, expectedBinding)));
     return ownerCurrent && sent[0];
   }
 
-  boolean sendExactSnapshotRestoreCommand(
-      String command, ExactSnapshotRestoreAdmission admission) {
+  boolean sendExactSnapshotRestoreCommand(String command, ExactSnapshotRestoreAdmission admission) {
     return sendExactSnapshotRestoreCommand(command, null, null, admission);
   }
-
 
   private void enqueueSavedGtpConfiguration() {
     configurationProfileCommand(gtpConfigurationProtocol, gtpConfigurationProfile)
         .ifPresent(command -> sendCommand(command, null, false, false));
   }
 
-  public static Optional<String> configurationProfileCommand(
-      String protocol, JSONObject profile) {
+  public static Optional<String> configurationProfileCommand(String protocol, JSONObject profile) {
     if (!GtpConfigurationProbe.ZENGTP_PROTOCOL.equals(protocol) || profile == null) {
       return Optional.empty();
     }
@@ -12912,17 +12841,14 @@ public class Leelaz {
             || (startupTransaction != null && startupBinding != expectedBinding)
             || (expectedLeela0110StateToken != null
                 && !isCurrentLeela0110PonderState(
-                    expectedBinding,
-                    startupTransaction,
-                    expectedLeela0110StateToken)))) {
+                    expectedBinding, startupTransaction, expectedLeela0110StateToken)))) {
       if (startupTransaction != null) {
         throw new IllegalStateException(
             "engine-game startup command lost its Leela0110 reader binding: " + command);
       }
       return;
     }
-    ReaderStreamBinding commandBinding =
-        expectedBinding != null ? expectedBinding : startupBinding;
+    ReaderStreamBinding commandBinding = expectedBinding != null ? expectedBinding : startupBinding;
     QueuedCommandSettlement startupPermit =
         startupTransaction == null
             ? null
@@ -13035,8 +12961,7 @@ public class Leelaz {
   private static Thread newBenchmarkTaskThread(Runnable runnable) {
     Thread thread =
         new Thread(
-            runnable,
-            "lizzie-benchmark-task-" + BENCHMARK_TASK_THREAD_SEQUENCE.incrementAndGet());
+            runnable, "lizzie-benchmark-task-" + BENCHMARK_TASK_THREAD_SEQUENCE.incrementAndGet());
     thread.setDaemon(true);
     return thread;
   }
@@ -13070,7 +12995,10 @@ public class Leelaz {
         if (focusBoundary.failed) return;
         queueHead = null;
         for (QueuedCommand candidate : targetQueue) {
-          if (candidate.onResponse == focusBoundary) { queueHead = candidate; break; }
+          if (candidate.onResponse == focusBoundary) {
+            queueHead = candidate;
+            break;
+          }
         }
         if (queueHead == null) return;
       }
@@ -13135,8 +13063,7 @@ public class Leelaz {
       if (queuedCommand.onResponse instanceof EngineRulesResponseHandler) {
         beforeEngineRulesCommandPhysicalWrite(command);
       }
-      deferredResponse =
-          sendCommandToLeelaz(command, queuedCommand);
+      deferredResponse = sendCommandToLeelaz(command, queuedCommand);
     } catch (RuntimeException | Error ex) {
       sendFailure = ex;
     } finally {
@@ -13199,8 +13126,7 @@ public class Leelaz {
    *
    * @param command a GTP command containing no newline characters
    */
-  private Runnable sendCommandToLeelaz(
-      String command, QueuedCommand queuedCommand) {
+  private Runnable sendCommandToLeelaz(String command, QueuedCommand queuedCommand) {
     if (!hasGtpCapability()) {
       return null;
     }
@@ -13290,7 +13216,9 @@ public class Leelaz {
                   this,
                   outputBinding,
                   outputBinding == null ? null : outputBinding.analysisOutputRecoveryToken,
-                  queuedCommand.restoreAdmission == null ? null : queuedCommand.restoreAdmission.ownerIdentity);
+                  queuedCommand.restoreAdmission == null
+                      ? null
+                      : queuedCommand.restoreAdmission.ownerIdentity);
           if (transactionlessAnalysisWrite == null) {
             throw new AnalysisOutputAdmissionFailure(
                 "analysis/state output is blocked by an unrelated game or recovery owner");
@@ -13398,14 +13326,16 @@ public class Leelaz {
                               || outputBinding.output != currentOutputStream
                               || outputStream != currentOutputStream
                               || runtime.result.isDone()) {
-                            throw new IllegalStateException("Runtime thread command lost its reader binding");
+                            throw new IllegalStateException(
+                                "Runtime thread command lost its reader binding");
                           }
                           synchronized (outputBinding) {
                             runtime.writeSequence = ++outputBinding.runtimeThreadWriteSequence;
                           }
                         });
                 if (!admitted) {
-                  throw new IllegalStateException("Runtime thread command lost foreground selection");
+                  throw new IllegalStateException(
+                      "Runtime thread command lost foreground selection");
                 }
               }
               // Selection admission is short; transport IO must not hold the global primary lock.
@@ -13486,8 +13416,7 @@ public class Leelaz {
         cleanupFailure =
             runEngineCleanupStep(
                 cleanupFailure, () -> rememberRecentLine(recentStderrLines, diagnostic));
-        cleanupFailure =
-            runEngineCleanupStep(cleanupFailure, () -> System.err.println(diagnostic));
+        cleanupFailure = runEngineCleanupStep(cleanupFailure, () -> System.err.println(diagnostic));
         if (e instanceof Error) {
           // Settlement must wake an exact startup waiter, but broadening this boundary must not
           // downgrade JVM Errors for ordinary command callers that historically observed them.
@@ -13534,10 +13463,7 @@ public class Leelaz {
       if (EngineManager.occupiesEngineGameAdmission()) {
         int commandNumber = commandNumberSnapshot();
         Lizzie.gtpConsole.addCommandForEngineGame(
-            command,
-            commandNumber,
-            oriEnginename,
-            EngineManager.isActiveBlackParticipant(this));
+            command, commandNumber, oriEnginename, EngineManager.isActiveBlackParticipant(this));
 
       } else if (Lizzie.gtpConsole != null
           && ((Lizzie.config != null && Lizzie.config.alwaysGtp)
@@ -13563,8 +13489,7 @@ public class Leelaz {
             runEngineCleanupStep(
                 cleanupFailure, () -> queuedCommand.publishSettlementFailure(commandFailure));
       }
-      cleanupFailure =
-          retireOutstandingResponseCountOnSendFailure(pendingHandler, cleanupFailure);
+      cleanupFailure = retireOutstandingResponseCountOnSendFailure(pendingHandler, cleanupFailure);
       if (queuedCommand.failOnSendError) {
         throw commandFailure;
       }
@@ -13613,14 +13538,11 @@ public class Leelaz {
     }
     Throwable cleanupFailure = failure;
     cleanupFailure =
-        runEngineCleanupStep(
-            cleanupFailure, () -> removePendingResponseHandler(pendingHandler));
-    cleanupFailure =
-        retireOutstandingResponseCountOnSendFailure(pendingHandler, cleanupFailure);
+        runEngineCleanupStep(cleanupFailure, () -> removePendingResponseHandler(pendingHandler));
+    cleanupFailure = retireOutstandingResponseCountOnSendFailure(pendingHandler, cleanupFailure);
     RuntimeException settledFailure = failure;
     cleanupFailure =
-        runEngineCleanupStep(
-            cleanupFailure, () -> queuedCommand.notifySendFailure(settledFailure));
+        runEngineCleanupStep(cleanupFailure, () -> queuedCommand.notifySendFailure(settledFailure));
     runEngineCleanupStep(cleanupFailure, () -> noteCommandFailed(pendingHandler));
     if (queuedCommand.failOnSendError
         && !(queuedCommand.onResponse instanceof MoveFocusResponse
@@ -13652,8 +13574,7 @@ public class Leelaz {
       cancelQueuedEngineGameRequests(commandQueue(), transaction, failure, cancelled);
       cancelQueuedEngineGameRequests(
           foregroundRestoreCommandQueue(), transaction, failure, cancelled);
-      cancelEngineGameRequestBeforeWrite(
-          normalCommandBeingSent, transaction, failure, cancelled);
+      cancelEngineGameRequestBeforeWrite(normalCommandBeingSent, transaction, failure, cancelled);
       ArrayDeque<PendingResponseHandler> pending = pendingResponseHandlers();
       synchronized (pending) {
         Iterator<PendingResponseHandler> iterator = pending.iterator();
@@ -13981,7 +13902,6 @@ public class Leelaz {
         0L);
   }
 
-
   private static boolean isTrackedExactSnapshotRestoreCommand(String command) {
     return command != null
         && (command.startsWith("loadsgf ")
@@ -14000,11 +13920,9 @@ public class Leelaz {
   }
 
   private boolean requiresMatchingResponseCommandId(
-      String command,
-      Runnable handler,
-      boolean exactLoadSgf,
-      QueuedCommand queuedCommand) {
-    return handler instanceof MoveFocusResponse || handler instanceof BoardSynchronizationResponseHandler
+      String command, Runnable handler, boolean exactLoadSgf, QueuedCommand queuedCommand) {
+    return handler instanceof MoveFocusResponse
+        || handler instanceof BoardSynchronizationResponseHandler
         || (queuedCommand != null && queuedCommand.positionResponseTimeout != null)
         || handler instanceof EngineGameResponseHandler
         || handler instanceof EngineGameTimeLeftResponseHandler
@@ -14018,9 +13936,7 @@ public class Leelaz {
             && (command.startsWith("kata-get-param ") || command.startsWith("kata-set-param ")));
   }
 
-
-  private int nextResponseCommandId(
-      String command, Runnable handler, QueuedCommand queuedCommand) {
+  private int nextResponseCommandId(String command, Runnable handler, QueuedCommand queuedCommand) {
     if (command != null && command.startsWith("loadsgf ")) {
       return loadSgfResponseCommandIds.getAndIncrement();
     }
@@ -14030,7 +13946,8 @@ public class Leelaz {
     if (queuedCommand != null && queuedCommand.positionResponseTimeout != null) {
       return boardSynchronizationResponseCommandIds.getAndIncrement();
     }
-    if (handler instanceof MoveFocusResponse || handler instanceof BoardSynchronizationResponseHandler) {
+    if (handler instanceof MoveFocusResponse
+        || handler instanceof BoardSynchronizationResponseHandler) {
       return boardSynchronizationResponseCommandIds.getAndIncrement();
     }
     if (handler instanceof EngineGameResponseHandler) {
@@ -14145,8 +14062,7 @@ public class Leelaz {
                 foregroundRestoreCommandQueue(), handler, trackedLoadSgfOnly, failure);
       }
       if (retiredQueued == null) {
-        retiredPending =
-            removePendingResponseHandlerIfRetirementSafe(handler, trackedLoadSgfOnly);
+        retiredPending = removePendingResponseHandlerIfRetirementSafe(handler, trackedLoadSgfOnly);
         if (retiredPending != null) {
           retirePendingResponseCountWithoutResponse(retiredPending);
           if (retiredPending.isExactSnapshotLoadSgf()) {
@@ -14268,9 +14184,7 @@ public class Leelaz {
   }
 
   private void completeEngineGamePassingResponse(
-      EngineGameResponseHandler handler,
-      ReaderStreamBinding binding,
-      String coordinate) {
+      EngineGameResponseHandler handler, ReaderStreamBinding binding, String coordinate) {
     int responseCommandId = NO_RESPONSE_COMMAND_ID;
     ArrayDeque<PendingResponseHandler> handlers = pendingResponseHandlers();
     synchronized (handlers) {
@@ -14407,8 +14321,7 @@ public class Leelaz {
     }
     ReaderStreamBinding binding = (ReaderStreamBinding) sourceEngineIncarnation;
     PendingResponseHandler pending = peekPendingResponseHandler(line);
-    if (pending == null
-        || pending.isStaleResponseBinding(binding, currentReaderStreamBinding())) {
+    if (pending == null || pending.isStaleResponseBinding(binding, currentReaderStreamBinding())) {
       return null;
     }
     return pending.queuedCommand.engineGameStartupTransaction();
@@ -14531,7 +14444,6 @@ public class Leelaz {
       return null;
     }
   }
-
 
   // Response-binding tests invoke this directly to isolate handler routing from queue counters.
   private boolean runPendingResponseHandlerForLine(String line) {
@@ -14729,8 +14641,6 @@ public class Leelaz {
     return startReservedExclusiveGtpSession(session);
   }
 
-
-
   private ExclusiveGtpSession reserveExclusiveGtpSession(
       Object owner, Consumer<String> lineConsumer, Runnable onReady, Runnable onClosed) {
     ExclusiveGtpSession session =
@@ -14768,8 +14678,6 @@ public class Leelaz {
     }
     return ExclusiveGtpLeaseAvailability.AVAILABLE;
   }
-
-
 
   public ExclusiveGtpLeaseAvailability beginForegroundAnalysisLease(
       Object owner, Consumer<String> lineConsumer, Runnable onReady, Runnable onClosed) {
@@ -14813,8 +14721,7 @@ public class Leelaz {
       Consumer<ForegroundAnalysisLease> onReady,
       Consumer<ForegroundAnalysisLease> onClosed,
       boolean reportRestoreFailureToUser) {
-    ForegroundAnalysisLease lease =
-        new ForegroundAnalysisLease(this, reportRestoreFailureToUser);
+    ForegroundAnalysisLease lease = new ForegroundAnalysisLease(this, reportRestoreFailureToUser);
     ExclusiveGtpLeaseAvailability availability =
         beginForegroundAnalysisLease(
             lease,
@@ -14835,14 +14742,10 @@ public class Leelaz {
         lease);
   }
 
-
-
-
   private boolean isWebTrialEngineBusy() {
     return Lizzie.webBoardManager != null
         && Lizzie.webBoardManager.isEngineOperationExcludedByTrial();
   }
-
 
   private void recordForegroundAnalysisLeaseFailure(
       ExclusiveGtpSession session, ForegroundAnalysisLeaseFailure failure) {
@@ -14850,7 +14753,6 @@ public class Leelaz {
       ((ForegroundAnalysisLease) session.owner).recordFailure(failure);
     }
   }
-
 
   public ExclusiveGtpLeaseAvailability previewForegroundAnalysisLeaseAvailability() {
     synchronized (engineArbitrationLock()) {
@@ -14870,7 +14772,6 @@ public class Leelaz {
       return foregroundEngineUseAvailability();
     }
   }
-
 
   private ExclusiveGtpLeaseAvailability foregroundEngineUseAvailability() {
     if (Lizzie.frame != null
@@ -14977,8 +14878,7 @@ public class Leelaz {
         return false;
       }
     }
-    return writeExclusiveGtpCommand(
-        session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
+    return writeExclusiveGtpCommand(session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
   }
 
   /** Long-lived adapters must present their owner on every write, including cancellation. */
@@ -14986,16 +14886,19 @@ public class Leelaz {
     ExclusiveGtpSession session;
     synchronized (engineArbitrationLock()) {
       session = exclusiveGtpSession;
-      if (session == null || session.owner != owner || !session.active || session.closing
-          || session.readerBinding != readerStreamBinding || session.readerBinding == null
-          || session.readerBinding.terminated || session.releaseRequested
-          || command == null || command.trim().isEmpty()) return false;
+      if (session == null
+          || session.owner != owner
+          || !session.active
+          || session.closing
+          || session.readerBinding != readerStreamBinding
+          || session.readerBinding == null
+          || session.readerBinding.terminated
+          || session.releaseRequested
+          || command == null
+          || command.trim().isEmpty()) return false;
     }
     return writeExclusiveGtpCommand(session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command);
   }
-
-
-
 
   public void endExclusiveGtpSession() {
     ExclusiveGtpSession session;
@@ -15095,17 +14998,22 @@ public class Leelaz {
       return exclusiveGtpSession != null && exclusiveGtpSession.owner == owner;
     }
   }
+
   /** Fox's nonblocking write-start claim shares the physical reader ownership boundary. */
   boolean claimFoxSubmission(Object owner, java.util.function.BooleanSupplier claim) {
     synchronized (engineArbitrationLock()) {
       ExclusiveGtpSession session = exclusiveGtpSession;
-      return session != null && session.owner == owner && session.active && !session.closing
-          && !session.releaseRequested && session.readerBinding != null
-          && session.readerBinding == readerStreamBinding && !session.readerBinding.terminated
+      return session != null
+          && session.owner == owner
+          && session.active
+          && !session.closing
+          && !session.releaseRequested
+          && session.readerBinding != null
+          && session.readerBinding == readerStreamBinding
+          && !session.readerBinding.terminated
           && claim.getAsBoolean();
     }
   }
-
 
   boolean setForegroundAnalysisLeaseRestoreRules(Object owner, String rules) {
     synchronized (engineArbitrationLock()) {
@@ -15126,8 +15034,14 @@ public class Leelaz {
   boolean setFoxRestoreState(Object owner, String rules, double maxTime, long maxVisits) {
     synchronized (engineArbitrationLock()) {
       ExclusiveGtpSession session = exclusiveGtpSession;
-      if (session == null || session.owner != owner || !session.active || session.closing
-          || !Double.isFinite(maxTime) || maxTime <= 0 || maxVisits <= 0 || rules == null) return false;
+      if (session == null
+          || session.owner != owner
+          || !session.active
+          || session.closing
+          || !Double.isFinite(maxTime)
+          || maxTime <= 0
+          || maxVisits <= 0
+          || rules == null) return false;
       session.originalRules = rules;
       session.foxMaxTime = maxTime;
       session.foxMaxVisits = maxVisits;
@@ -15139,34 +15053,57 @@ public class Leelaz {
   public CompletableFuture<FoxEngineSession.Limits> queryFoxLimits() {
     ReaderStreamBinding binding = readerStreamBinding;
     long generation = Lizzie.capturePrimaryEngineGeneration(this);
-    return queryFoxLimit("maxTime", binding, generation).thenCompose(time ->
-        queryFoxLimit("maxVisits", binding, generation).thenApply(visits ->
-            new FoxEngineSession.Limits(Double.parseDouble(time), Long.parseLong(visits))));
+    return queryFoxLimit("maxTime", binding, generation)
+        .thenCompose(
+            time ->
+                queryFoxLimit("maxVisits", binding, generation)
+                    .thenApply(
+                        visits ->
+                            new FoxEngineSession.Limits(
+                                Double.parseDouble(time), Long.parseLong(visits))));
   }
 
   private CompletableFuture<String> queryFoxLimit(
       String parameter, ReaderStreamBinding binding, long generation) {
     CompletableFuture<String> result = new CompletableFuture<>();
-    Runnable response = () -> {
-      if (generation < 0 || Lizzie.capturePrimaryEngineGeneration(this) != generation
-          || !isCurrentLiveEngineIncarnation(binding) || isCurrentCommandResponseError()) {
-        result.completeExceptionally(new IllegalStateException("Fox parameter query failed"));
-      } else result.complete(gtpResponsePayload(currentCommandResponseLine()));
-    };
-    COMMAND_DISPATCH_EXECUTOR.execute(() -> {
-      if (generation < 0 || Lizzie.capturePrimaryEngineGeneration(this) != generation
-          || !isCurrentLiveEngineIncarnation(binding)
-          || !sendCommand("kata-get-param " + parameter, response,
-              result::completeExceptionally, true, false, null, false, binding)) {
-        result.completeExceptionally(new IllegalStateException("Fox parameter query unavailable"));
-        return;
-      }
-      var timeout = RUNTIME_THREAD_TIMEOUT_EXECUTOR.schedule(() -> {
-        if (result.completeExceptionally(new IllegalStateException("Fox parameter query timeout")))
-          retireTimedOutNormalCommand(response);
-      }, 5, TimeUnit.SECONDS);
-      result.whenComplete((value, failure) -> timeout.cancel(false));
-    });
+    Runnable response =
+        () -> {
+          if (generation < 0
+              || Lizzie.capturePrimaryEngineGeneration(this) != generation
+              || !isCurrentLiveEngineIncarnation(binding)
+              || isCurrentCommandResponseError()) {
+            result.completeExceptionally(new IllegalStateException("Fox parameter query failed"));
+          } else result.complete(gtpResponsePayload(currentCommandResponseLine()));
+        };
+    COMMAND_DISPATCH_EXECUTOR.execute(
+        () -> {
+          if (generation < 0
+              || Lizzie.capturePrimaryEngineGeneration(this) != generation
+              || !isCurrentLiveEngineIncarnation(binding)
+              || !sendCommand(
+                  "kata-get-param " + parameter,
+                  response,
+                  result::completeExceptionally,
+                  true,
+                  false,
+                  null,
+                  false,
+                  binding)) {
+            result.completeExceptionally(
+                new IllegalStateException("Fox parameter query unavailable"));
+            return;
+          }
+          var timeout =
+              RUNTIME_THREAD_TIMEOUT_EXECUTOR.schedule(
+                  () -> {
+                    if (result.completeExceptionally(
+                        new IllegalStateException("Fox parameter query timeout")))
+                      retireTimedOutNormalCommand(response);
+                  },
+                  5,
+                  TimeUnit.SECONDS);
+          result.whenComplete((value, failure) -> timeout.cancel(false));
+        });
     return result;
   }
 
@@ -15186,7 +15123,6 @@ public class Leelaz {
           && (Lizzie.config == null || !Lizzie.config.isDoubleEngineMode())
           && readBoardGmaReservation == null
           && !hasLifecycleCompletionLocked()
-         
           && !foregroundRestoreInProgress
           && !exclusiveGtpLifecycleTransition
           && exclusiveGtpSession == null;
@@ -15213,7 +15149,6 @@ public class Leelaz {
     }
     return new ExclusiveGtpLifecycleReservation(this, owner);
   }
-
 
   public EngineModeReservation beginEngineModeReservation() {
     synchronized (engineArbitrationLock()) {
@@ -15378,7 +15313,8 @@ public class Leelaz {
           || hasLifecycleCompletionLocked()) {
         return true;
       }
-      return exclusiveGtpLifecycleTransition && exclusiveGtpLifecycleOwner != Thread.currentThread();
+      return exclusiveGtpLifecycleTransition
+          && exclusiveGtpLifecycleOwner != Thread.currentThread();
     }
   }
 
@@ -15493,7 +15429,6 @@ public class Leelaz {
     analysisOutputGeneration.incrementAndGet();
   }
 
-
   private boolean canCaptureExactSnapshotRestoreAdmission(
       ExactSnapshotRestoreOwner owner, Object ownerIdentity) {
     switch (owner) {
@@ -15535,6 +15470,7 @@ public class Leelaz {
                 || exclusiveGtpLifecycleOwner != allowedLifecycleOwner))
         || exclusiveGtpSession != null;
   }
+
   private boolean hasConflictingBoardSyncRestoreWorkLocked() {
     return readBoardGmaReservation != null
         || readBoardGmaRestoreBarrier != null
@@ -15585,8 +15521,7 @@ public class Leelaz {
     }
   }
 
-  private boolean isExactSnapshotRestoreAdmissionValid(
-      ExactSnapshotRestoreAdmission admission) {
+  private boolean isExactSnapshotRestoreAdmissionValid(ExactSnapshotRestoreAdmission admission) {
     if (admission == null || !admission.includes(this)) {
       return false;
     }
@@ -15596,8 +15531,7 @@ public class Leelaz {
     }
     if (admission.owner == ExactSnapshotRestoreOwner.BOARD_SYNC
         && admission.primaryEngineGeneration >= 0
-        && Lizzie.capturePrimaryEngineGeneration(authority)
-            != admission.primaryEngineGeneration) {
+        && Lizzie.capturePrimaryEngineGeneration(authority) != admission.primaryEngineGeneration) {
       return false;
     }
     synchronized (authority.engineArbitrationLock()) {
@@ -15682,7 +15616,8 @@ public class Leelaz {
   void markFoxPdaUnconfirmed(Object owner) {
     synchronized (engineArbitrationLock()) {
       ExclusiveGtpSession session = exclusiveGtpSession;
-      if (session == null || session.owner != owner || session.readerBinding != readerStreamBinding) return;
+      if (session == null || session.owner != owner || session.readerBinding != readerStreamBinding)
+        return;
       session.restoreFailed = true;
       recordForegroundAnalysisLeaseFailure(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED);
     }
@@ -15766,13 +15701,10 @@ public class Leelaz {
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore =
           history == null
               ? null
-              : ExactSnapshotEngineRestore.prepare(
-                      admission, history.getCurrentHistoryNode())
+              : ExactSnapshotEngineRestore.prepare(admission, history.getCurrentHistoryNode())
                   .orElse(null);
       Double komi =
-          history == null || history.getGameInfo() == null
-              ? null
-              : history.getGameInfo().getKomi();
+          history == null || history.getGameInfo() == null ? null : history.getGameInfo().getKomi();
       return new ForegroundRestoreCapture(
           preparedRestore,
           admission,
@@ -15801,8 +15733,7 @@ public class Leelaz {
       session.releaseRequested = true;
       session.afterRestore = afterRestore;
       session.afterRestoreFailure = afterRestoreFailure;
-      recordForegroundAnalysisLeaseFailure(
-          session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED);
+      recordForegroundAnalysisLeaseFailure(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED);
       session.restoreFailed = true;
       session.closing = true;
     }
@@ -15812,11 +15743,6 @@ public class Leelaz {
     restoreAfterClosedForegroundLease(session);
     return true;
   }
-
-
-
-
-
 
   protected long foregroundReleaseStopTimeoutMillis() {
     return FOREGROUND_RELEASE_STOP_TIMEOUT_MILLIS;
@@ -15878,7 +15804,6 @@ public class Leelaz {
     System.err.println(message);
   }
 
-
   private void scheduleExclusiveGtpReleaseStopTimeout(ExclusiveGtpSession session) {
     Timer timeout = new Timer("lizzie-exclusive-gtp-release-stop-timeout", true);
     TimerTask timeoutTask =
@@ -15904,7 +15829,6 @@ public class Leelaz {
     }
   }
 
-
   private void cancelExclusiveGtpReleaseStopTimeout(ExclusiveGtpSession session) {
     Timer timeout;
     synchronized (engineArbitrationLock()) {
@@ -15917,9 +15841,7 @@ public class Leelaz {
   }
 
   private void failForegroundLeaseRelease(
-      ExclusiveGtpSession session,
-      ForegroundAnalysisLeaseFailure failureReason,
-      String detail) {
+      ExclusiveGtpSession session, ForegroundAnalysisLeaseFailure failureReason, String detail) {
     cancelExclusiveGtpReleaseStopTimeout(session);
     synchronized (engineArbitrationLock()) {
       if (session == null
@@ -15940,10 +15862,6 @@ public class Leelaz {
     System.err.println(message);
     restoreAfterClosedForegroundLease(session);
   }
-
-
-
-
 
   private void restoreAfterClosedForegroundLease(ExclusiveGtpSession session) {
     cancelExclusiveGtpInitialStopTimeout(session);
@@ -16014,7 +15932,8 @@ public class Leelaz {
         try {
           EngineRulesResult restoredRules = queryEngineRulesOperation(5000).await(6000);
           KataGoRules expectedRules = KataGoRules.parse(session.originalRules).orElseThrow();
-          if (restoredRules == null || !restoredRules.isConfirmed()
+          if (restoredRules == null
+              || !restoredRules.isConfirmed()
               || !expectedRules.semanticallyEquals(restoredRules.observed())) {
             throw new IllegalStateException("Fox restored rules readback was not confirmed");
           }
@@ -16023,7 +15942,8 @@ public class Leelaz {
           throw new IllegalStateException("Fox restored rules readback interrupted", interrupted);
         }
         confirmForegroundRestoreCommand(session, "kata-set-param maxTime " + session.foxMaxTime);
-        confirmForegroundRestoreCommand(session, "kata-set-param maxVisits " + session.foxMaxVisits);
+        confirmForegroundRestoreCommand(
+            session, "kata-set-param maxVisits " + session.foxMaxVisits);
         confirmForegroundRestoreCommand(session, "kata-time_settings none");
       } else if (session.originalRules != null) {
         sendCommand("kata-set-rules " + session.originalRules);
@@ -16047,17 +15967,24 @@ public class Leelaz {
 
   private void confirmForegroundRestoreCommand(ExclusiveGtpSession session, String command) {
     CompletableFuture<Void> confirmed = new CompletableFuture<>();
-    sendCommand(command, () -> {
-      if (currentCommandResponseError) {
-        confirmed.completeExceptionally(new IllegalStateException(currentCommandResponseLine));
-      } else {
-        confirmed.complete(null);
-      }
-    }, confirmed::completeExceptionally, true, false);
+    sendCommand(
+        command,
+        () -> {
+          if (currentCommandResponseError) {
+            confirmed.completeExceptionally(new IllegalStateException(currentCommandResponseLine));
+          } else {
+            confirmed.complete(null);
+          }
+        },
+        confirmed::completeExceptionally,
+        true,
+        false);
     try {
       confirmed.get(5, java.util.concurrent.TimeUnit.SECONDS);
-      if (session.readerBinding != readerStreamBinding || session.readerBinding.terminated
-          || Lizzie.leelaz != this || isForegroundRestoreCompleted(session)) {
+      if (session.readerBinding != readerStreamBinding
+          || session.readerBinding.terminated
+          || Lizzie.leelaz != this
+          || isForegroundRestoreCompleted(session)) {
         throw new IllegalStateException("Fox restore engine instance changed");
       }
     } catch (Exception failure) {
@@ -16363,10 +16290,7 @@ public class Leelaz {
     classifyTrackedLoadSgfReset(
         normalCommandBeingSent, failure, cancelledLoadSgfCommands, sentLoadSgfCommands);
     classifyEngineGameReset(
-        normalCommandBeingSent,
-        failure,
-        cancelledEngineGameCommands,
-        sentEngineGameCommands);
+        normalCommandBeingSent, failure, cancelledEngineGameCommands, sentEngineGameCommands);
     commandQueue().clear();
     foregroundRestoreCommandQueue().clear();
     synchronized (handlers) {
@@ -16375,10 +16299,7 @@ public class Leelaz {
         PendingResponseHandler handler = iterator.next();
         if (handler.queuedCommand.requiresStateReset()) {
           classifyEngineGameReset(
-              handler.queuedCommand,
-              failure,
-              cancelledEngineGameCommands,
-              sentEngineGameCommands);
+              handler.queuedCommand, failure, cancelledEngineGameCommands, sentEngineGameCommands);
           boolean cancelled =
               classifyTrackedLoadSgfReset(
                   handler.queuedCommand, failure, cancelledLoadSgfCommands, sentLoadSgfCommands);
@@ -16493,8 +16414,7 @@ public class Leelaz {
     }
   }
 
-  private static Throwable appendEngineCommandResetFailure(
-      Throwable primary, Throwable cleanup) {
+  private static Throwable appendEngineCommandResetFailure(Throwable primary, Throwable cleanup) {
     if (primary == null) {
       return cleanup;
     }
@@ -16624,8 +16544,11 @@ public class Leelaz {
   }
 
   private ExclusiveGtpWriteResult writeExclusiveGtpCommandResult(
-      ExclusiveGtpSession expectedSession, ExclusiveGtpWritePhase phase, int expectedCommandId,
-      String command, Runnable onPhysicalWrite) {
+      ExclusiveGtpSession expectedSession,
+      ExclusiveGtpWritePhase phase,
+      int expectedCommandId,
+      String command,
+      Runnable onPhysicalWrite) {
     if (!hasGtpCapability()) {
       return ExclusiveGtpWriteResult.NOT_CLAIMED;
     }
@@ -16641,7 +16564,8 @@ public class Leelaz {
           }
           if (phase == ExclusiveGtpWritePhase.ACTIVE_COMMAND
               && command.contains(" kata-search_analyze_cancellable ")) {
-            expectedSession.finiteSearchId = Integer.parseInt(command.substring(0, command.indexOf(' ')));
+            expectedSession.finiteSearchId =
+                Integer.parseInt(command.substring(0, command.indexOf(' ')));
             expectedSession.finiteSearchPlayed = false;
             expectedSession.finiteSearchError = false;
           }
@@ -16663,9 +16587,7 @@ public class Leelaz {
   }
 
   private boolean canWriteExclusiveGtpCommand(
-      ExclusiveGtpSession expectedSession,
-      ExclusiveGtpWritePhase phase,
-      int expectedCommandId) {
+      ExclusiveGtpSession expectedSession, ExclusiveGtpWritePhase phase, int expectedCommandId) {
     if (exclusiveGtpSession != expectedSession
         || expectedSession == null
         || expectedSession.closing
@@ -16688,13 +16610,13 @@ public class Leelaz {
             && !expectedSession.releaseStopFailed
             && expectedSession.releaseStopCommandId == expectedCommandId;
       case RESTORE_PARAMETERS:
-        return expectedSession.parametersRestoring && expectedSession.releaseRequested
+        return expectedSession.parametersRestoring
+            && expectedSession.releaseRequested
             && expectedSession.restoringSearchParameters.containsKey(expectedCommandId);
       default:
         return false;
     }
   }
-
 
   private boolean dispatchExclusiveGtpLine(String line) {
     return dispatchExclusiveGtpLine(currentReaderStreamBinding(), line);
@@ -16709,7 +16631,8 @@ public class Leelaz {
         || binding.terminated) {
       return false;
     }
-    if (session.owner instanceof FoxEngineSession fox) fox.transcript.received(line == null ? "" : line);
+    if (session.owner instanceof FoxEngineSession fox)
+      fox.transcript.received(line == null ? "" : line);
     String trimmed = line == null ? "" : line.trim();
     synchronized (engineArbitrationLock()) {
       if (trimmed.startsWith("=") || trimmed.startsWith("?")) {
@@ -16717,7 +16640,8 @@ public class Leelaz {
         if (session.responseHeaderId == session.finiteSearchId && trimmed.startsWith("?")) {
           session.finiteSearchError = true;
         }
-      } else if (session.responseHeaderId == session.finiteSearchId && session.finiteSearchId != 0) {
+      } else if (session.responseHeaderId == session.finiteSearchId
+          && session.finiteSearchId != 0) {
         if (trimmed.startsWith("play ")) session.finiteSearchPlayed = true;
         if (trimmed.isEmpty() && (session.finiteSearchPlayed || session.finiteSearchError)) {
           session.finiteSearchId = 0;
@@ -16777,9 +16701,11 @@ public class Leelaz {
                 && trimmed.startsWith("?")) {
               parameterFailure = true;
             }
-            if (trimmed.isEmpty()) session.restoringSearchParameters.remove(session.responseHeaderId);
+            if (trimmed.isEmpty())
+              session.restoringSearchParameters.remove(session.responseHeaderId);
           }
-          if (trimmed.isEmpty() && session.releaseStopAcknowledged
+          if (trimmed.isEmpty()
+              && session.releaseStopAcknowledged
               && session.responseHeaderId == session.releaseStopCommandId) {
             session.releaseStopComplete = true;
           }
@@ -16796,7 +16722,9 @@ public class Leelaz {
       }
       if (parameterFailure) {
         // Failure completion takes Board; navigation takes Board before arbitration.
-        failForegroundLeaseRelease(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED,
+        failForegroundLeaseRelease(
+            session,
+            ForegroundAnalysisLeaseFailure.RESTORE_FAILED,
             "search parameter restore failed");
         return true;
       }
@@ -16821,17 +16749,19 @@ public class Leelaz {
       }
     }
     for (Map.Entry<Integer, String> entry : commands.entrySet()) {
-      if (!writeExclusiveGtpCommand(session, ExclusiveGtpWritePhase.RESTORE_PARAMETERS,
-          entry.getKey(), entry.getKey() + " " + entry.getValue())) {
-        failForegroundLeaseRelease(session, ForegroundAnalysisLeaseFailure.RESTORE_FAILED,
+      if (!writeExclusiveGtpCommand(
+          session,
+          ExclusiveGtpWritePhase.RESTORE_PARAMETERS,
+          entry.getKey(),
+          entry.getKey() + " " + entry.getValue())) {
+        failForegroundLeaseRelease(
+            session,
+            ForegroundAnalysisLeaseFailure.RESTORE_FAILED,
             "search parameter restore write failed");
         return;
       }
     }
   }
-
-
-
 
   private boolean completeExclusiveGtpInitialStopBoundary(
       ExclusiveGtpSession session, ReaderStreamBinding binding) {
@@ -16865,20 +16795,6 @@ public class Leelaz {
     }
     return true;
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   private void abortExclusiveGtpSession() {
     abortExclusiveGtpSession(exclusiveGtpSession);
@@ -16936,6 +16852,7 @@ public class Leelaz {
 
   private static final class RecoverableBufferedOutputStream extends BufferedOutputStream {
     private boolean partialWriteDetected;
+
     /** True after at least one byte reached the delegate and until its flush succeeds. */
     private boolean delegatedBytesAwaitingFlush;
 
@@ -17153,8 +17070,7 @@ public class Leelaz {
               context,
               () -> {
                 while (true) {
-                  EngineGameResponseHandler active =
-                      owner.activeEngineGameResponseHandler.get();
+                  EngineGameResponseHandler active = owner.activeEngineGameResponseHandler.get();
                   if (active != null
                       && active.state.get() != SETTLED
                       && active.binding == binding) {
@@ -17300,8 +17216,7 @@ public class Leelaz {
             if (mirror != null) {
               synchronizeBoardSize(mirror);
             }
-            board.resendMoveToEngineFromRoot(
-                engine, mirror, false, false, rootMoves, rootKomi);
+            board.resendMoveToEngineFromRoot(engine, mirror, false, false, rootMoves, rootKomi);
           };
       engine.withExactSnapshotRestoreAdmission(
           admission,
@@ -17361,6 +17276,7 @@ public class Leelaz {
     private Thread restoreThread;
     private Timer releaseStopTimeout;
     private Timer restoreTimeout;
+
     /** Reader borrowed by this session; a later reader never inherits its restore failure. */
     private ReaderStreamBinding readerBinding;
 
@@ -17377,14 +17293,6 @@ public class Leelaz {
       this.stopCommandId = stopCommandId;
     }
   }
-
-
-
-
-
-
-
-
 
   public static final class ForegroundAnalysisLeaseAcquisition {
     private final ExclusiveGtpLeaseAvailability availability;
@@ -17457,8 +17365,9 @@ public class Leelaz {
         session = engine.exclusiveGtpSession;
         if (!isActiveBuiltInZhizi() || session.owner != this) return false;
       }
-      return engine.writeExclusiveGtpCommandResult(session, ExclusiveGtpWritePhase.ACTIVE_COMMAND,
-          0, command, onPhysicalWrite) == ExclusiveGtpWriteResult.SENT;
+      return engine.writeExclusiveGtpCommandResult(
+              session, ExclusiveGtpWritePhase.ACTIVE_COMMAND, 0, command, onPhysicalWrite)
+          == ExclusiveGtpWriteResult.SENT;
     }
 
     boolean installSearchParameter(int id, String parameter, String original, String value) {
@@ -17469,8 +17378,11 @@ public class Leelaz {
         // Registration shares release admission; even an uncertain write must be restored.
         session.originalSearchParameters.putIfAbsent(parameter, original);
       }
-      return engine.writeExclusiveGtpCommand(session, ExclusiveGtpWritePhase.ACTIVE_COMMAND,
-          0, id + " kata-set-param " + parameter + " " + value);
+      return engine.writeExclusiveGtpCommand(
+          session,
+          ExclusiveGtpWritePhase.ACTIVE_COMMAND,
+          0,
+          id + " kata-set-param " + parameter + " " + value);
     }
 
     public boolean release(Runnable afterRestore, Runnable afterRestoreFailure) {
@@ -17532,8 +17444,12 @@ public class Leelaz {
 
     private void release(boolean restored) {
       if (!released.compareAndSet(false, true)) return;
-      boolean success = restored && !failed && !engineStateUnrestored
-          && currentReaderStreamBinding() == binding && !binding.terminated;
+      boolean success =
+          restored
+              && !failed
+              && !engineStateUnrestored
+              && currentReaderStreamBinding() == binding
+              && !binding.terminated;
       super.close();
       drained.complete(success);
     }
@@ -17557,13 +17473,13 @@ public class Leelaz {
         ReadBoardGmaReservation reservation = lastReadBoardGmaReservation;
         return reservation != null
                 && (readBoardGmaReservation == reservation || !reservation.drained.isDone())
-            ? reservation.drained : null;
+            ? reservation.drained
+            : null;
       }
     }
   }
 
-  void invalidateReadBoardGmaDrain(
-      ReadBoardGmaSession.ReservationReleaseCapability capability) {
+  void invalidateReadBoardGmaDrain(ReadBoardGmaSession.ReservationReleaseCapability capability) {
     if (capability.reservationOwner() instanceof ReadBoardGmaReservation reservation) {
       reservation.failed = true;
     }
@@ -17666,8 +17582,8 @@ public class Leelaz {
       restartClosedEngine(index, afterBoardRestore, null);
     }
 
-    void restartClosedEngine(
-        int index, Runnable afterBoardRestore, Consumer<String> onFailure) throws IOException {
+    void restartClosedEngine(int index, Runnable afterBoardRestore, Consumer<String> onFailure)
+        throws IOException {
       AutomaticRestartOperation ownedOperation;
       synchronized (this) {
         ownedOperation = operation;
@@ -17791,8 +17707,7 @@ public class Leelaz {
               ExactSnapshotRestoreOwner.LIFECYCLE, owner, effectiveMirror);
       ExactSnapshotEngineRestore.PreparedRestore preparedRestore = null;
       if (historyTarget != null) {
-        preparedRestore =
-            ExactSnapshotEngineRestore.prepare(admission, historyTarget).orElse(null);
+        preparedRestore = ExactSnapshotEngineRestore.prepare(admission, historyTarget).orElse(null);
       }
       return new AutomaticRestartRound(
           target,
@@ -17819,7 +17734,6 @@ public class Leelaz {
       return resumePonder;
     }
 
-
     private boolean synchronizeSessionRules() {
       BoardHistoryList.SessionRulesTarget rulesTarget = capturedFrame.sessionRulesTarget();
       if (rulesTarget == null) {
@@ -17836,11 +17750,7 @@ public class Leelaz {
         }
         if (Lizzie.frame != null
             && Lizzie.frame.requestLifecycleRulesOverride(
-                rulesTarget,
-                rulesPrimary,
-                rulesPrimaryGeneration,
-                rulesMirror,
-                targetResult)) {
+                rulesTarget, rulesPrimary, rulesPrimaryGeneration, rulesMirror, targetResult)) {
           return true;
         }
         return retireStaleRulesRoundOrThrow(
@@ -17855,11 +17765,7 @@ public class Leelaz {
           }
           if (Lizzie.frame != null
               && Lizzie.frame.requestLifecycleRulesOverride(
-                  rulesTarget,
-                  rulesPrimary,
-                  rulesPrimaryGeneration,
-                  rulesMirror,
-                  mirrorResult)) {
+                  rulesTarget, rulesPrimary, rulesPrimaryGeneration, rulesMirror, mirrorResult)) {
             return true;
           }
           return retireStaleRulesRoundOrThrow(
@@ -17874,6 +17780,7 @@ public class Leelaz {
         return capturedFrame.matches(EngineManager.BoardFrame.capture(board));
       }
     }
+
     private boolean retireStaleRulesRoundOrThrow(String message) {
       synchronized (board) {
         if (!capturedFrame.matches(EngineManager.BoardFrame.capture(board))) {
@@ -17882,7 +17789,6 @@ public class Leelaz {
         throw new IllegalStateException(message);
       }
     }
-
 
     private boolean execute() {
       if (!synchronizeSessionRules()) {
@@ -18017,8 +17923,7 @@ public class Leelaz {
         synchronization.start();
       } catch (IOException | RuntimeException | Error failure) {
         Throwable cleanupFailure =
-            failBeforeFence(
-                safeFailureDetail(failure, "automatic engine restart failed"));
+            failBeforeFence(safeFailureDetail(failure, "automatic engine restart failed"));
         addSuppressedFailure(failure, cleanupFailure);
         throw failure;
       }
@@ -18038,12 +17943,9 @@ public class Leelaz {
         converge();
       } catch (RuntimeException | Error failure) {
         Throwable cleanupFailure =
-            failBeforeFence(
-                safeFailureDetail(
-                    failure, "automatic engine board restore failed"));
+            failBeforeFence(safeFailureDetail(failure, "automatic engine board restore failed"));
         addSuppressedFailure(failure, cleanupFailure);
-        reportAutomaticRestartSettlementFailure(
-            "Automatic restart convergence failed", failure);
+        reportAutomaticRestartSettlementFailure("Automatic restart convergence failed", failure);
         return;
       }
       if (KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
@@ -18096,9 +17998,7 @@ public class Leelaz {
       BoardHistoryList history = board.getHistory();
       BoardHistoryNode historyTarget = history == null ? null : history.getCurrentHistoryNode();
       Double komi =
-          history == null || history.getGameInfo() == null
-              ? null
-              : history.getGameInfo().getKomi();
+          history == null || history.getGameInfo() == null ? null : history.getGameInfo().getKomi();
       return AutomaticRestartRound.captureWithMirror(
           Leelaz.this,
           board,
@@ -18209,8 +18109,7 @@ public class Leelaz {
       } catch (RuntimeException | Error failure) {
         settlementFailure = failure;
       }
-      settlementFailure =
-          combineFailures(settlementFailure, releaseBeforeFenceResources());
+      settlementFailure = combineFailures(settlementFailure, releaseBeforeFenceResources());
       notifyFailure(detail);
       notifyCompletion();
       return settlementFailure;
@@ -18378,8 +18277,7 @@ public class Leelaz {
           return installLocked(claim) ? claim : null;
         }
       }
-      return withOrderedEndpointLocks(
-          authority, mirror, () -> installLocked(claim) ? claim : null);
+      return withOrderedEndpointLocks(authority, mirror, () -> installLocked(claim) ? claim : null);
     }
 
     private static <T> T withOrderedEndpointLocks(
@@ -18431,23 +18329,20 @@ public class Leelaz {
       }
     }
 
-    void confirmFinalBoardSynchronization(
-        Runnable onSuccess, Consumer<String> onFailure) {
+    void confirmFinalBoardSynchronization(Runnable onSuccess, Consumer<String> onFailure) {
       startBoardSynchronizationAttempt(
           () -> completeSuccess(onSuccess, onFailure),
           detail -> completeFailure(detail, onFailure));
     }
 
-    void startBoardSynchronizationAttempt(
-        Runnable onSuccess, Consumer<String> onFailure) {
+    void startBoardSynchronizationAttempt(Runnable onSuccess, Consumer<String> onFailure) {
       if (!fenceStarted.compareAndSet(false, true)) {
         throw new IllegalStateException("Lifecycle completion fence has already started");
       }
       performBoardSynchronizationAttempt(onSuccess, onFailure);
     }
 
-    void continueBoardSynchronizationAttempt(
-        Runnable onSuccess, Consumer<String> onFailure) {
+    void continueBoardSynchronizationAttempt(Runnable onSuccess, Consumer<String> onFailure) {
       if (!fenceStarted.get() || settled.get()) {
         throw new IllegalStateException("Lifecycle completion fence is not pending");
       }
@@ -18464,16 +18359,19 @@ public class Leelaz {
           // Preserve the single-engine override seam; the production two-argument method delegates
           // to the paired implementation, while controlled/fake engines may provide their own
           // exact final-fence implementation here.
-          runAsCompletionFenceOwner(() -> authority.confirmBoardSynchronization(ownedSuccess, ownedFailure));
+          runAsCompletionFenceOwner(
+              () -> authority.confirmBoardSynchronization(ownedSuccess, ownedFailure));
         } else {
-          runAsCompletionFenceOwner(() -> authority.confirmBoardSynchronization(capturedMirror, ownedSuccess, ownedFailure));
+          runAsCompletionFenceOwner(
+              () ->
+                  authority.confirmBoardSynchronization(
+                      capturedMirror, ownedSuccess, ownedFailure));
         }
       } catch (RuntimeException | Error failure) {
         runAsCompletionFenceOwner(
             () ->
                 onFailure.accept(
-                    safeFailureDetail(
-                        failure, "lifecycle completion fence failed to start")));
+                    safeFailureDetail(failure, "lifecycle completion fence failed to start")));
       }
     }
 
@@ -18578,8 +18476,7 @@ public class Leelaz {
           runAsCompletionFenceOwner(
               () ->
                   onFailure.accept(
-                      safeFailureDetail(
-                          failure, "lifecycle completion callback failed")));
+                      safeFailureDetail(failure, "lifecycle completion callback failed")));
         } else {
           throw failure;
         }
@@ -18658,7 +18555,6 @@ public class Leelaz {
       super(engine, owner);
     }
   }
-
 
   private static final class TrackedLoadSgfConsumer {
     private final Leelaz targetEngine;
@@ -18966,8 +18862,7 @@ public class Leelaz {
     }
 
     @Override
-    public void onPhysicalWriteFailure(
-        Throwable physicalFailure, RuntimeException requestFailure) {
+    public void onPhysicalWriteFailure(Throwable physicalFailure, RuntimeException requestFailure) {
       try {
         if (engineGamePermit != null) {
           engineGamePermit.onRequestFailed(requestFailure);
@@ -19082,9 +18977,7 @@ public class Leelaz {
         new AtomicReference<>();
 
     private EngineGameCommandPermit(
-        Leelaz owner,
-        EngineManager.EngineGamePostMoveToken turn,
-        ReaderStreamBinding binding) {
+        Leelaz owner, EngineManager.EngineGamePostMoveToken turn, ReaderStreamBinding binding) {
       this.owner = owner;
       this.turn = turn;
       this.binding = binding;
@@ -19107,15 +19000,13 @@ public class Leelaz {
     @Override
     public void onWriteClaimed() {
       if (!state.compareAndSet(RESERVED, WRITE_CLAIMED)) {
-        throw new IllegalStateException(
-            "Engine-game turn changed before physical command output");
+        throw new IllegalStateException("Engine-game turn changed before physical command output");
       }
       EngineManager.EngineGamePhysicalRequestLease lease =
           EngineManager.claimEngineGamePostMoveOutput(turn, owner, binding);
       if (lease == null) {
         state.set(SETTLED);
-        throw new IllegalStateException(
-            "Engine-game turn changed before physical command output");
+        throw new IllegalStateException("Engine-game turn changed before physical command output");
       }
       physicalLease.set(lease);
       if (state.get() == SETTLED) {
@@ -19217,8 +19108,7 @@ public class Leelaz {
             "Engine-game startup transaction changed before physical command output");
       }
       EngineManager.EngineGamePhysicalRequestLease lease =
-          EngineManager.claimEngineGameStartupOutput(
-              transaction, owner, binding);
+          EngineManager.claimEngineGameStartupOutput(transaction, owner, binding);
       if (lease == null) {
         state.set(SETTLED);
         throw new IllegalStateException(
@@ -19272,8 +19162,10 @@ public class Leelaz {
     private final String command;
     private final Runnable onResponse;
     private final CommandSendFailureHandler onSendFailure;
+
     /** Internal queue-consistency link; deliberately separate from tracked restore callbacks. */
     private volatile CommandSendFailureHandler internalSendFailureHandler;
+
     private final boolean failOnSendError;
     private final QueuedCommandSettlement settlement;
     private final boolean countedCommand;
@@ -19282,12 +19174,14 @@ public class Leelaz {
     private ReaderStreamBinding ordinaryAnalysisBinding;
     private final ReaderStreamBinding readBoardGmaResponseBinding;
     private final Object expectedLeela0110StateToken;
-    private final ExactSnapshotRestoreAdmission restoreAdmission = exactSnapshotRestoreAdmissionContext.get();
+    private final ExactSnapshotRestoreAdmission restoreAdmission =
+        exactSnapshotRestoreAdmissionContext.get();
     private final LifecycleCompletionClaim completionOwner =
         lifecycleCompletionCommandContext.get() != null
-            && lifecycleCompletionCommandContext.get().authority.lifecycleCompletionClaim
-                == lifecycleCompletionCommandContext.get()
-            ? lifecycleCompletionCommandContext.get() : null;
+                && lifecycleCompletionCommandContext.get().authority.lifecycleCompletionClaim
+                    == lifecycleCompletionCommandContext.get()
+            ? lifecycleCompletionCommandContext.get()
+            : null;
     private boolean foregroundRestoreCommand;
     private RuntimeException cancellationFailure;
     private boolean outputWriteStarted;
@@ -19343,9 +19237,10 @@ public class Leelaz {
       this.failOnSendError = failOnSendError;
       this.settlement = settlement;
       this.countedCommand = countedCommand;
-      this.restartBootstrapReceipt = restoreAdmission != null
-              || lifecycleCompletionCommandContext.get() != null
-          ? null : restartBootstrapReceipt;
+      this.restartBootstrapReceipt =
+          restoreAdmission != null || lifecycleCompletionCommandContext.get() != null
+              ? null
+              : restartBootstrapReceipt;
       this.readBoardGmaResponseBinding = readBoardGmaResponseBinding;
       this.expectedLeela0110StateToken = expectedLeela0110StateToken;
       if (onResponse instanceof MoveFocusResponse) {
@@ -19433,8 +19328,7 @@ public class Leelaz {
         return ((EngineGameResponseHandler) onResponse).context.transaction;
       }
       if (settlement instanceof EngineGameCommandPermit) {
-        EngineManager.EngineGamePostMoveToken turn =
-            ((EngineGameCommandPermit) settlement).turn;
+        EngineManager.EngineGamePostMoveToken turn = ((EngineGameCommandPermit) settlement).turn;
         return turn == null ? null : turn.transaction;
       }
       if (settlement instanceof EngineGameStartupCommandPermit) {
@@ -19493,7 +19387,8 @@ public class Leelaz {
         if (onResponse instanceof MoveFocusResponse) {
           MoveFocusResponse focus = (MoveFocusResponse) onResponse;
           if (!focus.validBeforeWrite()) {
-            cancellationFailure = new IllegalStateException("Focus request retired before output write");
+            cancellationFailure =
+                new IllegalStateException("Focus request retired before output write");
             outstandingResponseRetired = true;
             focus.superseded = true;
             return false;
@@ -19515,8 +19410,7 @@ public class Leelaz {
       return true;
     }
 
-    private synchronized void installInternalSendFailureHandler(
-        CommandSendFailureHandler handler) {
+    private synchronized void installInternalSendFailureHandler(CommandSendFailureHandler handler) {
       if (handler == null) {
         return;
       }
@@ -19583,8 +19477,7 @@ public class Leelaz {
         permit.cancelBeforePhysicalWrite(permit.turn == null ? null : permit.turn.transaction);
       }
       if (settlement instanceof EngineGameStartupCommandPermit) {
-        EngineGameStartupCommandPermit permit =
-            (EngineGameStartupCommandPermit) settlement;
+        EngineGameStartupCommandPermit permit = (EngineGameStartupCommandPermit) settlement;
         permit.cancelBeforePhysicalWrite(permit.transaction);
       }
       if (settlement instanceof StartupCommandDelivery) {
@@ -19725,7 +19618,6 @@ public class Leelaz {
       this.retiredEngineGameHandler = retiredEngineGameHandler;
     }
   }
-
 
   private void rememberRecentLine(ArrayDeque<String> lines, String line) {
     if (lines == null || line == null) {
@@ -19875,8 +19767,6 @@ public class Leelaz {
     }
     //	ignoreCmdNumber=cmdNumber-1;
   }
-
-
 
   /**
    * @param color color of stone to play
@@ -20032,16 +19922,7 @@ public class Leelaz {
       String command, EngineManager.EngineGamePostMoveToken turn) {
     ReaderStreamBinding binding = currentReaderStreamBinding();
     EngineGameCommandPermit permit = new EngineGameCommandPermit(this, turn, binding);
-    boolean accepted =
-        sendCommand(
-            command,
-            null,
-            null,
-            true,
-            false,
-            permit,
-            false,
-            binding);
+    boolean accepted = sendCommand(command, null, null, true, false, permit, false, binding);
     if (!accepted) {
       EngineManager.failEngineGameTransaction(
           turn == null ? null : turn.transaction,
@@ -20052,10 +19933,7 @@ public class Leelaz {
 
   private boolean sendEngineGameTimeLeft(
       EngineManager.EngineGameClockSync sync, Runnable onSuccess) {
-    if (sync == null
-        || sync.endpoint != this
-        || sync.command == null
-        || onSuccess == null) {
+    if (sync == null || sync.endpoint != this || sync.command == null || onSuccess == null) {
       return false;
     }
     ReaderStreamBinding binding = currentReaderStreamBinding();
@@ -20067,15 +19945,7 @@ public class Leelaz {
     EngineGameTimeLeftResponseHandler responseHandler =
         new EngineGameTimeLeftResponseHandler(this, sync, onSuccess);
     boolean accepted =
-        sendCommand(
-            sync.command,
-            responseHandler,
-            null,
-            true,
-            false,
-            permit,
-            false,
-            binding);
+        sendCommand(sync.command, responseHandler, null, true, false, permit, false, binding);
     if (!accepted) {
       EngineManager.failEngineGameTransaction(
           sync.turn.transaction,
@@ -20156,14 +20026,7 @@ public class Leelaz {
               }
             }
           };
-      return sendCommand(
-          command,
-          null,
-          null,
-          false,
-          true,
-          settlement,
-          true);
+      return sendCommand(command, null, null, false, true, settlement, true);
     }
     if (inputCommand) {
       isInputCommand = true;
@@ -20222,8 +20085,7 @@ public class Leelaz {
     }
 
     private void preparePondering() {
-      prepareValue(
-          readBoardGmaPondering, ponder ? "true" : "false", this::prepareMaxTime);
+      prepareValue(readBoardGmaPondering, ponder ? "true" : "false", this::prepareMaxTime);
     }
 
     private void prepareMaxTime() {
@@ -20281,8 +20143,7 @@ public class Leelaz {
       setParam(param, String.valueOf(value), true, completion);
     }
 
-    private void prepareValue(
-        ReadBoardGmaRuntimeParam param, String value, Runnable completion) {
+    private void prepareValue(ReadBoardGmaRuntimeParam param, String value, Runnable completion) {
       if (finishCancellationIfRequested()) {
         return;
       }
@@ -20344,10 +20205,7 @@ public class Leelaz {
     }
 
     private void setParam(
-        ReadBoardGmaRuntimeParam param,
-        String value,
-        boolean overridden,
-        Runnable completion) {
+        ReadBoardGmaRuntimeParam param, String value, boolean overridden, Runnable completion) {
       sendPreparationCommand(
           "kata-set-param " + param.name + " " + value,
           response -> {
@@ -20385,8 +20243,7 @@ public class Leelaz {
         }
       }
       if (cancelled) {
-        completeReadBoardGmaEngineRestore(
-            cancellationSuccessCallback, cancellationFailureCallback);
+        completeReadBoardGmaEngineRestore(cancellationSuccessCallback, cancellationFailureCallback);
         return;
       }
       if (!sendReadBoardGmaCommand(color, sessionAdmission)) {
@@ -20529,9 +20386,7 @@ public class Leelaz {
     private Timer timeout;
 
     private ReadBoardGmaRestoreBarrier(
-        Runnable onSuccess,
-        Consumer<ReadBoardGmaRuntimeFailure> onFailure,
-        boolean sessionOwned) {
+        Runnable onSuccess, Consumer<ReadBoardGmaRuntimeFailure> onFailure, boolean sessionOwned) {
       this(onSuccess, onFailure, sessionOwned, null);
     }
 
@@ -20634,8 +20489,7 @@ public class Leelaz {
         return false;
       }
       readBoardGmaPreparation =
-          new ReadBoardGmaPreparation(
-              color, maxTimeSeconds, maxVisits, ponder, sessionAdmission);
+          new ReadBoardGmaPreparation(color, maxTimeSeconds, maxVisits, ponder, sessionAdmission);
     }
     readBoardGmaPreparation.start();
     return true;
@@ -20703,7 +20557,6 @@ public class Leelaz {
             owner, owner.currentReadBoardGmaIdentity(), owner.currentReadBoardGmaGeneration());
   }
 
-
   private boolean sendReadBoardGmaCommand(
       String color, ReadBoardGmaSessionAdmission sessionAdmission) {
     if (sessionAdmission != null && !admitReadBoardGmaSession(sessionAdmission)) {
@@ -20759,8 +20612,7 @@ public class Leelaz {
     }
   }
 
-  public void completeReadBoardGmaEngineRestore(
-      Runnable onSuccess, Consumer<String> onFailure) {
+  public void completeReadBoardGmaEngineRestore(Runnable onSuccess, Consumer<String> onFailure) {
     ReadBoardGmaRestoreBarrier barrier;
     List<ReadBoardGmaRuntimeParam> paramsToRestore = new ArrayList<>();
     synchronized (readBoardGmaLock()) {
@@ -20783,8 +20635,7 @@ public class Leelaz {
               },
               false);
       readBoardGmaRestoreBarrier = barrier;
-      registerReadBoardGmaRuntimeParamRestore(
-          barrier, readBoardGmaPondering, paramsToRestore);
+      registerReadBoardGmaRuntimeParamRestore(barrier, readBoardGmaPondering, paramsToRestore);
       registerReadBoardGmaRuntimeParamRestore(barrier, readBoardGmaMaxTime, paramsToRestore);
       registerReadBoardGmaRuntimeParamRestore(barrier, readBoardGmaMaxVisits, paramsToRestore);
     }
@@ -20852,13 +20703,11 @@ public class Leelaz {
     }
   }
 
-  private String readBoardGmaBindingFailureDetail(
-      ReadBoardGmaSession.FailureCategory category) {
+  private String readBoardGmaBindingFailureDetail(ReadBoardGmaSession.FailureCategory category) {
     return category == ReadBoardGmaSession.FailureCategory.PROCESS_TERMINATED
         ? "ReadBoard GMA runtime participant engine process terminated"
         : "ReadBoard GMA runtime participant belongs to a stale engine incarnation";
   }
-
 
   private Object readBoardGmaLock() {
     Object lock = readBoardGmaLock;
@@ -20893,13 +20742,23 @@ public class Leelaz {
     return currentReaderStreamBinding();
   }
 
-  public enum RuntimeThreadOverrideState { OFF, ON, UNKNOWN }
+  public enum RuntimeThreadOverrideState {
+    OFF,
+    ON,
+    UNKNOWN
+  }
 
-  public enum RuntimeThreadSource { CFG, BENCHMARK, COMMAND }
+  public enum RuntimeThreadSource {
+    CFG,
+    BENCHMARK,
+    COMMAND
+  }
+
   private volatile boolean runtimeThreadRestoreReserved;
 
   private EngineData findRuntimeThreadSavedEntry(String id) {
-    if (Lizzie.config == null || Lizzie.config.leelazConfig == null
+    if (Lizzie.config == null
+        || Lizzie.config.leelazConfig == null
         || Lizzie.config.leelazConfig.optJSONArray("engine-settings-list") == null) {
       throw new IllegalStateException("Saved engine entry is unavailable");
     }
@@ -20914,7 +20773,11 @@ public class Leelaz {
     private final Integer recommendation;
 
     private RuntimeThreadSourceSnapshot(
-        String entryId, String command, String policy, RuntimeThreadSource source, Integer recommendation) {
+        String entryId,
+        String command,
+        String policy,
+        RuntimeThreadSource source,
+        Integer recommendation) {
       this.entryId = entryId;
       this.command = command;
       this.policy = policy;
@@ -20923,14 +20786,16 @@ public class Leelaz {
     }
 
     private boolean stillCurrent() {
-      if (!Objects.equals(savedEntryId, entryId) || !Objects.equals(engineCommand, command)) return false;
+      if (!Objects.equals(savedEntryId, entryId) || !Objects.equals(engineCommand, command))
+        return false;
       EngineData entry = entryId.isBlank() ? null : findRuntimeThreadSavedEntry(entryId);
       return entryId.isBlank()
           ? entry == null
           : entry != null
               && command.equals(entry.commands)
               && !EngineThreadPolicy.isRemoteManaged(entry.commands, entry.useJavaSSH)
-              && Objects.equals(policy, entry.threadPolicy == null ? null : entry.threadPolicy.toString());
+              && Objects.equals(
+                  policy, entry.threadPolicy == null ? null : entry.threadPolicy.toString());
     }
   }
 
@@ -20941,21 +20806,32 @@ public class Leelaz {
       throw new IllegalStateException("Local KataGo launch context is unavailable");
     }
     EngineData entry = id.isBlank() ? null : findRuntimeThreadSavedEntry(id);
-    if (!id.isBlank() && (entry == null || !command.equals(entry.commands)
-        || EngineThreadPolicy.isRemoteManaged(entry.commands, entry.useJavaSSH))) {
+    if (!id.isBlank()
+        && (entry == null
+            || !command.equals(entry.commands)
+            || EngineThreadPolicy.isRemoteManaged(entry.commands, entry.useJavaSSH))) {
       throw new IllegalStateException("Saved KataGo engine entry changed or was removed");
     }
-    RuntimeThreadSource source = KataGoRuntimeHelper.hasEffectiveNumSearchThreadsOverride(Utils.splitCommand(command))
-        ? RuntimeThreadSource.COMMAND
-        : entry != null && EngineThreadPolicy.source(entry) == EngineThreadPolicy.Source.BENCHMARK
-            ? RuntimeThreadSource.BENCHMARK : RuntimeThreadSource.CFG;
-    Integer recommendation = source == RuntimeThreadSource.BENCHMARK
-        ? EngineThreadPolicy.recommendedThreads(entry) : null;
+    RuntimeThreadSource source =
+        KataGoRuntimeHelper.hasEffectiveNumSearchThreadsOverride(Utils.splitCommand(command))
+            ? RuntimeThreadSource.COMMAND
+            : entry != null
+                    && EngineThreadPolicy.source(entry) == EngineThreadPolicy.Source.BENCHMARK
+                ? RuntimeThreadSource.BENCHMARK
+                : RuntimeThreadSource.CFG;
+    Integer recommendation =
+        source == RuntimeThreadSource.BENCHMARK
+            ? EngineThreadPolicy.recommendedThreads(entry)
+            : null;
     if (source == RuntimeThreadSource.BENCHMARK && recommendation <= 0) {
       throw new IllegalStateException("Saved KataGo benchmark recommendation is invalid");
     }
-    return new RuntimeThreadSourceSnapshot(id, command,
-        entry == null || entry.threadPolicy == null ? null : entry.threadPolicy.toString(), source, recommendation);
+    return new RuntimeThreadSourceSnapshot(
+        id,
+        command,
+        entry == null || entry.threadPolicy == null ? null : entry.threadPolicy.toString(),
+        source,
+        recommendation);
   }
 
   public final class RuntimeThreadSourceRestore {
@@ -20963,19 +20839,25 @@ public class Leelaz {
     private final RuntimeThreadSourceSnapshot snapshot;
     private final AtomicBoolean consumed = new AtomicBoolean();
 
-    private RuntimeThreadSourceRestore(RuntimeSearchThreads original, RuntimeThreadSourceSnapshot snapshot) {
+    private RuntimeThreadSourceRestore(
+        RuntimeSearchThreads original, RuntimeThreadSourceSnapshot snapshot) {
       this.original = original;
       this.snapshot = snapshot;
     }
 
-    public RuntimeThreadSource source() { return snapshot.source; }
+    public RuntimeThreadSource source() {
+      return snapshot.source;
+    }
 
-    public Integer recommendedThreads() { return snapshot.recommendation; }
+    public Integer recommendedThreads() {
+      return snapshot.recommendation;
+    }
 
     public CompletableFuture<RuntimeSearchThreads> execute(
         java.util.function.Function<RuntimeSearchThreads, CompletableFuture<Void>> beforeResume) {
       if (!consumed.compareAndSet(false, true)) {
-        return CompletableFuture.failedFuture(new IllegalStateException("Source restore already executed"));
+        return CompletableFuture.failedFuture(
+            new IllegalStateException("Source restore already executed"));
       }
       Objects.requireNonNull(beforeResume);
       CompletableFuture<RuntimeSearchThreads> result = new CompletableFuture<>();
@@ -20988,23 +20870,31 @@ public class Leelaz {
         CompletableFuture<RuntimeSearchThreads> result) {
       AutomaticRestartAttempt attempt = null;
       try {
-        if (!original.isCurrent() || original.overrideState() != RuntimeThreadOverrideState.ON
-            || !snapshot.stillCurrent() || EngineThreadPolicy.isRemoteManaged(Leelaz.this)
+        if (!original.isCurrent()
+            || original.overrideState() != RuntimeThreadOverrideState.ON
+            || !snapshot.stillCurrent()
+            || EngineThreadPolicy.isRemoteManaged(Leelaz.this)
             || KataGoRuntimeHelper.isBenchmarkEngineSyncSuppressed()) {
           throw new IllegalStateException("KataGo source restore target changed or is unavailable");
         }
         attempt = beginAutomaticEngineRestartAttempt();
         if (attempt == null) throw new IllegalStateException("KataGo engine is occupied");
-        boolean admitted = Lizzie.runIfPrimaryEngine(Leelaz.this, original.primaryGeneration, () -> {
-          synchronized (engineArbitrationLock()) {
-            if (!original.isCurrent() || original.overrideState() != RuntimeThreadOverrideState.ON
-                || !snapshot.stillCurrent()) {
-              throw new IllegalStateException("KataGo source changed before restart");
-            }
-            runtimeThreadRestoreReserved = true;
-          }
-        });
-        if (!admitted) throw new IllegalStateException("KataGo foreground selection changed before restart");
+        boolean admitted =
+            Lizzie.runIfPrimaryEngine(
+                Leelaz.this,
+                original.primaryGeneration,
+                () -> {
+                  synchronized (engineArbitrationLock()) {
+                    if (!original.isCurrent()
+                        || original.overrideState() != RuntimeThreadOverrideState.ON
+                        || !snapshot.stillCurrent()) {
+                      throw new IllegalStateException("KataGo source changed before restart");
+                    }
+                    runtimeThreadRestoreReserved = true;
+                  }
+                });
+        if (!admitted)
+          throw new IllegalStateException("KataGo foreground selection changed before restart");
         AutomaticRestartAttempt owned = attempt;
         AutomaticRestartOperation operation = owned.operation;
         operation.deferResumeUntilCompletion = true;
@@ -21012,56 +20902,75 @@ public class Leelaz {
         AtomicReference<String> failure = new AtomicReference<>();
         normalQuit();
         shutdown();
-        owned.restartClosedEngine(currentEngineN,
-            () -> COMMAND_DISPATCH_EXECUTOR.execute(() -> {
-              try {
-              runtimeThreadRestoreReserved = false;
-              String detail = failure.get();
-              if (detail != null) {
-                result.completeExceptionally(new IllegalStateException(detail));
-                return;
-              }
-              if (!snapshot.stillCurrent()) {
-                threadPolicyReloadPending = true;
-                result.completeExceptionally(new IllegalStateException("KataGo source changed during restart"));
-                return;
-              }
-              RuntimeSearchThreads successor =
-                  new RuntimeSearchThreads(operation.restartedBinding, original.primaryGeneration);
-              if (successor.binding == original.binding || !successor.isCurrent()) {
-                result.completeExceptionally(new IllegalStateException("KataGo restart successor is unavailable"));
-                return;
-              }
-              successor.query().handle((value, queryFailure) -> null)
-                  .thenComposeAsync(ignored -> {
-                    if (!successor.isCurrent()) {
-                      return CompletableFuture.failedFuture(new IllegalStateException("KataGo restart successor changed"));
-                    }
-                    return Objects.requireNonNull(beforeResume.apply(successor));
-                  }, COMMAND_DISPATCH_EXECUTOR).whenCompleteAsync((ignored, continuationFailure) -> {
-                    if (continuationFailure != null) {
-                      result.completeExceptionally(continuationFailure);
-                    } else if (!successor.isCurrent()) {
-                      result.completeExceptionally(new IllegalStateException("KataGo restart successor changed"));
-                    } else {
+        owned.restartClosedEngine(
+            currentEngineN,
+            () ->
+                COMMAND_DISPATCH_EXECUTOR.execute(
+                    () -> {
                       try {
+                        runtimeThreadRestoreReserved = false;
+                        String detail = failure.get();
+                        if (detail != null) {
+                          result.completeExceptionally(new IllegalStateException(detail));
+                          return;
+                        }
                         if (!snapshot.stillCurrent()) {
                           threadPolicyReloadPending = true;
-                          throw new IllegalStateException("KataGo source changed during parameter handoff");
+                          result.completeExceptionally(
+                              new IllegalStateException("KataGo source changed during restart"));
+                          return;
                         }
-                        threadPolicyReloadPending = false;
-                        resumeClosedEngineAfterBoardSynchronization(resumePonder);
-                        result.complete(successor);
-                      } catch (RuntimeException | Error resumeFailure) {
-                        result.completeExceptionally(resumeFailure);
+                        RuntimeSearchThreads successor =
+                            new RuntimeSearchThreads(
+                                operation.restartedBinding, original.primaryGeneration);
+                        if (successor.binding == original.binding || !successor.isCurrent()) {
+                          result.completeExceptionally(
+                              new IllegalStateException("KataGo restart successor is unavailable"));
+                          return;
+                        }
+                        successor
+                            .query()
+                            .handle((value, queryFailure) -> null)
+                            .thenComposeAsync(
+                                ignored -> {
+                                  if (!successor.isCurrent()) {
+                                    return CompletableFuture.failedFuture(
+                                        new IllegalStateException(
+                                            "KataGo restart successor changed"));
+                                  }
+                                  return Objects.requireNonNull(beforeResume.apply(successor));
+                                },
+                                COMMAND_DISPATCH_EXECUTOR)
+                            .whenCompleteAsync(
+                                (ignored, continuationFailure) -> {
+                                  if (continuationFailure != null) {
+                                    result.completeExceptionally(continuationFailure);
+                                  } else if (!successor.isCurrent()) {
+                                    result.completeExceptionally(
+                                        new IllegalStateException(
+                                            "KataGo restart successor changed"));
+                                  } else {
+                                    try {
+                                      if (!snapshot.stillCurrent()) {
+                                        threadPolicyReloadPending = true;
+                                        throw new IllegalStateException(
+                                            "KataGo source changed during parameter handoff");
+                                      }
+                                      threadPolicyReloadPending = false;
+                                      resumeClosedEngineAfterBoardSynchronization(resumePonder);
+                                      result.complete(successor);
+                                    } catch (RuntimeException | Error resumeFailure) {
+                                      result.completeExceptionally(resumeFailure);
+                                    }
+                                  }
+                                },
+                                COMMAND_DISPATCH_EXECUTOR);
+                      } catch (RuntimeException | Error receiptFailure) {
+                        threadPolicyReloadPending = true;
+                        result.completeExceptionally(receiptFailure);
                       }
-                    }
-                  }, COMMAND_DISPATCH_EXECUTOR);
-              } catch (RuntimeException | Error receiptFailure) {
-                threadPolicyReloadPending = true;
-                result.completeExceptionally(receiptFailure);
-              }
-            }), failure::set);
+                    }),
+            failure::set);
       } catch (IOException | RuntimeException | Error error) {
         runtimeThreadRestoreReserved = false;
         if (attempt != null) attempt.close();
@@ -21069,7 +20978,6 @@ public class Leelaz {
       }
     }
   }
-
 
   /** A single foreground KataGo reader, not a saved or launch-time thread policy. */
   public final class RuntimeSearchThreads {
@@ -21089,10 +20997,13 @@ public class Leelaz {
     }
 
     public RuntimeThreadOverrideState overrideState() {
-      return isCurrent() ? (binding.runtimeThreadOverrideState == null
-          ? EngineThreadPolicy.isRemoteManaged(Leelaz.this)
-              ? RuntimeThreadOverrideState.UNKNOWN : RuntimeThreadOverrideState.OFF
-          : binding.runtimeThreadOverrideState) : RuntimeThreadOverrideState.UNKNOWN;
+      return isCurrent()
+          ? (binding.runtimeThreadOverrideState == null
+              ? EngineThreadPolicy.isRemoteManaged(Leelaz.this)
+                  ? RuntimeThreadOverrideState.UNKNOWN
+                  : RuntimeThreadOverrideState.OFF
+              : binding.runtimeThreadOverrideState)
+          : RuntimeThreadOverrideState.UNKNOWN;
     }
 
     public RuntimeThreadSourceRestore prepareRestore() {
@@ -21133,14 +21044,16 @@ public class Leelaz {
     COMMAND_DISPATCH_EXECUTOR.execute(
         () -> {
           if (!target.isCurrent()) {
-            result.completeExceptionally(new IllegalStateException("KataGo process or foreground selection changed"));
+            result.completeExceptionally(
+                new IllegalStateException("KataGo process or foreground selection changed"));
             return;
           }
           String command =
               requested == null
                   ? "kata-get-param numSearchThreads"
                   : "kata-set-param numSearchThreads " + requested;
-          RuntimeSearchThreadsResponse handler = new RuntimeSearchThreadsResponse(target, requested, result);
+          RuntimeSearchThreadsResponse handler =
+              new RuntimeSearchThreadsResponse(target, requested, result);
           boolean[] admitted = new boolean[1];
           try {
             boolean selected =
@@ -21154,7 +21067,6 @@ public class Leelaz {
                             || isRulesMutationOccupied()
                             || isOrdinaryForwardingOccupied()
                             || runtimeThreadRestoreReserved
-
                             || readBoardGmaReservation != null
                             || engineStateUnrestored
                             || activeUpdateEngineStartAttempt != null) {
@@ -21162,8 +21074,17 @@ public class Leelaz {
                         }
                         admitted[0] =
                             enqueueOrdinaryCommand(
-                                command, handler, handler::fail, true, null, true, false, true,
-                                target.binding, null, false);
+                                command,
+                                handler,
+                                handler::fail,
+                                true,
+                                null,
+                                true,
+                                false,
+                                true,
+                                target.binding,
+                                null,
+                                false);
                       }
                     });
             if (!selected || !admitted[0]) {
@@ -21175,8 +21096,10 @@ public class Leelaz {
                     () -> {
                       boolean timedOut;
                       synchronized (result) {
-                        timedOut = result.completeExceptionally(
-                            new IllegalStateException("Timed out waiting for KataGo thread response"));
+                        timedOut =
+                            result.completeExceptionally(
+                                new IllegalStateException(
+                                    "Timed out waiting for KataGo thread response"));
                       }
                       if (timedOut) retireTimedOutNormalCommand(handler);
                     },
@@ -21217,7 +21140,9 @@ public class Leelaz {
         return;
       }
       if (isCurrentCommandResponseError()) {
-        fail(new IllegalStateException("KataGo rejected numSearchThreads: " + currentCommandResponseLine()));
+        fail(
+            new IllegalStateException(
+                "KataGo rejected numSearchThreads: " + currentCommandResponseLine()));
         return;
       }
       int confirmed;
@@ -21271,6 +21196,7 @@ public class Leelaz {
   void setRuntimeSearchThreadsTimeoutForTest(long millis) {
     runtimeSearchThreadsTimeoutMillis = millis;
   }
+
   boolean isCurrentEngineIncarnation(Object expectedIncarnation) {
     return expectedIncarnation != null && readerStreamBinding == expectedIncarnation;
   }
@@ -21391,7 +21317,6 @@ public class Leelaz {
     }
   }
 
-
   void retireReadBoardGmaSession() {
     ReadBoard readBoard = Lizzie.frame == null ? null : Lizzie.frame.readBoard;
     if (readBoard != null && readBoard.retireReadBoardGmaSession()) {
@@ -21462,7 +21387,6 @@ public class Leelaz {
     paramsToRestore.add(param);
   }
 
-
   private void prepareReadBoardGmaRuntimeParam(ReadBoardGmaRuntimeParam param, String value) {
     boolean requestSnapshot;
     synchronized (readBoardGmaLock()) {
@@ -21504,9 +21428,7 @@ public class Leelaz {
           @Override
           public void run() {
             failReadBoardGmaRuntimeRestore(
-                barrier,
-                ReadBoardGmaSession.FailureCategory.TIMEOUT,
-                "restore response timeout");
+                barrier, ReadBoardGmaSession.FailureCategory.TIMEOUT, "restore response timeout");
           }
         },
         Math.max(1L, readBoardGmaRestoreResponseTimeoutMillis()));
@@ -21710,9 +21632,7 @@ public class Leelaz {
     ReadBoardGmaSession.FailureCategory bindingFailureCategory;
     synchronized (engineArbitrationLock()) {
       synchronized (readBoardGmaLock()) {
-        if (readBoardGmaRestoreBarrier != barrier
-            || barrier.completed
-            || barrier.remaining != 0) {
+        if (readBoardGmaRestoreBarrier != barrier || barrier.completed || barrier.remaining != 0) {
           return;
         }
         bindingFailureCategory = readBoardGmaResponseBindingFailureCategory(barrier);
@@ -22025,10 +21945,8 @@ public class Leelaz {
     private final AtomicBoolean mirrorLegDispatched = new AtomicBoolean(false);
     private final AtomicBoolean authorityLegConfirmed = new AtomicBoolean(false);
     private final AtomicBoolean mirrorLegConfirmed = new AtomicBoolean(false);
-    private final RestartBootstrapReceipt restartReceipt =
-        restartBootstrapReceiptContext.get();
-    private final Runnable responseHandler =
-        (BoardSynchronizationResponseHandler) this::onResponse;
+    private final RestartBootstrapReceipt restartReceipt = restartBootstrapReceiptContext.get();
+    private final Runnable responseHandler = (BoardSynchronizationResponseHandler) this::onResponse;
     private final Runnable mirrorResponseHandler;
     private Timer timeout;
 
@@ -22404,9 +22322,7 @@ public class Leelaz {
         }
       } catch (RuntimeException ex) {
         settleFailure(
-            ex.getMessage() == null
-                ? "failed to send engine-game komi command"
-                : ex.getMessage());
+            ex.getMessage() == null ? "failed to send engine-game komi command" : ex.getMessage());
       }
     }
 
@@ -22415,8 +22331,7 @@ public class Leelaz {
         return;
       }
       if (engine.isCurrentCommandResponseError()) {
-        settleFailure(
-            "engine-game komi failed: " + engine.currentCommandResponseLine());
+        settleFailure("engine-game komi failed: " + engine.currentCommandResponseLine());
         return;
       }
       komiConfirmed.set(true);
@@ -22424,8 +22339,7 @@ public class Leelaz {
     }
 
     private void onKomiSendFailure(RuntimeException failure) {
-      settleFailure(
-          failure == null ? "engine-game komi send failed" : failure.getMessage());
+      settleFailure(failure == null ? "engine-game komi send failed" : failure.getMessage());
     }
 
     private void dispatchFence() {
@@ -22456,9 +22370,7 @@ public class Leelaz {
         }
       } catch (RuntimeException ex) {
         settleFailure(
-            ex.getMessage() == null
-                ? "failed to send engine-game komi fence"
-                : ex.getMessage());
+            ex.getMessage() == null ? "failed to send engine-game komi fence" : ex.getMessage());
       }
     }
 
@@ -22467,8 +22379,7 @@ public class Leelaz {
         return;
       }
       if (engine.isCurrentCommandResponseError()) {
-        settleFailure(
-            "engine-game komi fence failed: " + engine.currentCommandResponseLine());
+        settleFailure("engine-game komi fence failed: " + engine.currentCommandResponseLine());
         return;
       }
       fenceConfirmed.set(true);
@@ -22476,8 +22387,7 @@ public class Leelaz {
     }
 
     private void onFenceSendFailure(RuntimeException failure) {
-      settleFailure(
-          failure == null ? "engine-game komi fence send failed" : failure.getMessage());
+      settleFailure(failure == null ? "engine-game komi fence send failed" : failure.getMessage());
     }
 
     private void tryComplete() {
@@ -22530,8 +22440,7 @@ public class Leelaz {
       } finally {
         if (onFailure != null) {
           try {
-            engine.runWithRestartBootstrapReceipt(
-                restartReceipt, () -> onFailure.accept(detail));
+            engine.runWithRestartBootstrapReceipt(restartReceipt, () -> onFailure.accept(detail));
           } catch (RuntimeException | Error ex) {
             ex.printStackTrace();
           }
@@ -22653,8 +22562,7 @@ public class Leelaz {
     }
 
     private void onSendFailure(RuntimeException failure) {
-      String detail =
-          failure == null ? "restore send failed: " + param.name : failure.getMessage();
+      String detail = failure == null ? "restore send failed: " + param.name : failure.getMessage();
       ReadBoardGmaSession.FailureCategory bindingFailureCategory =
           barrier == null ? null : readBoardGmaResponseBindingFailureCategory(barrier);
       ReadBoardGmaSession.FailureCategory category =
@@ -22679,8 +22587,7 @@ public class Leelaz {
       failRestore(detail, category);
     }
 
-    private void failRestore(
-        String detail, ReadBoardGmaSession.FailureCategory category) {
+    private void failRestore(String detail, ReadBoardGmaSession.FailureCategory category) {
       if (barrier != null) {
         failReadBoardGmaRuntimeRestore(barrier, category, detail);
       } else {
@@ -22799,7 +22706,9 @@ public class Leelaz {
     String value = trimmed.substring(1).trim();
     int separator = value.indexOf(' ');
     if (separator > 0
-        && value.substring(0, separator).chars()
+        && value
+            .substring(0, separator)
+            .chars()
             .allMatch(character -> character >= '0' && character <= '9')) {
       return value.substring(separator + 1).trim();
     }
@@ -22840,8 +22749,7 @@ public class Leelaz {
     genmoveForPk(color, currentGame.transaction);
   }
 
-  boolean genmoveForPk(
-      String color, EngineManager.EngineGameOwnerTransaction transaction) {
+  boolean genmoveForPk(String color, EngineManager.EngineGameOwnerTransaction transaction) {
     return genmoveForPk(color, transaction, null);
   }
 
@@ -22880,8 +22788,7 @@ public class Leelaz {
     ReaderStreamBinding binding = currentReaderStreamBinding();
     EngineManager.EngineGameMoveResponseContext responseContext =
         turn == null
-            ? EngineManager.captureEngineGameMoveResponseContext(
-                transaction, this, binding, color)
+            ? EngineManager.captureEngineGameMoveResponseContext(transaction, this, binding, color)
             : EngineManager.captureEngineGameMoveResponseContext(turn, this, binding, color);
     if (responseContext == null) {
       return false;
@@ -22932,8 +22839,7 @@ public class Leelaz {
   public void clear() {
     synchronized (this) {
       YikeSyncDebugLog.log("Leelaz clear() entered isPondering=" + isPondering);
-      sendStatefulOrdinaryCommands(
-          List.of("clear_board"), StatefulOrdinaryMutationKind.NONE);
+      sendStatefulOrdinaryCommands(List.of("clear_board"), StatefulOrdinaryMutationKind.NONE);
       afterClearStateCommandForTest();
       if (isPondering) ponder();
     }
@@ -22944,8 +22850,7 @@ public class Leelaz {
   public void clearWithoutPonder() {
     this.notPondering();
     nameCmdfornoponder();
-    sendStatefulOrdinaryCommands(
-        List.of("clear_board"), StatefulOrdinaryMutationKind.NONE);
+    sendStatefulOrdinaryCommands(List.of("clear_board"), StatefulOrdinaryMutationKind.NONE);
   }
 
   public void undo() {
@@ -23036,7 +22941,8 @@ public class Leelaz {
   public void ponder(boolean addPlayer, boolean blackToPlay) {
     if (moveFocusCapability() == MoveFocusCapability.PROBING) return;
     if (moveFocusProbeRequestedBinding == currentReaderStreamBinding()
-        && !noAnalyze && !isInitialBoardSynchronizationActive()
+        && !noAnalyze
+        && !isInitialBoardSynchronizationActive()
         && startMoveFocusProbeIfAnalysisAllowed(addPlayer, blackToPlay)) return;
     if (moveFocusCapability() == MoveFocusCapability.PROBING) return;
     ponderCurrentPosition(addPlayer, blackToPlay);
@@ -23210,7 +23116,6 @@ public class Leelaz {
     }
     YikeSyncDebugLog.log("Leelaz togglePonder after isPondering=" + isPondering);
   }
-
 
   /** Reissues primary analysis after a comparison restart without crossing a later user pause. */
   public boolean ponderAfterComparisonRestartIfAnalysisControlAllows(Leelaz comparisonEngine) {
@@ -23770,9 +23675,7 @@ public class Leelaz {
     }
     boolean hasSnapshot = attempt != null && attempt.snapshot() != null;
     String fallbackMessage =
-        Lizzie.resourceBundle != null
-            ? Lizzie.resourceBundle.getString("Leelaz.engineFailed")
-            : "";
+        Lizzie.resourceBundle != null ? Lizzie.resourceBundle.getString("Leelaz.engineFailed") : "";
     String message;
     if (hasSnapshot) {
       String originalError = attempt.snapshot().toJson().optString("originalError");
@@ -23810,8 +23713,7 @@ public class Leelaz {
     }
     long primaryGeneration = startupPrimaryEngineGeneration;
     boolean primaryEngine =
-        primaryGeneration >= 0L
-            && Lizzie.capturePrimaryEngineGeneration(this) == primaryGeneration;
+        primaryGeneration >= 0L && Lizzie.capturePrimaryEngineGeneration(this) == primaryGeneration;
     Object expectedEngineIncarnation = captureEngineIncarnationFence();
     EngineStartupDiagnostics.Attempt diagnosticAttempt = startupDiagnosticAttempt;
     EngineFailedMessage.runOnEventDispatchThreadAndWait(
@@ -23858,18 +23760,19 @@ public class Leelaz {
     if (diagnosticAttempt != null && diagnosticAttempt != startupDiagnosticAttempt) return;
     closeBundledStartupDialog(primaryGeneration, expectedEngineIncarnation);
     if (primaryEngine) {
-      boolean currentPrimary = Lizzie.runIfPrimaryEngine(
-          this,
-          primaryGeneration,
-          () -> {
-            if (hasMissingLocalStartupAsset(commands, useRemoteCompute, useJavaSSH)) {
-              Lizzie.engineStartupStatus.needsRepair(
-                  "EngineStartup.needsRepair", "AI is not ready - click to repair", message);
-            } else {
-              Lizzie.engineStartupStatus.failed(
-                  "EngineStartup.failed", "AI failed to start - click to repair", message);
-            }
-          });
+      boolean currentPrimary =
+          Lizzie.runIfPrimaryEngine(
+              this,
+              primaryGeneration,
+              () -> {
+                if (hasMissingLocalStartupAsset(commands, useRemoteCompute, useJavaSSH)) {
+                  Lizzie.engineStartupStatus.needsRepair(
+                      "EngineStartup.needsRepair", "AI is not ready - click to repair", message);
+                } else {
+                  Lizzie.engineStartupStatus.failed(
+                      "EngineStartup.failed", "AI failed to start - click to repair", message);
+                }
+              });
       if (!currentPrimary) {
         return;
       }
@@ -23882,10 +23785,10 @@ public class Leelaz {
         && Lizzie.config != null
         && !Lizzie.config.autoCheckEngineAlive
         && Lizzie.engineManager != null
-        && EngineManager.occupiesEngineGameAdmission())
-      Lizzie.engineManager.clearEngineGame();
+        && EngineManager.occupiesEngineGameAdmission()) Lizzie.engineManager.clearEngineGame();
     if (GraphicsEnvironment.isHeadless()) return;
-    if (engineFailedMessage != null && engineFailedMessage.isVisible()
+    if (engineFailedMessage != null
+        && engineFailedMessage.isVisible()
         && presentedStartupDiagnosticAttempt == diagnosticAttempt) return;
     EngineFailedMessage.showDialog(
         commands,
@@ -24007,8 +23910,7 @@ public class Leelaz {
   }
 
   private void closeBundledStartupDialog() {
-    closeBundledStartupDialog(
-        startupPrimaryEngineGeneration, captureEngineIncarnationFence());
+    closeBundledStartupDialog(startupPrimaryEngineGeneration, captureEngineIncarnationFence());
   }
 
   private void closeBundledStartupDialog(
@@ -24199,9 +24101,7 @@ public class Leelaz {
   void dispatchBundledStartupTimeoutPresentationForTest(
       Object expectedIncarnation, String message) {
     dispatchBundledStartupTimeoutPresentation(
-        expectedIncarnation,
-        suppressesGlobalEnginePresentation(expectedIncarnation),
-        message);
+        expectedIncarnation, suppressesGlobalEnginePresentation(expectedIncarnation), message);
   }
 
   private String text(String key, String fallback) {
@@ -24459,7 +24359,8 @@ public class Leelaz {
     boolean lifecycleOwner =
         restoreAdmission != null && isExactSnapshotRestoreAdmissionValid(restoreAdmission);
     if (!matchOwner && !lifecycleOwner && isRulesMutationOccupied()) {
-      failEngineRules(operation, EngineRulesResult.Status.SET_FAILED, EngineRulesResult.Reason.OCCUPIED);
+      failEngineRules(
+          operation, EngineRulesResult.Status.SET_FAILED, EngineRulesResult.Reason.OCCUPIED);
       return operation;
     }
     if (autoSettleMatchRulesForTest) {
@@ -24478,7 +24379,8 @@ public class Leelaz {
     boolean canQuery = commandLists.contains("kata-get-rules");
     updateEngineRulesCapabilities(operation, canSet, canQuery);
     if (!canSet) {
-      failEngineRules(operation, EngineRulesResult.Status.SET_FAILED, EngineRulesResult.Reason.SET_UNSUPPORTED);
+      failEngineRules(
+          operation, EngineRulesResult.Status.SET_FAILED, EngineRulesResult.Reason.SET_UNSUPPORTED);
       return operation;
     }
     synchronized (engineRulesLock) {
@@ -24559,6 +24461,7 @@ public class Leelaz {
     sendEngineRulesCommand(operation, "kata-get-rules", false);
     return operation;
   }
+
   boolean queryEngineRules(long timeoutMillis) {
     return queryEngineRulesOperation(timeoutMillis).accepted();
   }
@@ -24614,11 +24517,7 @@ public class Leelaz {
       EngineRulesResult current = engineRulesResult;
       EngineRulesResult pending =
           EngineRulesResult.pending(
-                  operation.generation,
-                  requested,
-                  current.observed(),
-                  canSet,
-                  canQuery)
+                  operation.generation, requested, current.observed(), canSet, canQuery)
               .withCommandIds(current.setCommandId(), current.queryCommandId());
       publishEngineRulesResultLocked(operation, pending);
     }
@@ -24655,11 +24554,14 @@ public class Leelaz {
   }
 
   private KataGoRules requestedStartupRules() {
-    if (Lizzie.config == null || Lizzie.config.kataRules == null || Lizzie.config.kataRules.isEmpty()) {
+    if (Lizzie.config == null
+        || Lizzie.config.kataRules == null
+        || Lizzie.config.kataRules.isEmpty()) {
       return null;
     }
     return KataGoRules.parse(Lizzie.config.kataRules).orElse(null);
   }
+
   private ReaderStreamBinding captureEngineRulesStartupBinding() {
     Object startupContext = startupPostActionCommandContext.get();
     if (startupContext instanceof StartupPostActionLease) {
@@ -24690,7 +24592,9 @@ public class Leelaz {
       replaced = activeEngineRulesOperation;
       if (replaced != null && !replaced.isTerminalLocked()) {
         EngineRulesResult.Status status =
-            replaced.awaitingSet ? EngineRulesResult.Status.SET_FAILED : EngineRulesResult.Status.QUERY_FAILED;
+            replaced.awaitingSet
+                ? EngineRulesResult.Status.SET_FAILED
+                : EngineRulesResult.Status.QUERY_FAILED;
         replacedResult = replaced.snapshot.failed(status, EngineRulesResult.Reason.REPLACED);
         replaced.markTerminalLocked(replacedResult);
       }
@@ -24715,7 +24619,6 @@ public class Leelaz {
     retireAndCompleteEngineRulesOperation(replaced, replacedResult);
     return operation;
   }
-
 
   private boolean isCurrentEngineRulesOperationLocked(EngineRulesOperation operation) {
     return operation != null
@@ -24839,8 +24742,7 @@ public class Leelaz {
           runWithEngineGameStartupCommandContext(
               operation.engineGameTransaction,
               () ->
-                  sendStartupPostActionCommand(
-                      command, lease.binding, handler, onFailure, false));
+                  sendStartupPostActionCommand(command, lease.binding, handler, onFailure, false));
         } else {
           lease.sendCommand(command, handler, onFailure);
         }
@@ -24852,8 +24754,7 @@ public class Leelaz {
           runWithEngineGameStartupCommandContext(
               operation.engineGameTransaction,
               () ->
-                  sendStartupPostActionCommand(
-                      command, readerBinding, handler, onFailure, false));
+                  sendStartupPostActionCommand(command, readerBinding, handler, onFailure, false));
         } else {
           sendStartupPostActionCommand(command, readerBinding, handler, onFailure);
         }
@@ -24883,16 +24784,7 @@ public class Leelaz {
         }
       }
       boolean failClosedStartupCommand = startupContext != null;
-      boolean sent =
-          sendCommand(
-              command,
-              handler,
-              onFailure,
-              true,
-              false,
-              null,
-              false,
-              null);
+      boolean sent = sendCommand(command, handler, onFailure, true, false, null, false, null);
       if (failClosedStartupCommand && !sent) {
         throw new IllegalStateException("startup command was rejected: " + command);
       }
@@ -24940,7 +24832,9 @@ public class Leelaz {
     Optional<KataGoRules> parsed = KataGoRules.parse(responseLine);
     if (parsed.isEmpty()) {
       failEngineRules(
-          operation, EngineRulesResult.Status.QUERY_FAILED, EngineRulesResult.Reason.INVALID_READBACK);
+          operation,
+          EngineRulesResult.Status.QUERY_FAILED,
+          EngineRulesResult.Reason.INVALID_READBACK);
       return;
     }
     confirmEngineRules(operation, parsed.get(), "= " + gtpResponsePayload(responseLine));
@@ -25093,7 +24987,6 @@ public class Leelaz {
     }
   }
 
-
   private EngineRulesOperation settleMatchRulesForTest(
       EngineRulesOperation operation, KataGoRules requested, boolean setCommand) {
     boolean canSet = commandLists.contains("kata-set-rules");
@@ -25105,7 +24998,8 @@ public class Leelaz {
       }
     }
     if (setCommand && !canSet) {
-      failEngineRules(operation, EngineRulesResult.Status.SET_FAILED, EngineRulesResult.Reason.SET_UNSUPPORTED);
+      failEngineRules(
+          operation, EngineRulesResult.Status.SET_FAILED, EngineRulesResult.Reason.SET_UNSUPPORTED);
       return operation;
     }
     if (!setCommand && !canQuery) {
@@ -25238,8 +25132,7 @@ public class Leelaz {
     if (endGetCommandList) {
       return true;
     }
-    long deadline =
-        System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1L, waitMillis));
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1L, waitMillis));
     while (!endGetCommandList) {
       if (!started || isDownWithError || isNormalEnd) {
         return false;
@@ -25278,26 +25171,30 @@ public class Leelaz {
             synchronized (parameterReadLock) {
               if (activeParameterRead == read && !read.complete()) activeParameterRead = null;
             }
-          }, timeoutMillis);
+          },
+          timeoutMillis);
     } catch (RuntimeException | Error failure) {
       retireParameterRead(read);
       throw failure;
     }
   }
+
   void scheduleParameterReadTimeout(Runnable timeout, long timeoutMillis) {
-    Thread timeoutThread = new Thread(() -> {
-      try {
-        Thread.sleep(Math.max(0L, timeoutMillis));
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-        return;
-      }
-      timeout.run();
-    }, "lizzie-katago-parameter-timeout");
+    Thread timeoutThread =
+        new Thread(
+            () -> {
+              try {
+                Thread.sleep(Math.max(0L, timeoutMillis));
+              } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return;
+              }
+              timeout.run();
+            },
+            "lizzie-katago-parameter-timeout");
     timeoutThread.setDaemon(true);
     timeoutThread.start();
   }
-
 
   private void sendParameterRead(ParameterRead read, String parameter, boolean pdaParameter) {
     String command = "kata-get-param " + parameter;
@@ -25307,7 +25204,8 @@ public class Leelaz {
     if (startupContext instanceof StartupPostActionLease) {
       ((StartupPostActionLease) startupContext).sendCommand(command, handler, onFailure);
     } else if (startupContext instanceof ReaderStreamBinding) {
-      sendStartupPostActionCommand(command, (ReaderStreamBinding) startupContext, handler, onFailure);
+      sendStartupPostActionCommand(
+          command, (ReaderStreamBinding) startupContext, handler, onFailure);
     } else if (!sendCommand(command, handler, onFailure, true, false, null, false, read.binding)) {
       retireParameterRead(read);
     }
@@ -25371,8 +25269,10 @@ public class Leelaz {
       }
       synchronized (engineArbitrationLock()) {
         synchronized (parameterReadLock) {
-          if (activeParameterRead != read || read.complete()
-              || readerStreamBinding != read.binding || read.binding.terminated) return;
+          if (activeParameterRead != read
+              || read.complete()
+              || readerStreamBinding != read.binding
+              || read.binding.terminated) return;
           if (pdaParameter) {
             pda = read.pda = value;
             read.hasPda = true;
@@ -25383,18 +25283,24 @@ public class Leelaz {
           if (!read.complete()) return;
         }
       }
-      SwingUtilities.invokeLater(() -> Lizzie.runIfPrimaryEngine(
-          Leelaz.this, read.primaryGeneration, () -> {
-            synchronized (engineArbitrationLock()) {
-              synchronized (parameterReadLock) {
-                if (activeParameterRead == read && readerStreamBinding == read.binding
-                    && !read.binding.terminated && !read.binding.suppressGlobalEnginePresentation
-                    && Lizzie.frame != null) {
-                  Lizzie.frame.setPdaAndWrn(read.pda, read.wrn);
-                }
-              }
-            }
-          }));
+      SwingUtilities.invokeLater(
+          () ->
+              Lizzie.runIfPrimaryEngine(
+                  Leelaz.this,
+                  read.primaryGeneration,
+                  () -> {
+                    synchronized (engineArbitrationLock()) {
+                      synchronized (parameterReadLock) {
+                        if (activeParameterRead == read
+                            && readerStreamBinding == read.binding
+                            && !read.binding.terminated
+                            && !read.binding.suppressGlobalEnginePresentation
+                            && Lizzie.frame != null) {
+                          Lizzie.frame.setPdaAndWrn(read.pda, read.wrn);
+                        }
+                      }
+                    }
+                  }));
     }
   }
 
@@ -25432,8 +25338,7 @@ public class Leelaz {
     private final ReaderStreamBinding binding;
     private final Object stateToken;
 
-    private Leela0110PonderCommandOwner(
-        ReaderStreamBinding binding, Object stateToken) {
+    private Leela0110PonderCommandOwner(ReaderStreamBinding binding, Object stateToken) {
       this.binding = binding;
       this.stateToken = stateToken;
     }
@@ -25463,10 +25368,7 @@ public class Leelaz {
           transaction,
           () ->
               sendCommandNoLeelaz2(
-                  "time_left b 0 0",
-                  null,
-                  commandOwner.binding,
-                  commandOwner.stateToken));
+                  "time_left b 0 0", null, commandOwner.binding, commandOwner.stateToken));
     }
   }
 
@@ -25500,15 +25402,12 @@ public class Leelaz {
         leela0110PonderingTimer.schedule(
             new TimerTask() {
               public void run() {
-                if (isCurrentLeela0110PonderState(
-                        expectedBinding, transaction, stateToken)
+                if (isCurrentLeela0110PonderState(expectedBinding, transaction, stateToken)
                     && (transaction == null
                         || EngineManager.isCurrentEngineGameTransaction(transaction))) {
                   runWithEngineGameStartupCommandContext(
                       transaction,
-                      () ->
-                          sendCommandNoLeelaz2(
-                              "name", null, expectedBinding, stateToken));
+                      () -> sendCommandNoLeelaz2("name", null, expectedBinding, stateToken));
                 }
               }
             },
@@ -25546,8 +25445,7 @@ public class Leelaz {
     }
   }
 
-  private void cancelLeela0110PonderForReaderBinding(
-      ReaderStreamBinding binding) {
+  private void cancelLeela0110PonderForReaderBinding(ReaderStreamBinding binding) {
     leela0110PonderPhysicalWriteLock.lock();
     try {
       synchronized (leela0110PonderStateLock) {
@@ -25569,8 +25467,7 @@ public class Leelaz {
               && leela0110PonderingStateToken != null
               && readerStreamBinding == leela0110PonderingBinding
               && !leela0110PonderingBinding.terminated
-          ? new Leela0110PonderCommandOwner(
-              leela0110PonderingBinding, leela0110PonderingStateToken)
+          ? new Leela0110PonderCommandOwner(leela0110PonderingBinding, leela0110PonderingStateToken)
           : null;
     }
   }
@@ -25614,8 +25511,7 @@ public class Leelaz {
         () -> {
           leela0110StopPonder();
           if (isPondering && prepareLeela0110PonderState(transaction)) {
-            Leela0110PonderCommandOwner commandOwner =
-                leela0110PonderCommandOwner(transaction);
+            Leela0110PonderCommandOwner commandOwner = leela0110PonderCommandOwner(transaction);
             if (commandOwner == null) {
               return;
             }
@@ -25626,10 +25522,7 @@ public class Leelaz {
                 transaction,
                 () ->
                     sendCommandNoLeelaz2(
-                        "time_left b 0 0",
-                        null,
-                        commandOwner.binding,
-                        commandOwner.stateToken));
+                        "time_left b 0 0", null, commandOwner.binding, commandOwner.stateToken));
           }
         });
   }

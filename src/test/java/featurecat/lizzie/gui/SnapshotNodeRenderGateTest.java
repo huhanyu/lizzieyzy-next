@@ -51,8 +51,7 @@ class SnapshotNodeRenderGateTest {
       assertTrue(renderer.isShowingBranch(), "fixture should start with a visible branch overlay.");
       assertTrue(Lizzie.frame.enterSetupMode(), "root-only board should enter setup mode.");
 
-      assertFalse(
-          renderer.isShowingBranch(), "setup mode must not retain a stale branch overlay.");
+      assertFalse(renderer.isShowingBranch(), "setup mode must not retain a stale branch overlay.");
       assertTrue(renderer.branchOpt.isEmpty(), "setup mode must clear the branch selection.");
     } finally {
       EngineManager.isEmpty = previousEmpty;
@@ -229,9 +228,7 @@ class SnapshotNodeRenderGateTest {
     assertArrayEquals(
         expected,
         actual,
-        "last "
-            + allowMoveNumber
-            + " should not renumber the complete candidate preview sequence");
+        "last " + allowMoveNumber + " should not renumber the complete candidate preview sequence");
   }
 
   private static int[] pixels(BufferedImage image) {

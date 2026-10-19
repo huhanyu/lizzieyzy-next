@@ -29,8 +29,13 @@ public final class FoxMutationAdmissionAcceptanceIT {
   void ordinaryMutationsWaitForConfirmedFoxHandback() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("fox.smoke"));
     DesktopProbeProcess.requireDisplay();
-    Path result = DesktopProbeProcess.run(FoxMutationAdmissionAcceptanceIT.class, "fox-mutations",
-        List.of(), List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")), 180);
+    Path result =
+        DesktopProbeProcess.run(
+            FoxMutationAdmissionAcceptanceIT.class,
+            "fox-mutations",
+            List.of(),
+            List.of(System.getProperty("fox.engine"), System.getProperty("fox.model")),
+            180);
     assertEquals("PASS", Files.readString(result).trim());
   }
 
@@ -40,23 +45,35 @@ public final class FoxMutationAdmissionAcceptanceIT {
     Leelaz engine = null;
     int exit = 0;
     try {
-      JSONObject config = new JSONObject()
-          .put("leelaz", new JSONObject().put("engine-settings-list", new JSONArray()))
-          .put("ui", new JSONObject().put("autoload-empty", true).put("first-time-load", false)
-              .put("use-language", 2).put("auto-quick-analyze-on-load", false));
+      JSONObject config =
+          new JSONObject()
+              .put("leelaz", new JSONObject().put("engine-settings-list", new JSONArray()))
+              .put(
+                  "ui",
+                  new JSONObject()
+                      .put("autoload-empty", true)
+                      .put("first-time-load", false)
+                      .put("use-language", 2)
+                      .put("auto-quick-analyze-on-load", false));
       Files.writeString(work.resolve("config.txt"), config.toString(2));
       Path cfg = work.resolve("engine.cfg");
-      Files.writeString(cfg, "rules = chinese\nkomi = 6.5\nnumSearchThreads = 2\nmaxVisits = 64\n"
-          + "maxTime = 3\nponderingEnabled = false\nlogAllGTPCommunication = true\n"
-          + "logSearchInfo = true\nlogDir = " + work.resolve("gtp-log") + "\n");
+      Files.writeString(
+          cfg,
+          "rules = chinese\nkomi = 6.5\nnumSearchThreads = 2\nmaxVisits = 64\n"
+              + "maxTime = 3\nponderingEnabled = false\nlogAllGTPCommunication = true\n"
+              + "logSearchInfo = true\nlogDir = "
+              + work.resolve("gtp-log")
+              + "\n");
       Path gib = work.resolve("foreign.gib");
       Files.writeString(gib, "\\[GAMEINFOMAIN=GONGJE:75,\\]\nINI 0 0 0\nSTO 0 0 1 3 3\n");
       System.setProperty("lizzie.work.dir", work.toString());
       Lizzie.main(new String[0]);
       await(() -> Lizzie.frame != null && Lizzie.frame.isShowing(), "main window");
-      SwingUtilities.invokeAndWait(() -> {
-        for (Window window : Window.getWindows()) if (window instanceof Dialog) window.dispose();
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            for (Window window : Window.getWindows())
+              if (window instanceof Dialog) window.dispose();
+          });
       EngineData entry = new EngineData();
       entry.id = UUID.randomUUID().toString();
       entry.index = Lizzie.engineManager.engineList.size();
@@ -83,22 +100,29 @@ public final class FoxMutationAdmissionAcceptanceIT {
       SwingUtilities.invokeAndWait(() -> find(fox, JSpinner.class).setValue(selectedPort));
       SwingUtilities.invokeLater(() -> button(fox, "Fox.start").doClick());
       await(() -> modal() != null, "rules confirmation");
-      SwingUtilities.invokeAndWait(() -> {
-        JDialog modal = modal();
-        find(modal, JOptionPane.class).setValue(JOptionPane.OK_OPTION);
-        modal.dispose();
-      });
+      SwingUtilities.invokeAndWait(
+          () -> {
+            JDialog modal = modal();
+            find(modal, JOptionPane.class).setValue(JOptionPane.OK_OPTION);
+            modal.dispose();
+          });
       await(() -> button(fox, "Fox.stop").isEnabled(), "listener ready");
       try (Socket peer = new Socket("127.0.0.1", port)) {
         peer.setSoTimeout(20000);
-        send(peer, "FARULE,19,60,30,3,650", "FASTATUS,1,B", "FATIMELEFT,60,30,3", "FAMOVE,1,B,0^0^0^N");
+        send(
+            peer,
+            "FARULE,19,60,30,3,650",
+            "FASTATUS,1,B",
+            "FATIMELEFT,60,30,3",
+            "FAMOVE,1,B,0^0^0^N");
         assertEquals("AFSTATUS,B", receive(peer));
         send(peer, "FASTATUS,1,B", "FATIMELEFT,59,30,3", "FAMOVE,1,B,0^0^0^N");
         String submission = receive(peer);
         assertTrue(submission.startsWith("AFPLAY,B,1^"), submission);
         assertEquals(0, Lizzie.board.getHistory().getMoveNumber());
         rejectedMutations(gib, "pending");
-        send(peer, "FAMOVE,0,B," + submission.substring("AFPLAY,B,".length()), "FATIMELEFT,58,30,3");
+        send(
+            peer, "FAMOVE,0,B," + submission.substring("AFPLAY,B,".length()), "FATIMELEFT,58,30,3");
         await(() -> Lizzie.board.getHistory().getMoveNumber() == 1, "confirmed move");
         await(() -> !Lizzie.frame.getBestMoves().isEmpty(), "real candidates");
         Thread.sleep(3500);
@@ -111,31 +135,39 @@ public final class FoxMutationAdmissionAcceptanceIT {
         await(() -> hasText(fox, "Fox.disconnected"), "retained observation");
         assertTrue(target.hasExclusiveGtpLease());
         rejectedMutations(gib, "retained");
-        SwingUtilities.invokeAndWait(() -> {
-          button(fox, "Fox.stop").doClick();
-          assertTrue(hasText(fox, "Fox.restoring"));
-          rejectOnEdt(gib, "restoring");
-        });
-        await(() -> button(fox, "Fox.start").isEnabled() && !target.hasExclusiveGtpWorkInProgress(), "confirmed Stop");
-        SwingUtilities.invokeAndWait(() -> {
-          try {
-            Lizzie.frame.tryPlay(true);
-            assertTrue(Lizzie.frame.isTrying);
-            Lizzie.frame.tryPlay(true);
-            assertFalse(Lizzie.frame.isTrying);
-            GameInfoDialog info = editedInfo();
-            info.apply();
-            info.dispose();
-            assertEquals(7.5, Lizzie.board.getHistory().getGameInfo().getKomi());
-            assertEquals("foreign black", Lizzie.board.getHistory().getGameInfo().getPlayerBlack());
-            Lizzie.config.readKomi = true;
-            assertTrue(Lizzie.frame.loadFile(gib.toFile(), false, false));
-            assertEquals("Player 2", Lizzie.board.getHistory().getGameInfo().getPlayerBlack());
-            assertEquals(7.5, Lizzie.board.getHistory().getGameInfo().getKomi());
-          } catch (Exception failure) { throw new RuntimeException(failure); }
-        });
+        SwingUtilities.invokeAndWait(
+            () -> {
+              button(fox, "Fox.stop").doClick();
+              assertTrue(hasText(fox, "Fox.restoring"));
+              rejectOnEdt(gib, "restoring");
+            });
+        await(
+            () -> button(fox, "Fox.start").isEnabled() && !target.hasExclusiveGtpWorkInProgress(),
+            "confirmed Stop");
+        SwingUtilities.invokeAndWait(
+            () -> {
+              try {
+                Lizzie.frame.tryPlay(true);
+                assertTrue(Lizzie.frame.isTrying);
+                Lizzie.frame.tryPlay(true);
+                assertFalse(Lizzie.frame.isTrying);
+                GameInfoDialog info = editedInfo();
+                info.apply();
+                info.dispose();
+                assertEquals(7.5, Lizzie.board.getHistory().getGameInfo().getKomi());
+                assertEquals(
+                    "foreign black", Lizzie.board.getHistory().getGameInfo().getPlayerBlack());
+                Lizzie.config.readKomi = true;
+                assertTrue(Lizzie.frame.loadFile(gib.toFile(), false, false));
+                assertEquals("Player 2", Lizzie.board.getHistory().getGameInfo().getPlayerBlack());
+                assertEquals(7.5, Lizzie.board.getHistory().getGameInfo().getKomi());
+              } catch (Exception failure) {
+                throw new RuntimeException(failure);
+              }
+            });
         screenshot(work, "post-stop-ordinary.png");
-        System.out.println("PASS pending/live/retained/restoring rejection; confirmed Stop restores trial/info/GIB");
+        System.out.println(
+            "PASS pending/live/retained/restoring rejection; confirmed Stop restores trial/info/GIB");
         Files.writeString(result, "PASS");
       }
     } catch (Throwable failure) {
@@ -167,12 +199,24 @@ public final class FoxMutationAdmissionAcceptanceIT {
       assertFalse(Lizzie.frame.isTrying, phase);
       assertFalse(Lizzie.frame.loadFile(gib.toFile(), false, false), phase);
       assertFalse(GIBParser.load(gib.toString()), phase);
-      assertFalse(Lizzie.frame.loadSgfString("(;SZ[19]KM[7.5];B[dd])", 0, true, false, null), phase);
-      assertFalse(Lizzie.frame.importDroppedKifuFiles(new Transferable() {
-        public DataFlavor[] getTransferDataFlavors() { return new DataFlavor[] {DataFlavor.javaFileListFlavor}; }
-        public boolean isDataFlavorSupported(DataFlavor flavor) { return DataFlavor.javaFileListFlavor.equals(flavor); }
-        public Object getTransferData(DataFlavor flavor) { return List.of(gib.toFile()); }
-      }), phase);
+      assertFalse(
+          Lizzie.frame.loadSgfString("(;SZ[19]KM[7.5];B[dd])", 0, true, false, null), phase);
+      assertFalse(
+          Lizzie.frame.importDroppedKifuFiles(
+              new Transferable() {
+                public DataFlavor[] getTransferDataFlavors() {
+                  return new DataFlavor[] {DataFlavor.javaFileListFlavor};
+                }
+
+                public boolean isDataFlavorSupported(DataFlavor flavor) {
+                  return DataFlavor.javaFileListFlavor.equals(flavor);
+                }
+
+                public Object getTransferData(DataFlavor flavor) {
+                  return List.of(gib.toFile());
+                }
+              }),
+          phase);
       Lizzie.frame.openFile();
       LizzieFrame.editGameInfo();
       info.apply();
@@ -183,15 +227,27 @@ public final class FoxMutationAdmissionAcceptanceIT {
       assertEquals(title, Lizzie.frame.getTitle(), phase);
       assertSame(file, Lizzie.frame.curFile, phase);
       assertEquals(sound, Lizzie.config.playSound, phase);
-      System.out.println("REJECTED " + phase + " move=" + node.getData().moveNumber
-          + " komi=" + history.getGameInfo().getKomi());
-    } catch (Exception failure) { throw new RuntimeException(failure); }
+      System.out.println(
+          "REJECTED "
+              + phase
+              + " move="
+              + node.getData().moveNumber
+              + " komi="
+              + history.getGameInfo().getKomi());
+    } catch (Exception failure) {
+      throw new RuntimeException(failure);
+    }
   }
 
   private static GameInfoDialog editedInfo() throws Exception {
     GameInfoDialog info = new GameInfoDialog();
     info.setGameInfo(Lizzie.board.getHistory().getGameInfo());
-    for (String[] field : new String[][] {{"textFieldKomi", "7.5"}, {"textFieldBlack", "foreign black"}, {"textFieldWhite", "foreign white"}}) {
+    for (String[] field :
+        new String[][] {
+          {"textFieldKomi", "7.5"},
+          {"textFieldBlack", "foreign black"},
+          {"textFieldWhite", "foreign white"}
+        }) {
       var member = GameInfoDialog.class.getDeclaredField(field[0]);
       member.setAccessible(true);
       ((JTextField) member.get(info)).setText(field[1]);
@@ -204,17 +260,25 @@ public final class FoxMutationAdmissionAcceptanceIT {
     try (var paths = Files.list(work.resolve("gtp-log"))) {
       for (Path path : paths.toList()) text.append(Files.readString(path));
     }
-    return text.toString().lines().filter(line -> line.contains("Controller:"))
+    return text.toString()
+        .lines()
+        .filter(line -> line.contains("Controller:"))
         .collect(java.util.stream.Collectors.joining("\n"));
   }
 
   private static void screenshot(Path work, String name) throws Exception {
-    ImageIO.write(new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())), "png", work.resolve(name).toFile());
+    ImageIO.write(
+        new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize())),
+        "png",
+        work.resolve(name).toFile());
   }
 
   private static void await(BooleanSupplier condition, String label) throws Exception {
     long end = System.nanoTime() + 40_000_000_000L;
-    while (System.nanoTime() < end) { if (condition.getAsBoolean()) return; Thread.sleep(25); }
+    while (System.nanoTime() < end) {
+      if (condition.getAsBoolean()) return;
+      Thread.sleep(25);
+    }
     throw new AssertionError(label);
   }
 
@@ -222,46 +286,67 @@ public final class FoxMutationAdmissionAcceptanceIT {
     if (type.isInstance(parent)) return type.cast(parent);
     for (Component child : parent.getComponents()) {
       if (type.isInstance(child)) return type.cast(child);
-      if (child instanceof Container) { T found = find((Container) child, type); if (found != null) return found; }
+      if (child instanceof Container) {
+        T found = find((Container) child, type);
+        if (found != null) return found;
+      }
     }
     return null;
   }
 
   private static JButton button(Container parent, String key) {
     for (Component child : parent.getComponents()) {
-      if (child instanceof JButton && ((JButton) child).getText().equals(Lizzie.resourceBundle.getString(key))) return (JButton) child;
-      if (child instanceof Container) { JButton found = button((Container) child, key); if (found != null) return found; }
+      if (child instanceof JButton
+          && ((JButton) child).getText().equals(Lizzie.resourceBundle.getString(key)))
+        return (JButton) child;
+      if (child instanceof Container) {
+        JButton found = button((Container) child, key);
+        if (found != null) return found;
+      }
     }
     return null;
   }
 
   private static boolean hasText(Container parent, String key) {
     for (Component child : parent.getComponents()) {
-      if (child instanceof JLabel && ((JLabel) child).getText().equals(Lizzie.resourceBundle.getString(key))) return true;
+      if (child instanceof JLabel
+          && ((JLabel) child).getText().equals(Lizzie.resourceBundle.getString(key))) return true;
       if (child instanceof Container && hasText((Container) child, key)) return true;
     }
     return false;
   }
 
   private static JDialog foxDialog() {
-    for (Window window : Window.getWindows()) if (window instanceof JDialog && ((JDialog) window).getTitle().equals(Lizzie.resourceBundle.getString("Fox.title"))) return (JDialog) window;
+    for (Window window : Window.getWindows())
+      if (window instanceof JDialog
+          && ((JDialog) window).getTitle().equals(Lizzie.resourceBundle.getString("Fox.title")))
+        return (JDialog) window;
     throw new AssertionError("Fox dialog");
   }
 
   private static JDialog modal() {
-    for (Window window : Window.getWindows()) if (window instanceof JDialog && ((JDialog) window).isModal() && window.isShowing()) return (JDialog) window;
+    for (Window window : Window.getWindows())
+      if (window instanceof JDialog && ((JDialog) window).isModal() && window.isShowing())
+        return (JDialog) window;
     return null;
   }
 
   private static void send(Socket peer, String... messages) throws Exception {
-    for (String message : messages) { peer.getOutputStream().write(FoxProtocol.encode(message)); System.out.println("IN " + message); }
+    for (String message : messages) {
+      peer.getOutputStream().write(FoxProtocol.encode(message));
+      System.out.println("IN " + message);
+    }
     peer.getOutputStream().flush();
   }
 
   private static String receive(Socket peer) throws Exception {
     var bytes = new java.io.ByteArrayOutputStream();
     int value;
-    do { value = peer.getInputStream().read(); if (value < 0) throw new java.io.EOFException(); bytes.write(value); } while (value != '\n');
+    do {
+      value = peer.getInputStream().read();
+      if (value < 0) throw new java.io.EOFException();
+      bytes.write(value);
+    } while (value != '\n');
     var messages = new ArrayList<String>();
     new FoxProtocol().accept(bytes.toByteArray(), bytes.size(), messages::add);
     assertEquals(1, messages.size());
@@ -276,6 +361,10 @@ public final class FoxMutationAdmissionAcceptanceIT {
       width = height = oriWidth = oriHeight = 19;
       komi = orikomi = 6.5f;
     }
-    @Override public String getEngineName(int index) { return "Fox mutation real KataGo"; }
+
+    @Override
+    public String getEngineName(int index) {
+      return "Fox mutation real KataGo";
+    }
   }
 }

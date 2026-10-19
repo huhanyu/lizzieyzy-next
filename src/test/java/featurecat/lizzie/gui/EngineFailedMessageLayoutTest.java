@@ -9,8 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import featurecat.lizzie.Lizzie;
-import featurecat.lizzie.analysis.EngineStartupDiagnostics;
 import featurecat.lizzie.analysis.EngineStartupDiagnostic;
+import featurecat.lizzie.analysis.EngineStartupDiagnostics;
 import featurecat.lizzie.gui.EngineFailedMessage.DiagnosticActionResult;
 import featurecat.lizzie.util.KataGoRuntimeHelper.TensorRtFailureKind;
 import featurecat.lizzie.util.KataGoRuntimeHelper.TensorRtInstallStatus;
@@ -123,17 +123,23 @@ class EngineFailedMessageLayoutTest {
 
   @Test
   void plinkPasswordsNeverReachFailureTextOrDiagnosticCommands() {
-    for (String value : List.of("CANARY_PLINK", "CANARY_PLINK suffix",
-        "CANARY_PLINK&suffix;end,rest}final", "CANARY_PLINK\tsuffix")) {
+    for (String value :
+        List.of(
+            "CANARY_PLINK",
+            "CANARY_PLINK suffix",
+            "CANARY_PLINK&suffix;end,rest}final",
+            "CANARY_PLINK\tsuffix")) {
       String command = "plink -pw \"" + value + "\" -P 22";
-      JScrollPane pane = EngineFailedMessage.createScrollableText(
-          command, new Font(Font.MONOSPACED, Font.PLAIN, 14));
+      JScrollPane pane =
+          EngineFailedMessage.createScrollableText(
+              command, new Font(Font.MONOSPACED, Font.PLAIN, 14));
       List<String> arguments = List.of("plink", "-pw", value, "-P", "22");
-      for (String safe : List.of(
-          ((JTextArea) pane.getViewport().getView()).getText(),
-          EngineFailedMessage.redactSensitiveText(command),
-          EngineFailedMessage.buildDiagnosticCommand(arguments, command),
-          EngineFailedMessage.buildDiagnosticCommand(List.of(), command))) {
+      for (String safe :
+          List.of(
+              ((JTextArea) pane.getViewport().getView()).getText(),
+              EngineFailedMessage.redactSensitiveText(command),
+              EngineFailedMessage.buildDiagnosticCommand(arguments, command),
+              EngineFailedMessage.buildDiagnosticCommand(List.of(), command))) {
         assertFalse(safe.contains("CANARY_PLINK"));
         assertFalse(safe.contains("suffix"));
         assertTrue(safe.contains("<redacted>"));

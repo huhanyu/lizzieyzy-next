@@ -17,30 +17,24 @@ class MenuBottomToolbarVisibilityTest {
 
   @Test
   void heightZeroSelectsInvisibleEvenIfVisibleFlagIsStale() {
-    assertEquals(
-        Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(0, true));
-    assertEquals(
-        Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(0, false));
+    assertEquals(Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(0, true));
+    assertEquals(Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(0, false));
   }
 
   @Test
   void shownHeightSelectsVisibleOnlyWhenTheToolbarIsShowing() {
-    assertEquals(
-        Menu.BottomToolbarMenuMark.VISIBLE, Menu.bottomToolbarMenuMark(26, true));
+    assertEquals(Menu.BottomToolbarMenuMark.VISIBLE, Menu.bottomToolbarMenuMark(26, true));
   }
 
   @Test
   void hideThatLeavesStaleShownHeightStillSelectsInvisible() {
-    assertEquals(
-        Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(26, false));
+    assertEquals(Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(26, false));
   }
 
   @Test
   void detailedHeightSelectsDetailedOnlyWhileVisible() {
-    assertEquals(
-        Menu.BottomToolbarMenuMark.DETAILED, Menu.bottomToolbarMenuMark(70, true));
-    assertEquals(
-        Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(70, false));
+    assertEquals(Menu.BottomToolbarMenuMark.DETAILED, Menu.bottomToolbarMenuMark(70, true));
+    assertEquals(Menu.BottomToolbarMenuMark.INVISIBLE, Menu.bottomToolbarMenuMark(70, false));
   }
 
   @Test

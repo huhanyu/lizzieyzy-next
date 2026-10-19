@@ -66,10 +66,8 @@ class EngineManagerEngineGameStartTest {
                   manager, EngineGamePlans.harness(0, 1, true), null, true)
               != null);
 
-      EngineManager.PkEngineSynchronization black =
-          manager.startEngineForPkSynchronization(-1);
-      EngineManager.PkEngineSynchronization white =
-          manager.startEngineForPkSynchronization(-1);
+      EngineManager.PkEngineSynchronization black = manager.startEngineForPkSynchronization(-1);
+      EngineManager.PkEngineSynchronization white = manager.startEngineForPkSynchronization(-1);
 
       assertFalse(manager.finishPkEngineSynchronizations(black, white));
       SwingUtilities.invokeAndWait(() -> {});

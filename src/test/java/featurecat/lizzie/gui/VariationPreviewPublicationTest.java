@@ -23,18 +23,45 @@ class VariationPreviewPublicationTest {
   private final BoardData data = BoardData.empty(3, 3);
   private VariationPreviewGenerator.Geometry geometry =
       new VariationPreviewGenerator.Geometry(3, 3, 100, 100, 20, 20, 30, 30, 10, 1, 1);
-  private final VariationPreviewGenerator.Style style = new VariationPreviewGenerator.Style(
-      false, false, false, false, true, false, false, false, false, true, true, 0,
-      199, 199, 0, new Font("Dialog", Font.PLAIN, 12), null, null, null, 0,
-      Color.ORANGE, Color.ORANGE,
-      VariationPreviewGenerator.captureSourceStones(data.stones, null), "pass");
+  private final VariationPreviewGenerator.Style style =
+      new VariationPreviewGenerator.Style(
+          false,
+          false,
+          false,
+          false,
+          true,
+          false,
+          false,
+          false,
+          false,
+          true,
+          true,
+          0,
+          199,
+          199,
+          0,
+          new Font("Dialog", Font.PLAIN, 12),
+          null,
+          null,
+          null,
+          0,
+          Color.ORANGE,
+          Color.ORANGE,
+          VariationPreviewGenerator.captureSourceStones(data.stones, null),
+          "pass");
   private VariationPreviewState.Mode mode =
       new VariationPreviewState.Mode(ExtraMode.Normal, false, false);
   private VariationPreviewState.Selection live;
 
   private VariationPreviewState.Selection selection(String coordinate, int visits) {
-    Branch.Input input = new Branch.Input(new Branch.Position(3, 3, data, data.stones, true),
-        List.of(coordinate, "C1"), List.of(Integer.toString(visits), "200"), 2, false, true);
+    Branch.Input input =
+        new Branch.Input(
+            new Branch.Position(3, 3, data, data.stones, true),
+            List.of(coordinate, "C1"),
+            List.of(Integer.toString(visits), "200"),
+            2,
+            false,
+            true);
     return new VariationPreviewState.Selection(null, coordinate, input, 2);
   }
 
@@ -80,7 +107,6 @@ class VariationPreviewPublicationTest {
     state.clear();
     assertNull(state.published());
   }
-
 
   @Test
   void lateA1CannotPublishOverReselectedA2() {
@@ -175,8 +201,14 @@ class VariationPreviewPublicationTest {
   void clearDuringValidationRejectsPublicationWithoutHoldingTheStateMonitor() {
     live = selection("B2", 1);
     state.select(live);
-    state.request(state.generation(), live, geometry, style, mode,
-        () -> runWriter(state::clear), result -> fail("retired result consumed"));
+    state.request(
+        state.generation(),
+        live,
+        geometry,
+        style,
+        mode,
+        () -> runWriter(state::clear),
+        result -> fail("retired result consumed"));
     finish();
     assertNull(state.selected());
     assertNull(state.published());
@@ -186,7 +218,12 @@ class VariationPreviewPublicationTest {
   void newerStepDuringValidationIsNotOverwrittenByTheCompletedRequest() {
     live = selection("B2", 1);
     state.select(live);
-    state.request(state.generation(), live, geometry, style, mode,
+    state.request(
+        state.generation(),
+        live,
+        geometry,
+        style,
+        mode,
         () -> runWriter(() -> state.setDisplayedLength(1)),
         result -> fail("old prefix consumed"));
     finish();
@@ -205,22 +242,31 @@ class VariationPreviewPublicationTest {
     CountDownLatch clearing = new CountDownLatch(1);
     CountDownLatch cleared = new CountDownLatch(1);
     AtomicReference<VariationPreviewGenerator.Result> visible = new AtomicReference<>();
-    Thread writer = new Thread(() -> {
-      clearing.countDown();
-      synchronized (state) {
-        state.clear();
-        visible.set(null);
-      }
-      cleared.countDown();
-    });
-    state.request(state.generation(), live, geometry, style, mode, () -> {}, result -> {
-      writer.start();
-      await(clearing);
-      assertSame(result, state.published());
-      visible.set(result);
-      assertEquals(2, result.branch().length);
-      assertEquals(1L, cleared.getCount(), "clear must follow whole-result consumption");
-    });
+    Thread writer =
+        new Thread(
+            () -> {
+              clearing.countDown();
+              synchronized (state) {
+                state.clear();
+                visible.set(null);
+              }
+              cleared.countDown();
+            });
+    state.request(
+        state.generation(),
+        live,
+        geometry,
+        style,
+        mode,
+        () -> {},
+        result -> {
+          writer.start();
+          await(clearing);
+          assertSame(result, state.published());
+          visible.set(result);
+          assertEquals(2, result.branch().length);
+          assertEquals(1L, cleared.getCount(), "clear must follow whole-result consumption");
+        });
     finish();
     await(cleared);
     writer.join(2000);
@@ -246,13 +292,15 @@ class VariationPreviewPublicationTest {
 
   private static void runWriter(Runnable action) {
     CountDownLatch finished = new CountDownLatch(1);
-    Thread writer = new Thread(() -> {
-      try {
-        action.run();
-      } finally {
-        finished.countDown();
-      }
-    });
+    Thread writer =
+        new Thread(
+            () -> {
+              try {
+                action.run();
+              } finally {
+                finished.countDown();
+              }
+            });
     writer.setDaemon(true);
     writer.start();
     await(finished);

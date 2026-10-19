@@ -104,8 +104,7 @@ public final class EdtHangWatchdog {
     if (scheduler == null) {
       return;
     }
-    scheduler.scheduleWithFixedDelay(
-        this::safeTick, pollNanos, pollNanos, TimeUnit.NANOSECONDS);
+    scheduler.scheduleWithFixedDelay(this::safeTick, pollNanos, pollNanos, TimeUnit.NANOSECONDS);
   }
 
   void enable() {

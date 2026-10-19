@@ -146,15 +146,18 @@ public class SidebarPanel extends JPanel {
     SurfacePalette palette = surfacePalette();
     Color tint = palette.highlight();
     return new Color(
-        tint.getRed(), tint.getGreen(), tint.getBlue(),
+        tint.getRed(),
+        tint.getGreen(),
+        tint.getBlue(),
         selected ? palette.highlightAlpha() : Math.min(12, palette.highlightAlpha()));
   }
 
   private static SurfacePalette surfacePalette() {
-    Color fill = Lizzie.config == null
-        ? new Color(30, 33, 38)
-        : resolveCommentPanelFillColor(
-            Lizzie.config.commentBackgroundColor, Lizzie.config.isAppleStyle);
+    Color fill =
+        Lizzie.config == null
+            ? new Color(30, 33, 38)
+            : resolveCommentPanelFillColor(
+                Lizzie.config.commentBackgroundColor, Lizzie.config.isAppleStyle);
     SurfacePalette cached = cachedSurfacePalette;
     if (cached != null && cached.fill().equals(fill)) return cached;
     SurfacePalette palette = createSurfacePalette(fill);
@@ -174,12 +177,15 @@ public class SidebarPanel extends JPanel {
       // No single foreground guarantees contrast there. Preserve user alpha and the
       // existing palette rather than treating a guessed underlay as the actual surface.
       dark = fill.getRed() * 0.2126 + fill.getGreen() * 0.7152 + fill.getBlue() * 0.0722 < 140;
-      return new SurfacePalette(fill, dark,
+      return new SurfacePalette(
+          fill,
+          dark,
           dark ? new Color(239, 242, 241) : new Color(28, 34, 32),
           dark ? new Color(185, 195, 191) : new Color(72, 83, 79),
           dark ? new Color(105, 211, 186) : new Color(18, 107, 98),
           dark ? new Color(255, 176, 164) : new Color(155, 43, 35),
-          dark ? new Color(105, 211, 186) : new Color(18, 107, 98), 25);
+          dark ? new Color(105, 211, 186) : new Color(18, 107, 98),
+          25);
     }
     Color tint = readableColor(accent, surfaces, 3.0);
     int highlightAlpha = 25;
@@ -187,25 +193,33 @@ public class SidebarPanel extends JPanel {
     while (highlightAlpha > 0 && !supportsTextContrast(painted)) {
       painted = highlightedSurfaces(surfaces, tint, --highlightAlpha);
     }
-    return new SurfacePalette(fill, dark,
+    return new SurfacePalette(
+        fill,
+        dark,
         readableColor(primary, painted, 4.5),
         readableColor(secondary, painted, 4.5),
         readableColor(accent, painted, 3.0),
         readableColor(loss, painted, 4.5),
-        tint, highlightAlpha);
+        tint,
+        highlightAlpha);
   }
 
   private record SurfacePalette(
-      Color fill, boolean dark, Color primary, Color secondary, Color accent,
-      Color loss, Color highlight, int highlightAlpha) {}
+      Color fill,
+      boolean dark,
+      Color primary,
+      Color secondary,
+      Color accent,
+      Color loss,
+      Color highlight,
+      int highlightAlpha) {}
 
   private static Color[] surfaceBounds(Color fill) {
     if (fill.getAlpha() == 255) return new Color[] {fill};
     // Bound every possible underlay, including image pixels. These are conservative
     // extrema, not a claim that the actual wallpaper is black or white.
     return new Color[] {
-        expandBound(composite(fill, Color.BLACK), -1),
-        expandBound(composite(fill, Color.WHITE), 1)
+      expandBound(composite(fill, Color.BLACK), -1), expandBound(composite(fill, Color.WHITE), 1)
     };
   }
 
@@ -241,16 +255,19 @@ public class SidebarPanel extends JPanel {
 
   private static Color readableColor(Color preferred, Color[] surfaces, double minimum) {
     if (minimumContrast(preferred, surfaces) >= minimum) return preferred;
-    Color endpoint = minimumContrast(Color.BLACK, surfaces) >= minimumContrast(Color.WHITE, surfaces)
-        ? Color.BLACK : Color.WHITE;
+    Color endpoint =
+        minimumContrast(Color.BLACK, surfaces) >= minimumContrast(Color.WHITE, surfaces)
+            ? Color.BLACK
+            : Color.WHITE;
     int low = 0;
     int high = 255;
     while (low < high) {
       int amount = (low + high) / 2;
-      Color candidate = new Color(
-          blendChannel(preferred.getRed(), endpoint.getRed(), amount),
-          blendChannel(preferred.getGreen(), endpoint.getGreen(), amount),
-          blendChannel(preferred.getBlue(), endpoint.getBlue(), amount));
+      Color candidate =
+          new Color(
+              blendChannel(preferred.getRed(), endpoint.getRed(), amount),
+              blendChannel(preferred.getGreen(), endpoint.getGreen(), amount),
+              blendChannel(preferred.getBlue(), endpoint.getBlue(), amount));
       if (minimumContrast(candidate, surfaces) >= minimum) high = amount;
       else low = amount + 1;
     }
@@ -276,8 +293,8 @@ public class SidebarPanel extends JPanel {
     double minimum = Double.POSITIVE_INFINITY;
     for (Color surface : surfaces) {
       double second = luminance(surface);
-      minimum = Math.min(minimum,
-          (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05));
+      minimum =
+          Math.min(minimum, (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05));
     }
     return minimum;
   }

@@ -23,11 +23,9 @@ public final class CrashLoggingFailureProbe {
     LoggingStatus status = runtime.status();
     System.out.println("CONTINUED");
     System.out.println("persistence=" + status.persistenceEnabled());
-    status
-        .stream(LogStream.CRASH)
+    status.stream(LogStream.CRASH)
         .ifPresent(stream -> System.out.println("crash-reason=" + stream.reason()));
-    status
-        .stream(LogStream.APP)
+    status.stream(LogStream.APP)
         .ifPresent(stream -> System.out.println("app-reason=" + stream.reason()));
   }
 }

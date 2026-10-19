@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
-import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineCommandSink;
 import featurecat.lizzie.analysis.EngineFollowController;
+import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
@@ -341,14 +341,14 @@ class BoardRootSetupSeamTest {
       env.close();
     }
   }
+
   @Test
   void currentPositionConversionPreservesSetupStateAndGameMetadata() throws Exception {
     TestEnvironment env = TestEnvironment.open();
     try {
       BoardHistoryList history =
           SGFParser.parseSgf(
-              "(;SZ[3]RU[Japanese]KM[6.5]PB[Black]PW[White]RE[W+R]"
-                  + ";B[aa](;W[])(;W[cc]))",
+              "(;SZ[3]RU[Japanese]KM[6.5]PB[Black]PW[White]RE[W+R]" + ";B[aa](;W[])(;W[cc]))",
               false);
       history.toStart();
       history.next();
@@ -370,7 +370,8 @@ class BoardRootSetupSeamTest {
       assertEquals(0, root.numberOfChildren(), "conversion should discard moves and variations.");
       assertEquals(0, root.getData().moveNumber, "the converted root should have no move count.");
       assertEquals(Stone.BLACK, root.getData().stones[Board.getIndex(0, 0)]);
-      assertTrue(root.getData().blackToPlay, "conversion should preserve the displayed side-to-play.");
+      assertTrue(
+          root.getData().blackToPlay, "conversion should preserve the displayed side-to-play.");
       assertEquals(
           "Japanese",
           root.getData().getProperty("RU"),
@@ -394,7 +395,8 @@ class BoardRootSetupSeamTest {
           "converted setup stones must not save as ordinary moves or passes.");
 
       BoardHistoryList reopened = SGFParser.parseSgf(saved, false);
-      assertEquals(0, reopened.getStart().numberOfChildren(), "reopened SGF should remain root-only.");
+      assertEquals(
+          0, reopened.getStart().numberOfChildren(), "reopened SGF should remain root-only.");
       assertEquals(Stone.BLACK, reopened.getStart().getData().stones[Board.getIndex(0, 0)]);
       assertTrue(reopened.getStart().getData().blackToPlay);
     } finally {
@@ -598,12 +600,12 @@ class BoardRootSetupSeamTest {
       Lizzie.board.setupSetSideToPlay(false);
 
       assertTrue(
-          sink.calls.isEmpty(), "setup edits must not send engine commands while the mode is active.");
+          sink.calls.isEmpty(),
+          "setup edits must not send engine commands while the mode is active.");
 
       BoardHistoryNode finalSetup = Lizzie.board.getHistory().getStart();
       sink.blockResync = true;
-      CompletableFuture<Void> exitCall =
-          CompletableFuture.runAsync(Lizzie.frame::exitSetupMode);
+      CompletableFuture<Void> exitCall = CompletableFuture.runAsync(Lizzie.frame::exitSetupMode);
       try {
         assertTrue(
             sink.resyncStarted.await(1, TimeUnit.SECONDS),
@@ -622,7 +624,8 @@ class BoardRootSetupSeamTest {
           List.of("resync", "clearBestMoves"),
           sink.calls,
           "mode exit should use one history resync instead of ordinary play replay.");
-      assertTrue(sink.resyncTarget == finalSetup, "the final root snapshot should be synchronized.");
+      assertTrue(
+          sink.resyncTarget == finalSetup, "the final root snapshot should be synchronized.");
       assertEquals(Stone.BLACK, sink.resyncTarget.getData().stones[Board.getIndex(0, 0)]);
       assertEquals(Stone.WHITE, sink.resyncTarget.getData().stones[Board.getIndex(1, 1)]);
       assertFalse(
@@ -1111,6 +1114,7 @@ class BoardRootSetupSeamTest {
     public void playMove(Stone color, String move) {
       playedMoves.add(color + " " + move);
     }
+
     @Override
     public boolean isLoaded() {
       return true;

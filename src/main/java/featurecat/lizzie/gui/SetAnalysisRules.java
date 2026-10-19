@@ -67,9 +67,11 @@ public class SetAnalysisRules extends JDialog {
     btnApply.setBounds(183, below + 5, 93, 23);
     getContentPane().add(btnApply);
     int width = editor.width();
-    int buttonHeight = Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
-    int buttonWidth = Math.max(93, Math.max(btnApply.getPreferredSize().width,
-        btnCancel.getPreferredSize().width));
+    int buttonHeight =
+        Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
+    int buttonWidth =
+        Math.max(
+            93, Math.max(btnApply.getPreferredSize().width, btnCancel.getPreferredSize().width));
     btnApply.setBounds(width / 2 - buttonWidth - 6, below, buttonWidth, buttonHeight);
     btnCancel.setBounds(width / 2 + 6, below, buttonWidth, buttonHeight);
     getContentPane().setPreferredSize(new Dimension(width, below + buttonHeight + 16));

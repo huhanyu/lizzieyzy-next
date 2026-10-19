@@ -17,10 +17,7 @@ final class WindowsUpdateAdapter implements UpdateDiscovery.PlatformAdapter {
   }
 
   private WindowsUpdateAdapter(
-      boolean supported,
-      boolean useDetectedTarget,
-      String flavor,
-      InstalledUpdateState installed) {
+      boolean supported, boolean useDetectedTarget, String flavor, InstalledUpdateState installed) {
     this.supported = supported;
     this.useDetectedTarget = useDetectedTarget;
     this.flavor = flavor;
@@ -40,8 +37,7 @@ final class WindowsUpdateAdapter implements UpdateDiscovery.PlatformAdapter {
       if (useDetectedTarget) {
         WindowsUpdatePaths paths = WindowsUpdatePaths.detect();
         targetFlavor = paths.flavor;
-        state =
-            InstalledUpdateState.read(paths.appDir, selection.installedVersion, paths.flavor);
+        state = InstalledUpdateState.read(paths.appDir, selection.installedVersion, paths.flavor);
       }
       if (!hasMatchingWindowsCore(manifest, targetFlavor)) {
         return UpdateCheckResult.noPackage();

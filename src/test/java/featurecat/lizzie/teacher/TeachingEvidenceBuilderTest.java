@@ -36,7 +36,8 @@ class TeachingEvidenceBuilderTest {
             pvCandidate("D4", 2, 180, 53.119, -1.049, List.of("D4", "C3")));
 
     TeachingEvidence evidence =
-        TeachingEvidenceBuilder.buildTeachingEvidence(analysis, "why D4", List.of(), List.of(), List.of());
+        TeachingEvidenceBuilder.buildTeachingEvidence(
+            analysis, "why D4", List.of(), List.of(), List.of());
 
     assertEquals(12, evidence.moveNumber);
     assertEquals(TeachingPhase.opening, evidence.phase);
@@ -197,12 +198,10 @@ class TeachingEvidenceBuilderTest {
   void verifyTeacherMarkdownAcceptsLegalActualCandidateAndPvCoordinates() {
     TeachingEvidence evidence = evidenceWithLegalMoves();
 
-    MarkdownVerification actual =
-        TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐D4。", evidence);
+    MarkdownVerification actual = TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐D4。", evidence);
     MarkdownVerification candidate =
         TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐Q16。", evidence);
-    MarkdownVerification pv =
-        TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐C3。", evidence);
+    MarkdownVerification pv = TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐C3。", evidence);
 
     assertTrue(actual.ok);
     assertTrue(candidate.ok);
@@ -240,7 +239,8 @@ class TeachingEvidenceBuilderTest {
     assertFalse(hasIssue(supportedJoseki.warnings, "Joseki terminology"));
 
     MarkdownVerification cited =
-        TeachingEvidenceBuilder.verifyTeacherMarkdown("according to Sensei this is forced.", evidence);
+        TeachingEvidenceBuilder.verifyTeacherMarkdown(
+            "according to Sensei this is forced.", evidence);
     assertTrue(hasIssue(cited.warnings, "cite external sources"));
     assertTrue(hasIssue(cited.warnings, "sourceRefs"));
 
@@ -305,14 +305,14 @@ class TeachingEvidenceBuilderTest {
         TeachingEvidenceBuilder.verifyTeacherMarkdown("实战D4，推荐Q16，后续C3。", evidence);
     String cleanNote = TeachingEvidenceBuilder.buildVerificationNote(clean, evidence, "zh-CN");
     String cleanAppended =
-        TeachingEvidenceBuilder.appendVerificationNote("实战D4，推荐Q16，后续C3。", clean, evidence, "zh-CN");
+        TeachingEvidenceBuilder.appendVerificationNote(
+            "实战D4，推荐Q16，后续C3。", clean, evidence, "zh-CN");
 
     assertTrue(clean.ok);
     assertEquals("实战D4，推荐Q16，后续C3。\n\n" + cleanNote.trim(), cleanAppended);
     assertFalse(cleanAppended.contains("校验提示"));
 
-    MarkdownVerification dirty =
-        TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐T19。", evidence);
+    MarkdownVerification dirty = TeachingEvidenceBuilder.verifyTeacherMarkdown("推荐T19。", evidence);
     String dirtyNote = TeachingEvidenceBuilder.buildVerificationNote(dirty, evidence, "zh-CN");
     String dirtyAppended =
         TeachingEvidenceBuilder.appendVerificationNote("推荐T19。", dirty, evidence, "zh-CN");
@@ -321,7 +321,8 @@ class TeachingEvidenceBuilderTest {
     assertTrue(dirtyAppended.contains("Unsupported recommended coordinate T19"));
 
     assertEquals(
-        dirtyNote, TeachingEvidenceBuilder.appendVerificationNote("  \n", dirty, evidence, "zh-CN"));
+        dirtyNote,
+        TeachingEvidenceBuilder.appendVerificationNote("  \n", dirty, evidence, "zh-CN"));
   }
 
   private static TeachingEvidence evidenceForMoveNumber(int moveNumber) {

@@ -68,7 +68,6 @@ class TensorRtRepairEntryLifecycleTest {
     assertTrue(Leelaz.startupFailureDiagnosticIsModal(null));
   }
 
-
   @Test
   void consumeRequiresIdentityAndPreservesReplacement() throws Exception {
     Leelaz engine = new Leelaz("");
@@ -185,16 +184,14 @@ class TensorRtRepairEntryLifecycleTest {
     TensorRtRepairContext pending = repairable("katago.exe gtp");
     engine.storePendingTensorRtRepairContext(pending);
 
-    KataGoAutoSetupDialog.OpenRequest request =
-        KataGoAutoSetupDialog.openRequestForRepair(pending);
+    KataGoAutoSetupDialog.OpenRequest request = KataGoAutoSetupDialog.openRequestForRepair(pending);
     assertTrue(request.directed);
     assertFalse(KataGoRuntimeHelper.isValidDirectedTensorRtTarget(request.context));
 
     boolean directedTransferAccepted =
         KataGoAutoSetupDialog.directedTransferAccepted(request.context, null);
     assertFalse(
-        Leelaz.consumePendingIfDirectedTransfer(
-            engine, directedTransferAccepted, request.context));
+        Leelaz.consumePendingIfDirectedTransfer(engine, directedTransferAccepted, request.context));
     assertSame(pending, engine.pendingTensorRtRepairContext());
   }
 

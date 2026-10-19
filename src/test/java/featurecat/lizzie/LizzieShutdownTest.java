@@ -92,8 +92,7 @@ class LizzieShutdownTest {
       config.uiConfig = new JSONObject();
       RecordingFrame frame = allocate(RecordingFrame.class);
       RecordingLeelaz engine = new RecordingLeelaz();
-      EngineManager engineManager =
-          new EngineManager(new ArrayList<>(java.util.List.of(engine)));
+      EngineManager engineManager = new EngineManager(new ArrayList<>(java.util.List.of(engine)));
       Harness harness =
           new Harness(
               Lizzie.config,

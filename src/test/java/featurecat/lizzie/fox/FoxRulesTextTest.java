@@ -20,9 +20,11 @@ class FoxRulesTextTest {
     assertEquals("中国规则", FoxRulesText.describe(preset("chinese"), ZH));
     assertEquals("日韩规则", FoxRulesText.describe(preset("japanese"), ZH));
     assertEquals("日韩规则", FoxRulesText.describe(preset("korean"), ZH));
-    assertEquals(FoxRulesText.describe(preset("chinese-ogs"), ZH),
+    assertEquals(
+        FoxRulesText.describe(preset("chinese-ogs"), ZH),
         FoxRulesText.describe(preset("chinese-kgs"), ZH));
-    assertEquals(FoxRulesText.describe(preset("aga"), ZH), FoxRulesText.describe(preset("bga"), ZH));
+    assertEquals(
+        FoxRulesText.describe(preset("aga"), ZH), FoxRulesText.describe(preset("bga"), ZH));
   }
 
   @Test
@@ -46,10 +48,11 @@ class FoxRulesTextTest {
 
   @Test
   void valuesAndFieldsWithoutDialogWordingStayRaw() {
-    KataGoRules custom = KataGoRules.parse(
-        "{\"ko\":\"SPIGHT\",\"scoring\":\"AREA\",\"tax\":\"NONE\",\"suicide\":false,"
-            + "\"hasButton\":false,\"whiteHandicapBonus\":\"N\",\"friendlyPassOk\":true,\"extra\":7}")
-        .orElseThrow();
+    KataGoRules custom =
+        KataGoRules.parse(
+                "{\"ko\":\"SPIGHT\",\"scoring\":\"AREA\",\"tax\":\"NONE\",\"suicide\":false,"
+                    + "\"hasButton\":false,\"whiteHandicapBonus\":\"N\",\"friendlyPassOk\":true,\"extra\":7}")
+            .orElseThrow();
     assertEquals(
         "胜负判断：数子；打劫规则：SPIGHT；允许棋块自杀：否；还棋头：无；"
             + "让子贴还(让N子)：贴还N目；数子规则下收后方贴还0.5目：否；未提净死子时允许停一手：是；extra：7",

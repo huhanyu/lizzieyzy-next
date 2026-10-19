@@ -58,8 +58,7 @@ class LeelazEdtCommandDispatchTest {
       SwingUtilities.invokeLater(nextUiEventRan::countDown);
 
       assertTrue(
-          sendReturned.await(1, TimeUnit.SECONDS),
-          "GTP output blocked the Swing event thread");
+          sendReturned.await(1, TimeUnit.SECONDS), "GTP output blocked the Swing event thread");
       assertTrue(
           nextUiEventRan.await(1, TimeUnit.SECONDS),
           "the next user input could not run while engine output was stalled");

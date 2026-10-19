@@ -31,10 +31,11 @@ class SGFParserSemanticRoundTripTest {
   @TempDir Path tempDirectory;
 
   @ParameterizedTest
-  @ValueSource(strings = {
-      "(;SZ[5]AB[aa]AW[ee](;W[cc];B[])(;B[bb];W[]))",
-      "(;SZ[5]PL[W];AB[aa]AW[ee](;W[cc];B[])(;B[bb];W[]))"
-  })
+  @ValueSource(
+      strings = {
+        "(;SZ[5]AB[aa]AW[ee](;W[cc];B[])(;B[bb];W[]))",
+        "(;SZ[5]PL[W];AB[aa]AW[ee](;W[cc];B[])(;B[bb];W[]))"
+      })
   void branchEditsAndDirectTurnChangePersistCurrentInitialState(String sgf) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       assertTrue(SGFParser.loadFromStringforedit(sgf));
@@ -47,9 +48,10 @@ class SGFParserSemanticRoundTripTest {
       board.moveToAnyPosition(initial.getVariation(1).orElseThrow());
       assertFalse(initial.getData().blackToPlay, "browsing does not infer from the side branch");
       board.moveBranchUp();
-      assertFalse(initial.getData().blackToPlay, "promotion does not reinterpret the initial state");
-      assertTreeSemanticsEqual(board.getHistory(),
-          SGFParser.parseSgf(SGFParser.saveToString(false), true));
+      assertFalse(
+          initial.getData().blackToPlay, "promotion does not reinterpret the initial state");
+      assertTreeSemanticsEqual(
+          board.getHistory(), SGFParser.parseSgf(SGFParser.saveToString(false), true));
       board.deleteMoveNoHint();
       assertFalse(initial.getData().blackToPlay, "deleting the first action preserves the turn");
       board.moveToAnyPosition(initial);
@@ -100,8 +102,7 @@ class SGFParserSemanticRoundTripTest {
   @ValueSource(strings = {"", "PL[B]", "PL[W]"})
   void editUndoRedoPreservesIndependentInitialSetupAndResolvedTurn(String player) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      assertTrue(SGFParser.loadFromStringforedit(
-          "(;SZ[5]" + player + ";AB[aa]AW[ee];W[cc];B[])"));
+      assertTrue(SGFParser.loadFromStringforedit("(;SZ[5]" + player + ";AB[aa]AW[ee];W[cc];B[])"));
       Board board = Lizzie.board;
       board.nextMove(false);
       board.nextMove(false);
@@ -149,38 +150,45 @@ class SGFParserSemanticRoundTripTest {
       assertFalse(setup.getData().blackToPlay);
       assertTrue(setup.getVariation(0).orElseThrow().getData().dummy);
       BoardHistoryNode restoredWhite = setup.getVariation(1).orElseThrow();
-      assertSame(deletePass ? restoredWhite.getVariation(0).orElseThrow() : restoredWhite,
+      assertSame(
+          deletePass ? restoredWhite.getVariation(0).orElseThrow() : restoredWhite,
           board.getHistory().getCurrentHistoryNode());
 
       board.reedit();
       assertTreeSemanticsEqual(after, board.getHistory());
       setup = board.getHistory().getStart().getVariation(0).orElseThrow();
       assertFalse(setup.getData().blackToPlay);
-      assertSame(deletePass ? setup.getVariation(1).orElseThrow() : setup,
+      assertSame(
+          deletePass ? setup.getVariation(1).orElseThrow() : setup,
           board.getHistory().getCurrentHistoryNode());
       if (deletePass) assertDummySiblingAnalysis(board.getHistory(), true);
     }
   }
 
   @ParameterizedTest
-  @CsvSource(delimiter = '|', value = {
-      "(;SZ[5];W[cc])|false", "(;SZ[5];B[cc])|true",
-      "(;SZ[5];W[])|false", "(;SZ[5];B[])|true",
-      "(;SZ[5]AB[aa][ee];W[cc])|false",
-      "(;SZ[5]AB[aa]AW[ee];W[cc])|false",
-      "(;SZ[5]PL[B]AB[aa];W[cc])|true",
-      "(;SZ[5]HA[2]AB[aa][ee];B[cc])|true",
-      "(;SZ[5]HA[3]AB[aa][ee];W[cc])|false",
-      "(;SZ[5]HA[2]AB[aa][ee])|false",
-      "(;SZ[5]HA[3]AB[aa][ee])|true", "(;SZ[5]HA[2])|true",
-      "(;SZ[5]AB[aa][ee])|true",
-      "(;SZ[5](;W[cc])(;B[bb]))|false",
-      "(;SZ[5](;B[cc])(;W[bb]))|true",
-      "(;SZ[5];C[note]TR[aa];W[cc])|false",
-      "(;SZ[5];AB[aa];W[cc])|true",
-      "(;SZ[5]AB[aa];AE[aa];W[cc])|true",
-      "(;SZ[5];PL[W];W[cc])|true"
-  })
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "(;SZ[5];W[cc])|false",
+        "(;SZ[5];B[cc])|true",
+        "(;SZ[5];W[])|false",
+        "(;SZ[5];B[])|true",
+        "(;SZ[5]AB[aa][ee];W[cc])|false",
+        "(;SZ[5]AB[aa]AW[ee];W[cc])|false",
+        "(;SZ[5]PL[B]AB[aa];W[cc])|true",
+        "(;SZ[5]HA[2]AB[aa][ee];B[cc])|true",
+        "(;SZ[5]HA[3]AB[aa][ee];W[cc])|false",
+        "(;SZ[5]HA[2]AB[aa][ee])|false",
+        "(;SZ[5]HA[3]AB[aa][ee])|true",
+        "(;SZ[5]HA[2])|true",
+        "(;SZ[5]AB[aa][ee])|true",
+        "(;SZ[5](;W[cc])(;B[bb]))|false",
+        "(;SZ[5](;B[cc])(;W[bb]))|true",
+        "(;SZ[5];C[note]TR[aa];W[cc])|false",
+        "(;SZ[5];AB[aa];W[cc])|true",
+        "(;SZ[5]AB[aa];AE[aa];W[cc])|true",
+        "(;SZ[5];PL[W];W[cc])|true"
+      })
   void initialTurnUsesLocalFirstActionAfterExplicitPlayer(String sgf, boolean black)
       throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
@@ -198,8 +206,7 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void explicitPlayerPersistsAcrossSetupUntilReplaced() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      BoardHistoryList history = SGFParser.parseSgf(
-          "(;SZ[5]PL[B];AB[aa][ee];PL[W];W[cc])", true);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[5]PL[B];AB[aa][ee];PL[W];W[cc])", true);
       BoardHistoryNode root = history.getStart();
       BoardHistoryNode setup = root.next().orElseThrow();
       BoardHistoryNode player = setup.next().orElseThrow();
@@ -248,8 +255,8 @@ class SGFParserSemanticRoundTripTest {
       midgame.next();
       midgame.next();
       SGFParser.parseBranch(midgame, ";AB[aa];W[cc]");
-      BoardHistoryNode midSetup = midgame.getStart().next().orElseThrow()
-          .next().orElseThrow().next().orElseThrow();
+      BoardHistoryNode midSetup =
+          midgame.getStart().next().orElseThrow().next().orElseThrow().next().orElseThrow();
       assertTrue(midSetup.getData().blackToPlay);
     }
   }
@@ -257,14 +264,13 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void setupBoundariesResolveIndependentlyInEveryInitialVariation() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      BoardHistoryList history = SGFParser.parseSgf(
-          "(;SZ[5](;AB[aa];C[transparent];W[cc])(;AW[ee];B[bb]))", true);
+      BoardHistoryList history =
+          SGFParser.parseSgf("(;SZ[5](;AB[aa];C[transparent];W[cc])(;AW[ee];B[bb]))", true);
       BoardHistoryNode root = history.getStart();
       assertTrue(root.getData().blackToPlay);
       assertFalse(root.getVariation(0).orElseThrow().getData().blackToPlay);
       assertTrue(root.getVariation(1).orElseThrow().getData().blackToPlay);
-      BoardHistoryList removed = SGFParser.parseSgf(
-          "(;SZ[5]AB[aa];AE[aa];W[cc])", true);
+      BoardHistoryList removed = SGFParser.parseSgf("(;SZ[5]AB[aa];AE[aa];W[cc])", true);
       assertTrue(removed.getStart().getData().blackToPlay);
       assertFalse(removed.getStart().next().orElseThrow().getData().blackToPlay);
     }
@@ -327,7 +333,8 @@ class SGFParserSemanticRoundTripTest {
     }
   }
 
-  private static void assertDummySiblingAnalysis(BoardHistoryList history, boolean independentSetup) {
+  private static void assertDummySiblingAnalysis(
+      BoardHistoryList history, boolean independentSetup) {
     BoardHistoryNode parent = history.getStart();
     if (independentSetup) parent = parent.getVariation(0).orElseThrow();
     BoardData white = parent.getVariation(1).orElseThrow().getData();
@@ -347,8 +354,8 @@ class SGFParserSemanticRoundTripTest {
       BoardData real = detached.getStart().getVariation(1).orElseThrow().getData();
       assertFalse(real.dummy);
       assertEquals(action.startsWith("B") ? Stone.BLACK : Stone.WHITE, real.lastMoveColor);
-      assertEquals(action.endsWith("[]") ? BoardNodeKind.PASS : BoardNodeKind.MOVE,
-          real.getNodeKind());
+      assertEquals(
+          action.endsWith("[]") ? BoardNodeKind.PASS : BoardNodeKind.MOVE, real.getNodeKind());
       assertEquals(1, real.moveNumber);
       assertTrue(SGFParser.loadFromString(sgf, false));
       assertTreeSemanticsEqual(detached, Lizzie.board.getHistory());
@@ -366,20 +373,34 @@ class SGFParserSemanticRoundTripTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"W[cc], LZ, false", "W[], LZ, false", "B[cc], LZOP, false",
-      "B[], LZOP, false", "W[cc], LZ, true", "W[], LZ, true",
-      "B[cc], LZOP, true", "B[], LZOP, true"})
+  @CsvSource({
+    "W[cc], LZ, false",
+    "W[], LZ, false",
+    "B[cc], LZOP, false",
+    "B[], LZOP, false",
+    "W[cc], LZ, true",
+    "W[], LZ, true",
+    "B[cc], LZOP, true",
+    "B[], LZOP, true"
+  })
   void sameNodeDummyPayloadBelongsToRealActionRegardlessOfPropertyOrder(
       String action, String analysisTag, boolean rootNode) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       Lizzie.config.extraMode = featurecat.lizzie.ExtraMode.Double_Engine;
-      String payload = "C[note]LB[aa:A]" + analysisTag
-          + "[KataGo 45 12.3k 2.5 1.2 0 rootVisits=12345\n"
-          + "move D4 visits 321 winrate 5500 pv D4]" + analysisTag + "2"
-          + "[Second 55 23.5k -2.5 1.3 0 rootVisits=23456\n"
-          + "move E5 visits 432 winrate 4500 pv E5]";
-      for (String node : List.of("DD[true]" + payload + action,
-          payload + "DD[true]" + action, "DD[true]" + action + payload)) {
+      String payload =
+          "C[note]LB[aa:A]"
+              + analysisTag
+              + "[KataGo 45 12.3k 2.5 1.2 0 rootVisits=12345\n"
+              + "move D4 visits 321 winrate 5500 pv D4]"
+              + analysisTag
+              + "2"
+              + "[Second 55 23.5k -2.5 1.3 0 rootVisits=23456\n"
+              + "move E5 visits 432 winrate 4500 pv E5]";
+      for (String node :
+          List.of(
+              "DD[true]" + payload + action,
+              payload + "DD[true]" + action,
+              "DD[true]" + action + payload)) {
         String sgf = "(;SZ[5]" + (rootNode ? "" : ";") + node + ")";
         for (String entry : List.of("detached", "live", "edit", "branch", "file")) {
           BoardHistoryList history;
@@ -406,8 +427,8 @@ class SGFParserSemanticRoundTripTest {
             Files.writeString(saved, SGFParser.saveToString(false));
             assertTrue(SGFParser.load(saved.toString(), false, false));
             javax.swing.SwingUtilities.invokeAndWait(() -> {});
-            assertSameNodeDummyPayload(Lizzie.board.getHistory(), action,
-                entry + " reopen " + round + ": " + node);
+            assertSameNodeDummyPayload(
+                Lizzie.board.getHistory(), action, entry + " reopen " + round + ": " + node);
           }
         }
       }
@@ -433,8 +454,10 @@ class SGFParserSemanticRoundTripTest {
     assertTrue(dummy.getData().bestMoves2.isEmpty(), context);
     BoardData real = root.getVariation(1).orElseThrow().getData();
     assertFalse(real.dummy, context);
-    assertEquals(action.endsWith("[]") ? BoardNodeKind.PASS : BoardNodeKind.MOVE,
-        real.getNodeKind(), context);
+    assertEquals(
+        action.endsWith("[]") ? BoardNodeKind.PASS : BoardNodeKind.MOVE,
+        real.getNodeKind(),
+        context);
     assertEquals(action.startsWith("B") ? Stone.BLACK : Stone.WHITE, real.lastMoveColor, context);
     assertEquals(1, real.moveNumber, context);
     assertEquals("note", real.comment, context);
@@ -451,15 +474,18 @@ class SGFParserSemanticRoundTripTest {
 
   @ParameterizedTest
   @CsvSource({"true, false", "true, true", "false, false", "false, true"})
-  void rootPayloadScanRespectsEscapesSetupAndNodeBoundaries(
-      boolean sameNodeDummy, boolean setup) throws Exception {
+  void rootPayloadScanRespectsEscapesSetupAndNodeBoundaries(boolean sameNodeDummy, boolean setup)
+      throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       Lizzie.config.extraMode = featurecat.lizzie.ExtraMode.Double_Engine;
       String comment = "note];(;DD[true]W[cc])\\tail";
-      String sgf = "(;SZ[5]" + (setup ? "AB[ee]PL[B]" : "")
-          + "C[note\\];(;DD[true\\]W[cc\\])\\\\tail]LB[aa:A]"
-          + "LZ[KataGo 45 123]LZ2[Second 55 234]"
-          + (sameNodeDummy ? "" : ";") + "DD[true]W[cc])";
+      String sgf =
+          "(;SZ[5]"
+              + (setup ? "AB[ee]PL[B]" : "")
+              + "C[note\\];(;DD[true\\]W[cc\\])\\\\tail]LB[aa:A]"
+              + "LZ[KataGo 45 123]LZ2[Second 55 234]"
+              + (sameNodeDummy ? "" : ";")
+              + "DD[true]W[cc])";
       for (String entry : List.of("detached", "live", "edit", "file")) {
         if (entry.equals("detached")) Lizzie.board.setHistory(SGFParser.parseSgf(sgf, true));
         else if (entry.equals("live")) assertTrue(SGFParser.loadFromString(sgf, false));
@@ -476,8 +502,8 @@ class SGFParserSemanticRoundTripTest {
           assertTrue(root.getData().isSnapshotNode());
           assertEquals(0, root.getData().moveNumber);
           assertTrue(root.getData().blackToPlay);
-          assertEquals(setup ? Stone.BLACK : Stone.EMPTY,
-              root.getData().stones[Board.getIndex(4, 4)]);
+          assertEquals(
+              setup ? Stone.BLACK : Stone.EMPTY, root.getData().stones[Board.getIndex(4, 4)]);
           BoardData dummy = root.getVariation(0).orElseThrow().getData();
           assertTrue(dummy.dummy);
           BoardData real = root.getVariation(1).orElseThrow().getData();
@@ -509,9 +535,13 @@ class SGFParserSemanticRoundTripTest {
   void standaloneDummyKeepsPayloadAcrossTwoSavedFileReopens(String analysisTag) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       Lizzie.config.extraMode = featurecat.lizzie.ExtraMode.Double_Engine;
-      String sgf = "(;SZ[5]C[parent]LB[bb:P](;DD[true]C[placeholder]LB[aa:A]"
-          + analysisTag + "[KataGo 45 123]" + analysisTag + "2[Second 55 234])"
-          + "(;W[]C[sibling]LB[cc:S]))";
+      String sgf =
+          "(;SZ[5]C[parent]LB[bb:P](;DD[true]C[placeholder]LB[aa:A]"
+              + analysisTag
+              + "[KataGo 45 123]"
+              + analysisTag
+              + "2[Second 55 234])"
+              + "(;W[]C[sibling]LB[cc:S]))";
       assertTrue(SGFParser.loadFromString(sgf, false));
       for (int round = 0; round < 3; round++) {
         BoardHistoryNode root = Lizzie.board.getHistory().getStart();
@@ -550,9 +580,10 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void dummyPayloadBufferStopsAtNodeAndVariationBoundaries() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      String branches = "(;DD[true]C[placeholder]LZ[KataGo 45 123])"
-          + "(;DD[true]C[real]LZ[KataGo 55 345]W[cc];B[aa]C[next])"
-          + "(;W[dd]C[side])";
+      String branches =
+          "(;DD[true]C[placeholder]LZ[KataGo 45 123])"
+              + "(;DD[true]C[real]LZ[KataGo 55 345]W[cc];B[aa]C[next])"
+              + "(;W[dd]C[side])";
       String sgf = "(;SZ[5]" + branches + ")";
       for (String entry : List.of("detached", "live", "edit", "branch")) {
         BoardHistoryList history;
@@ -597,8 +628,7 @@ class SGFParserSemanticRoundTripTest {
       assertTrue(partial.getData().blackToPlay);
       assertFalse(complete.getData().blackToPlay);
       assertFalse(InitialHandicapSetup.isInitialHandicap(complete, 2, SIZE, SIZE));
-      BoardHistoryList invalidPl = SGFParser.parseSgf(
-          "(;SZ[5]HA[2]PL[invalid]AB[aa][ee])", true);
+      BoardHistoryList invalidPl = SGFParser.parseSgf("(;SZ[5]HA[2]PL[invalid]AB[aa][ee])", true);
       assertFalse(invalidPl.getStart().getData().blackToPlay);
     }
   }
@@ -639,7 +669,8 @@ class SGFParserSemanticRoundTripTest {
       assertEquals(List.of("D4", "C4"), data.bestMoves.get(0).variation);
 
       BoardHistoryList saved = SGFParser.parseSgf(SGFParser.saveToString(false), true);
-      assertEquals(101709,
+      assertEquals(
+          101709,
           saved.getStart().next().orElseThrow().next().orElseThrow().getData().getPlayouts());
 
       MoveData incoming = new MoveData();
@@ -650,11 +681,20 @@ class SGFParserSemanticRoundTripTest {
       Object newStream = new Object();
       for (int visits : new int[] {1000, 101709, 101710}) {
         incoming.playouts = visits;
-        BoardData.AnalysisAdoption adoption = data.adoptOrdinaryAnalysis(
-            new ArrayList<>(List.of(incoming)), "b11", Lizzie.leelaz, visits, visits,
-            null, newStream, false, false);
+        BoardData.AnalysisAdoption adoption =
+            data.adoptOrdinaryAnalysis(
+                new ArrayList<>(List.of(incoming)),
+                "b11",
+                Lizzie.leelaz,
+                visits,
+                visits,
+                null,
+                newStream,
+                false,
+                false);
         boolean deeper = visits > 101709;
-        assertEquals(deeper ? BoardData.AnalysisAdoption.FULL : BoardData.AnalysisAdoption.REJECTED,
+        assertEquals(
+            deeper ? BoardData.AnalysisAdoption.FULL : BoardData.AnalysisAdoption.REJECTED,
             adoption);
         assertEquals(deeper ? visits : 101709, data.getPlayouts());
         assertEquals(deeper ? 25 : 0.2, data.winrate, 0.0001);
@@ -693,12 +733,13 @@ class SGFParserSemanticRoundTripTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {
-      "(;SZ[5]\\r;B[aa])", "(;SZ[5]\\\\n;B[aa])",
-      "(;SZ[5]K\\nM[6.5];B[aa])", "(;SZ[5]K\\n\\nM[6.5];B[aa])",
-      "(;SZ[5]\\n;B[aa](;W[bb])", "(;SZ[5]\\n;B[aa]C[unfinished)",
-      "(;SZ[5]\\n;B[aa])\\n(;SZ[5]"
-  })
+  @ValueSource(
+      strings = {
+        "(;SZ[5]\\r;B[aa])", "(;SZ[5]\\\\n;B[aa])",
+        "(;SZ[5]K\\nM[6.5];B[aa])", "(;SZ[5]K\\n\\nM[6.5];B[aa])",
+        "(;SZ[5]\\n;B[aa](;W[bb])", "(;SZ[5]\\n;B[aa]C[unfinished)",
+        "(;SZ[5]\\n;B[aa])\\n(;SZ[5]"
+      })
   void ambiguousStructuralEscapesCannotReplaceLoadedHistory(String invalid) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       assertTrue(SGFParser.loadFromString("(;SZ[5];B[cc])", false));
@@ -725,14 +766,18 @@ class SGFParserSemanticRoundTripTest {
       String normal =
           "(;SZ[5]\nKM[6.5]XX[keep\\\\n]C[中文 \\] \\\\ slash\nsecond line]"
               + "\n;B[aa]\n(;W[bb]C[main];B[cc])\n(;W[dd]C[variation];B[ee]))";
-      String escaped = normal.replace("\n;", newline + ";")
-          .replace("\nKM", newline + "KM").replace("\n(", newline + "(");
+      String escaped =
+          normal
+              .replace("\n;", newline + ";")
+              .replace("\nKM", newline + "KM")
+              .replace("\n(", newline + "(");
       BoardHistoryList expected = SGFParser.parseSgf(normal, true);
       BoardHistoryList live = Lizzie.board.getHistory();
       BoardHistoryList actual = SGFParser.parseSgf(escaped, true);
       assertSame(live, Lizzie.board.getHistory());
       assertTreeSemanticsEqual(expected, actual);
-      assertEquals(expected.getStart().getData().getProperty("XX"),
+      assertEquals(
+          expected.getStart().getData().getProperty("XX"),
           actual.getStart().getData().getProperty("XX"));
       assertEquals(List.of("BLACK 0,0", "WHITE 1,1", "BLACK 2,2"), mainlineMoves(actual));
       assertTrue(SGFParser.loadFromString(escaped, false));
@@ -759,9 +804,11 @@ class SGFParserSemanticRoundTripTest {
   void exactRootAndSparseCandidateMetricsSurviveAdoptAndRepeatedSave(String tag) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       boolean secondary = tag.endsWith("2");
-      String sgf = "(;SZ[5]" + tag
-          + "[KataGo 45 12.3k 2.5 1.2 0 rootVisits=12345\n"
-          + "move C3 visits 50000 winrate 5500 order 10 edgeVisits 0 pv C3 D4])";
+      String sgf =
+          "(;SZ[5]"
+              + tag
+              + "[KataGo 45 12.3k 2.5 1.2 0 rootVisits=12345\n"
+              + "move C3 visits 50000 winrate 5500 order 10 edgeVisits 0 pv C3 D4])";
       for (int round = 0; round < 3; round++) {
         BoardHistoryList history = SGFParser.parseSgf(sgf, true);
         Lizzie.board.setHistory(history);
@@ -794,8 +841,10 @@ class SGFParserSemanticRoundTripTest {
         assertEquals(12345, secondary ? data.rootVisits2 : data.rootVisits);
         sgf = SGFParser.saveToString(false);
       }
-      BoardData legacy = SGFParser.parseSgf(
-          "(;SZ[5]" + tag + "[KataGo 45 12k 2.5 1.2 0])", true).getStart().getData();
+      BoardData legacy =
+          SGFParser.parseSgf("(;SZ[5]" + tag + "[KataGo 45 12k 2.5 1.2 0])", true)
+              .getStart()
+              .getData();
       assertEquals(12000, secondary ? legacy.getPlayouts2() : legacy.getPlayouts());
       assertEquals(-1, secondary ? legacy.rootVisits2 : legacy.rootVisits);
     }
@@ -804,10 +853,10 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void mainlineMovesPreserveOrderColorAndBoard() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[5];B[ba];W[cc];B[de];W[ee])", true);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[5];B[ba];W[cc];B[de];W[ee])", true);
 
-      assertEquals(List.of("BLACK 1,0", "WHITE 2,2", "BLACK 3,4", "WHITE 4,4"), mainlineMoves(history));
+      assertEquals(
+          List.of("BLACK 1,0", "WHITE 2,2", "BLACK 3,4", "WHITE 4,4"), mainlineMoves(history));
       BoardHistoryNode end = history.getEnd();
       assertEquals(Stone.BLACK, end.getData().stones[Board.getIndex(1, 0)]);
       assertEquals(Stone.WHITE, end.getData().stones[Board.getIndex(2, 2)]);
@@ -842,8 +891,7 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void abAwAndPlApplyAsRootSetupNotAsMoves() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[5]AB[aa][ee]AW[cc]PL[W])", true);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[5]AB[aa][ee]AW[cc]PL[W])", true);
 
       BoardHistoryNode root = history.getStart();
       assertEquals(0, root.numberOfChildren());
@@ -875,8 +923,7 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void handicapPropertySetsGameInfoAndWhiteToPlayOnAbSetup() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      BoardHistoryList history =
-          SGFParser.parseSgf("(;SZ[5]HA[2]AB[aa][ee];W[cc])", true);
+      BoardHistoryList history = SGFParser.parseSgf("(;SZ[5]HA[2]AB[aa][ee];W[cc])", true);
 
       assertEquals(2, history.getGameInfo().getHandicap());
       BoardHistoryNode root = history.getStart();
@@ -907,16 +954,11 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void commentsSupportChineseUnicodeEscapedBracketBackslashAndMultiline() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      String sgf =
-          "(;SZ[5]C[根注释：中文 and \\] and \\\\ slash\nsecond line];B[aa]C[move \\] and κ])";
+      String sgf = "(;SZ[5]C[根注释：中文 and \\] and \\\\ slash\nsecond line];B[aa]C[move \\] and κ])";
       BoardHistoryList history = SGFParser.parseSgf(sgf, true);
 
-      assertEquals(
-          "根注释：中文 and ] and \\ slash\nsecond line",
-          history.getStart().getData().comment);
-      assertEquals(
-          "move ] and κ",
-          history.getStart().next().orElseThrow().getData().comment);
+      assertEquals("根注释：中文 and ] and \\ slash\nsecond line", history.getStart().getData().comment);
+      assertEquals("move ] and κ", history.getStart().next().orElseThrow().getData().comment);
     }
   }
 
@@ -935,8 +977,7 @@ class SGFParserSemanticRoundTripTest {
   @Test
   void tolerantPrefixSuffixAndOptionalRootSemicolonStillParse() throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
-      BoardHistoryList wrapped =
-          SGFParser.parseSgf("junk before\n(;SZ[5];B[aa]) trailing", true);
+      BoardHistoryList wrapped = SGFParser.parseSgf("junk before\n(;SZ[5];B[aa]) trailing", true);
       assertNotNull(wrapped);
       assertEquals(List.of("BLACK 0,0"), mainlineMoves(wrapped));
 
@@ -957,17 +998,7 @@ class SGFParserSemanticRoundTripTest {
   }
 
   @ParameterizedTest
-  @ValueSource(
-      strings = {
-        "",
-        "not sgf",
-        "(",
-        ")",
-        ";",
-        "B[aa]",
-        "(;SZ[5];B[",
-        "(;SZ[5];B[aa]"
-      })
+  @ValueSource(strings = {"", "not sgf", "(", ")", ";", "B[aa]", "(;SZ[5];B[", "(;SZ[5];B[aa]"})
   void incompleteOrNonSgfInputIsHandledWithoutThrowing(String raw) throws Exception {
     try (RulesLayerTestHarness ignored = RulesLayerTestHarness.open(SIZE)) {
       BoardHistoryList parsed = assertDoesNotThrow(() -> SGFParser.parseSgf(raw, true));
@@ -1221,7 +1252,8 @@ class SGFParserSemanticRoundTripTest {
 
       BoardHistoryNode root1 = history1.getStart();
       assertEquals(0, root1.getData().moveNumber);
-      assertFalse(root1.getData().blackToPlay, "root handicap setup without PL defaults to White to play");
+      assertFalse(
+          root1.getData().blackToPlay, "root handicap setup without PL defaults to White to play");
       assertTrue(InitialHandicapSetup.isInitialHandicap(root1, 2, 19, 19));
 
       BoardHistoryNode move1 = root1.next().orElseThrow();

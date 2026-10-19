@@ -281,7 +281,8 @@ class BoardPlayCaptureHistoryRegressionTest {
       assertSame(variation, env.current());
       assertTrue(RulesLayerTestHarness.sameLastMove(variation.getData(), 2, 2));
       assertEquals(Stone.WHITE, env.stoneAt(2, 2));
-      assertEquals(Stone.EMPTY, env.stoneAt(1, 1), "the variation must not keep the mainline stone.");
+      assertEquals(
+          Stone.EMPTY, env.stoneAt(1, 1), "the variation must not keep the mainline stone.");
       assertEquals(Stone.WHITE, mainlineWhite.getData().stones[Board.getIndex(1, 1)]);
       assertTrue(blackNode.next().isPresent());
       assertSame(
@@ -302,8 +303,12 @@ class BoardPlayCaptureHistoryRegressionTest {
       board.place(1, 1, Stone.WHITE, true);
 
       assertEquals(2, blackNode.numberOfChildren());
-      assertTrue(RulesLayerTestHarness.sameLastMove(blackNode.getVariation(0).orElseThrow().getData(), 4, 4));
-      assertTrue(RulesLayerTestHarness.sameLastMove(blackNode.getVariation(1).orElseThrow().getData(), 1, 1));
+      assertTrue(
+          RulesLayerTestHarness.sameLastMove(
+              blackNode.getVariation(0).orElseThrow().getData(), 4, 4));
+      assertTrue(
+          RulesLayerTestHarness.sameLastMove(
+              blackNode.getVariation(1).orElseThrow().getData(), 1, 1));
     }
   }
 

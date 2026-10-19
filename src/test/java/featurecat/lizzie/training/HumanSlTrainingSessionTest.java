@@ -61,21 +61,10 @@ class HumanSlTrainingSessionTest {
   }
 
   private static List<Integer> moveNumbers(TrainingSessionReport report) {
-    return report.assessments().stream()
-        .map(assessment -> assessment.decision.moveNumber)
-        .toList();
+    return report.assessments().stream().map(assessment -> assessment.decision.moveNumber).toList();
   }
 
-  private static HumanMoveDecision decision(
-      int moveNumber, double scoreLoss, double winrateLoss) {
-    return new HumanMoveDecision(
-        moveNumber,
-        null,
-        "D4",
-        "Q16",
-        "C3",
-        0.25,
-        scoreLoss,
-        winrateLoss);
+  private static HumanMoveDecision decision(int moveNumber, double scoreLoss, double winrateLoss) {
+    return new HumanMoveDecision(moveNumber, null, "D4", "Q16", "C3", 0.25, scoreLoss, winrateLoss);
   }
 }

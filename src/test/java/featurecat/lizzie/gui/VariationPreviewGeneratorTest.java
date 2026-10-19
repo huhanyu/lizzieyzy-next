@@ -31,8 +31,13 @@ class VariationPreviewGeneratorTest {
     List<String> variation = new ArrayList<>(List.of("B2", "C1"));
     List<String> visits = new ArrayList<>(List.of("1200", "2300"));
     Branch.Input input =
-        new Branch.Input(new Branch.Position(3, 2, source, sourceStones, true), variation, visits, 2,
-            false, true);
+        new Branch.Input(
+            new Branch.Position(3, 2, source, sourceStones, true),
+            variation,
+            visits,
+            2,
+            false,
+            true);
     VariationPreviewGenerator.Geometry geometry =
         new VariationPreviewGenerator.Geometry(3, 2, 120, 80, 20, 20, 40, 40, 12, 2, 1);
     BufferedImage shadow = new BufferedImage(25, 25, BufferedImage.TYPE_INT_ARGB);
@@ -45,9 +50,28 @@ class VariationPreviewGeneratorTest {
     }
     VariationPreviewGenerator.Style style =
         new VariationPreviewGenerator.Style(
-            false, false, false, false, true, false, false, false, false, true, true, 0,
-            199, 199, -1, new Font("Dialog", Font.PLAIN, 12), null, null, shadow, 12,
-            Color.ORANGE, Color.ORANGE,
+            false,
+            false,
+            false,
+            false,
+            true,
+            false,
+            false,
+            false,
+            false,
+            true,
+            true,
+            0,
+            199,
+            199,
+            -1,
+            new Font("Dialog", Font.PLAIN, 12),
+            null,
+            null,
+            shadow,
+            12,
+            Color.ORANGE,
+            Color.ORANGE,
             VariationPreviewGenerator.captureSourceStones(sourceStones, null),
             "pass");
     VariationPreviewGenerator.Result first =
@@ -82,8 +106,8 @@ class VariationPreviewGeneratorTest {
       assertArrayEquals(firstAnnotations, pixels(repeated.annotations()));
 
       Branch.Input different =
-          new Branch.Input(input.position, List.of("C2", "B1"), List.of("10", "20"), 2,
-              false, true);
+          new Branch.Input(
+              input.position, List.of("C2", "B1"), List.of("10", "20"), 2, false, true);
       VariationPreviewGenerator.Result next =
           VariationPreviewGenerator.generate(different, geometry, style);
       assertEquals(Color.BLACK.getRGB(), next.stones().getRGB(100, 20));

@@ -66,14 +66,12 @@ class WinrateGraphDisplaySettingsTest {
         WinrateGraph.resolveRenderableMetrics(true, false, true);
     WinrateGraph.RenderableMetrics scoreOnly =
         WinrateGraph.resolveRenderableMetrics(false, true, true);
-    WinrateGraph.RenderableMetrics both =
-        WinrateGraph.resolveRenderableMetrics(true, true, true);
+    WinrateGraph.RenderableMetrics both = WinrateGraph.resolveRenderableMetrics(true, true, true);
     WinrateGraph.RenderableMetrics bothButScoreUnavailable =
         WinrateGraph.resolveRenderableMetrics(true, true, false);
     WinrateGraph.RenderableMetrics scoreRequestedButUnavailable =
         WinrateGraph.resolveRenderableMetrics(false, true, false);
-    WinrateGraph.RenderableMetrics none =
-        WinrateGraph.resolveRenderableMetrics(false, false, true);
+    WinrateGraph.RenderableMetrics none = WinrateGraph.resolveRenderableMetrics(false, false, true);
 
     assertTrue(winrateOnly.winrateRenderable);
     assertFalse(winrateOnly.scoreRenderable);

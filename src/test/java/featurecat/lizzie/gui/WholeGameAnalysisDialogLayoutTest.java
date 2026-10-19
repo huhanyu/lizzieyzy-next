@@ -43,8 +43,7 @@ class WholeGameAnalysisDialogLayoutTest {
               JLabel progress =
                   (JLabel) findByName(dialog.getContentPane(), "wholeGameProgressText");
               JLabel mode = (JLabel) findByName(dialog.getContentPane(), "wholeGameMode");
-              JLabel remaining =
-                  (JLabel) findByName(dialog.getContentPane(), "wholeGameRemaining");
+              JLabel remaining = (JLabel) findByName(dialog.getContentPane(), "wholeGameRemaining");
               JScrollPane scrollPane =
                   (JScrollPane) findByName(dialog.getContentPane(), "wholeGameScrollPane");
               progress.setText("已完成 1234 / 2345 个局面 · 当前计算量 5000");
@@ -94,7 +93,8 @@ class WholeGameAnalysisDialogLayoutTest {
               () -> {
                 WholeGameAnalysisDialog dialog = null;
                 try {
-                  ResourceBundle resources = ResourceBundle.getBundle("l10n.DisplayStrings", locale);
+                  ResourceBundle resources =
+                      ResourceBundle.getBundle("l10n.DisplayStrings", locale);
                   Lizzie.resourceBundle = resources;
                   dialog = new WholeGameAnalysisDialog(null);
                   JLabel progress =
@@ -148,8 +148,7 @@ class WholeGameAnalysisDialogLayoutTest {
                 }
               });
           if (failure.get() != null) {
-            throw new AssertionError(
-                "Layout failed for " + locale + " at " + scale, failure.get());
+            throw new AssertionError("Layout failed for " + locale + " at " + scale, failure.get());
           }
         }
       }

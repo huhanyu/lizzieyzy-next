@@ -106,8 +106,8 @@ public final class ExactSnapshotEngineRestore {
    *
    * <p>Unlike {@link #prepare(Leelaz.ExactSnapshotRestoreAdmission, BoardHistoryNode)}, this
    * variant treats an ordinary empty history root as a replay origin. That gives remote engines a
-   * real move tail that preserves side-to-play without inventing a pass, while retaining strict
-   * GTP acknowledgements for resource handoffs.
+   * real move tail that preserves side-to-play without inventing a pass, while retaining strict GTP
+   * acknowledgements for resource handoffs.
    */
   public static PreparedRestore prepareCurrentHistoryPosition(
       Leelaz.ExactSnapshotRestoreAdmission admission, BoardHistoryNode target) {
@@ -138,8 +138,9 @@ public final class ExactSnapshotEngineRestore {
       snapshot.addProperty("SZ", formatBoardSizeTag(size[0], size[1]));
       tail = List.copyOf(RestorePlan.captureTail(target, anchor.node, size[0], size[1]));
       this.komi = komi;
-      initialHandicap = InitialHandicapSetup.isInitialHandicap(anchor.node, handicap, size[0], size[1])
-          && !snapshot.blackToPlay;
+      initialHandicap =
+          InitialHandicapSetup.isInitialHandicap(anchor.node, handicap, size[0], size[1])
+              && !snapshot.blackToPlay;
       boolean empty = !anchor.node.previous().isPresent() && snapshot.blackToPlay;
       if (snapshot.stones == null) {
         empty = false;
@@ -154,8 +155,16 @@ public final class ExactSnapshotEngineRestore {
     public PreparedRestore prepare(Leelaz.ExactSnapshotRestoreAdmission admission) {
       try {
         admission.authority().requireExactSnapshotRestoreAdmission(admission);
-        return new PreparedRestore(new RestorePlan(admission.authority(), admission.mirror(),
-            snapshot, tail, komi, admission, initialHandicap, emptyOrigin));
+        return new PreparedRestore(
+            new RestorePlan(
+                admission.authority(),
+                admission.mirror(),
+                snapshot,
+                tail,
+                komi,
+                admission,
+                initialHandicap,
+                emptyOrigin));
       } catch (RuntimeException | Error failure) {
         admission.completeBoardSync();
         throw failure;
@@ -215,7 +224,8 @@ public final class ExactSnapshotEngineRestore {
       for (Leelaz target : plan.targetEngines) {
         if (target.requiresInBandSnapshotRestore(plan.admission)) {
           if (plan.initialHandicap && !target.supportsHandicapSnapshotRestore(plan.admission)) {
-            throw new Failure(FailureCategory.UNSUPPORTED_REMOTE_POSITION,
+            throw new Failure(
+                FailureCategory.UNSUPPORTED_REMOTE_POSITION,
                 "Engine does not advertise set_free_handicap for exact handicap restore.");
           }
           // Engines that cannot read host files (SSH, scripts, WSL, containers) restore an
@@ -224,8 +234,8 @@ public final class ExactSnapshotEngineRestore {
               && !plan.initialHandicap
               && !plan.emptyOrigin
               && !target.supportsSetPositionSnapshotRestore(plan.admission)) {
-            throw new Failure(FailureCategory.SNAPSHOT_PREPARATION,
-                UNSUPPORTED_SNAPSHOT_TRANSPORT_DETAIL);
+            throw new Failure(
+                FailureCategory.SNAPSHOT_PREPARATION, UNSUPPORTED_SNAPSHOT_TRANSPORT_DETAIL);
           }
           remoteTargets.add(target);
         } else {
@@ -280,10 +290,11 @@ public final class ExactSnapshotEngineRestore {
     }
   }
 
-  private static void requireSupportedRemotePosition(
-      RestorePlan plan, List<Leelaz> remoteTargets) {
-    if (remoteTargets.isEmpty() || plan.initialHandicap
-        || plan.snapshotData.blackToPlay || !plan.tail.isEmpty()) {
+  private static void requireSupportedRemotePosition(RestorePlan plan, List<Leelaz> remoteTargets) {
+    if (remoteTargets.isEmpty()
+        || plan.initialHandicap
+        || plan.snapshotData.blackToPlay
+        || !plan.tail.isEmpty()) {
       return;
     }
     // set_position leaves Black to play. A white-to-play position without a real tail is only
@@ -312,8 +323,9 @@ public final class ExactSnapshotEngineRestore {
       for (int index = 0; index < plan.snapshotData.stones.length; index++) {
         if (plan.snapshotData.stones[index] == Stone.BLACK) {
           int[] coord = toBoardCoord(index, plan.boardHeight);
-          handicap.append(' ').append(formatGtpCoord(
-              coord[0], coord[1], plan.boardWidth, plan.boardHeight));
+          handicap
+              .append(' ')
+              .append(formatGtpCoord(coord[0], coord[1], plan.boardWidth, plan.boardHeight));
         }
       }
       commands.add(handicap.toString());
@@ -468,9 +480,7 @@ public final class ExactSnapshotEngineRestore {
           new IOException("No safe writable snapshot directory was available to every engine.");
       failures.forEach(cause::addSuppressed);
       throw new Failure(
-          FailureCategory.SNAPSHOT_PREPARATION,
-          NO_WRITABLE_SNAPSHOT_LOCATION_DETAIL,
-          cause);
+          FailureCategory.SNAPSHOT_PREPARATION, NO_WRITABLE_SNAPSHOT_LOCATION_DETAIL, cause);
     }
     try {
       staged.requireCurrent(plan.admission);
@@ -684,7 +694,7 @@ public final class ExactSnapshotEngineRestore {
       return (double) engine.komi;
     }
     return null;
-    }
+  }
 
   private static Double captureHistoryKomi() {
     Board board = Lizzie.board;
@@ -878,8 +888,7 @@ public final class ExactSnapshotEngineRestore {
     }
 
     private static Optional<RestorePlan> capture(
-        Leelaz.ExactSnapshotRestoreAdmission admission,
-        BoardHistoryNode target) {
+        Leelaz.ExactSnapshotRestoreAdmission admission, BoardHistoryNode target) {
       return capture(admission, target, false);
     }
 
@@ -914,12 +923,23 @@ public final class ExactSnapshotEngineRestore {
         return Optional.empty();
       }
       BoardHistoryList history = Lizzie.board == null ? null : Lizzie.board.getHistory();
-      int handicap = history == null || history.getGameInfo() == null
-          || history.getStart() != findHistoryOrigin(target)
-          ? 0 : history.getGameInfo().getHandicap();
+      int handicap =
+          history == null
+                  || history.getGameInfo() == null
+                  || history.getStart() != findHistoryOrigin(target)
+              ? 0
+              : history.getGameInfo().getHandicap();
       FrozenHistoryPosition frozen = freezeHistoryPosition(target, handicap, captureHistoryKomi());
-      return Optional.of(new RestorePlan(engine, mirrorEngine, frozen.snapshot, frozen.tail,
-          frozen.komi, admission, frozen.initialHandicap, frozen.emptyOrigin));
+      return Optional.of(
+          new RestorePlan(
+              engine,
+              mirrorEngine,
+              frozen.snapshot,
+              frozen.tail,
+              frozen.komi,
+              admission,
+              frozen.initialHandicap,
+              frozen.emptyOrigin));
     }
 
     private static BoardHistoryNode findHistoryOrigin(BoardHistoryNode target) {
@@ -931,11 +951,10 @@ public final class ExactSnapshotEngineRestore {
     }
 
     private static RestorePlan capture(
-        Leelaz.ExactSnapshotRestoreAdmission admission,
-        BoardData sourceData) {
+        Leelaz.ExactSnapshotRestoreAdmission admission, BoardData sourceData) {
       if (admission == null) {
         throw new IllegalArgumentException("admission");
-    }
+      }
       Leelaz engine = admission.authority();
       Leelaz mirrorEngine = admission.mirror();
       requireEngine(engine);
@@ -949,7 +968,9 @@ public final class ExactSnapshotEngineRestore {
           snapshotData,
           Collections.emptyList(),
           null,
-          admission, false, false);
+          admission,
+          false,
+          false);
     }
 
     private static void requireEngine(Leelaz engine) {

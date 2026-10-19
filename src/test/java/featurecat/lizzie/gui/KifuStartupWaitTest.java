@@ -25,8 +25,12 @@ class KifuStartupWaitTest {
   void startupFailureReleasesImportWithoutStartingAnalysis() throws Exception {
     try (Fixture f = new Fixture()) {
       f.defer();
-      f.transition("fail", new Class<?>[] {long.class, boolean.class, String.class},
-          f.token, true, "missing engine");
+      f.transition(
+          "fail",
+          new Class<?>[] {long.class, boolean.class, String.class},
+          f.token,
+          true,
+          "missing engine");
       f.runPending();
       assertNull(field(f.frame, "pendingKifuEngineSyncRoot"));
       assertTrue(LizzieFrame.canGoAfterload);
@@ -97,9 +101,9 @@ class KifuStartupWaitTest {
       Lizzie.leelaz = new Leelaz("");
       Lizzie.board = new Board();
       Lizzie.engineManager = manager;
-      var constructor = Class.forName(
-          "featurecat.lizzie.analysis.EngineManager$EngineSwitchUiTracker")
-          .getDeclaredConstructor();
+      var constructor =
+          Class.forName("featurecat.lizzie.analysis.EngineManager$EngineSwitchUiTracker")
+              .getDeclaredConstructor();
       constructor.setAccessible(true);
       tracker = constructor.newInstance();
       set(manager, "engineSwitchUiTracker", tracker);
@@ -111,8 +115,14 @@ class KifuStartupWaitTest {
     }
 
     void begin() throws Exception {
-      transition("begin", new Class<?>[] {boolean.class, int.class, String.class,
-          int.class, String.class}, true, -1, "", 0, "test");
+      transition(
+          "begin",
+          new Class<?>[] {boolean.class, int.class, String.class, int.class, String.class},
+          true,
+          -1,
+          "",
+          0,
+          "test");
     }
 
     void transition(String name, Class<?>[] types, Object... args) throws Exception {
@@ -122,12 +132,22 @@ class KifuStartupWaitTest {
     }
 
     void defer() throws Exception {
-      Method method = LizzieFrame.class.getDeclaredMethod("deferKifuSyncUntilEngineSwitchSettles",
-          BoardHistoryNode.class, BoardHistoryList.SessionRulesTarget.class,
-          int.class, Runnable.class);
+      Method method =
+          LizzieFrame.class.getDeclaredMethod(
+              "deferKifuSyncUntilEngineSwitchSettles",
+              BoardHistoryNode.class,
+              BoardHistoryList.SessionRulesTarget.class,
+              int.class,
+              Runnable.class);
       method.setAccessible(true);
-      assertTrue((Boolean) method.invoke(frame, Lizzie.board.getHistory().getStart(),
-          Lizzie.board.getHistory().captureSessionRules(), 0, (Runnable) actions::incrementAndGet));
+      assertTrue(
+          (Boolean)
+              method.invoke(
+                  frame,
+                  Lizzie.board.getHistory().getStart(),
+                  Lizzie.board.getHistory().captureSessionRules(),
+                  0,
+                  (Runnable) actions::incrementAndGet));
     }
 
     void runPending() throws Exception {
@@ -148,8 +168,15 @@ class KifuStartupWaitTest {
 
   private static final class CapturingExecutor extends ScheduledThreadPoolExecutor {
     Runnable pending;
-    CapturingExecutor() { super(1); }
-    @Override public void execute(Runnable command) { pending = command; }
+
+    CapturingExecutor() {
+      super(1);
+    }
+
+    @Override
+    public void execute(Runnable command) {
+      pending = command;
+    }
   }
 
   private static <T> T allocate(Class<T> type) throws Exception {

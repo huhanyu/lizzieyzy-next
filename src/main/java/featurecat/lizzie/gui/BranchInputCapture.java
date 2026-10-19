@@ -101,7 +101,10 @@ final class BranchInputCapture {
     synchronized (board) {
       if (!matchesContext()) return false;
       return Board.asCoordinates(coordinate)
-          .map(coords -> featurecat.lizzie.analysis.AnalysisCandidateValidator.isEmptyPoint(sourceData, coords))
+          .map(
+              coords ->
+                  featurecat.lizzie.analysis.AnalysisCandidateValidator.isEmptyPoint(
+                      sourceData, coords))
           .orElse(true);
     }
   }

@@ -74,14 +74,12 @@ public final class MaintenanceObservation {
 
   private static final Pattern HTTP_REASON = Pattern.compile("http-\\d{3}");
   private static final Pattern HTTP_STATUS = Pattern.compile("(?i)\\bHTTP\\s+(\\d{3})\\b");
-  private static final Pattern URL =
-      Pattern.compile("(?i)\\b[a-z][a-z0-9+.-]*://\\S+");
+  private static final Pattern URL = Pattern.compile("(?i)\\b[a-z][a-z0-9+.-]*://\\S+");
   private static final Pattern WINDOWS_ABS_PATH =
       Pattern.compile(
           "(?:[A-Za-z]:\\\\|\\\\\\\\)(?:[^]\\\\<>:\"|?*\\r\\n\\\\]+\\\\)*[^]\\\\<>:\"|?*\\r\\n\\\\\\s]+|[A-Za-z]:/[^\\s\\]]+");
   private static final Pattern UNIX_ABS_PATH =
-      Pattern.compile(
-          "(?<![A-Za-z0-9:])(/(?:[^/<>:\"|?*\\r\\n]+/)+[^/<>:\"|?*\\r\\n\\s]+)");
+      Pattern.compile("(?<![A-Za-z0-9:])(/(?:[^/<>:\"|?*\\r\\n]+/)+[^/<>:\"|?*\\r\\n\\s]+)");
 
   private MaintenanceObservation() {}
 

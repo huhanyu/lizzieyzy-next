@@ -9,13 +9,12 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.enginegame.Acceptance;
-import featurecat.lizzie.enginegame.EngineGameMatchRulesSelection;
 import featurecat.lizzie.enginegame.EngineGameBatchSpec;
 import featurecat.lizzie.enginegame.EngineGameBatchSpecFactory;
-import featurecat.lizzie.enginegame.StartFailure;
+import featurecat.lizzie.enginegame.EngineGameMatchRulesSelection;
 import featurecat.lizzie.enginegame.MatchRulesTexts;
+import featurecat.lizzie.enginegame.StartFailure;
 import featurecat.lizzie.enginegame.StartObserver;
-
 import featurecat.lizzie.util.Utils;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -529,13 +528,7 @@ public class NewEngineGameDialog extends JDialog {
         LizzieFrame.toolbar.chkenginePkTime,
         LizzieFrame.toolbar.txtenginePkTime,
         LizzieFrame.toolbar.txtenginePkTimeWhite);
-    addEngineRow(
-        enginePanel,
-        3,
-        new JFontLabel(""),
-        null,
-        cmbBlackTimeMode,
-        cmbWhiteTimeMode);
+    addEngineRow(enginePanel, 3, new JFontLabel(""), null, cmbBlackTimeMode, cmbWhiteTimeMode);
     addEngineRow(
         enginePanel,
         4,
@@ -639,7 +632,6 @@ public class NewEngineGameDialog extends JDialog {
               pendingEngineGameStart = false;
               cancelled = true;
               Lizzie.engineGame.stop();
-
             }
           }
         });
@@ -974,8 +966,8 @@ public class NewEngineGameDialog extends JDialog {
   }
 
   /**
-   * Apply-path result for 让子. Empty/blank continues as even game (0). Illegal non-empty text
-   * yields a visible error key parented to this dialog; it must not be swallowed.
+   * Apply-path result for 让子. Empty/blank continues as even game (0). Illegal non-empty text yields
+   * a visible error key parented to this dialog; it must not be swallowed.
    */
   static final class EngineGameHandicapApply {
     static final String ERROR_RESOURCE_KEY = "Menu.inputIntegerHint";

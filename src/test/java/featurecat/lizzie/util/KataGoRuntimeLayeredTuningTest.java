@@ -179,7 +179,6 @@ class KataGoRuntimeLayeredTuningTest {
     }
   }
 
-
   @Test
   void officialFingerprintTracksHardwareButIgnoresManagedThreadAndProcessNoise() {
     List<String> first =
@@ -505,7 +504,6 @@ class KataGoRuntimeLayeredTuningTest {
     assertTrue(index >= 0 && index + 1 < command.size(), "Missing option " + option);
     return command.get(index + 1);
   }
-
 
   private static void initializeConfigJson(Config config) {
     config.uiConfig = new JSONObject();

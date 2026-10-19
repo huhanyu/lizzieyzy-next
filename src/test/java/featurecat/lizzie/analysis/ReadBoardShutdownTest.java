@@ -234,7 +234,6 @@ class ReadBoardShutdownTest {
     }
   }
 
-
   @Test
   void openBoardSyncDoesNotBlockEventDispatchThreadWhileRestarting() throws Exception {
     LizzieFrame previousFrame = Lizzie.frame;
@@ -303,7 +302,6 @@ class ReadBoardShutdownTest {
     setField(readBoard, "usePipe", true);
     return readBoard;
   }
-
 
   private static final class UnsafeHolder {
     private static final sun.misc.Unsafe UNSAFE = loadUnsafe();
@@ -380,7 +378,6 @@ class ReadBoardShutdownTest {
       retirementCount++;
     }
   }
-
 
   private static final class TrackingSocket extends Socket {
     private boolean closeCalled;

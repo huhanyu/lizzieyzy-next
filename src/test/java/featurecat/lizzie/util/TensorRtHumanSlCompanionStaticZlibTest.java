@@ -72,11 +72,13 @@ public class TensorRtHumanSlCompanionStaticZlibTest {
     assertTrue(KataGoRuntimeHelper.inspectNvidiaRuntime(fixture.tensorRtEngine, "").ready);
     assertRequiresDynamicZlib(fixture.companion);
 
-    Files.writeString(manifest, "HumanSL companion: " + COMPANION + "\n", StandardOpenOption.APPEND);
+    Files.writeString(
+        manifest, "HumanSL companion: " + COMPANION + "\n", StandardOpenOption.APPEND);
     assertRequiresDynamicZlib(fixture.companion);
 
     fixture.writeManifest(true);
-    Files.writeString(manifest, "HumanSL companion: " + COMPANION + "\n", StandardOpenOption.APPEND);
+    Files.writeString(
+        manifest, "HumanSL companion: " + COMPANION + "\n", StandardOpenOption.APPEND);
     assertRequiresDynamicZlib(fixture.companion);
 
     fixture.writeManifest(true);
@@ -98,7 +100,8 @@ public class TensorRtHumanSlCompanionStaticZlibTest {
     KataGoRuntimeHelper.NvidiaRuntimeStatus missingCudnn =
         KataGoRuntimeHelper.inspectNvidiaRuntime(fixture.companion, "");
     assertFalse(missingCudnn.ready);
-    assertTrue(missingCudnn.missingDlls.contains("cudnn64_9.dll"), missingCudnn.missingDlls.toString());
+    assertTrue(
+        missingCudnn.missingDlls.contains("cudnn64_9.dll"), missingCudnn.missingDlls.toString());
     assertFalse(
         missingCudnn.missingDlls.stream().anyMatch(value -> value.contains("zlibwapi.dll")),
         "The verified companion keeps its static zlib exemption while reporting real gaps.");

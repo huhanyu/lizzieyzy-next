@@ -67,18 +67,23 @@ class EngineGameBatchSpecMappingTest {
     assertEquals(361, spec.maxMoves());
     assertEquals(new EngineGameOutputChoices(true, true, "alpha_vs_beta"), spec.output());
     assertTrue(
-        spec.matchRules().semanticallyEquals(featurecat.lizzie.analysis.KataGoRules.parse("chinese").orElseThrow()));
+        spec.matchRules()
+            .semanticallyEquals(
+                featurecat.lizzie.analysis.KataGoRules.parse("chinese").orElseThrow()));
   }
 
   @Test
   void acceptedBatchFreezesMatchRulesIndependentlyOfStartupDefault() {
     EngineGameBatchSpec spec =
         EngineGameBatchSpecFactory.from(
-            analysisStart().matchRules(featurecat.lizzie.analysis.KataGoRules.parse("japanese").orElseThrow()).build());
+            analysisStart()
+                .matchRules(featurecat.lizzie.analysis.KataGoRules.parse("japanese").orElseThrow())
+                .build());
 
     assertTrue(
         spec.matchRules()
-            .semanticallyEquals(featurecat.lizzie.analysis.KataGoRules.parse("japanese").orElseThrow()));
+            .semanticallyEquals(
+                featurecat.lizzie.analysis.KataGoRules.parse("japanese").orElseThrow()));
   }
 
   @Test

@@ -14,8 +14,7 @@ class SyncDiagnosticsExportSanitizerTest {
     String analysis = "info move D4 visits 100 winrate 0.5 pv " + "D4 Q16 ".repeat(2400);
     for (String ending : List.of("\n", "\r\n", "\r")) {
       for (String word : List.of("secret", "SECRET", "SeCrEt", "prefixsecretSuffix")) {
-        String input =
-            analysis + ending + "  " + word + " private detail  " + ending + analysis;
+        String input = analysis + ending + "  " + word + " private detail  " + ending + analysis;
         String expected = analysis + ending + "<redacted-secret>" + ending + analysis;
         SyncDiagnosticsExportSanitizer sanitizer = new SyncDiagnosticsExportSanitizer();
         assertEquals(expected, sanitizer.text(input));
@@ -48,13 +47,11 @@ class SyncDiagnosticsExportSanitizerTest {
 
     assertEquals(
         "yike session=(live-room#1), next=unite-board#1.",
-        sanitizer.text(
-            "yike session=(live-room:private-room_42), next=unite-board:board-7."));
+        sanitizer.text("yike session=(live-room:private-room_42), next=unite-board:board-7."));
     assertEquals("live-room#1", sanitizer.sessionAlias(" \tlive-room:private-room_42\r\n"));
     assertEquals(2, sanitizer.aliases().size());
     assertEquals(
-        List.of("live-room#1", "unite-board#1"),
-        List.copyOf(sanitizer.aliases().values()));
+        List.of("live-room#1", "unite-board#1"), List.copyOf(sanitizer.aliases().values()));
   }
 
   @Test
@@ -63,8 +60,7 @@ class SyncDiagnosticsExportSanitizerTest {
 
     assertEquals(" \t\r\n\n", sanitizer.text(" \t\r\n\n"));
     assertEquals(
-        "\tpassword=<redacted> \r\n\n",
-        sanitizer.text("\tpassword=CANARY_TEXT_WHITESPACE \r\n\n"));
+        "\tpassword=<redacted> \r\n\n", sanitizer.text("\tpassword=CANARY_TEXT_WHITESPACE \r\n\n"));
   }
 
   @Test
@@ -203,8 +199,7 @@ class SyncDiagnosticsExportSanitizerTest {
     assertTrue(sanitized.contains("url=<redacted-url>"), sanitized);
     assertTrue(sanitized.contains("escapedUrl=<redacted-url>"), sanitized);
 
-    String regex =
-        new SyncDiagnosticsExportSanitizer().text("regex=^\\\\d+\\\\s+$");
+    String regex = new SyncDiagnosticsExportSanitizer().text("regex=^\\\\d+\\\\s+$");
     assertEquals("regex=^\\\\d+\\\\s+$", regex);
     assertFalse(regex.contains("<redacted-path>"), regex);
 

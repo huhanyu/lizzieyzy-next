@@ -86,11 +86,9 @@ class ReadBoardLoggingHandshakeTest {
     ReadBoardLoggingSnapshot snapshot = board.loggingSnapshot();
 
     assertFalse(snapshot.attached());
-    assertEquals(
-        ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.diagnosticsPresentation());
+    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, snapshot.diagnosticsPresentation());
     assertEquals("no capture session", snapshot.captureSummary());
   }
-
 
   @Test
   void requestLoggingSetRequiresProcessSession() throws Exception {
@@ -123,7 +121,12 @@ class ReadBoardLoggingHandshakeTest {
     control.beginSet(true, false, false);
     board.markCapabilityTimeout();
     assertEquals(ReadBoardLoggingControl.Status.UNKNOWN, control.status());
-    assertEquals(ReadBoardLoggingControl.Presentation.UNKNOWN, control.presentation(true, ReadBoardLoggingProtocol.Toggle.ON, ReadBoardLoggingProtocol.Persistence.HEALTHY));
+    assertEquals(
+        ReadBoardLoggingControl.Presentation.UNKNOWN,
+        control.presentation(
+            true,
+            ReadBoardLoggingProtocol.Toggle.ON,
+            ReadBoardLoggingProtocol.Persistence.HEALTHY));
   }
 
   @Test
@@ -301,8 +304,7 @@ class ReadBoardLoggingHandshakeTest {
 
     assertEquals(ReadBoardLoggingControl.Status.UNKNOWN, control.status());
     assertEquals(
-        ReadBoardLoggingControl.Presentation.UNKNOWN,
-        control.snapshot().diagnosticsPresentation());
+        ReadBoardLoggingControl.Presentation.UNKNOWN, control.snapshot().diagnosticsPresentation());
     board.shutdownLoggingTimeoutExecutor();
   }
 
@@ -317,9 +319,7 @@ class ReadBoardLoggingHandshakeTest {
     control.onCapability(ReadBoardLoggingProtocol.tryParseCapability(CAPABILITY));
 
     AssertionError failure =
-        assertThrows(
-            AssertionError.class,
-            () -> board.requestLoggingSet(true, false, false));
+        assertThrows(AssertionError.class, () -> board.requestLoggingSet(true, false, false));
 
     assertEquals("controlled logging write failure", failure.getMessage());
     assertEquals(ReadBoardLoggingControl.Status.UNKNOWN, control.status());
@@ -327,8 +327,7 @@ class ReadBoardLoggingHandshakeTest {
   }
 
   private static String observedFor(String setLine) {
-    ReadBoardLoggingProtocol.SetRequest request =
-        ReadBoardLoggingProtocol.tryParseSet(setLine);
+    ReadBoardLoggingProtocol.SetRequest request = ReadBoardLoggingProtocol.tryParseSet(setLine);
     return ReadBoardLoggingProtocol.formatObserved(
         new ReadBoardLoggingProtocol.Observed(
             request.requestId,
@@ -349,8 +348,7 @@ class ReadBoardLoggingHandshakeTest {
     }
 
     @Override
-    public ScheduledFuture<?> schedule(
-        Runnable command, long delay, TimeUnit unit) {
+    public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
       scheduled.add(command);
       return InertScheduledFuture.INSTANCE;
     }
@@ -373,8 +371,7 @@ class ReadBoardLoggingHandshakeTest {
     }
 
     @Override
-    public ScheduledFuture<?> schedule(
-        Runnable command, long delay, TimeUnit unit) {
+    public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
       scheduleEntered.countDown();
       try {
         if (!releaseSchedule.await(5, TimeUnit.SECONDS)) {
@@ -394,8 +391,7 @@ class ReadBoardLoggingHandshakeTest {
     }
 
     @Override
-    public ScheduledFuture<?> schedule(
-        Runnable command, long delay, TimeUnit unit) {
+    public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
       throw new RejectedExecutionException("controlled logging timeout rejection");
     }
   }

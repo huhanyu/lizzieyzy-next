@@ -34,10 +34,7 @@ public final class HumanSlTrainingPreferences {
         enumValue(saved, "opponent-preset", OpponentPreset.class, defaults.opponentPreset);
     HumanSlTrainingConfig.PlayerColor color =
         enumValue(
-            saved,
-            "player-color",
-            HumanSlTrainingConfig.PlayerColor.class,
-            defaults.playerColor);
+            saved, "player-color", HumanSlTrainingConfig.PlayerColor.class, defaults.playerColor);
     boolean danRank = saved.optBoolean("dan-rank", defaults.danRank);
     int rank = saved.optInt("rank", defaults.rank);
     int moveTime = normalizeMoveTime(saved.optInt("move-time-seconds", defaults.moveTimeSeconds));

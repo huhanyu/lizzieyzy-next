@@ -505,8 +505,7 @@ public final class KataGoAutoSetupHelper {
           weightPath == null ? activeWeightPath : weightPath.toAbsolutePath().normalize(),
           new ArrayList<>(dedup),
           discovery,
-          weightCatalog != null
-                  && (weightPath == null || weightCatalog.entry(weightPath) != null)
+          weightCatalog != null && (weightPath == null || weightCatalog.entry(weightPath) != null)
               ? weightCatalog
               : null,
           humanSlModelStatus,
@@ -1265,8 +1264,7 @@ public final class KataGoAutoSetupHelper {
     try {
       weights =
           withOfficialStrongest(
-              weights,
-              parseOfficialStrongest(httpGet(officialStrongestUrl(), "application/json")));
+              weights, parseOfficialStrongest(httpGet(officialStrongestUrl(), "application/json")));
     } catch (IOException e) {
       // The pinned catalog rows remain the offline and invalid-response fallback.
     }

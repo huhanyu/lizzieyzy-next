@@ -927,8 +927,7 @@ public class KataGoAnalysisWebSocketTransportTest {
     assertTrue(response.startsWith("?42 unknown command"));
     assertTrue(sendGtp(transport, "time_warp 1").startsWith("? unknown command"));
     assertTrue(sendGtp(transport, "gogui-setup_player W").startsWith("? unknown command"));
-    assertTrue(
-        sendGtp(transport, "kata-get-param unsupported").startsWith("? unknown parameter"));
+    assertTrue(sendGtp(transport, "kata-get-param unsupported").startsWith("? unknown parameter"));
   }
 
   @Test
@@ -1054,7 +1053,9 @@ public class KataGoAnalysisWebSocketTransportTest {
                               + "Sec-WebSocket-Accept: "
                               + accept
                               + "\r\n\r\n";
-                      socket.getOutputStream().write(response.getBytes(StandardCharsets.ISO_8859_1));
+                      socket
+                          .getOutputStream()
+                          .write(response.getBytes(StandardCharsets.ISO_8859_1));
                       socket.getOutputStream().flush();
                       connectedLatch.countDown();
                       try {

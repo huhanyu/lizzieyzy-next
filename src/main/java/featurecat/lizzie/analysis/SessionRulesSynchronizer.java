@@ -94,8 +94,7 @@ public final class SessionRulesSynchronizer {
       Leelaz mirror = primary == null ? null : primary.activeComparisonEngine();
       if (!permitsOrdinaryAnalysis(target, history, primary, mirror, engine)
           || (mirroredEngine != null
-              && !permitsOrdinaryAnalysis(
-                  target, history, primary, mirror, mirroredEngine))) {
+              && !permitsOrdinaryAnalysis(target, history, primary, mirror, mirroredEngine))) {
         return false;
       }
       return admission.get();

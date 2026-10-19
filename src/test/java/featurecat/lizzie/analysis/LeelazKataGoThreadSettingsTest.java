@@ -116,7 +116,6 @@ class LeelazKataGoThreadSettingsTest {
         assertTrue(startup.contains("analysisWideRootNoise 0.2"), startup);
         assertEquals(command, env.engine.engineCommand());
 
-
         env.engine.sendCommand("kata-set-param numSearchThreads 12");
         assertTrue(env.commands().contains("kata-set-param numSearchThreads 12"));
       }
@@ -168,7 +167,6 @@ class LeelazKataGoThreadSettingsTest {
               .contains("numSearchThreads=6"));
     }
   }
-
 
   @Test
   void manualBenchmarkRejectsSshAndUnknownExecutablesBeforeStartingProcess() throws Exception {

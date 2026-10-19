@@ -11,10 +11,14 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class FoxConnection implements AutoCloseable {
   public interface Listener {
     void connected(long connection);
+
     void received(long connection, String body);
+
     void disconnected(long connection);
+
     void problem(String key);
   }
+
   private final ServerSocket server;
   private final Listener listener;
   private Socket client;
@@ -23,8 +27,12 @@ public final class FoxConnection implements AutoCloseable {
   private long clientToken;
   private final Object outputLock = new Object();
 
-  /** The nonblocking claim is the write-start linearization point; a started write is not retractable. */
-  public boolean send(long token, String body, java.util.function.BooleanSupplier claim) throws IOException {
+  /**
+   * The nonblocking claim is the write-start linearization point; a started write is not
+   * retractable.
+   */
+  public boolean send(long token, String body, java.util.function.BooleanSupplier claim)
+      throws IOException {
     byte[] frame = FoxProtocol.encode(body);
     synchronized (outputLock) {
       Socket target;
@@ -96,21 +104,32 @@ public final class FoxConnection implements AutoCloseable {
         if (!closed && client == socket) listener.problem("Fox.connectionError");
       }
     } finally {
-      try { socket.close(); } catch (IOException ignored) { }
+      try {
+        socket.close();
+      } catch (IOException ignored) {
+      }
       synchronized (this) {
         // Admission needs this lock and an empty slot: the old disconnect is delivered before any
-        // replacement's connected callback, so its checkpoint/unresolved-submission transition runs.
+        // replacement's connected callback, so its checkpoint/unresolved-submission transition
+        // runs.
         listener.disconnected(token);
         if (client == socket) client = null;
       }
     }
   }
 
-  @Override public synchronized void close() {
+  @Override
+  public synchronized void close() {
     closed = true;
-    try { server.close(); } catch (IOException ignored) { }
+    try {
+      server.close();
+    } catch (IOException ignored) {
+    }
     if (client != null) {
-      try { client.close(); } catch (IOException ignored) { }
+      try {
+        client.close();
+      } catch (IOException ignored) {
+      }
       client = null;
     }
   }

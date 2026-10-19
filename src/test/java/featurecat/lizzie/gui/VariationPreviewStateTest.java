@@ -103,13 +103,11 @@ class VariationPreviewStateTest {
     assertSame(r2, state.published());
   }
 
-
   @Test
   void sameDisplayedLengthRetainsPublishedAndReturnsFalse() {
     VariationPreviewState state = new VariationPreviewState();
     Branch.Input input = sampleInput(3);
-    VariationPreviewState.Selection s1 =
-        new VariationPreviewState.Selection(null, "D4", input, 3);
+    VariationPreviewState.Selection s1 = new VariationPreviewState.Selection(null, "D4", input, 3);
     VariationPreviewGenerator.Result r1 = sampleResult(input);
 
     state.select(s1);
@@ -120,18 +118,11 @@ class VariationPreviewStateTest {
     assertSame(r1, state.published());
   }
 
-
   private static Branch.Input sampleInput(int maxLength) {
     BoardData data = BoardData.empty(19, 19);
-    Branch.Position position =
-        new Branch.Position(19, 19, data, data.stones.clone(), true);
+    Branch.Position position = new Branch.Position(19, 19, data, data.stones.clone(), true);
     return new Branch.Input(
-        position,
-        List.of("D4", "Q16"),
-        List.of("100", "200"),
-        maxLength,
-        false,
-        true);
+        position, List.of("D4", "Q16"), List.of("100", "200"), maxLength, false, true);
   }
 
   private static VariationPreviewGenerator.Result sampleResult(Branch.Input input) {

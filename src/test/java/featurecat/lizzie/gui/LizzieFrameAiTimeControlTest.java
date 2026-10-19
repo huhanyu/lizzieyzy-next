@@ -113,7 +113,6 @@ class LizzieFrameAiTimeControlTest {
     }
   }
 
-
   private static final class RecordingLeelaz extends Leelaz {
     private final List<String> commands = new ArrayList<>();
 

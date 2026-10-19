@@ -20,9 +20,7 @@ public final class ReadBoardObservation {
   public static boolean traceEnabled() {
     try {
       return initialized()
-          && LoggingRuntime.current()
-              .filter(LoggingRuntime::fullTraceActive)
-              .isPresent()
+          && LoggingRuntime.current().filter(LoggingRuntime::fullTraceActive).isPresent()
           && TRACE.isInfoEnabled();
     } catch (RuntimeException ignored) {
       return false;
@@ -37,13 +35,11 @@ public final class ReadBoardObservation {
     }
   }
 
-  public static void inContext(
-      String engineId, String gmaId, String sessionId, Runnable action) {
+  public static void inContext(String engineId, String gmaId, String sessionId, Runnable action) {
     if (action == null) {
       return;
     }
-    String trace =
-        LoggingRuntime.current().map(LoggingRuntime::currentTraceSessionId).orElse(null);
+    String trace = LoggingRuntime.current().map(LoggingRuntime::currentTraceSessionId).orElse(null);
     try (CorrelationContext.Scope scope =
         CorrelationContext.openScope()
             .installEngine(engineId)

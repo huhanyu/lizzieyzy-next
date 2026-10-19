@@ -11,7 +11,8 @@ final class UpdatePreferences {
   private UpdatePreferences() {}
 
   static boolean autoCheck() {
-    return Lizzie.config != null && Lizzie.config.uiConfig != null
+    return Lizzie.config != null
+        && Lizzie.config.uiConfig != null
         && Lizzie.config.uiConfig.optBoolean(AUTO_CHECK, false);
   }
 

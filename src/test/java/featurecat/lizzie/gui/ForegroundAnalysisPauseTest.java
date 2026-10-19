@@ -73,8 +73,7 @@ class ForegroundAnalysisPauseTest {
               pondering.set(true);
             });
 
-    ForegroundAnalysisPause.RestoreLease transferred =
-        lease.transferRestoreResponsibility();
+    ForegroundAnalysisPause.RestoreLease transferred = lease.transferRestoreResponsibility();
     assertTrue(transferred.isRestorePending());
     assertFalse(lease.transferRestoreResponsibility().isRestorePending());
     lease.restore();
@@ -91,10 +90,7 @@ class ForegroundAnalysisPauseTest {
 
     ForegroundAnalysisPause lease =
         ForegroundAnalysisPause.acquire(
-            () -> false,
-            pondering::get,
-            () -> pondering.set(false),
-            resumes::incrementAndGet);
+            () -> false, pondering::get, () -> pondering.set(false), resumes::incrementAndGet);
 
     lease.restore();
     assertFalse(pondering.get());

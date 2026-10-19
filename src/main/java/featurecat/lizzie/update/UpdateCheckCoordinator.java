@@ -7,27 +7,55 @@ import java.util.function.Consumer;
 
 /** Application-owned update lifecycle. State and callbacks are confined to the EDT. */
 final class UpdateCheckCoordinator {
-  enum Origin { AUTOMATIC, MANUAL }
-  enum DownloadPhase { NONE, DOWNLOADING, PAUSED, CANCELLED, FAILED, READY }
+  enum Origin {
+    AUTOMATIC,
+    MANUAL
+  }
+
+  enum DownloadPhase {
+    NONE,
+    DOWNLOADING,
+    PAUSED,
+    CANCELLED,
+    FAILED,
+    READY
+  }
 
   record Download(DownloadPhase phase, ResumableDownloader.Progress progress, String error) {}
 
   interface DownloadService {
-    Path prepare(UpdateCheckResult result, ResumableDownloader.Control control,
-        ResumableDownloader.ProgressListener progress) throws Exception;
+    Path prepare(
+        UpdateCheckResult result,
+        ResumableDownloader.Control control,
+        ResumableDownloader.ProgressListener progress)
+        throws Exception;
+
     void apply(UpdateCheckResult result, Path prepared) throws Exception;
   }
 
-  record State(boolean checking, Origin origin, UpdateCheckSelection selection,
-      UpdateCheckResult result, Download download) {
-    State(boolean checking, Origin origin, UpdateCheckSelection selection, UpdateCheckResult result) {
+  record State(
+      boolean checking,
+      Origin origin,
+      UpdateCheckSelection selection,
+      UpdateCheckResult result,
+      Download download) {
+    State(
+        boolean checking, Origin origin, UpdateCheckSelection selection, UpdateCheckResult result) {
       this(checking, origin, selection, result, new Download(DownloadPhase.NONE, null, null));
     }
+
     boolean downloading() {
       return download.phase() == DownloadPhase.DOWNLOADING || paused();
     }
-    boolean paused() { return download.phase() == DownloadPhase.PAUSED; }
-    boolean ready() { return download.phase() == DownloadPhase.READY; }
+
+    boolean paused() {
+      return download.phase() == DownloadPhase.PAUSED;
+    }
+
+    boolean ready() {
+      return download.phase() == DownloadPhase.READY;
+    }
+
     boolean hasOffer() {
       return result != null && result.reason == UpdateCheckResult.Reason.OFFER;
     }
@@ -35,6 +63,7 @@ final class UpdateCheckCoordinator {
 
   interface OfferHandoff {
     void openWindows(UpdateCheckSelection selection, UpdateCheckResult result);
+
     void openPackage(UpdateCheckSelection selection, UpdateCheckResult result);
   }
 
@@ -44,6 +73,7 @@ final class UpdateCheckCoordinator {
 
   interface Runner {
     void runBackground(Runnable work);
+
     void runOnEdt(Runnable work);
   }
 
@@ -67,13 +97,17 @@ final class UpdateCheckCoordinator {
   private ResumableDownloader.Control control;
   private Path prepared;
 
-  UpdateCheckCoordinator(Discovery discovery, OfferHandoff handoff, Runner runner,
-      Consumer<State> reminder) {
+  UpdateCheckCoordinator(
+      Discovery discovery, OfferHandoff handoff, Runner runner, Consumer<State> reminder) {
     this(discovery, handoff, runner, reminder, new UpdateDownloadService());
   }
 
-  UpdateCheckCoordinator(Discovery discovery, OfferHandoff handoff, Runner runner,
-      Consumer<State> reminder, DownloadService downloads) {
+  UpdateCheckCoordinator(
+      Discovery discovery,
+      OfferHandoff handoff,
+      Runner runner,
+      Consumer<State> reminder,
+      DownloadService downloads) {
     this.downloads = downloads;
     this.discovery = discovery;
     this.handoff = handoff;
@@ -81,14 +115,18 @@ final class UpdateCheckCoordinator {
     this.reminder = reminder;
   }
 
-  State state() { return state; }
+  State state() {
+    return state;
+  }
 
   void subscribe(Consumer<State> observer) {
     observers.add(observer);
     observer.accept(state);
   }
 
-  void unsubscribe(Consumer<State> observer) { observers.remove(observer); }
+  void unsubscribe(Consumer<State> observer) {
+    observers.remove(observer);
+  }
 
   /** Called once before exposing preference controls; subsequent policy changes only revoke. */
   void captureStartupPolicy(boolean enabled, boolean download, UpdateCheckSelection selection) {
@@ -100,9 +138,13 @@ final class UpdateCheckCoordinator {
   }
 
   /** This run's startup authority; re-enabling a revoked or new option only applies next launch. */
-  boolean automaticCheckActive() { return automaticCheck; }
+  boolean automaticCheckActive() {
+    return automaticCheck;
+  }
 
-  boolean automaticDownloadActive() { return automaticDownload; }
+  boolean automaticDownloadActive() {
+    return automaticDownload;
+  }
 
   void applicationReady() {
     if (startupConsumed) return;
@@ -148,16 +190,17 @@ final class UpdateCheckCoordinator {
     control = null;
     manualDownload = false;
     publish(new State(true, origin, selection, null));
-    runner.runBackground(() -> {
-      UpdateCheckResult result;
-      try {
-        result = discovery.check(selection);
-      } catch (RuntimeException e) {
-        result = UpdateCheckResult.failure(UpdateCheckResult.FailureKind.UNEXPECTED);
-      }
-      UpdateCheckResult completed = result;
-      runner.runOnEdt(() -> complete(origin, selection, completed));
-    });
+    runner.runBackground(
+        () -> {
+          UpdateCheckResult result;
+          try {
+            result = discovery.check(selection);
+          } catch (RuntimeException e) {
+            result = UpdateCheckResult.failure(UpdateCheckResult.FailureKind.UNEXPECTED);
+          }
+          UpdateCheckResult completed = result;
+          runner.runOnEdt(() -> complete(origin, selection, completed));
+        });
     return true;
   }
 
@@ -167,9 +210,11 @@ final class UpdateCheckCoordinator {
       publish(new State(false, null, null, null));
       return;
     }
-    if (result == null) result = UpdateCheckResult.failure(UpdateCheckResult.FailureKind.UNEXPECTED);
+    if (result == null)
+      result = UpdateCheckResult.failure(UpdateCheckResult.FailureKind.UNEXPECTED);
     if (result.reason == UpdateCheckResult.Reason.OFFER
-        && result.windowsPlan == null && result.packagePlan == null) {
+        && result.windowsPlan == null
+        && result.packagePlan == null) {
       result = UpdateCheckResult.failure(UpdateCheckResult.FailureKind.ADAPTER);
     }
     publish(new State(false, origin, selection, result));
@@ -214,40 +259,59 @@ final class UpdateCheckCoordinator {
     control = task;
     inFlight = true;
     publishDownload(DownloadPhase.DOWNLOADING, null, null);
-    runner.runBackground(() -> {
-      Path path = null;
-      Exception failure = null;
-      try {
-        task.checkCancelled();
-        path = downloads.prepare(offered.result(), task, progress -> runner.runOnEdt(() -> {
-          if (control == task && !task.isCancelled() && !automaticInvalidated && inFlight) {
-            publishDownload(task.isPaused() ? DownloadPhase.PAUSED : DownloadPhase.DOWNLOADING,
-                progress, null);
+    runner.runBackground(
+        () -> {
+          Path path = null;
+          Exception failure = null;
+          try {
+            task.checkCancelled();
+            path =
+                downloads.prepare(
+                    offered.result(),
+                    task,
+                    progress ->
+                        runner.runOnEdt(
+                            () -> {
+                              if (control == task
+                                  && !task.isCancelled()
+                                  && !automaticInvalidated
+                                  && inFlight) {
+                                publishDownload(
+                                    task.isPaused()
+                                        ? DownloadPhase.PAUSED
+                                        : DownloadPhase.DOWNLOADING,
+                                    progress,
+                                    null);
+                              }
+                            }));
+          } catch (Exception e) {
+            failure = e;
           }
-        }));
-      } catch (Exception e) { failure = e; }
-      Path finished = path;
-      Exception error = failure;
-      runner.runOnEdt(() -> {
-        if (control != task) return;
-        inFlight = false;
-        if (automaticInvalidated) {
-          publish(new State(false, null, null, null));
-          return;
-        }
-        if (task.isCancelled()) {
-          publishDownload(DownloadPhase.CANCELLED, state.download().progress(), null);
-        } else if (error != null || finished == null) {
-          publishDownload(DownloadPhase.FAILED, state.download().progress(),
-              error == null ? "" : UpdateText.userFacingError(error));
-        } else {
-          prepared = finished;
-          publishDownload(DownloadPhase.READY, state.download().progress(), null);
-          if (manualDownload) applyPrepared();
-          else remind();
-        }
-      });
-    });
+          Path finished = path;
+          Exception error = failure;
+          runner.runOnEdt(
+              () -> {
+                if (control != task) return;
+                inFlight = false;
+                if (automaticInvalidated) {
+                  publish(new State(false, null, null, null));
+                  return;
+                }
+                if (task.isCancelled()) {
+                  publishDownload(DownloadPhase.CANCELLED, state.download().progress(), null);
+                } else if (error != null || finished == null) {
+                  publishDownload(
+                      DownloadPhase.FAILED,
+                      state.download().progress(),
+                      error == null ? "" : UpdateText.userFacingError(error));
+                } else {
+                  prepared = finished;
+                  publishDownload(DownloadPhase.READY, state.download().progress(), null);
+                  if (manualDownload) applyPrepared();
+                  else remind();
+                }
+              });
+        });
   }
 
   void retryDownload() {
@@ -263,19 +327,25 @@ final class UpdateCheckCoordinator {
 
   void togglePause() {
     if (!state.downloading() || control == null) return;
-    if (control.isPaused()) control.resume(); else control.pause();
-    publishDownload(control.isPaused() ? DownloadPhase.PAUSED : DownloadPhase.DOWNLOADING,
-        state.download().progress(), null);
+    if (control.isPaused()) control.resume();
+    else control.pause();
+    publishDownload(
+        control.isPaused() ? DownloadPhase.PAUSED : DownloadPhase.DOWNLOADING,
+        state.download().progress(),
+        null);
   }
 
-  boolean busy() { return inFlight; }
+  boolean busy() {
+    return inFlight;
+  }
 
   private void applyPrepared() {
     if (!state.ready() || prepared == null || automaticInvalidated || inFlight) return;
     try {
       downloads.apply(state.result(), prepared);
     } catch (Exception e) {
-      publishDownload(DownloadPhase.READY, state.download().progress(), UpdateText.userFacingError(e));
+      publishDownload(
+          DownloadPhase.READY, state.download().progress(), UpdateText.userFacingError(e));
     }
   }
 
@@ -285,9 +355,15 @@ final class UpdateCheckCoordinator {
     reminder.accept(state);
   }
 
-  private void publishDownload(DownloadPhase phase, ResumableDownloader.Progress progress, String error) {
-    publish(new State(false, state.origin(), state.selection(), state.result(),
-        new Download(phase, progress, error)));
+  private void publishDownload(
+      DownloadPhase phase, ResumableDownloader.Progress progress, String error) {
+    publish(
+        new State(
+            false,
+            state.origin(),
+            state.selection(),
+            state.result(),
+            new Download(phase, progress, error)));
   }
 
   private void publish(State next) {

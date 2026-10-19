@@ -37,8 +37,7 @@ class CrashHandlingProcessTest {
   @Test
   void swingEdtExceptionWritesCrashAndAppThenContinues() throws Exception {
     Path work = Files.createTempDirectory(tempDir, "edt-crash");
-    LoggingChildProcess.Result result =
-        LoggingChildProcess.run(work, SwingEdtExceptionProbe.class);
+    LoggingChildProcess.Result result = LoggingChildProcess.run(work, SwingEdtExceptionProbe.class);
 
     assertEquals(0, result.exitCode(), result.output());
     assertTrue(result.output().contains("CONTINUED"), result.output());
@@ -88,8 +87,7 @@ class CrashHandlingProcessTest {
   @Test
   void configFailClosedExitWritesCrashAndAppThenTerminates() throws Exception {
     Path work = Files.createTempDirectory(tempDir, "config-exit");
-    LoggingChildProcess.Result result =
-        LoggingChildProcess.run(work, ConfigFatalExitProbe.class);
+    LoggingChildProcess.Result result = LoggingChildProcess.run(work, ConfigFatalExitProbe.class);
 
     assertEquals(1, result.exitCode(), result.output());
     String app = LoggingChildProcess.readLog(work, "app.log");
@@ -101,8 +99,7 @@ class CrashHandlingProcessTest {
   @Test
   void delayedSinkFatalExitPersistsCanaryInAppAndCrash() throws Exception {
     Path work = Files.createTempDirectory(tempDir, "slow-sink");
-    LoggingChildProcess.Result result =
-        LoggingChildProcess.run(work, DelayedCrashSinkProbe.class);
+    LoggingChildProcess.Result result = LoggingChildProcess.run(work, DelayedCrashSinkProbe.class);
 
     assertEquals(1, result.exitCode(), result.output());
     String app = LoggingChildProcess.readLog(work, "app.log");

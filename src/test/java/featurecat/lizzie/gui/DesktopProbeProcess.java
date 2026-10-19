@@ -56,6 +56,7 @@ final class DesktopProbeProcess {
       throws Exception {
     return run(entry, name, vmArgs, args, environment, timeoutSeconds, null, null);
   }
+
   static Path run(
       Class<?> entry,
       String name,
@@ -208,7 +209,8 @@ final class DesktopProbeProcess {
     if (GraphicsEnvironment.isHeadless()) {
       // Headless lifecycle tests must not launch a desktop JVM or capture the user's screen.
       try {
-        Files.writeString(evidence.resolve("screenshot.log"), "Not captured: headless parent JVM\n");
+        Files.writeString(
+            evidence.resolve("screenshot.log"), "Not captured: headless parent JVM\n");
       } catch (IOException failure) {
         System.err.println("Unable to record headless diagnostic: " + failure);
       }

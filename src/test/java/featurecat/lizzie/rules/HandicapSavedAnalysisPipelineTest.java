@@ -46,9 +46,14 @@ class HandicapSavedAnalysisPipelineTest {
   @TempDir Path tempDirectory;
 
   @ParameterizedTest
-  @CsvSource({"file, true, HA[2]AB[aa][ee]PL[W]", "file, false, HA[2]AB[aa][ee]PL[W]",
-      "string, true, HA[2]AB[aa][ee]PL[W]", "string, false, HA[2]AB[aa][ee]PL[W]",
-      "string, true, AB[aa][ee]", "string, true, AB[aa]AW[ee]"})
+  @CsvSource({
+    "file, true, HA[2]AB[aa][ee]PL[W]",
+    "file, false, HA[2]AB[aa][ee]PL[W]",
+    "string, true, HA[2]AB[aa][ee]PL[W]",
+    "string, false, HA[2]AB[aa][ee]PL[W]",
+    "string, true, AB[aa][ee]",
+    "string, true, AB[aa]AW[ee]"
+  })
   void synchronizedHandicapImportProtectsSavedAnalysisUntilDeeperRootInfo(
       String entrypoint, boolean readKomi, String setupProperties) throws Exception {
     ResourceBundle previousResources = Lizzie.resourceBundle;
@@ -106,7 +111,9 @@ class HandicapSavedAnalysisPipelineTest {
               });
       try {
         String sgf =
-            "(;SZ[5]" + setupProperties + "KM[0.5]"
+            "(;SZ[5]"
+                + setupProperties
+                + "KM[0.5]"
                 + "LZOP[b11 40 10 2 1 0 rootVisits=10\n"
                 + "move C3 visits 10 winrate 6000 scoreMean 2 pv C3]"
                 + ";W[bb];B[cc]LZ[b11 30 100 3 1 0 rootVisits=100\n"
@@ -126,8 +133,9 @@ class HandicapSavedAnalysisPipelineTest {
               }
             });
         await(
-            () -> !frame.loadResumes.isEmpty()
-                && frame.loadResumes.stream().allMatch(resume -> resume.getCount() == 0),
+            () ->
+                !frame.loadResumes.isEmpty()
+                    && frame.loadResumes.stream().allMatch(resume -> resume.getCount() == 0),
             "the actual post-load resume continuation did not settle");
         awaitEngineIdle(engine, transport);
         assertTrue(LizzieFrame.canGoAfterload);
@@ -140,7 +148,9 @@ class HandicapSavedAnalysisPipelineTest {
         assertTrue(frame.isUserAnalysisPaused());
         assertFalse(engine.isPondering(), "the pause must retire foreground analysis");
         assertTrue(
-            transport.commands().subList(commandsBeforePause, transport.commands().size())
+            transport
+                .commands()
+                .subList(commandsBeforePause, transport.commands().size())
                 .contains("stop"),
             "the pause must cross a real stop/ACK barrier before history navigation");
         assertEquals(0.5, engine.komi, 0.0001);
@@ -163,15 +173,16 @@ class HandicapSavedAnalysisPipelineTest {
         assertEquals(root.blackToPlay, restoredRoot.getStart().getData().blackToPlay);
         assertFalse(root.blackToPlay, "inferred White is independent of handicap eligibility");
         assertEquals(10, root.getPlayouts());
-        assertFalse(root.isChanged, "position/komi synchronization must preserve imported analysis");
+        assertFalse(
+            root.isChanged, "position/komi synchronization must preserve imported analysis");
 
         navigateForward(env.board(), engine, transport);
         SwingUtilities.invokeAndWait(() -> assertTrue(env.board().previousMove(false)));
         awaitHistoryRestores();
         awaitEngineIdle(engine, transport);
         assertSame(root, env.board().getData());
-        BoardHistoryList returned = SGFParser.parseSgf(
-            restoredSnapshots.get(restoredSnapshots.size() - 1), true);
+        BoardHistoryList returned =
+            SGFParser.parseSgf(restoredSnapshots.get(restoredSnapshots.size() - 1), true);
         assertArrayEquals(root.stones, returned.getStart().getData().stones);
         assertFalse(returned.getStart().getData().blackToPlay);
         assertEquals(10, root.getPlayouts());
@@ -197,7 +208,9 @@ class HandicapSavedAnalysisPipelineTest {
               engine,
               transport,
               "info move C4 visits 50000 winrate 0.25 scoreLead -5 prior 0.2 pv C4 D3"
-                  + " rootInfo visits " + visits + " winrate 0.9 scoreLead 50");
+                  + " rootInfo visits "
+                  + visits
+                  + " winrate 0.9 scoreLead 50");
           assertEquals(visits, engine.getBestMovesPlayouts());
           boolean deeper = visits > 100;
           assertSavedPayload(
@@ -222,7 +235,11 @@ class HandicapSavedAnalysisPipelineTest {
         assertEquals(10, reopened.getStart().getData().getPlayouts());
         assertSavedPayload(
             reopened.getStart().next().orElseThrow().next().orElseThrow().getData(),
-            101, 25, -5, "C4", List.of("C4", "D3"));
+            101,
+            25,
+            -5,
+            "C4",
+            List.of("C4", "D3"));
       } finally {
         // Cancel/await this coordinator before restoring globals. A queue marker alone is not
         // sufficient because its completion posts another EDT action and a post-load thread.
@@ -270,7 +287,12 @@ class HandicapSavedAnalysisPipelineTest {
   }
 
   private static void assertSavedPayload(
-      BoardData data, int visits, double winrate, double score, String coordinate, List<String> pv) {
+      BoardData data,
+      int visits,
+      double winrate,
+      double score,
+      String coordinate,
+      List<String> pv) {
     assertEquals(visits, data.getPlayouts());
     assertEquals(visits, data.rootVisits);
     assertEquals(winrate, data.winrate, 0.0001);
@@ -288,7 +310,8 @@ class HandicapSavedAnalysisPipelineTest {
   }
 
   private static void awaitHistoryRestores() throws Exception {
-    ExecutorService executor = (ExecutorService) getField(Board.class, null, "HISTORY_RESTORE_EXECUTOR");
+    ExecutorService executor =
+        (ExecutorService) getField(Board.class, null, "HISTORY_RESTORE_EXECUTOR");
     executor.submit(() -> {}).get(5, TimeUnit.SECONDS);
     SwingUtilities.invokeAndWait(() -> {});
   }
@@ -347,7 +370,8 @@ class HandicapSavedAnalysisPipelineTest {
           try {
             Object coordinator = getField(LizzieFrame.class, frame, "kifuEngineSyncCoordinator");
             if (coordinator != null) {
-              worker.set((ExecutorService) getField(coordinator.getClass(), coordinator, "executor"));
+              worker.set(
+                  (ExecutorService) getField(coordinator.getClass(), coordinator, "executor"));
             }
           } catch (Exception failure) {
             throw new AssertionError(failure);
@@ -356,7 +380,8 @@ class HandicapSavedAnalysisPipelineTest {
           }
         });
     if (worker.get() != null) {
-      assertTrue(worker.get().awaitTermination(5, TimeUnit.SECONDS), "import worker did not terminate");
+      assertTrue(
+          worker.get().awaitTermination(5, TimeUnit.SECONDS), "import worker did not terminate");
     }
     SwingUtilities.invokeAndWait(() -> {});
     for (CountDownLatch resume : frame.loadResumes) {
@@ -415,16 +440,37 @@ class HandicapSavedAnalysisPipelineTest {
       throw new AssertionError("unexpected imported-rules failure: " + message);
     }
 
-    @Override public void refresh() {}
-    @Override public void refresh(int mode) {}
-    @Override public void onMainEnginePonder() {}
-    @Override public void setPlayers(String white, String black) {}
-    @Override public void resetTitle() {}
-    @Override public void tryToResetByoTime() {}
-    @Override public void requestProblemListRefresh() {}
-    @Override public void refreshProblemListSnapshot() {}
-    @Override public void clearKataEstimate() {}
-    @Override public void requestAnalysisRefresh() {}
-    @Override public void requestAnalysisTitleUpdate() {}
+    @Override
+    public void refresh() {}
+
+    @Override
+    public void refresh(int mode) {}
+
+    @Override
+    public void onMainEnginePonder() {}
+
+    @Override
+    public void setPlayers(String white, String black) {}
+
+    @Override
+    public void resetTitle() {}
+
+    @Override
+    public void tryToResetByoTime() {}
+
+    @Override
+    public void requestProblemListRefresh() {}
+
+    @Override
+    public void refreshProblemListSnapshot() {}
+
+    @Override
+    public void clearKataEstimate() {}
+
+    @Override
+    public void requestAnalysisRefresh() {}
+
+    @Override
+    public void requestAnalysisTitleUpdate() {}
   }
 }

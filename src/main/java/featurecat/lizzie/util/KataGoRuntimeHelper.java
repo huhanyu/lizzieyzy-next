@@ -1750,10 +1750,11 @@ public final class KataGoRuntimeHelper {
     List<String> launch = applyStoredAppleTuningProfile(command, enginePath, entry);
     if (!isAppleSiliconHost())
       launch = applyStoredOfficialBenchmarkGpuSettings(launch, enginePath, entry);
-    launch = threads > 0
-        ? KataGoCommandSpec.parse(launch)
-            .withForcedOverrides(Map.of("numSearchThreads", String.valueOf(threads)))
-        : launch;
+    launch =
+        threads > 0
+            ? KataGoCommandSpec.parse(launch)
+                .withForcedOverrides(Map.of("numSearchThreads", String.valueOf(threads)))
+            : launch;
     return MeasuredKataGoTuning.applyLive(launch, entry);
   }
 

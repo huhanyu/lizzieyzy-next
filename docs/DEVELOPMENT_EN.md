@@ -57,6 +57,14 @@ If you changed Java code, run another build:
 mvn -B -DskipTests package
 ```
 
+Java code uses google-java-format. The java-linux CI job runs `fmt:check` and fails on unformatted code, so format before you push:
+
+```bash
+mvn -B -q com.spotify.fmt:fmt-maven-plugin:format
+```
+
+The whole repository was formatted once, so this only rewrites files you changed. That commit is listed in `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once so local `git blame` skips it (GitHub's blame view skips it automatically).
+
 To run the unit tests faster locally, give each test class its own JVM and use half the CPU cores
 (about twice as fast; the default, also used in CI, is one sequential JVM):
 

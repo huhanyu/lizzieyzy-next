@@ -62,8 +62,7 @@ public final class ChatGptLiveAcceptanceCli {
         var restored = reopened.active();
         if (restored == null || !restored.signedIn || restored.sessionOnly)
           throw new IOException("Refreshed session did not survive reopening");
-        var repeated =
-            new ChatGptCommentaryClient(reopened, restored.id, restored.model).models();
+        var repeated = new ChatGptCommentaryClient(reopened, restored.id, restored.model).models();
         if (repeated.isEmpty() || store.writes != 1)
           throw new IOException("Reopened session unexpectedly refreshed again");
         System.out.println(

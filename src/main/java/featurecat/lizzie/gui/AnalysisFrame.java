@@ -486,14 +486,17 @@ public class AnalysisFrame extends JFrame {
     // TODO Auto-generated method stub
     int minHeight = 22;
     int trueHeight = height - minHeight;
-    int totalPlayouts = index == 2
-        ? Lizzie.board.getData().getPlayouts2() : Lizzie.board.getData().getPlayouts();
+    int totalPlayouts =
+        index == 2 ? Lizzie.board.getData().getPlayouts2() : Lizzie.board.getData().getPlayouts();
     int maxPlayouts = 0;
     int maxMoveVisits = 0;
     double stable = 0;
     List<MoveData> bestMoves = null;
-    if (index == 1) bestMoves = featurecat.lizzie.fox.FoxLiveSession.isActive()
-        ? Lizzie.frame.getBestMoves() : Lizzie.board.getData().bestMoves;
+    if (index == 1)
+      bestMoves =
+          featurecat.lizzie.fox.FoxLiveSession.isActive()
+              ? Lizzie.frame.getBestMoves()
+              : Lizzie.board.getData().bestMoves;
     else if (index == 2) bestMoves = Lizzie.board.getData().bestMoves2;
     if (bestMoves == null || bestMoves.isEmpty()) return;
     if (index == 1 && featurecat.lizzie.fox.FoxLiveSession.isActive())
@@ -783,7 +786,8 @@ public class AnalysisFrame extends JFrame {
       public int getRowCount() {
         data2 = new ArrayList<MoveData>();
         if (index == 1) {
-          if (featurecat.lizzie.fox.FoxLiveSession.isActive()) bestMoves = Lizzie.frame.getBestMoves();
+          if (featurecat.lizzie.fox.FoxLiveSession.isActive())
+            bestMoves = Lizzie.frame.getBestMoves();
           else if (EngineGamePresentation.current().playing()
               && Lizzie.config.showPreviousBestmovesInEngineGame) {
             if (Lizzie.board.getHistory().getCurrentHistoryNode().previous().isPresent())
@@ -1026,8 +1030,7 @@ public class AnalysisFrame extends JFrame {
             if (data.order == -100) return resourceBundle.getString("AnalysisFrame.exclude");
             else return Utils.getPlayoutsString(data.playouts);
           case 5:
-            return String.format(
-                Locale.ENGLISH, "%.1f", data.allocationRatio(totalPlayouts) * 100);
+            return String.format(Locale.ENGLISH, "%.1f", data.allocationRatio(totalPlayouts) * 100);
           case 6:
             if (data.isNextMove && data.policy < -1000) return "--";
             return String.format(Locale.ENGLISH, "%.2f", data.policy);

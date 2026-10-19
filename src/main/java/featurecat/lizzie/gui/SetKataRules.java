@@ -9,7 +9,6 @@ import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.util.Utils;
 import java.awt.Dimension;
-import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -20,7 +19,6 @@ import java.text.MessageFormat;
 import java.util.OptionalDouble;
 import java.util.ResourceBundle;
 import javax.imageio.ImageIO;
-import javax.swing.ButtonGroup;
 import javax.swing.BorderFactory;
 import javax.swing.JDialog;
 import javax.swing.SwingUtilities;
@@ -131,15 +129,23 @@ public class SetKataRules extends JDialog {
     }
     // Size the row for the widest komi KataGo accepts (-400..400) so any real value fits.
     lblKomiHint = new JFontLabel(formatKomiHint(-400.0, 7.5));
-    int width = Math.max(editor.width(), composeOnly ? 0
-        : Math.max(chkbxAutoLoadRules.getPreferredSize().width,
-            lblKomiHint.getPreferredSize().width) + 36);
+    int width =
+        Math.max(
+            editor.width(),
+            composeOnly
+                ? 0
+                : Math.max(
+                        chkbxAutoLoadRules.getPreferredSize().width,
+                        lblKomiHint.getPreferredSize().width)
+                    + 36);
     lblKomiHint.setText("");
     int checkHeight = chkbxAutoLoadRules.getPreferredSize().height;
     chkbxAutoLoadRules.setBounds(18, below, width - 36, checkHeight);
-    int buttonHeight = Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
-    int buttonWidth = Math.max(93, Math.max(btnApply.getPreferredSize().width,
-        btnCancel.getPreferredSize().width));
+    int buttonHeight =
+        Math.max(btnApply.getPreferredSize().height, btnCancel.getPreferredSize().height);
+    int buttonWidth =
+        Math.max(
+            93, Math.max(btnApply.getPreferredSize().width, btnCancel.getPreferredSize().width));
     int buttonY = below + (composeOnly ? 0 : checkHeight + 2 * configuredStatusHeight());
     btnApply.setBounds(width / 2 - buttonWidth - 6, buttonY, buttonWidth, buttonHeight);
     btnCancel.setBounds(width / 2 + 6, buttonY, buttonWidth, buttonHeight);

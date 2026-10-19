@@ -33,11 +33,7 @@ class ThreadSnapshotTest {
                 1,
                 frame("java.awt.EventDispatchThread", "pumpOneEventForFilters")),
             stub(
-                "main",
-                Thread.State.RUNNABLE,
-                false,
-                2,
-                frame("featurecat.lizzie.Lizzie", "main")),
+                "main", Thread.State.RUNNABLE, false, 2, frame("featurecat.lizzie.Lizzie", "main")),
             stub(
                 "lizzie-log-app",
                 Thread.State.WAITING,
@@ -180,11 +176,7 @@ class ThreadSnapshotTest {
   }
 
   private static ThreadSnapshot.ThreadRecord stub(
-      String name,
-      Thread.State state,
-      boolean daemon,
-      long id,
-      StackTraceElement frame) {
+      String name, Thread.State state, boolean daemon, long id, StackTraceElement frame) {
     return new ThreadSnapshot.ThreadRecord() {
       @Override
       public String name() {

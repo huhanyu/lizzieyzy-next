@@ -83,10 +83,10 @@ public final class KataGoAssetCatalog {
   public String katagoSourceCommit() {
     return katagoSourceCommit;
   }
+
   public String origin() {
     return origin;
   }
-
 
   public String modelReleaseTag() {
     return modelReleaseTag;
@@ -145,8 +145,7 @@ public final class KataGoAssetCatalog {
     if (!origin.equals("project-source-build")
         || !root.optString("engineReleaseRepository").equals("wimi321/lizzieyzy-next")
         || !required(root, "katagoSourceCommit").matches("[0-9a-f]{40}")
-        || !required(root, "engineReleaseTag")
-            .matches("next-\\d{4}-\\d{2}-\\d{2}\\.[1-9][0-9]*")) {
+        || !required(root, "engineReleaseTag").matches("next-\\d{4}-\\d{2}-\\d{2}\\.[1-9][0-9]*")) {
       throw new IllegalStateException("Invalid trusted project source release identity");
     }
     return "https://github.com/wimi321/lizzieyzy-next/releases/download/"
@@ -214,6 +213,7 @@ public final class KataGoAssetCatalog {
     }
     return parsed;
   }
+
   private static String zlibLinkage(JSONObject value) {
     String linkage = value.optString("zlibLinkage", "dynamic").trim();
     if (!linkage.equals("dynamic") && !linkage.equals("static")) {
@@ -221,7 +221,6 @@ public final class KataGoAssetCatalog {
     }
     return linkage;
   }
-
 
   private static String required(JSONObject value, String key) {
     String result = value.optString(key, "").trim();

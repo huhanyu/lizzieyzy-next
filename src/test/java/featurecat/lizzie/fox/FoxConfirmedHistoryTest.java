@@ -26,10 +26,12 @@ class FoxConfirmedHistoryTest {
 
   /** Global move callbacks are not under test; the history's own board state is. */
   static final class QuietBoard extends Board {
-    @Override public void clearAfterMove() {}
+    @Override
+    public void clearAfterMove() {}
   }
 
-  @BeforeEach void smallBoard() throws Exception {
+  @BeforeEach
+  void smallBoard() throws Exception {
     previousWidth = Board.boardWidth;
     previousHeight = Board.boardHeight;
     previousConfig = Lizzie.config;
@@ -47,7 +49,8 @@ class FoxConfirmedHistoryTest {
     Lizzie.setPrimaryEngine(null);
   }
 
-  @AfterEach void restore() {
+  @AfterEach
+  void restore() {
     Board.boardWidth = previousWidth;
     Board.boardHeight = previousHeight;
     Zobrist.init();
@@ -57,19 +60,26 @@ class FoxConfirmedHistoryTest {
     Lizzie.setPrimaryEngine(previousEngine);
   }
 
-  @Test void confirmedCaptureFollowsGoRulesWhenNoCaptureSettingIsOn() {
+  @Test
+  void confirmedCaptureFollowsGoRulesWhenNoCaptureSettingIsOn() {
     Lizzie.config.noCapture = true;
     BoardHistoryList history = new BoardHistoryList(BoardData.empty(5, 5));
-    String[] moves = {"W1,1", "B1,0", "W4,4", "B0,1", "W4,3", "B2,1", "W4,2", "B1,2", "W3,3", "B1,1"};
+    String[] moves = {
+      "W1,1", "B1,0", "W4,4", "B0,1", "W4,3", "B2,1", "W4,2", "B1,2", "W3,3", "B1,1"
+    };
     int number = 0;
     for (String move : moves) {
       char color = move.charAt(0);
       String[] xy = move.substring(1).split(",");
-      FoxGameState.Placement placement = new FoxGameState.Placement(
-          ++number, Integer.parseInt(xy[0]), Integer.parseInt(xy[1]), color);
-      FoxLiveSession.appendConfirmed(history, new FoxGameState.Action(placement, color, number), false);
+      FoxGameState.Placement placement =
+          new FoxGameState.Placement(
+              ++number, Integer.parseInt(xy[0]), Integer.parseInt(xy[1]), color);
+      FoxLiveSession.appendConfirmed(
+          history, new FoxGameState.Action(placement, color, number), false);
     }
-    assertEquals(Stone.BLACK, history.getStones()[Board.getIndex(1, 1)],
+    assertEquals(
+        Stone.BLACK,
+        history.getStones()[Board.getIndex(1, 1)],
         "captured white stone is removed, so Black can reuse the point");
     assertEquals(1, history.getData().blackCaptures);
     assertTrue(Lizzie.config.noCapture, "the user's ordinary setting is untouched");

@@ -88,7 +88,8 @@ class B11SpeedNoticeDesktopTest {
       entry.komi = 7.5f;
       entry.commands = command(executable, b11, config);
 
-      Path bridge = Files.writeString(work.resolve("katago-bridge.sh"), "metadata-only script fixture");
+      Path bridge =
+          Files.writeString(work.resolve("katago-bridge.sh"), "metadata-only script fixture");
       entry.commands = command(bridge, b11, config);
       assertTrue(EngineThreadPolicy.isLocalKataGoCommand(entry.commands, false));
       SetupSnapshot bridgeSnapshot = KataGoAutoSetupHelper.inspectSavedEngine(entry);
@@ -99,7 +100,10 @@ class B11SpeedNoticeDesktopTest {
           () -> {
             KataGoAutoSetupDialog dialog = new KataGoAutoSetupDialog(Lizzie.frame);
             invoke(dialog, "cancelStateRefresh");
-            set(dialog, "stateRefreshRequestId", ((Long) field(dialog, "stateRefreshRequestId")) + 1L);
+            set(
+                dialog,
+                "stateRefreshRequestId",
+                ((Long) field(dialog, "stateRefreshRequestId")) + 1L);
             boundaryDialog.set(dialog);
           });
       try {

@@ -13,8 +13,15 @@ class FoxKifuDownloadRankTest {
 
   @ParameterizedTest
   @CsvSource({
-    "100, P1段", "101, P2段", "102, P3段", "103, P4段", "104, P5段",
-    "105, P6段", "106, P7段", "107, P8段", "108, P9段"
+    "100, P1段",
+    "101, P2段",
+    "102, P3段",
+    "103, P4段",
+    "104, P5段",
+    "105, P6段",
+    "106, P7段",
+    "107, P8段",
+    "108, P9段"
   })
   void decodesProfessionalRanksInsteadOfApplyingTheOnlineOffset(int rawRank, String expected) {
     assertEquals(expected, FoxKifuDownload.formatFoxRank(rawRank, CHINESE));

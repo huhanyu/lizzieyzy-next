@@ -18,7 +18,8 @@ class HumanSlTrainingBarTest {
     List<String> buttonTexts = new ArrayList<>();
     collectButtonTexts(bar, buttonTexts);
 
-    assertTrue(buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlTraining.finishReview")));
+    assertTrue(
+        buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlTraining.finishReview")));
     assertFalse(buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlGame.btn.resign")));
   }
 

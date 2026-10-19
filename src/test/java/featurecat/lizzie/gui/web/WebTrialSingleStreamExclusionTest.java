@@ -113,8 +113,7 @@ class WebTrialSingleStreamExclusionTest {
     assertEquals(
         WebBoardManager.TrialEnterResult.IDEMPOTENT,
         manager.enterTrialWithResult("trial-owner", anchor));
-    WebBoardManager.TrialEnterResult inUse =
-        manager.enterTrialWithResult("other-client", anchor);
+    WebBoardManager.TrialEnterResult inUse = manager.enterTrialWithResult("other-client", anchor);
     assertEquals(WebBoardManager.TrialEnterResult.Kind.IN_USE, inUse.kind());
     assertEquals("trial-owner", inUse.capturedOwnerClientId());
   }
@@ -212,8 +211,7 @@ class WebTrialSingleStreamExclusionTest {
     Method method = Leelaz.class.getDeclaredMethod("beginAutomaticEngineRestartAttempt");
     method.setAccessible(true);
 
-    Leelaz.AutomaticRestartAttempt attempt =
-        (Leelaz.AutomaticRestartAttempt) method.invoke(engine);
+    Leelaz.AutomaticRestartAttempt attempt = (Leelaz.AutomaticRestartAttempt) method.invoke(engine);
 
     assertNotNull(attempt);
     attempt.close();
@@ -223,8 +221,7 @@ class WebTrialSingleStreamExclusionTest {
     Leelaz.ForegroundAnalysisLeaseAcquisition foreground =
         engine.acquireForegroundAnalysisLease(line -> {}, lease -> {}, lease -> {});
     assertEquals(
-        Leelaz.ExclusiveGtpLeaseAvailability.APPLICATION_EXCLUSIVE_MODE,
-        foreground.availability());
+        Leelaz.ExclusiveGtpLeaseAvailability.APPLICATION_EXCLUSIVE_MODE, foreground.availability());
     assertNull(foreground.lease());
     assertNull(engine.beginExclusiveGtpLifecycleReservation());
     assertNull(engine.beginEngineModeReservation());
@@ -252,8 +249,8 @@ class WebTrialSingleStreamExclusionTest {
     return engine;
   }
 
-  private static Leelaz.ForegroundAnalysisLeaseAcquisition activateForegroundAnalysis(
-      Leelaz engine) throws Exception {
+  private static Leelaz.ForegroundAnalysisLeaseAcquisition activateForegroundAnalysis(Leelaz engine)
+      throws Exception {
     Leelaz.ForegroundAnalysisLeaseAcquisition foreground =
         engine.acquireForegroundAnalysisLease(line -> {}, lease -> {}, lease -> {});
     assertEquals(Leelaz.ExclusiveGtpLeaseAvailability.AVAILABLE, foreground.availability());

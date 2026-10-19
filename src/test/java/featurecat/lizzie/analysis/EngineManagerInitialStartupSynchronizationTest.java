@@ -32,7 +32,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -319,8 +318,7 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       engine.sendCommand("play B Q16");
       assertTrue(
-          engine.containsCommand("play B Q16"),
-          "ordinary play must enter after admission reopens");
+          engine.containsCommand("play B Q16"), "ordinary play must enter after admission reopens");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -396,8 +394,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void admissionStartingAfterSubmitPrecheckRejectsAllOrdinaryForwardingCommands()
-      throws Exception {
+  void admissionStartingAfterSubmitPrecheckRejectsAllOrdinaryForwardingCommands() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz();
       Board board = boardWithHistory(emptyRootHistory(0));
@@ -651,8 +648,10 @@ class EngineManagerInitialStartupSynchronizationTest {
       }
       assertTrue(
           engine.analysisStarted.await(2, TimeUnit.SECONDS),
-          "analysis must start after final fence; commands=" + engine.commands
-              + " phase=" + manager.engineSwitchUiSnapshot(true).phase());
+          "analysis must start after final fence; commands="
+              + engine.commands
+              + " phase="
+              + manager.engineSwitchUiSnapshot(true).phase());
       assertTrue(
           manager.firstSynchronizationCompleted.await(2, TimeUnit.SECONDS),
           "production synchronization worker must complete before assertions");
@@ -810,8 +809,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(target.started, "the partially published target reader must be stopped");
       assertFalse(target.isLoaded, "the failed target must remain unavailable");
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
@@ -843,8 +841,7 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertTrue(manager.switchEngineIfAvailable(1, true));
       assertTrue(target.returnedWithoutReader.await(2, TimeUnit.SECONDS));
-      boolean recovered =
-          previous.analysisOutputRecoveryCompleted.await(10, TimeUnit.SECONDS);
+      boolean recovered = previous.analysisOutputRecoveryCompleted.await(10, TimeUnit.SECONDS);
       Object activeTransaction = managerAtomicReferenceValue(manager, "engineSwitchTransaction");
       Object activeRecovery = managerAtomicReferenceValue(manager, "failedRollbackRecovery");
       assertTrue(
@@ -871,8 +868,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(0, EngineManager.currentEngineNo);
       assertFalse(EngineManager.isEmpty);
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertLifecycleReservationReleased(previous);
       assertTrue(previous.analysisStarted.await(2, TimeUnit.SECONDS));
@@ -880,10 +876,8 @@ class EngineManagerInitialStartupSynchronizationTest {
     }
   }
 
-
   @Test
-  void ordinarySwitchSynchronizationDispatchErrorExactClosesTheStartedTarget()
-      throws Exception {
+  void ordinarySwitchSynchronizationDispatchErrorExactClosesTheStartedTarget() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz current = new StartupSyncLeelaz();
       StartupSyncLeelaz target = new StartupSyncLeelaz();
@@ -915,8 +909,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(target.started, "dispatch failure must exact-close the new reader");
       assertFalse(target.isLoaded);
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
@@ -971,8 +964,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       target.publishReady();
       assertTrue(manager.firstSynchronizationCompleted.await(2, TimeUnit.SECONDS));
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
     }
   }
 
@@ -993,8 +985,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       Lizzie.engineManager = manager;
       AtomicBoolean submitted = new AtomicBoolean();
 
-      SwingUtilities.invokeAndWait(
-          () -> submitted.set(manager.switchEngineIfAvailable(1, true)));
+      SwingUtilities.invokeAndWait(() -> submitted.set(manager.switchEngineIfAvailable(1, true)));
       assertTrue(submitted.get(), "EDT admission must return before snapshot preparation");
       assertEquals(
           EngineManager.EngineSwitchUiPhase.SWITCHING,
@@ -1013,8 +1004,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(target.startCompleted.await(2, TimeUnit.SECONDS));
       assertTrue(manager.firstSynchronizationCompleted.await(2, TimeUnit.SECONDS));
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
     }
   }
 
@@ -1029,7 +1019,9 @@ class EngineManagerInitialStartupSynchronizationTest {
       CountDownLatch failed = new CountDownLatch(1);
       EngineManager manager =
           new EngineManager(
-              Lizzie.config, 0, false,
+              Lizzie.config,
+              0,
+              false,
               new ArrayList<>(List.of(engineData(0, "failure-detail", false))),
               command -> engine) {
             @Override
@@ -1051,8 +1043,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void realConstructorTracksDefaultStartupByCatalogPositionUntilFinalActive()
-      throws Exception {
+  void realConstructorTracksDefaultStartupByCatalogPositionUntilFinalActive() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz positionalEngine = new StartupSyncLeelaz();
       StartupSyncLeelaz defaultEngine = new StartupSyncLeelaz();
@@ -1060,8 +1051,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       Lizzie.board = boardWithHistory(emptyRootHistory(1));
       EngineData positional = engineData(3, "positional", false);
       EngineData selectedDefault = engineData(17, "selected-default", true);
-      ArrayList<EngineData> catalog =
-          new ArrayList<>(List.of(positional, selectedDefault));
+      ArrayList<EngineData> catalog = new ArrayList<>(List.of(positional, selectedDefault));
 
       EngineManager manager =
           new EngineManager(
@@ -1069,8 +1059,7 @@ class EngineManagerInitialStartupSynchronizationTest {
               0,
               true,
               catalog,
-              command ->
-                  "selected-default".equals(command) ? defaultEngine : positionalEngine);
+              command -> "selected-default".equals(command) ? defaultEngine : positionalEngine);
       Lizzie.engineManager = manager;
 
       assertTrue(defaultEngine.startCompleted.await(2, TimeUnit.SECONDS));
@@ -1079,7 +1068,8 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(-1, EngineManager.currentEngineNo);
       assertTrue(EngineManager.isEmpty);
       assertEquals(
-          1, manager.engineSwitchUiSnapshot(true).targetIndex(),
+          1,
+          manager.engineSwitchUiSnapshot(true).targetIndex(),
           "default selection must publish the exact engine-list position");
       assertEquals(
           EngineManager.EngineSwitchUiPhase.SWITCHING,
@@ -1094,8 +1084,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       }
 
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
       assertEquals(1, EngineManager.currentEngineNo);
       assertFalse(EngineManager.isEmpty);
     }
@@ -1209,11 +1198,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         Lizzie.leelaz = null;
         Lizzie.config.uiConfig = new org.json.JSONObject();
         new EngineManager(
-            Lizzie.config,
-            -1,
-            false,
-            new ArrayList<>(List.of(data)),
-            command -> engine);
+            Lizzie.config, -1, false, new ArrayList<>(List.of(data)), command -> engine);
 
         assertTrue(workerCompleted.await(2, TimeUnit.SECONDS));
         assertNull(escapedWorkerFailure.get(), "the preload worker must settle its own failure");
@@ -1232,8 +1217,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void nonSelectedInitialPreloadStartThenThrowClosesOnlyTheScheduledIncarnation()
-      throws Exception {
+  void nonSelectedInitialPreloadStartThenThrowClosesOnlyTheScheduledIncarnation() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz();
       EngineData data = engineData(29, "start-then-throw-initial-preload", false);
@@ -1297,8 +1281,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         assertNotNull(replacementIncarnation.get());
         assertSame(replacementIncarnation.get(), engine.currentEngineIncarnation());
         assertTrue(
-            engine.started,
-            "cleanup for the scheduled incarnation must preserve its replacement");
+            engine.started, "cleanup for the scheduled incarnation must preserve its replacement");
         assertTrue(engine.isLoaded, "the replacement incarnation must remain routable");
         Leelaz.UpdateEngineStartAttempt retry = engine.beginUpdateEngineStartAttempt();
         retry.failClose(new AssertionError("controlled replacement-preserving retry settlement"));
@@ -1336,8 +1319,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       }
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertEquals(0, manager.engineSwitchUiSnapshot(true).targetIndex());
       assertNull(Lizzie.leelaz, "the failed provisional PRIMARY must be rolled back");
       assertEquals(-1, EngineManager.currentEngineNo);
@@ -1356,8 +1338,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   @org.junit.jupiter.api.RepeatedTest(20)
   void failedInitialPrimaryCanBeRetriedAfterItsBinaryIsRepaired() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
-      FailOnceSelectedInitialStartupLeelaz engine =
-          new FailOnceSelectedInitialStartupLeelaz();
+      FailOnceSelectedInitialStartupLeelaz engine = new FailOnceSelectedInitialStartupLeelaz();
       CountDownLatch workerCompleted = new CountDownLatch(1);
       EngineManager.setInitialEngineStartupSchedulerForTest(
           new EngineManager.InitialEngineStartupScheduler() {
@@ -1406,8 +1387,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         assertTrue(engine.firstStartCompleted.await(2, TimeUnit.SECONDS));
         assertTrue(engine.cleanupEntered.await(2, TimeUnit.SECONDS));
         assertEquals(
-            EngineManager.EngineSwitchUiPhase.FAILED,
-            manager.engineSwitchUiSnapshot(true).phase());
+            EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
         assertNull(Lizzie.leelaz);
         assertTrue(EngineManager.isEmpty);
         assertEquals(-1, EngineManager.currentEngineNo);
@@ -1425,16 +1405,15 @@ class EngineManagerInitialStartupSynchronizationTest {
         assertTrue(((StartupSyncLeelaz) engine).analysisStarted.await(2, TimeUnit.SECONDS));
         long activeDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (manager.engineSwitchUiSnapshot(true).phase()
-                    != EngineManager.EngineSwitchUiPhase.ACTIVE
-                && System.nanoTime() < activeDeadline) {
+                != EngineManager.EngineSwitchUiPhase.ACTIVE
+            && System.nanoTime() < activeDeadline) {
           Thread.sleep(10L);
         }
         assertSame(engine, Lizzie.leelaz);
         assertEquals(0, EngineManager.currentEngineNo);
         assertFalse(EngineManager.isEmpty);
         assertEquals(
-            EngineManager.EngineSwitchUiPhase.ACTIVE,
-            manager.engineSwitchUiSnapshot(true).phase());
+            EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
       } finally {
         engine.allowCleanup.countDown();
         try {
@@ -1564,8 +1543,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         assertNull(Lizzie.leelaz);
         assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
         assertEquals(
-            EngineManager.EngineSwitchUiPhase.FAILED,
-            manager.engineSwitchUiSnapshot(true).phase());
+            EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
         assertTrue(
             manager.engineSwitchUiSnapshot(true).failureDetail().contains("start-after-throw"));
       } finally {
@@ -1576,8 +1554,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void selectedInitialStartupInnerDispatchErrorReleasesTheUnstartedTransaction()
-      throws Exception {
+  void selectedInitialStartupInnerDispatchErrorReleasesTheUnstartedTransaction() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz();
       AssertionError dispatchFailure =
@@ -1662,8 +1639,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void supersededInitialManagerCannotOverwriteNewManagerBoardOwnerOrReadyState()
-      throws Exception {
+  void supersededInitialManagerCannotOverwriteNewManagerBoardOwnerOrReadyState() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engineA = new StartupSyncLeelaz();
       StartupSyncLeelaz engineB = new StartupSyncLeelaz();
@@ -1680,21 +1656,13 @@ class EngineManagerInitialStartupSynchronizationTest {
       Lizzie.board = boardA;
       EngineManager managerA =
           new EngineManager(
-              Lizzie.config,
-              0,
-              false,
-              new ArrayList<>(List.of(dataA)),
-              command -> engineA);
+              Lizzie.config, 0, false, new ArrayList<>(List.of(dataA)), command -> engineA);
       assertTrue(engineA.startEntered.await(2, TimeUnit.SECONDS));
 
       Lizzie.board = boardB;
       EngineManager managerB =
           new EngineManager(
-              Lizzie.config,
-              0,
-              false,
-              new ArrayList<>(List.of(dataB)),
-              command -> engineB);
+              Lizzie.config, 0, false, new ArrayList<>(List.of(dataB)), command -> engineB);
       long readyDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
       while (managerB.engineSwitchUiSnapshot(true).phase()
               != EngineManager.EngineSwitchUiPhase.ACTIVE
@@ -1702,8 +1670,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         Thread.sleep(10L);
       }
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          managerB.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, managerB.engineSwitchUiSnapshot(true).phase());
 
       engineA.startReturnGate.countDown();
       assertTrue(engineA.startCompleted.await(2, TimeUnit.SECONDS));
@@ -1730,8 +1697,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void supersededInitialManagerFinalAckStopsOldRuntimeOffReaderCallbackThread()
-      throws Exception {
+  void supersededInitialManagerFinalAckStopsOldRuntimeOffReaderCallbackThread() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz staleEngine = new StartupSyncLeelaz();
       StartupSyncLeelaz activeEngine = new StartupSyncLeelaz();
@@ -1813,8 +1779,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void supersededInitialManagerFenceFailureCannotStopReusedEngineIncarnation()
-      throws Exception {
+  void supersededInitialManagerFenceFailureCannotStopReusedEngineIncarnation() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz reusedEngine = new StartupSyncLeelaz();
       StartupSyncLeelaz activeEngine = new StartupSyncLeelaz();
@@ -1834,8 +1799,7 @@ class EngineManagerInitialStartupSynchronizationTest {
               false,
               new ArrayList<>(List.of(engineData(0, "stale-reused-owner", false))),
               command -> reusedEngine);
-      assertTrue(
-          reusedEngine.boardSynchronizationCallbackEntered.await(2, TimeUnit.SECONDS));
+      assertTrue(reusedEngine.boardSynchronizationCallbackEntered.await(2, TimeUnit.SECONDS));
       Object staleIncarnation = reusedEngine.currentEngineIncarnation();
 
       Lizzie.board = activeBoard;
@@ -2140,8 +2104,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void secondaryMirrorFenceFailureInvalidatesPrimaryUiAndRestoresCapturedOwners()
-      throws Exception {
+  void secondaryMirrorFenceFailureInvalidatesPrimaryUiAndRestoresCapturedOwners() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz oldPrimary = new StartupSyncLeelaz();
       StartupSyncLeelaz activePrimary = new StartupSyncLeelaz();
@@ -2163,16 +2126,14 @@ class EngineManagerInitialStartupSynchronizationTest {
       EngineManager.currentEngineNo2 = 2;
       ProductionEntryEngineManager manager =
           new ProductionEntryEngineManager(
-              new ArrayList<>(
-                  List.of(oldPrimary, activePrimary, oldSecondary, targetSecondary)));
+              new ArrayList<>(List.of(oldPrimary, activePrimary, oldSecondary, targetSecondary)));
       Lizzie.engineManager = manager;
 
       assertTrue(manager.switchEngineIfAvailable(1, true));
       assertTrue(activePrimary.startCompleted.await(2, TimeUnit.SECONDS));
       assertTrue(manager.firstSynchronizationCompleted.await(2, TimeUnit.SECONDS));
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
 
       activePrimary.boardSynchronizationFailure = "controlled primary mirror fence failure";
       assertTrue(manager.switchEngineIfAvailable(3, false));
@@ -2186,8 +2147,7 @@ class EngineManagerInitialStartupSynchronizationTest {
           "the failed secondary target shutdown must complete before its effects are asserted");
 
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(false).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(false).phase());
       assertEquals(
           EngineManager.EngineSwitchUiPhase.FAILED,
           manager.engineSwitchUiSnapshot(true).phase(),
@@ -2230,8 +2190,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       EngineManager.currentEngineNo2 = 2;
       ProductionEntryEngineManager manager =
           new ProductionEntryEngineManager(
-              new ArrayList<>(
-                  List.of(oldPrimary, activePrimary, oldSecondary, targetSecondary)));
+              new ArrayList<>(List.of(oldPrimary, activePrimary, oldSecondary, targetSecondary)));
       Lizzie.engineManager = manager;
 
       assertTrue(manager.switchEngineIfAvailable(1, true));
@@ -2258,8 +2217,7 @@ class EngineManagerInitialStartupSynchronizationTest {
           "the outer synchronization call must return before the asynchronous target ACK");
       targetSecondary.boardSynchronizationGate.countDown();
 
-      assertTrue(
-          targetSecondary.boardSynchronizationCallbackCompleted.await(2, TimeUnit.SECONDS));
+      assertTrue(targetSecondary.boardSynchronizationCallbackCompleted.await(2, TimeUnit.SECONDS));
       assertTrue(
           manager.synchronizationFailed.await(2, TimeUnit.SECONDS),
           "mirror setup Error must enter the ordinary lifecycle failure path");
@@ -2272,11 +2230,9 @@ class EngineManagerInitialStartupSynchronizationTest {
       }
 
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(false).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(false).phase());
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertSame(oldPrimary, Lizzie.leelaz);
       assertEquals(0, EngineManager.currentEngineNo);
       assertSame(oldSecondary, Lizzie.leelaz2);
@@ -2293,8 +2249,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, activePrimary.normalQuitCount);
       assertEquals(1, targetSecondary.normalQuitCount);
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(false).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(false).phase());
       assertLifecycleReservationReleased(activePrimary);
       assertLifecycleReservationReleased(targetSecondary);
     }
@@ -2323,8 +2278,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       EngineManager.currentEngineNo2 = 2;
       ProductionEntryEngineManager manager =
           new ProductionEntryEngineManager(
-              new ArrayList<>(
-                  List.of(oldPrimary, activePrimary, oldSecondary, targetSecondary)));
+              new ArrayList<>(List.of(oldPrimary, activePrimary, oldSecondary, targetSecondary)));
       Lizzie.engineManager = manager;
 
       assertTrue(manager.switchEngineIfAvailable(1, true));
@@ -2341,17 +2295,10 @@ class EngineManagerInitialStartupSynchronizationTest {
           (EngineManager.EngineSwitchUiTracker) trackerField.get(manager);
       EngineManager.EngineSwitchUiSnapshot newerSwitch =
           tracker.begin(
-              true,
-              1,
-              "active-primary",
-              activePrimary,
-              1,
-              "active-primary",
-              activePrimary);
+              true, 1, "active-primary", activePrimary, 1, "active-primary", activePrimary);
       EngineManager.EngineSwitchUiSnapshot newerActive =
           tracker
-              .succeed(
-                  newerSwitch.token(), true, 1, "active-primary", activePrimary)
+              .succeed(newerSwitch.token(), true, 1, "active-primary", activePrimary)
               .orElseThrow();
       assertTrue(newerActive.token() > capturedMirrorToken);
 
@@ -2659,7 +2606,8 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(EngineManager.isEmpty);
       assertEquals(-1, EngineManager.currentEngineNo);
       assertFalse(current.isLoaded());
-      assertEquals(EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(
+          EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
       assertLifecycleReservationReleased(current);
       assertLifecycleReservationReleased(target);
     }
@@ -2744,11 +2692,9 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, previous.normalQuitCount, "the failed rollback runtime is stopped once");
       assertEquals(2, manager.synchronizationFailureCount);
       assertEquals(
-          EngineStartupStatus.State.START_FAILED,
-          Lizzie.engineStartupStatus.snapshot().state);
+          EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertNull(managerAtomicReferenceValue(manager, "failedRollbackRecovery"));
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertLifecycleReservationReleased(previous);
@@ -2811,11 +2757,9 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertFalse(previous.isLoaded);
       assertEquals(1, previous.normalQuitCount);
       assertEquals(
-          EngineStartupStatus.State.START_FAILED,
-          Lizzie.engineStartupStatus.snapshot().state);
+          EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertNull(managerAtomicReferenceValue(manager, "failedRollbackRecovery"));
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertLifecycleReservationReleased(previous);
@@ -3184,9 +3128,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(0, failingEngine.ponderCount, "no analysis after a failed snapshot restore");
       assertEquals(0, failingEngine.analyzeCount(), "no analyze command after a failed restore");
       assertEquals(
-          0,
-          env.readyTransitions.get() - readyBaseline,
-          "never marked ready on restore failure");
+          0, env.readyTransitions.get() - readyBaseline, "never marked ready on restore failure");
       assertLifecycleReservationReleased(failingEngine);
 
       assertTrue(manager.switchEngineIfAvailable(1, true), "a later activation must retry startup");
@@ -3238,9 +3180,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(0, engine.ponderCount, "no analysis after a failed catch-up restore");
       assertEquals(0, engine.analyzeCount(), "no analyze command after a failed catch-up");
       assertEquals(
-          0,
-          env.readyTransitions.get() - readyBaseline,
-          "never marked ready on catch-up failure");
+          0, env.readyTransitions.get() - readyBaseline, "never marked ready on catch-up failure");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -3425,8 +3365,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(null, Lizzie.leelaz);
       assertSame(null, menu.lastPdaEngine);
       assertFalse(
-          menu.lastPdaVisible,
-          "ordinary analysis must hide PDA when no primary owner is routable");
+          menu.lastPdaVisible, "ordinary analysis must hide PDA when no primary owner is routable");
       assertTrue(secondary.isLoaded(), "secondary availability must not masquerade as primary");
     }
   }
@@ -3446,8 +3385,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       EngineManager.isEmpty = true;
       EngineManager.currentEngineNo = -1;
       ProductionEntryEngineManager manager =
-          new ProductionEntryEngineManager(
-              new ArrayList<>(List.of(failedEngine, recoveryEngine)));
+          new ProductionEntryEngineManager(new ArrayList<>(List.of(failedEngine, recoveryEngine)));
       Lizzie.engineManager = manager;
 
       assertTrue(manager.switchEngineIfAvailable(0, true));
@@ -3458,13 +3396,13 @@ class EngineManagerInitialStartupSynchronizationTest {
           "the isolated failed-runtime stop must complete before its effects are asserted");
 
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertTrue(EngineManager.isEmpty);
       assertEquals(-1, EngineManager.currentEngineNo);
       assertEquals(1, failedEngine.normalQuitCount);
       assertEquals(1, manager.synchronizationFailureCount);
-      assertEquals(EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(
+          EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
       assertLifecycleReservationReleased(failedEngine);
 
       failedEngine.publishLateBoardSynchronizationSuccess();
@@ -3474,8 +3412,7 @@ class EngineManagerInitialStartupSynchronizationTest {
           "a late target ACK must not settle the already-failed lifecycle a second time");
       assertEquals(1, failedEngine.normalQuitCount);
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertTrue(EngineManager.isEmpty);
       assertEquals(-1, EngineManager.currentEngineNo);
 
@@ -3486,8 +3423,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(recoveryEngine.analysisStarted.await(2, TimeUnit.SECONDS));
       assertTrue(manager.secondSynchronizationCompleted.await(2, TimeUnit.SECONDS));
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
       assertEquals(1, EngineManager.currentEngineNo);
       assertEquals(EngineStartupStatus.State.READY, Lizzie.engineStartupStatus.snapshot().state);
       assertLifecycleReservationReleased(recoveryEngine);
@@ -3525,8 +3461,7 @@ class EngineManagerInitialStartupSynchronizationTest {
                   List.of(
                       engineData(0, "catch-up-error", false),
                       engineData(1, "catch-up-recovery", false))),
-              command ->
-                  "catch-up-error".equals(command) ? failedEngine : recoveryEngine);
+              command -> "catch-up-error".equals(command) ? failedEngine : recoveryEngine);
       Lizzie.engineManager = manager;
 
       assertTrue(failedEngine.startCompleted.await(2, TimeUnit.SECONDS));
@@ -3549,8 +3484,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       }
 
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.FAILED,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.FAILED, manager.engineSwitchUiSnapshot(true).phase());
       assertTrue(EngineManager.isEmpty);
       assertEquals(-1, EngineManager.currentEngineNo);
       assertFalse(failedEngine.isLoaded);
@@ -3569,8 +3503,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         Thread.sleep(10L);
       }
       assertEquals(
-          EngineManager.EngineSwitchUiPhase.ACTIVE,
-          manager.engineSwitchUiSnapshot(true).phase());
+          EngineManager.EngineSwitchUiPhase.ACTIVE, manager.engineSwitchUiSnapshot(true).phase());
       assertSame(recoveryEngine, Lizzie.leelaz);
       assertNull(managerAtomicReferenceValue(manager, "engineSwitchTransaction"));
       assertLifecycleReservationReleased(recoveryEngine);
@@ -3598,8 +3531,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       EngineManager.isEmpty = false;
       EngineManager.currentEngineNo = 0;
       ProductionEntryEngineManager manager =
-          new ProductionEntryEngineManager(
-              new ArrayList<>(List.of(previous, target, alternative)));
+          new ProductionEntryEngineManager(new ArrayList<>(List.of(previous, target, alternative)));
       Lizzie.engineManager = manager;
 
       Thread failedStopThread = null;
@@ -3721,7 +3653,8 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       assertEquals(null, Lizzie.leelaz, "rollback owner is unroutable before its ACK");
       assertTrue(EngineManager.isEmpty);
-      assertEquals(EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
+      assertEquals(
+          EngineStartupStatus.State.START_FAILED, Lizzie.engineStartupStatus.snapshot().state);
 
       previous.boardSynchronizationGate.countDown();
       try {
@@ -3730,8 +3663,7 @@ class EngineManagerInitialStartupSynchronizationTest {
         assertNotNull(recovery);
         assertSame(recovery, previous.analysisOutputRecoveryTokenForTest());
         assertTrue(
-            previous.suppressesGlobalEnginePresentation(
-                previous.analysisReaderBindingForTest()),
+            previous.suppressesGlobalEnginePresentation(previous.analysisReaderBindingForTest()),
             "recovery analysis stays quarantined until the final atomic promotion");
         assertEquals("EXACT_RETIRED", previous.analysisOutputRouteForTest());
       } finally {
@@ -4252,18 +4184,10 @@ class EngineManagerInitialStartupSynchronizationTest {
           engine.komi,
           0.001f,
           name + " must converge komi");
+      assertEquals(Board.boardWidth, engine.engineBoardWidth, name + " must converge board width");
       assertEquals(
-          Board.boardWidth,
-          engine.engineBoardWidth,
-          name + " must converge board width");
-      assertEquals(
-          Board.boardHeight,
-          engine.engineBoardHeight,
-          name + " must converge board height");
-      assertEquals(
-          0,
-          engine.analyzePosition(),
-          name + " must analyze the overwritten position");
+          Board.boardHeight, engine.engineBoardHeight, name + " must converge board height");
+      assertEquals(0, engine.analyzePosition(), name + " must analyze the overwritten position");
       assertLifecycleReservationReleased(engine);
     }
   }
@@ -4284,8 +4208,7 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       board.reopen(13, 13);
       assertTrue(
-          engine.commands.contains("boardsize 13"),
-          "reopen must forward boardsize when idle");
+          engine.commands.contains("boardsize 13"), "reopen must forward boardsize when idle");
 
       flattenWithExtraStones(board, true);
       assertTrue(
@@ -4301,7 +4224,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertEquals(1, boardSizeCount, "same-size reopen must be a no-op");
     }
   }
-
 
   @Test
   void catchUpReservationReacquisitionFailureFailsClosed() throws Exception {
@@ -4344,8 +4266,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void initialResizeForwardingReleasesBoardMonitorBeforeReverseLockCanEnter()
-      throws Exception {
+  void initialResizeForwardingReleasesBoardMonitorBeforeReverseLockCanEnter() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz();
       engine.started = true;
@@ -4611,12 +4532,10 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void closeReleasesMirrorAdmissionAndCompletionClaimAfterTargetDetachError()
-      throws Exception {
+  void closeReleasesMirrorAdmissionAndCompletionClaimAfterTargetDetachError() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       AssertionError detachFailure = new AssertionError("controlled target detach failure");
-      DetachFailingStartupSyncLeelaz target =
-          new DetachFailingStartupSyncLeelaz(detachFailure);
+      DetachFailingStartupSyncLeelaz target = new DetachFailingStartupSyncLeelaz(detachFailure);
       StartupSyncLeelaz mirror = new StartupSyncLeelaz();
       Board board = boardWithHistory(emptyRootHistory(1));
       env.publish(target, board);
@@ -4654,7 +4573,6 @@ class EngineManagerInitialStartupSynchronizationTest {
     }
   }
 
-
   @Test
   void captureFailureRetainsPrimaryFailureWhenReservationCleanupAlsoFails() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
@@ -4677,7 +4595,8 @@ class EngineManagerInitialStartupSynchronizationTest {
       RuntimeException failure =
           assertThrows(
               RuntimeException.class,
-              () -> EngineManager.InitialEngineStartupSynchronization.capture(engine, board, false));
+              () ->
+                  EngineManager.InitialEngineStartupSynchronization.capture(engine, board, false));
 
       assertSame(captureFailure, failure, "capture failure must remain the primary exception");
       assertEquals(1, failure.getSuppressed().length, "cleanup failure must be attached once");
@@ -5104,12 +5023,10 @@ class EngineManagerInitialStartupSynchronizationTest {
 
       retiredTimeout.run();
       assertTrue(
-          engine.isCheckingPdaForTest(),
-          "the retired reader timeout must not clear the new query");
+          engine.isCheckingPdaForTest(), "the retired reader timeout must not clear the new query");
       replacementTimeout.run();
       assertFalse(
-          engine.isCheckingPdaForTest(),
-          "the current reader/query timeout must settle its query");
+          engine.isCheckingPdaForTest(), "the current reader/query timeout must settle its query");
     }
   }
 
@@ -5243,9 +5160,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertTrue(manager.firstSynchronizationCompleted.await(2, TimeUnit.SECONDS));
       assertTrue(manager.synchronizationFailed.await(2, TimeUnit.SECONDS));
       assertEquals(
-          0,
-          env.readyTransitions.get() - readyBaseline,
-          "failed startup must never publish READY");
+          0, env.readyTransitions.get() - readyBaseline, "failed startup must never publish READY");
       assertEquals(
           0,
           ((SilentStartupMenu) LizzieFrame.menu).readyPrimaryIconCount,
@@ -5257,8 +5172,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void transactionlessSynchronizationFailurePresentationRejectsReplacedBoard()
-      throws Exception {
+  void transactionlessSynchronizationFailurePresentationRejectsReplacedBoard() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz(true);
       Board board = boardWithHistory(emptyRootHistory(0));
@@ -5373,8 +5287,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void startupPostCommandsCommitLoadedOnlyAfterExactPhysicalWritesBeforeRebind()
-      throws Exception {
+  void startupPostCommandsCommitLoadedOnlyAfterExactPhysicalWritesBeforeRebind() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       Leelaz engine = new Leelaz("");
       GatedRecordingOutputStream oldOutput = new GatedRecordingOutputStream();
@@ -5455,9 +5368,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertNull(rebindFailure.get());
       assertTrue(
           oldOutput.commands().stream()
-              .anyMatch(
-                  command ->
-                      command.endsWith("kata-get-param playoutDoublingAdvantage")),
+              .anyMatch(command -> command.endsWith("kata-get-param playoutDoublingAdvantage")),
           "startup commands must be physically written to their source reader transport");
       assertEquals(
           "",
@@ -5508,8 +5419,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void startupPostActionStartAfterThrowHasOneFailureOwnerAndNoLateCommands()
-      throws Exception {
+  void startupPostActionStartAfterThrowHasOneFailureOwnerAndNoLateCommands() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       StartupSyncLeelaz engine = new StartupSyncLeelaz(true);
       Board board = boardWithHistory(emptyRootHistory(0));
@@ -5574,8 +5484,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void ordinaryPhysicalWriteErrorIsNotDowngradedByStartupSettlementBoundary()
-      throws Exception {
+  void ordinaryPhysicalWriteErrorIsNotDowngradedByStartupSettlementBoundary() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       Leelaz engine = new Leelaz("");
       Error writeFailure = new AssertionError("controlled ordinary physical-write Error");
@@ -6063,8 +5972,7 @@ class EngineManagerInitialStartupSynchronizationTest {
   }
 
   @Test
-  void stateResetOwnsCountRetirementWhileStartupCancellationStillOccupiesQueue()
-      throws Exception {
+  void stateResetOwnsCountRetirementWhileStartupCancellationStillOccupiesQueue() throws Exception {
     try (StartupTestEnvironment env = StartupTestEnvironment.open()) {
       ControlledStartupDeliveryLeelaz engine = new ControlledStartupDeliveryLeelaz();
       ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -6194,8 +6102,7 @@ class EngineManagerInitialStartupSynchronizationTest {
       env.publish(primary, board);
       Lizzie.leelaz2 = secondary;
       Lizzie.config.extraMode = ExtraMode.Double_Engine;
-      EngineManager manager =
-          new EngineManager(new ArrayList<>(List.of(primary, secondary)));
+      EngineManager manager = new EngineManager(new ArrayList<>(List.of(primary, secondary)));
       Lizzie.engineManager = manager;
       EngineManager.currentEngineNo = 0;
       EngineManager.currentEngineNo2 = 1;
@@ -6345,7 +6252,6 @@ class EngineManagerInitialStartupSynchronizationTest {
       assertLifecycleReservationReleased(engine);
     }
   }
-
 
   @Test
   void terminalDiagnosticCallbackRejectsReplacementReader() throws Exception {
@@ -6578,8 +6484,8 @@ class EngineManagerInitialStartupSynchronizationTest {
     }
   }
 
-  private static void invokeResetGtpCommandStateAfterRestoreFailure(
-      Leelaz engine, String detail) throws Exception {
+  private static void invokeResetGtpCommandStateAfterRestoreFailure(Leelaz engine, String detail)
+      throws Exception {
     Method method =
         Leelaz.class.getDeclaredMethod("resetGtpCommandStateAfterRestoreFailure", String.class);
     method.setAccessible(true);
@@ -7112,8 +7018,7 @@ class EngineManagerInitialStartupSynchronizationTest {
     BoardData data = snapshotNode.getData();
     assertTrue(data.isSnapshotNode(), "fixture node 3 must be a SNAPSHOT");
     assertTrue(
-        snapshotNode.hasRemovedStone(),
-        "fixture SNAPSHOT must carry the AE removed-stone marker");
+        snapshotNode.hasRemovedStone(), "fixture SNAPSHOT must carry the AE removed-stone marker");
     assertFalse(data.blackToPlay, "fixture SNAPSHOT must carry PL[W]");
     assertEquals(
         Stone.EMPTY,
@@ -7475,8 +7380,7 @@ class EngineManagerInitialStartupSynchronizationTest {
     @Override
     public void sendCommand(String command) {
       startupCommandAttempts.add(command);
-      if (pdaStartupCommandFailure != null
-          && command.equals(pdaStartupCommandFailureCommand)) {
+      if (pdaStartupCommandFailure != null && command.equals(pdaStartupCommandFailureCommand)) {
         throw pdaStartupCommandFailure;
       }
       super.sendCommand(command);
@@ -8100,7 +8004,6 @@ class EngineManagerInitialStartupSynchronizationTest {
     protected void showContributingEngineSwitchUnavailable() {}
   }
 
-
   private static final class StartupTestEnvironment implements AutoCloseable {
     private final Leelaz previousPrimary = Lizzie.leelaz;
     private final Leelaz previousSecondary = Lizzie.leelaz2;
@@ -8264,6 +8167,7 @@ class EngineManagerInitialStartupSynchronizationTest {
     private boolean lastPdaVisible;
     private volatile int stoppedPrimaryIconCount;
     private volatile int readyPrimaryIconCount;
+
     @Override
     public void applyEngineSwitchUiState(EngineManager.EngineSwitchUiSnapshot snapshot) {}
 

@@ -126,8 +126,7 @@ final class KomiHoldSession {
       int repeatDelayMs,
       BooleanSupplier lifecycleReady) {
     KomiHoldSession session =
-        new KomiHoldSession(
-            control, holdStep, initialDelayMs, repeatDelayMs, lifecycleReady);
+        new KomiHoldSession(control, holdStep, initialDelayMs, repeatDelayMs, lifecycleReady);
     session.bind();
     return session;
   }

@@ -27,8 +27,7 @@ class StartupEvidenceProcessTest {
     Path legacyError = work.resolve("LastErrorLogs_keep.txt");
     Files.writeString(legacyError, "KEEP_ERROR\n");
     Files.writeString(work.resolve("LastGtpLogs_keep.txt"), "KEEP_GTP\n");
-    LoggingChildProcess.Result result =
-        LoggingChildProcess.run(work, StartupEvidenceProbe.class);
+    LoggingChildProcess.Result result = LoggingChildProcess.run(work, StartupEvidenceProbe.class);
 
     assertEquals(0, result.exitCode(), result.output());
     assertTrue(result.output().contains("STARTED"), result.output());
@@ -62,14 +61,14 @@ class StartupEvidenceProcessTest {
     Path work = Files.createTempDirectory(tempDir, "startup-false");
     writeLegacyConfig(work, false);
 
-    LoggingChildProcess.Result result =
-        LoggingChildProcess.run(work, StartupEvidenceProbe.class);
+    LoggingChildProcess.Result result = LoggingChildProcess.run(work, StartupEvidenceProbe.class);
 
     assertEquals(0, result.exitCode(), result.output());
     JSONObject saved = new JSONObject(Files.readString(work.resolve("config.txt")));
     assertFalse(saved.getJSONObject("ui").has("log-console-to-file"), saved.toString(2));
     assertFalse(saved.getJSONObject("ui").has("log-gtp-to-file"), saved.toString(2));
-    assertTrue(LoggingChildProcess.readLog(work, "app.log").contains("log-console-to-file"),
+    assertTrue(
+        LoggingChildProcess.readLog(work, "app.log").contains("log-console-to-file"),
         LoggingChildProcess.readLog(work, "app.log"));
   }
 

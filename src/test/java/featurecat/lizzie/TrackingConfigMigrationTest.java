@@ -94,5 +94,4 @@ class TrackingConfigMigrationTest {
     assertEquals(456, ui.getInt("tracking-analysis-max-visits"));
     assertFalse(ui.has("tracking-engine-max-visits"));
   }
-
 }

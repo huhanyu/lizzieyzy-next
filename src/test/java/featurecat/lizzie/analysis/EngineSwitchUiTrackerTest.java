@@ -19,8 +19,7 @@ class EngineSwitchUiTrackerTest {
   void delayedStartupKeepsTargetPendingUntilTheMatchingReadyCommit() {
     EngineManager.EngineSwitchUiTracker tracker = new EngineManager.EngineSwitchUiTracker();
 
-    EngineManager.EngineSwitchUiSnapshot pending =
-        tracker.begin(true, 0, "Current", 1, "Target");
+    EngineManager.EngineSwitchUiSnapshot pending = tracker.begin(true, 0, "Current", 1, "Target");
 
     assertEquals(EngineManager.EngineSwitchUiPhase.SWITCHING, pending.phase());
     assertEquals(0, pending.activeIndex());
@@ -128,8 +127,7 @@ class EngineSwitchUiTrackerTest {
     Leelaz capturedPrevious = availableEngine("captured");
     Leelaz replacement = availableEngine("replacement");
     Leelaz target = availableEngine("target");
-    EngineManager manager =
-        new EngineManager(new ArrayList<>(List.of(capturedPrevious, target)));
+    EngineManager manager = new EngineManager(new ArrayList<>(List.of(capturedPrevious, target)));
     EngineManager.EngineSwitchUiTracker tracker = new EngineManager.EngineSwitchUiTracker();
     EngineManager.EngineSwitchUiSnapshot pending =
         tracker.begin(true, 0, "Captured", capturedPrevious, 1, "Target", target);

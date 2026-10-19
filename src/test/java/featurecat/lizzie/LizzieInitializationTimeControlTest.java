@@ -33,7 +33,6 @@ class LizzieInitializationTimeControlTest {
     }
   }
 
-
   @Test
   void readBoardGmaInitializationDoesNotOverwriteGmaTime() throws Exception {
     try (Harness harness = Harness.open()) {
@@ -67,7 +66,6 @@ class LizzieInitializationTimeControlTest {
     }
   }
 
-
   private static final class Harness implements AutoCloseable {
     private final Config previousConfig;
     private final LizzieFrame previousFrame;
@@ -100,13 +98,7 @@ class LizzieInitializationTimeControlTest {
       engine.isKatago = true;
 
       Harness harness =
-          new Harness(
-              Lizzie.config,
-              Lizzie.frame,
-              Lizzie.leelaz,
-              LizzieFrame.menu,
-              frame,
-              engine);
+          new Harness(Lizzie.config, Lizzie.frame, Lizzie.leelaz, LizzieFrame.menu, frame, engine);
       Lizzie.config = config;
       Lizzie.frame = frame;
       Lizzie.leelaz = new Leelaz("");

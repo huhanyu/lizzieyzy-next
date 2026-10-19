@@ -17,7 +17,9 @@ public final class EngineStartupDiagnostic {
   private final String engineId;
   private final int sizeBytes;
   private static final int DEFAULT_MAX_BYTES = 256 * 1024;
-  public static EngineStartupDiagnostic basic(List<String> commands, String command, String detail) {
+
+  public static EngineStartupDiagnostic basic(
+      List<String> commands, String command, String detail) {
     String resolvedCommand = "";
     if (command != null && !command.isBlank()) {
       resolvedCommand = command.trim();
@@ -78,9 +80,7 @@ public final class EngineStartupDiagnostic {
     StringBuilder text = new StringBuilder();
     for (String argument : command) {
       if (text.length() > 0) text.append(' ');
-      text.append('"')
-          .append(argument.replace("\\", "\\\\").replace("\"", "\\\""))
-          .append('"');
+      text.append('"').append(argument.replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
     }
     return text.toString();
   }

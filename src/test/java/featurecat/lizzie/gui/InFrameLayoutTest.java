@@ -196,18 +196,14 @@ class InFrameLayoutTest {
   @Test
   void hiddenCommentOrVariationListOmitsDividerAndKeepsShareForRestore() {
     InFrameLayout hiddenComment =
-        InFrameLayout.layout(
-            visible(1600, 900, 4, null, 0.5, null, false, true, true, true));
+        InFrameLayout.layout(visible(1600, 900, 4, null, 0.5, null, false, true, true, true));
     InFrameLayout restoredComment = InFrameLayout.layout(allVisible(1600, 900, 4, null, 0.5, null));
     InFrameLayout hiddenVariation =
-        InFrameLayout.layout(
-            visible(1600, 900, 4, null, null, 0.6, true, true, false, true));
+        InFrameLayout.layout(visible(1600, 900, 4, null, null, 0.6, true, true, false, true));
     InFrameLayout hiddenList =
-        InFrameLayout.layout(
-            visible(1600, 900, 4, null, null, 0.6, true, true, true, false));
+        InFrameLayout.layout(visible(1600, 900, 4, null, null, 0.6, true, true, true, false));
     InFrameLayout listOnlyDefault =
-        InFrameLayout.layout(
-            visible(1600, 900, 4, null, null, null, true, true, false, true));
+        InFrameLayout.layout(visible(1600, 900, 4, null, null, null, true, true, false, true));
 
     assertEquals(Optional.empty(), hiddenComment.commentTopDivider);
     assertEquals(new Rectangle(), hiddenComment.comment);
@@ -273,7 +269,6 @@ class InFrameLayoutTest {
     assertEquals(0.75, InFrameLayout.leftoverShareAfterAssignedProportion(0.41, 6));
     assertNull(InFrameLayout.leftoverShareAfterAssignedProportion(null, 6));
   }
-
 
   private static InFrameLayout.Request allVisible(int width, int height, int proportion) {
     return allVisible(width, height, proportion, null);

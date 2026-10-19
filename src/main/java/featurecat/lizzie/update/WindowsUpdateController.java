@@ -6,8 +6,11 @@ import javax.swing.SwingUtilities;
 
 public final class WindowsUpdateController {
   private static final UpdateCheckCoordinator COORDINATOR =
-      new UpdateCheckCoordinator(UpdateDiscovery::check, new ProductionHandoff(),
-          new SwingRunner(), state -> coordinator().openOffer());
+      new UpdateCheckCoordinator(
+          UpdateDiscovery::check,
+          new ProductionHandoff(),
+          new SwingRunner(),
+          state -> coordinator().openOffer());
   private static CheckUpdateDialog page;
 
   private WindowsUpdateController() {}
@@ -18,7 +21,9 @@ public final class WindowsUpdateController {
 
   public static void captureStartupPolicy() {
     COORDINATOR.captureStartupPolicy(
-        UpdatePreferences.autoCheck(), UpdatePreferences.autoDownload(), UpdateCheckSelection.of(
+        UpdatePreferences.autoCheck(),
+        UpdatePreferences.autoDownload(),
+        UpdateCheckSelection.of(
             UpdateChannel.current(), UpdateSource.current(), Lizzie.nextVersion));
   }
 
@@ -26,7 +31,9 @@ public final class WindowsUpdateController {
     SwingUtilities.invokeLater(COORDINATOR::applicationReady);
   }
 
-  static UpdateCheckCoordinator coordinator() { return COORDINATOR; }
+  static UpdateCheckCoordinator coordinator() {
+    return COORDINATOR;
+  }
 
   static void automaticPolicyChanged() {
     COORDINATOR.invalidateAutomatic();

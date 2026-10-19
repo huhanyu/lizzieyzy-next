@@ -16,8 +16,7 @@ class EngineCountDownTest {
     assertEquals("time_left B 30 1", canadian.claimTimeLeftCommand());
     assertEquals("time_left B 30 3", canadian.claimTimeLeftCommand());
 
-    EngineCountDown kataCanadian =
-        clock("kata-time_settings canadian 0 12.5 2", engine, false);
+    EngineCountDown kataCanadian = clock("kata-time_settings canadian 0 12.5 2", engine, false);
     assertEquals("time_left W 12.50 1", kataCanadian.claimTimeLeftCommand());
     assertEquals("time_left W 12.50 2", kataCanadian.claimTimeLeftCommand());
 
@@ -30,13 +29,11 @@ class EngineCountDownTest {
     assertEquals("time_left W 12.50 0", fischer.claimTimeLeftCommand());
     assertEquals("time_left W 15.00 0", fischer.claimTimeLeftCommand());
 
-    EngineCountDown capped =
-        clock("kata-time_settings fischer-capped 10 5 12 11", engine, true);
+    EngineCountDown capped = clock("kata-time_settings fischer-capped 10 5 12 11", engine, true);
     assertEquals("time_left B 11.00 0", capped.claimTimeLeftCommand());
     assertEquals("time_left B 11.00 0", capped.claimTimeLeftCommand());
 
-    EngineCountDown absolute =
-        clock("kata-time_settings absolute 9.75", engine, false);
+    EngineCountDown absolute = clock("kata-time_settings absolute 9.75", engine, false);
     assertEquals("time_left W 9.75 0", absolute.claimTimeLeftCommand());
   }
 

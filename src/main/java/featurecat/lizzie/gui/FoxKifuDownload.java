@@ -365,9 +365,7 @@ public class FoxKifuDownload extends JFrame {
       return;
     }
     if (isKifuLoading) {
-      Utils.showMsg(
-          Lizzie.frame.kifuLoadText("KifuLoad.wait"),
-          this);
+      Utils.showMsg(Lizzie.frame.kifuLoadText("KifuLoad.wait"), this);
       return;
     }
     String safeNicknameHint = nicknameHint == null ? "" : nicknameHint.trim();
@@ -399,9 +397,7 @@ public class FoxKifuDownload extends JFrame {
     Lizzie.config.uiConfig.put("last-fox-query-by-uid", byUid);
     saveConfigQuietly();
     showProgressNotice(
-        MessageFormat.format(
-            Lizzie.frame.kifuLoadText("KifuLoad.foxSearching"),
-            normalizedUser));
+        MessageFormat.format(Lizzie.frame.kifuLoadText("KifuLoad.foxSearching"), normalizedUser));
     if (byUid) {
       foxReq.sendCommand(
           "account_uid "
@@ -547,12 +543,7 @@ public class FoxKifuDownload extends JFrame {
         String kifu = jsonObject.getString("chess");
         showProgressNotice(Lizzie.frame.kifuLoadText("KifuLoad.parsing"));
         Lizzie.frame.loadDownloadedSgfString(
-            kifu,
-            0,
-            Lizzie.config.readKomi,
-            false,
-            null,
-            this::completeFoxKifuLoadRequest);
+            kifu, 0, Lizzie.config.readKomi, false, null, this::completeFoxKifuLoadRequest);
       }
       if (isFoxPayloadWithoutContent(jsonObject)) {
         failCurrentFoxRequest(jsonObject, jsonObject.optString("resultstr", string));

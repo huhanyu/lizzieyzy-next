@@ -553,6 +553,13 @@ def portable_steps(maven: str, bash: str) -> list[Step]:
     )
     steps.append(
         Step(
+            "Verify Java formatting",
+            (maven, "-B", "-q", "com.spotify.fmt:fmt-maven-plugin:check"),
+            group="java",
+        )
+    )
+    steps.append(
+        Step(
             "Run full portable verification gate",
             (
                 maven,

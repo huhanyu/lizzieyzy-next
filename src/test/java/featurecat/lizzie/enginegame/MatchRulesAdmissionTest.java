@@ -131,8 +131,7 @@ class MatchRulesAdmissionTest {
             confirmed(WHITE, true, true, JAPANESE, CHINESE, true),
             null);
     MatchRulesAdmission.ConsentKey granted =
-        MatchRulesAdmission.consentKey(
-            BLACK, WHITE, CHINESE, first.unverified());
+        MatchRulesAdmission.consentKey(BLACK, WHITE, CHINESE, first.unverified());
 
     MatchRulesAdmission.Decision exchanged =
         MatchRulesAdmission.decide(
@@ -195,10 +194,7 @@ class MatchRulesAdmissionTest {
             false);
     MatchRulesAdmission.Decision changed =
         MatchRulesAdmission.decide(
-            CHINESE,
-            neither,
-            confirmed(WHITE, true, true, JAPANESE, CHINESE, true),
-            granted);
+            CHINESE, neither, confirmed(WHITE, true, true, JAPANESE, CHINESE, true), granted);
 
     assertEquals(MatchRulesAdmission.Outcome.ADMIT_UNVERIFIED, changed.outcome());
     assertFalse(granted.sameConsent(changed.consentKey()));

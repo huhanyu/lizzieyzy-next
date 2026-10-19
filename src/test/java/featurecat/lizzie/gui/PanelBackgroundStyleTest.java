@@ -71,8 +71,7 @@ class PanelBackgroundStyleTest {
     assertTrue(baseline.getAlpha() < curve.getAlpha(), "baseline should stay below data curves.");
     assertTrue(fill.getAlpha() < baseline.getAlpha(), "fill should stay below the baseline.");
     assertTrue(fill.getAlpha() < grid.getAlpha(), "fill should stay below ordinary grid.");
-    assertFalse(
-        baseline.equals(curve), "baseline must not use the user-selectable curve color.");
+    assertFalse(baseline.equals(curve), "baseline must not use the user-selectable curve color.");
   }
 
   private static double luminanceContrast(Color foreground, Color background) {

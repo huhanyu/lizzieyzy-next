@@ -4,18 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.ExtraMode;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.EngineFollowController;
+import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
 import featurecat.lizzie.analysis.MoveRankEvaluationMode;
-import featurecat.lizzie.analysis.EngineManager;
-import featurecat.lizzie.analysis.EngineFollowController;
-import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
@@ -26,28 +25,25 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseWheelEvent;
-import java.awt.image.BufferedImage;
-import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
+import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.ArrayDeque;
-import java.util.concurrent.Executor;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.Set;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import javax.swing.table.AbstractTableModel;
-import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 
 class MoveOnlyUiGateTest {
@@ -167,8 +163,7 @@ class MoveOnlyUiGateTest {
     try {
       TrackingLizzieFrame frame = configuredFrame();
       Lizzie.frame = frame;
-      BoardHistoryList history =
-          historyWithNext(currentData(), moveData(new int[] {1, 1}, 2));
+      BoardHistoryList history = historyWithNext(currentData(), moveData(new int[] {1, 1}, 2));
       BoardHistoryNode anchor = history.getStart();
       insertDummyAsFirstVariation(anchor);
       BoardHistoryNode displayNode = anchor.variations.get(1);
@@ -190,8 +185,7 @@ class MoveOnlyUiGateTest {
     try {
       TrackingLizzieFrame frame = configuredFrame();
       Lizzie.frame = frame;
-      BoardHistoryList history =
-          historyWithNext(currentData(), moveData(new int[] {1, 1}, 2));
+      BoardHistoryList history = historyWithNext(currentData(), moveData(new int[] {1, 1}, 2));
       BoardHistoryNode displayNode = history.getStart().variations.get(0);
       MoveData displayCandidate = bestMove(2, 1);
       displayCandidate.order = 1;
@@ -230,16 +224,14 @@ class MoveOnlyUiGateTest {
     try {
       TrackingLizzieFrame frame = configuredFrame();
       Lizzie.frame = frame;
-      BoardHistoryList history =
-          historyWithNext(currentData(), moveData(new int[] {1, 1}, 2));
+      BoardHistoryList history = historyWithNext(currentData(), moveData(new int[] {1, 1}, 2));
       Lizzie.board = boardWith(history);
       frame.setDisplayNodeOverride(history.getStart().variations.get(0));
       Lizzie.config.usePureStone = true;
       BoardRenderer renderer = configuredBranchRenderer();
 
       BufferedImage image = renderNextBlunderFirstMove(renderer, 1, 1);
-      int centerRgb =
-          image.getRGB(SCALED_MARGIN + SQUARE_SIZE, SCALED_MARGIN + SQUARE_SIZE);
+      int centerRgb = image.getRGB(SCALED_MARGIN + SQUARE_SIZE, SCALED_MARGIN + SQUARE_SIZE);
 
       assertEquals(
           Color.BLACK.getRGB(),
@@ -256,8 +248,7 @@ class MoveOnlyUiGateTest {
     try {
       TrackingLizzieFrame frame = configuredFrame();
       Lizzie.frame = frame;
-      Lizzie.board =
-          boardWith(historyWithNext(currentData(), moveData(new int[] {1, 1}, 2)));
+      Lizzie.board = boardWith(historyWithNext(currentData(), moveData(new int[] {1, 1}, 2)));
       BoardRenderer renderer = configuredBranchRenderer();
 
       assertTrue(
@@ -326,7 +317,6 @@ class MoveOnlyUiGateTest {
       env.close();
     }
   }
-
 
   @Test
   void boardRendererKeepsBranchNavigationAtFirstCandidateMove() throws Exception {
@@ -573,7 +563,8 @@ class MoveOnlyUiGateTest {
       fixture.renderer.selectHoveredVariation();
       fixture.draw();
       assertTrue(fixture.renderer.isShowingBranch());
-      assertEquals(fixture.candidate.variation.size(), fixture.renderer.branchOpt.orElseThrow().length);
+      assertEquals(
+          fixture.candidate.variation.size(), fixture.renderer.branchOpt.orElseThrow().length);
       fixture.assertPreviewRecordUnchanged();
     }
   }
@@ -843,8 +834,7 @@ class MoveOnlyUiGateTest {
       fixture.frame.mouseOverCoordinate = new int[] {1, 0};
       fixture.draw();
 
-      assertIterableEquals(
-          other.variation, fixture.renderer.selectedVariation().orElseThrow());
+      assertIterableEquals(other.variation, fixture.renderer.selectedVariation().orElseThrow());
       assertTrue(fixture.renderer.hasSelectedVariation());
       fixture.wheel(-1);
       fixture.draw();
@@ -943,7 +933,6 @@ class MoveOnlyUiGateTest {
       env.close();
     }
   }
-
 
   @Test
   void boardRendererRedrawsBranchImagesAfterClearingSameHover() throws Exception {
@@ -1183,7 +1172,8 @@ class MoveOnlyUiGateTest {
       assertPendingLength(independent.boardRenderer, node, 1);
       input.keyPressed(key(KeyEvent.VK_DOWN));
       assertPendingLength(independent.boardRenderer, node, 2);
-      assertIterableEquals(pending.selectedPv, independent.boardRenderer.selectedVariation().orElseThrow());
+      assertIterableEquals(
+          pending.selectedPv, independent.boardRenderer.selectedVariation().orElseThrow());
       assertIterableEquals(
           Lizzie.board.getData().bestMoves.get(0).variation,
           LizzieFrame.boardRenderer.selectedVariation().orElseThrow());
@@ -1202,21 +1192,24 @@ class MoveOnlyUiGateTest {
           try (TestEnvironment env = TestEnvironment.open();
               PendingInputEnvironment pending = PendingInputEnvironment.open()) {
             TrackingIndependentMainBoard independent = configuredPendingIndependent();
-            BoardRenderer opposite = independentHost ? LizzieFrame.boardRenderer : independent.boardRenderer;
+            BoardRenderer opposite =
+                independentHost ? LizzieFrame.boardRenderer : independent.boardRenderer;
             opposite.setDisplayedBranchLength(2);
             if (independentHost) new Input().keyPressed(key(KeyEvent.VK_2));
             else independent.setMouseOverCoords(1);
             BoardHistoryNode node = Lizzie.board.getHistory().getCurrentHistoryNode();
-            BoardHistoryNode target = direction < 0 ? node.previous().orElseThrow() : node.next().orElseThrow();
+            BoardHistoryNode target =
+                direction < 0 ? node.previous().orElseThrow() : node.next().orElseThrow();
             Input mainInput = new Input();
-            Runnable navigate = () -> {
-              if (useWheel) {
-                if (independentHost) independent.processMouseWheelMoved(wheel(direction, 1));
-                else mainInput.mouseWheelMoved(wheel(direction, 1));
-              } else {
-                pendingKey(independentHost, direction < 0 ? KeyEvent.VK_UP : KeyEvent.VK_DOWN);
-              }
-            };
+            Runnable navigate =
+                () -> {
+                  if (useWheel) {
+                    if (independentHost) independent.processMouseWheelMoved(wheel(direction, 1));
+                    else mainInput.mouseWheelMoved(wheel(direction, 1));
+                  } else {
+                    pendingKey(independentHost, direction < 0 ? KeyEvent.VK_UP : KeyEvent.VK_DOWN);
+                  }
+                };
 
             Lizzie.frame.isPlayingAgainstLeelaz = true;
             SwingUtilities.invokeAndWait(navigate);
@@ -1224,14 +1217,16 @@ class MoveOnlyUiGateTest {
             assertEquals(2, opposite.getDisplayedBranchLength());
             assertIterableEquals(pending.selectedPv, opposite.selectedVariation().orElseThrow());
             Lizzie.frame.isPlayingAgainstLeelaz = false;
-            SwingUtilities.invokeAndWait(() -> {
-              if (useWheel && !independentHost) mainInput.mouseWheelMoved(wheel(direction, 2));
-              else navigate.run();
-            });
+            SwingUtilities.invokeAndWait(
+                () -> {
+                  if (useWheel && !independentHost) mainInput.mouseWheelMoved(wheel(direction, 2));
+                  else navigate.run();
+                });
 
             assertSame(target, Lizzie.board.getHistory().getCurrentHistoryNode());
             assertEquals(direction < 0 ? 0 : 2, Lizzie.board.getData().moveNumber);
-            assertFalse(opposite.hasSelectedVariation(), "real history navigation retires the old source.");
+            assertFalse(
+                opposite.hasSelectedVariation(), "real history navigation retires the old source.");
           }
         }
       }
@@ -1270,7 +1265,8 @@ class MoveOnlyUiGateTest {
         pendingMiddle(independentHost, true);
 
         pendingKey(independentHost, KeyEvent.VK_1);
-        assertIterableEquals(Lizzie.board.getData().bestMoves.get(0).variation,
+        assertIterableEquals(
+            Lizzie.board.getData().bestMoves.get(0).variation,
             owner.selectedVariation().orElseThrow());
         pendingMiddle(independentHost, false);
 
@@ -1338,7 +1334,9 @@ class MoveOnlyUiGateTest {
   }
 
   private static BoardRenderer pendingHostRenderer(boolean independentHost) throws Exception {
-    return independentHost ? configuredPendingIndependent().boardRenderer : LizzieFrame.boardRenderer;
+    return independentHost
+        ? configuredPendingIndependent().boardRenderer
+        : LizzieFrame.boardRenderer;
   }
 
   private static void pendingKey(boolean independentHost, int code) {
@@ -1356,20 +1354,31 @@ class MoveOnlyUiGateTest {
   }
 
   private static KeyEvent key(int code) {
-    return new KeyEvent(Lizzie.frame.mainPanel, KeyEvent.KEY_PRESSED, 1, 0, code, KeyEvent.CHAR_UNDEFINED);
+    return new KeyEvent(
+        Lizzie.frame.mainPanel, KeyEvent.KEY_PRESSED, 1, 0, code, KeyEvent.CHAR_UNDEFINED);
   }
 
   private static MouseWheelEvent wheel(int rotation, long when) {
     return new MouseWheelEvent(
-        Lizzie.frame.mainPanel, MouseEvent.MOUSE_WHEEL, when, 0, 60, 60, 0, false,
-        MouseWheelEvent.WHEEL_UNIT_SCROLL, 1, rotation);
+        Lizzie.frame.mainPanel,
+        MouseEvent.MOUSE_WHEEL,
+        when,
+        0,
+        60,
+        60,
+        0,
+        false,
+        MouseWheelEvent.WHEEL_UNIT_SCROLL,
+        1,
+        rotation);
   }
 
   private static MouseEvent middle(int id) {
     return new MouseEvent(Lizzie.frame.mainPanel, id, 1, 0, 60, 60, 1, false, MouseEvent.BUTTON2);
   }
 
-  private static void assertPendingLength(BoardRenderer renderer, BoardHistoryNode node, int length) {
+  private static void assertPendingLength(
+      BoardRenderer renderer, BoardHistoryNode node, int length) {
     assertEquals(length, renderer.getDisplayedBranchLength());
     assertSame(node, Lizzie.board.getHistory().getCurrentHistoryNode());
     assertEquals(1, Lizzie.board.getData().moveNumber);
@@ -1590,7 +1599,10 @@ class MoveOnlyUiGateTest {
     BoardRenderer renderer = new BoardRenderer(independent);
     VariationPreviewState state =
         (VariationPreviewState) getField(BoardRenderer.class, renderer, "preview");
-    setField(VariationPreviewState.class, state, "scheduler",
+    setField(
+        VariationPreviewState.class,
+        state,
+        "scheduler",
         new VariationPreviewScheduler(new ControlledPreview(), Runnable::run));
     setIntField(renderer, "x", 0);
     setIntField(renderer, "y", 0);
@@ -1985,7 +1997,6 @@ class MoveOnlyUiGateTest {
     @Override
     public void onMainEnginePonder() {}
 
-
     @Override
     public void repaint() {}
   }
@@ -2018,10 +2029,11 @@ class MoveOnlyUiGateTest {
     private final boolean previousDragMode = Input.Draggedmode;
     private final boolean previousSelectMode = Input.selectMode;
     private MoveData selectedMove;
-    private final List<String> selectedPv = List.of(
-        Board.convertCoordinatesToName(2, 0),
-        Board.convertCoordinatesToName(2, 1),
-        Board.convertCoordinatesToName(1, 2));
+    private final List<String> selectedPv =
+        List.of(
+            Board.convertCoordinatesToName(2, 0),
+            Board.convertCoordinatesToName(2, 1),
+            Board.convertCoordinatesToName(1, 2));
 
     private static PendingInputEnvironment open() throws Exception {
       PendingInputEnvironment env = new PendingInputEnvironment();

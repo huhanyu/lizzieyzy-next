@@ -440,8 +440,7 @@ class WinrateGraphVariationHitTest {
           currentGraphPoints(graph).isEmpty(),
           "hiding the winrate line should leave shared move-number columns without winrate anchors.");
 
-      assertSharedMoveNumberColumnSelectsCurrentVariation(
-          fixture, graph, frame, "hidden winrate");
+      assertSharedMoveNumberColumnSelectsCurrentVariation(fixture, graph, frame, "hidden winrate");
     } finally {
       env.close();
     }
@@ -469,8 +468,7 @@ class WinrateGraphVariationHitTest {
           currentGraphPoints(graph).isEmpty(),
           "score-lead-only should keep winrate anchors hidden on a shared move-number column.");
 
-      assertSharedMoveNumberColumnSelectsCurrentVariation(
-          fixture, graph, frame, "score-lead-only");
+      assertSharedMoveNumberColumnSelectsCurrentVariation(fixture, graph, frame, "score-lead-only");
     } finally {
       env.close();
     }
@@ -495,10 +493,8 @@ class WinrateGraphVariationHitTest {
       int[] origParams = (int[]) getField(graph, "origParams");
       int[] top = uniqueColumnPixel(graph, fixture.variationCurrent, origParams[1]);
       int[] bottom =
-          uniqueColumnPixel(
-              graph, fixture.variationCurrent, origParams[1] + origParams[3] - 1);
-      assertPixelAwayFromRenderedAnchors(
-          graph, top, fixture.mainFourth, fixture.variationCurrent);
+          uniqueColumnPixel(graph, fixture.variationCurrent, origParams[1] + origParams[3] - 1);
+      assertPixelAwayFromRenderedAnchors(graph, top, fixture.mainFourth, fixture.variationCurrent);
       assertPixelAwayFromRenderedAnchors(
           graph, bottom, fixture.mainFourth, fixture.variationCurrent);
 
@@ -683,8 +679,7 @@ class WinrateGraphVariationHitTest {
 
       int[] origParams = (int[]) getField(graph, "origParams");
       int[] top = uniqueColumnPixel(graph, fixture.second, origParams[1]);
-      int[] bottom =
-          uniqueColumnPixel(graph, fixture.second, origParams[1] + origParams[3] - 1);
+      int[] bottom = uniqueColumnPixel(graph, fixture.second, origParams[1] + origParams[3] - 1);
 
       assertHoverClickDragResolveSameNode(
           fixture.board,
@@ -724,8 +719,7 @@ class WinrateGraphVariationHitTest {
           "an SGF move without primary analysis should not require a winrate anchor.");
 
       int[] origParams = (int[]) getField(graph, "origParams");
-      int[] pixel =
-          uniqueColumnPixel(graph, fixture.unanalyzed, origParams[1] + origParams[3] / 2);
+      int[] pixel = uniqueColumnPixel(graph, fixture.unanalyzed, origParams[1] + origParams[3] / 2);
 
       assertHoverClickDragResolveSameNode(
           fixture.board,
@@ -757,8 +751,7 @@ class WinrateGraphVariationHitTest {
           "unique semantic column should not require a rendered winrate anchor.");
 
       int[] origParams = (int[]) getField(graph, "origParams");
-      int[] mid =
-          uniqueColumnPixel(graph, fixture.unanalyzed, origParams[1] + origParams[3] / 2);
+      int[] mid = uniqueColumnPixel(graph, fixture.unanalyzed, origParams[1] + origParams[3] / 2);
       int[] top = uniqueColumnPixel(graph, fixture.unanalyzed, origParams[1]);
 
       assertSame(
@@ -1056,8 +1049,7 @@ class WinrateGraphVariationHitTest {
     int[] origParams = (int[]) getField(graph, "origParams");
     int[] top = uniqueColumnPixel(graph, fixture.variationCurrent, origParams[1]);
     int[] bottom =
-        uniqueColumnPixel(
-            graph, fixture.variationCurrent, origParams[1] + origParams[3] - 1);
+        uniqueColumnPixel(graph, fixture.variationCurrent, origParams[1] + origParams[3] - 1);
     assertHoverClickDragResolveSameNode(
         fixture.board,
         fixture.variationStart,
@@ -1077,11 +1069,7 @@ class WinrateGraphVariationHitTest {
   }
 
   private static void assertDenseRoundedMoveHoverClickDrag(
-      LinearFixture fixture,
-      WinrateGraph graph,
-      TrackingFrame frame,
-      int[] pixel,
-      String label) {
+      LinearFixture fixture, WinrateGraph graph, TrackingFrame frame, int[] pixel, String label) {
     BoardHistoryNode resolved = graph.resolveMoveTargetNode(pixel[0], pixel[1]);
     assertNotNull(resolved, label + " should resolve a history node.");
     assertEquals(
@@ -1152,9 +1140,7 @@ class WinrateGraphVariationHitTest {
     board.getHistory().setHead(startNode);
     frame.onMouseDragged(pixel[0], pixel[1]);
     assertSame(
-        expectedNode,
-        board.getHistory().getCurrentHistoryNode(),
-        label + " drag target mismatch.");
+        expectedNode, board.getHistory().getCurrentHistoryNode(), label + " drag target mismatch.");
   }
 
   private static void assertHoverClickDragResolveSameTarget(

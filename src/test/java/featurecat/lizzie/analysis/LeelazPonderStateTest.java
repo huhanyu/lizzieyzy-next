@@ -37,8 +37,7 @@ class LeelazPonderStateTest {
   }
 
   @Test
-  void kataNameStartupCommandsDoNotHoldEngineMonitorWhileCommandQueueIsBlocked()
-      throws Exception {
+  void kataNameStartupCommandsDoNotHoldEngineMonitorWhileCommandQueueIsBlocked() throws Exception {
     try (TestHarness ignored = TestHarness.open()) {
       StartupWorkerLeelaz engine = new StartupWorkerLeelaz();
       engine.installFreshCommandOutputForTest(new ByteArrayOutputStream());
@@ -113,7 +112,8 @@ class LeelazPonderStateTest {
   }
 
   private static boolean awaitThreadState(
-      Thread thread, Thread.State expected, long timeout, TimeUnit unit) throws InterruptedException {
+      Thread thread, Thread.State expected, long timeout, TimeUnit unit)
+      throws InterruptedException {
     long deadline = System.nanoTime() + unit.toNanos(timeout);
     while (System.nanoTime() < deadline) {
       if (thread != null && thread.getState() == expected) {

@@ -34,7 +34,6 @@ public final class ReadBoardLoggingProtocol {
   public static final String PRIVACY_SESSION_ID = "sessionId";
   public static final String PRIVACY_SECRET = "secret";
 
-
   public enum Toggle {
     OFF,
     ON,
@@ -64,7 +63,6 @@ public final class ReadBoardLoggingProtocol {
     SESSION_ID,
     SECRET
   }
-
 
   public static final class Capability {
     public final String processSessionId;
@@ -407,7 +405,6 @@ public final class ReadBoardLoggingProtocol {
     }
     return PRIVACY_SAFE;
   }
-
 
   public static Observed applySetIndependently(
       SetRequest request,

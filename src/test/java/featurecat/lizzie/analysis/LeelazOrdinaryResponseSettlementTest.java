@@ -60,19 +60,26 @@ class LeelazOrdinaryResponseSettlementTest {
       parseInfo(engine, upstream);
       assertEquals(100, Lizzie.board.getData().getPlayouts());
       assertEquals(100, Lizzie.board.getData().rootVisits);
-      MoveData c3 = engine.getBestMoves().stream()
-          .filter(move -> move.coordinate.equals("C3")).findFirst().orElseThrow();
+      MoveData c3 =
+          engine.getBestMoves().stream()
+              .filter(move -> move.coordinate.equals("C3"))
+              .findFirst()
+              .orElseThrow();
       assertEquals(368, c3.playouts);
       assertEquals(0, c3.edgeVisits);
       assertEquals(10, c3.order);
       assertFalse(engine.isStopPonderingByLimit());
 
-      parseInfo(engine, "info move D4 visits 40 winrate 0.51 scoreLead 2.5 prior 0.2 pv D4"
-          + " rootInfo visits 100 winrate 0.9 scoreLead 20");
+      parseInfo(
+          engine,
+          "info move D4 visits 40 winrate 0.51 scoreLead 2.5 prior 0.2 pv D4"
+              + " rootInfo visits 100 winrate 0.9 scoreLead 20");
       assertEquals(51.0, Lizzie.board.getData().winrate, 0.001);
       assertEquals(2.5, Lizzie.board.getData().scoreMean, 0.001);
-      parseInfo(engine, "info move D4 visits 40 winrate 0.66 scoreLead 3.5 prior 0.2 pv D4 C3"
-          + " rootInfo visits 100 winrate 0.9 scoreLead 20");
+      parseInfo(
+          engine,
+          "info move D4 visits 40 winrate 0.66 scoreLead 3.5 prior 0.2 pv D4 C3"
+              + " rootInfo visits 100 winrate 0.9 scoreLead 20");
       assertEquals(66.0, Lizzie.board.getData().winrate, 0.001);
       assertEquals(List.of("D4", "C3"), Lizzie.board.getData().bestMoves.get(0).variation);
 
@@ -89,7 +96,8 @@ class LeelazOrdinaryResponseSettlementTest {
       assertEquals(80.0, Lizzie.board.getData().winrate, 0.001);
       parseInfo(engine, "info move D4 visits 50000 winrate 0.8 pv D4 rootInfo visits 501");
       org.junit.jupiter.api.Assertions.assertTrue(engine.isStopPonderingByLimit());
-      org.junit.jupiter.api.Assertions.assertTrue(output.toString(StandardCharsets.UTF_8).endsWith("stop\n"));
+      org.junit.jupiter.api.Assertions.assertTrue(
+          output.toString(StandardCharsets.UTF_8).endsWith("stop\n"));
     } finally {
       Lizzie.leelaz = previousEngine;
       Lizzie.board = previousBoard;

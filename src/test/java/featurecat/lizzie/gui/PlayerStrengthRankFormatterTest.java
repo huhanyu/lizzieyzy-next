@@ -37,10 +37,8 @@ class PlayerStrengthRankFormatterTest {
     assertEquals(
         "\u696d\u99181.4\u7d1a",
         PlayerStrengthRankFormatter.format(0.6, bundle(Locale.TRADITIONAL_CHINESE)));
-    assertEquals(
-        "1.4\u7d1a", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.JAPAN)));
-    assertEquals(
-        "1.4 \ud050", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.KOREA)));
+    assertEquals("1.4\u7d1a", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.JAPAN)));
+    assertEquals("1.4 \ud050", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.KOREA)));
     assertEquals(
         "1.4 \u0e04\u0e22\u0e39",
         PlayerStrengthRankFormatter.format(0.6, bundle(Locale.forLanguageTag("th-TH"))));
@@ -51,8 +49,7 @@ class PlayerStrengthRankFormatterTest {
   void formatsProfessionalBandsAndRejectsInvalidPredictions() {
     ResourceBundle chinese = bundle(Locale.SIMPLIFIED_CHINESE);
 
-    assertEquals(
-        "10.0 \u804c\u4e1a", PlayerStrengthRankFormatter.format(10.0, chinese));
+    assertEquals("10.0 \u804c\u4e1a", PlayerStrengthRankFormatter.format(10.0, chinese));
     assertEquals(
         "11.0 \u4e00\u7ebf\u804c\u4e1a", PlayerStrengthRankFormatter.format(11.0, chinese));
     assertEquals("12.0 \u534a\u795e/AI", PlayerStrengthRankFormatter.format(12.0, chinese));

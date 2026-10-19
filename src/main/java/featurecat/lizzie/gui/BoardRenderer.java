@@ -225,16 +225,15 @@ public class BoardRenderer {
     if (forceWholeGameMoveEvaluation) {
       return MoveOverlayOrder.MOVE_NUMBERS_THEN_RANK;
     }
-    return showingBranch
-        ? MoveOverlayOrder.RANK_THEN_MOVE_NUMBERS
-        : MoveOverlayOrder.RANK_ONLY;
+    return showingBranch ? MoveOverlayOrder.RANK_THEN_MOVE_NUMBERS : MoveOverlayOrder.RANK_ONLY;
   }
 
   static boolean isMarkupOnBoard(int x, int y, int boardWidth, int boardHeight) {
     return x >= 0 && y >= 0 && x < boardWidth && y < boardHeight;
   }
 
-  static List<String> remainingMarkupEntries(String propertyValue, int boardWidth, int boardHeight) {
+  static List<String> remainingMarkupEntries(
+      String propertyValue, int boardWidth, int boardHeight) {
     List<String> remaining = new ArrayList<String>();
     if (propertyValue == null || propertyValue.isEmpty()) {
       return remaining;
@@ -1128,8 +1127,7 @@ public class BoardRenderer {
           Board.boardHeight);
       return;
     }
-    List<Point> points =
-        BoardStylePainter.standardStarPoints(Board.boardWidth, Board.boardHeight);
+    List<Point> points = BoardStylePainter.standardStarPoints(Board.boardWidth, Board.boardHeight);
     if (points.isEmpty()) {
       return;
     }
@@ -1237,7 +1235,6 @@ public class BoardRenderer {
   public void removeKataEstimateImage() {
     kataEstimateImage = new BufferedImage(boardWidth, boardHeight, TYPE_INT_ARGB);
   }
-
 
   public static int roundToInt(double number) {
     return (int) round(number);
@@ -1378,7 +1375,6 @@ public class BoardRenderer {
     kataEstimateImage = newEstimateImage;
     g.dispose();
   }
-
 
   public void removeblock() {
     if (hasBlockimage) {
@@ -1595,18 +1591,21 @@ public class BoardRenderer {
     // calculate best moves and branch
     BoardData candidateData = capture.analysisData;
     if (featurecat.lizzie.fox.FoxLiveSession.isActive()) {
-      bestMoves = new ArrayList<>(
-          featurecat.lizzie.fox.FoxLiveSession.displayedCandidates(Lizzie.frame.getDisplayNode()));
+      bestMoves =
+          new ArrayList<>(
+              featurecat.lizzie.fox.FoxLiveSession.displayedCandidates(
+                  Lizzie.frame.getDisplayNode()));
       estimateArray = null;
-    } else synchronized (candidateData) {
-      if (boardIndex == 1) {
-        bestMoves = new ArrayList<>(candidateData.bestMoves2);
-        estimateArray = candidateData.estimateArray2;
-      } else {
-        bestMoves = new ArrayList<>(candidateData.bestMoves);
-        estimateArray = candidateData.estimateArray;
+    } else
+      synchronized (candidateData) {
+        if (boardIndex == 1) {
+          bestMoves = new ArrayList<>(candidateData.bestMoves2);
+          estimateArray = candidateData.estimateArray2;
+        } else {
+          bestMoves = new ArrayList<>(candidateData.bestMoves);
+          estimateArray = candidateData.estimateArray;
+        }
       }
-    }
     if (boardIndex != 1 && previous && Lizzie.config.showPreviousBestmovesOnlyFirstMove) {
       Optional<int[]> currentMove = getCurrentHistoryMoveCoords();
       List<MoveData> matchingMoves = new ArrayList<>();
@@ -1676,37 +1675,42 @@ public class BoardRenderer {
     int[] coords = Board.convertNameToCoordinates(suggestedMove.get().coordinate);
     if (matchesHistoryMove(getNextHistoryMoveCoords(), coords)) needShow = true;
     if (!notChangedMouseOverMove
-        && !(Lizzie.config.autoReplayBranch
-            && Lizzie.config.autoReplayDisplayEntireVariationsFirst)
+        && !(Lizzie.config.autoReplayBranch && Lizzie.config.autoReplayDisplayEntireVariationsFirst)
         && displayedBranchLength < 2
         && ((percentPlayouts <= Lizzie.config.minPlayoutRatioForStats && !needShow)
             || Lizzie.config.autoReplayBranch
             || (Lizzie.config.limitMaxSuggestion > 0
                 && mouseOverOrder > Lizzie.config.limitMaxSuggestion
-                && !needShow && !suggestedMove.get().lastTimeUnlimited))) {
+                && !needShow
+                && !suggestedMove.get().lastTimeUnlimited))) {
       displayedBranchLength = 1;
     }
-    if (notChangedMouseOverMove
-        && (!refresh || Lizzie.config.noRefreshOnMouseMove)) {
+    if (notChangedMouseOverMove && (!refresh || Lizzie.config.noRefreshOnMouseMove)) {
       return selected.withSimulation(
           Lizzie.config.removeDeadChainInVariation && !Lizzie.config.noCapture,
           Lizzie.config.showPvVisitsAllMove || Lizzie.config.showPvVisitsLastMove);
     }
-    Branch.Input input = capture.capture(
-        () -> suggestedMove.get().variation, () -> suggestedMove.get().pvVisits,
-        displayedBranchLength > 0 ? displayedBranchLength : 199,
-        Lizzie.config.removeDeadChainInVariation && !Lizzie.config.noCapture,
-        Lizzie.config.showPvVisitsAllMove || Lizzie.config.showPvVisitsLastMove, null, null);
+    Branch.Input input =
+        capture.capture(
+            () -> suggestedMove.get().variation,
+            () -> suggestedMove.get().pvVisits,
+            displayedBranchLength > 0 ? displayedBranchLength : 199,
+            Lizzie.config.removeDeadChainInVariation && !Lizzie.config.noCapture,
+            Lizzie.config.showPvVisitsAllMove || Lizzie.config.showPvVisitsLastMove,
+            null,
+            null);
     if (input == null) {
       clearBranch();
       return null;
     }
-    if (notChangedMouseOverMove && input.variation.equals(selected.input().variation)
+    if (notChangedMouseOverMove
+        && input.variation.equals(selected.input().variation)
         && java.util.Objects.equals(input.pvVisits, selected.input().pvVisits)) {
       return selected.withSimulation(input.removeDeadChains, input.recordPvVisits);
     }
-    VariationPreviewState.Selection replacement = new VariationPreviewState.Selection(
-        capture, suggestedMove.get().coordinate, input, displayedBranchLength);
+    VariationPreviewState.Selection replacement =
+        new VariationPreviewState.Selection(
+            capture, suggestedMove.get().coordinate, input, displayedBranchLength);
     return replacement;
   }
 
@@ -1730,52 +1734,79 @@ public class BoardRenderer {
       return;
     }
     drawShadowCache();
-    int[] hover = isIndependBoard
-        ? Lizzie.frame.independentMainBoard.mouseOverCoordinate : Lizzie.frame.mouseOverCoordinate;
-    VariationPreviewGenerator.Geometry geometry = new VariationPreviewGenerator.Geometry(
-        Board.boardWidth, Board.boardHeight, boardWidth, boardHeight,
-        scaledMarginWidth, scaledMarginHeight, squareWidth, squareHeight, stoneRadius,
-        hover[0], hover[1]);
-    VariationPreviewGenerator.Style style = new VariationPreviewGenerator.Style(
-        false, false, Lizzie.config.removeDeadChainInVariation, shouldShowPreviousBestMoves(),
-        Lizzie.config.usePureStone, isFancyBoard, Lizzie.config.showStoneHighlight,
-        Lizzie.config.showHoverGlow, Lizzie.frame.isTrying,
-        Lizzie.config.showPvVisitsAllMove, Lizzie.config.showPvVisitsLastMove,
-        Lizzie.config.pvVisitsLimit, maxBranchMoves(false), maxBranchMoves(true), 0,
-        LizzieFrame.uiFont,
-        Lizzie.config.usePureStone ? null : getScaleStone(true, stoneRadius * 2 + 1),
-        Lizzie.config.usePureStone ? null : getScaleStone(false, stoneRadius * 2 + 1),
-        Lizzie.config.showStoneShadow ? cachedShadow : null, cachedStoneCenter,
-        paint, noFancyColor,
-        replacement.source().captureCurrentStones(publishedStyle),
-        resourceBundle.getString("BoardRenderer.pass"));
+    int[] hover =
+        isIndependBoard
+            ? Lizzie.frame.independentMainBoard.mouseOverCoordinate
+            : Lizzie.frame.mouseOverCoordinate;
+    VariationPreviewGenerator.Geometry geometry =
+        new VariationPreviewGenerator.Geometry(
+            Board.boardWidth,
+            Board.boardHeight,
+            boardWidth,
+            boardHeight,
+            scaledMarginWidth,
+            scaledMarginHeight,
+            squareWidth,
+            squareHeight,
+            stoneRadius,
+            hover[0],
+            hover[1]);
+    VariationPreviewGenerator.Style style =
+        new VariationPreviewGenerator.Style(
+            false,
+            false,
+            Lizzie.config.removeDeadChainInVariation,
+            shouldShowPreviousBestMoves(),
+            Lizzie.config.usePureStone,
+            isFancyBoard,
+            Lizzie.config.showStoneHighlight,
+            Lizzie.config.showHoverGlow,
+            Lizzie.frame.isTrying,
+            Lizzie.config.showPvVisitsAllMove,
+            Lizzie.config.showPvVisitsLastMove,
+            Lizzie.config.pvVisitsLimit,
+            maxBranchMoves(false),
+            maxBranchMoves(true),
+            0,
+            LizzieFrame.uiFont,
+            Lizzie.config.usePureStone ? null : getScaleStone(true, stoneRadius * 2 + 1),
+            Lizzie.config.usePureStone ? null : getScaleStone(false, stoneRadius * 2 + 1),
+            Lizzie.config.showStoneShadow ? cachedShadow : null,
+            cachedStoneCenter,
+            paint,
+            noFancyColor,
+            replacement.source().captureCurrentStones(publishedStyle),
+            resourceBundle.getString("BoardRenderer.pass"));
     if (style.sourceStones() == null || !replacement.source().isCurrent()) {
       clearBranch();
       return;
     }
-    preview.request(requestGeneration, replacement, geometry, style,
-        new VariationPreviewState.Mode(Lizzie.config.extraMode,
-            Lizzie.config.noRefreshOnMouseMove, Lizzie.config.autoReplayBranch),
-        this::drawBranch, result -> {
-      branch = result.branch();
-      branchOpt = Optional.of(branch);
-      branchStonesImage = result.stones();
-      branchStonesShadowImage = result.shadows();
-      shouldHideMouseOverInfo = result.hideMouseOverInfo();
-      isMouseOverStoneBlack = result.mouseOverStoneBlack();
-      isShowingBranch = true;
-      publishedStyle = style;
-      if (isIndependBoard) Lizzie.frame.independentMainBoard.repaint();
-      else Lizzie.frame.repaintSuggestionHoverPreview();
-    });
+    preview.request(
+        requestGeneration,
+        replacement,
+        geometry,
+        style,
+        new VariationPreviewState.Mode(
+            Lizzie.config.extraMode,
+            Lizzie.config.noRefreshOnMouseMove,
+            Lizzie.config.autoReplayBranch),
+        this::drawBranch,
+        result -> {
+          branch = result.branch();
+          branchOpt = Optional.of(branch);
+          branchStonesImage = result.stones();
+          branchStonesShadowImage = result.shadows();
+          shouldHideMouseOverInfo = result.hideMouseOverInfo();
+          isMouseOverStoneBlack = result.mouseOverStoneBlack();
+          isShowingBranch = true;
+          publishedStyle = style;
+          if (isIndependBoard) Lizzie.frame.independentMainBoard.repaint();
+          else Lizzie.frame.repaintSuggestionHoverPreview();
+        });
     synchronized (preview) {
       if (preview.published() == null) clearPublishedPreview();
     }
   }
-
-
-
-
 
   private Optional<MoveData> mouseOveredMove() {
     isMouseOverNextBlunder = false;
@@ -1813,7 +1844,8 @@ public class BoardRenderer {
         }
       }
     if (!featurecat.lizzie.fox.FoxLiveSession.isActive()
-        && mouseOverTemp != null && mouseOverTempNode == Lizzie.frame.getDisplayNode()) {
+        && mouseOverTemp != null
+        && mouseOverTempNode == Lizzie.frame.getDisplayNode()) {
       boolean needAddback = false;
       Optional<int[]> coords = Board.asCoordinates(mouseOverTemp.coordinate);
       if (coords.isPresent()) {
@@ -2242,8 +2274,7 @@ public class BoardRenderer {
         if (heatcount.get(i) > 0) {
           int y1 = i / Board.boardWidth;
           int x1 = i % Board.boardWidth;
-          if (!AnalysisCandidateValidator.isEmptyPoint(
-              displayNode.getData(), new int[] {x1, y1})) {
+          if (!AnalysisCandidateValidator.isEmptyPoint(displayNode.getData(), new int[] {x1, y1})) {
             continue;
           }
           int suggestionX = x + scaledMarginWidth + squareWidth * x1;
@@ -2520,7 +2551,9 @@ public class BoardRenderer {
               Board.getIndex(coords[0], coords[1]) < hasDrawBackground.length
                   ? hasDrawBackground[Board.getIndex(coords[0], coords[1])]
                   : false;
-          if (outOfOrder && !isMouseOver && hasBackground
+          if (outOfOrder
+              && !isMouseOver
+              && hasBackground
               && !selectedTrackingPoints.contains(move.coordinate)) continue;
 
           float hue;
@@ -2705,9 +2738,7 @@ public class BoardRenderer {
                 showPlayouts,
                 showScoreLead,
                 canShowMaxColor && hasMaxWinrate ? maxColor : normalColor,
-                canShowMaxColor && move.allocationVisits() == maxPlayouts
-                    ? maxColor
-                    : normalColor,
+                canShowMaxColor && move.allocationVisits() == maxPlayouts ? maxColor : normalColor,
                 canShowMaxColor && move.scoreMean == maxScoreMean ? maxColor : normalColor);
           }
         }
@@ -2715,7 +2746,6 @@ public class BoardRenderer {
         clearAfterMove();
       }
     }
-
   }
 
   private void drawTrackingOverlay(Graphics2D g) {
@@ -2912,7 +2942,6 @@ public class BoardRenderer {
     }
   }
 
-
   private void drawTrackedPointMarkers(
       Graphics2D g,
       TrackingAnalysisController.DisplaySnapshot snapshot,
@@ -2977,8 +3006,7 @@ public class BoardRenderer {
                   : Math.max(0.0, Math.min(1.0, (double) visits / snapshot.targetVisits()));
           g.setComposite(AlphaComposite.SrcOver);
           g.setStroke(
-              new BasicStroke(
-                  progressWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+              new BasicStroke(progressWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
           g.setColor(new Color(25, 118, 210, 105));
           g.drawOval(
               centerX - progressRadius,
@@ -2996,8 +3024,7 @@ public class BoardRenderer {
         } else if (snapshot.cancellationPending()) {
           g.setComposite(AlphaComposite.SrcOver);
           g.setStroke(
-              new BasicStroke(
-                  progressWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+              new BasicStroke(progressWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
           g.setColor(new Color(245, 166, 35));
           g.drawArc(
               centerX - progressRadius,
@@ -3103,7 +3130,8 @@ public class BoardRenderer {
             continue;
           }
           TrackingAnalysisController.DisplaySnapshot focus = Lizzie.frame.trackingDisplaySnapshot();
-          if (boardIndex == 0 && Lizzie.frame.isTrackingDisplayCurrent(focus)
+          if (boardIndex == 0
+              && Lizzie.frame.isTrackingDisplayCurrent(focus)
               && focus.selectedPoints().contains(move.coordinate)) continue;
           if (Lizzie.frame.priorityMoveCoords.size() > 0) {
             boolean needSkip = false;
@@ -3215,8 +3243,7 @@ public class BoardRenderer {
                         && !Lizzie.board.isPkBoard
                         && !Lizzie.frame.isShowingHeatmap
                         && !Lizzie.frame.isShowingPolicy
-                        && ((displayNode.getData().blackToPlay
-                                && Lizzie.config.showBlackCandidates)
+                        && ((displayNode.getData().blackToPlay && Lizzie.config.showBlackCandidates)
                             || (!displayNode.getData().blackToPlay
                                 && Lizzie.config.showWhiteCandidates))) {
                       BoardData nextData = nexts.get(0).getData();
@@ -3388,8 +3415,7 @@ public class BoardRenderer {
         if (move.coordinate.equals(coordsName)) {
           if (move.order > 0
               && move.playouts < Lizzie.config.minPlayoutsForNextMove
-              && nextMoveNode.getData().getPlayouts()
-                  >= Lizzie.config.minPlayoutsForNextMove) {
+              && nextMoveNode.getData().getPlayouts() >= Lizzie.config.minPlayoutsForNextMove) {
             shouldIgnoreBestMove = true;
             this.ignoreBestMoveX = coordX;
             this.ignoreBestMoveY = coordY;
@@ -3408,8 +3434,7 @@ public class BoardRenderer {
     boolean blackToPlay = Lizzie.frame.getDisplayNode().getData().blackToPlay;
     if (Lizzie.config.usePureStone)
       drawStoneSimple(g, g, moveX, moveY, blackToPlay ? Stone.BLACK : Stone.WHITE);
-    else
-      drawStone(g, g, moveX, moveY, blackToPlay ? Stone.BLACK : Stone.WHITE);
+    else drawStone(g, g, moveX, moveY, blackToPlay ? Stone.BLACK : Stone.WHITE);
     if (blackToPlay) g.setColor(Color.WHITE);
     else g.setColor(Color.BLACK);
     if (showBlunderWinrate && showBlunderScore) {
@@ -4074,11 +4099,7 @@ public class BoardRenderer {
                     markupStroke(
                         stone,
                         isStarIntersection(
-                            move[0],
-                            move[1],
-                            Board.boardWidth,
-                            Board.boardHeight,
-                            chineseClassic));
+                            move[0], move[1], Board.boardWidth, Board.boardHeight, chineseClassic));
                 drawOneMarkup(g, key, moves, moveX, moveY, stroke);
               }
             });
@@ -4611,7 +4632,9 @@ public class BoardRenderer {
 
   public int getBranchLength() {
     VariationPreviewState.Selection selected = validSelection();
-    return selected == null ? 0 : min(selected.input().maxLength, selected.input().variation.size());
+    return selected == null
+        ? 0
+        : min(selected.input().maxLength, selected.input().variation.size());
   }
 
   public boolean incrementDisplayedBranchLength(int n) {
@@ -4672,7 +4695,8 @@ public class BoardRenderer {
     VariationPreviewState.Selection retained = middleSelection;
     middleSelection = null;
     return retained != null && retained.source().isCurrent()
-        ? Optional.of(retained) : Optional.empty();
+        ? Optional.of(retained)
+        : Optional.empty();
   }
 
   public void cancelPreview() {

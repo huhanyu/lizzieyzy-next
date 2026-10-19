@@ -1072,8 +1072,7 @@ public final class RemoteComputeConfig {
       return cached;
     }
     synchronized (CREDENTIAL_LOCK) {
-      if (systemCredentialStore == null
-          || !Objects.equals(directory, systemCredentialDirectory)) {
+      if (systemCredentialStore == null || !Objects.equals(directory, systemCredentialDirectory)) {
         systemCredentialDirectory = directory;
         systemCredentialStore = createCredentialStore(directory);
       }
@@ -1148,9 +1147,7 @@ public final class RemoteComputeConfig {
       }
       legacyStores.add(PlatformCredentialStore.create(legacyDirectory));
     }
-    return legacyStores.isEmpty()
-        ? primary
-        : new MigratingCredentialStore(primary, legacyStores);
+    return legacyStores.isEmpty() ? primary : new MigratingCredentialStore(primary, legacyStores);
   }
 
   private static boolean isWindows() {

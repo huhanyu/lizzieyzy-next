@@ -50,8 +50,7 @@ class EnginePkIdentityTest {
 
   @Test
   void duplicateCommandsPreferMatchingName() {
-    List<EngineData> engines =
-        List.of(engine("first", "same-cmd"), engine("second", "same-cmd"));
+    List<EngineData> engines = List.of(engine("first", "same-cmd"), engine("second", "same-cmd"));
 
     assertEquals(1, EnginePkIdentity.resolveIndex(engines, "same-cmd", "second"));
     assertEquals(0, EnginePkIdentity.resolveIndex(engines, "same-cmd", "missing-name"));

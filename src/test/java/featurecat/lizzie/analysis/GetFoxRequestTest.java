@@ -215,8 +215,7 @@ class GetFoxRequestTest {
   @Test
   void explicitUidSearchFetchesThatUidAndCarriesItsIdentity() throws Exception {
     ScriptedFoxRequest request =
-        new ScriptedFoxRequest()
-            .respond("YHWQFetchChessList", "{\"result\":0,\"chesslist\":[]}");
+        new ScriptedFoxRequest().respond("YHWQFetchChessList", "{\"result\":0,\"chesslist\":[]}");
 
     runCommand(request, "account_uid 123456 00123456");
 

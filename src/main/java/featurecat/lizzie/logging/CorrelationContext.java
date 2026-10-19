@@ -138,8 +138,7 @@ public final class CorrelationContext {
         return;
       }
       closed = true;
-      List<Map.Entry<String, String>> entries =
-          new ArrayList<>(previousValues.entrySet());
+      List<Map.Entry<String, String>> entries = new ArrayList<>(previousValues.entrySet());
       for (int index = entries.size() - 1; index >= 0; index--) {
         Map.Entry<String, String> entry = entries.get(index);
         put(entry.getKey(), entry.getValue());
