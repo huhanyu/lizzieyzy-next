@@ -26,8 +26,11 @@ final class StrengthScale {
   /** Each tier's share of the ruler. */
   static final double[] WEIGHTS = {0.22, 0.40, 0.126, 0.127, 0.127};
 
-  /** A labelled or plain tick: its rank value, label (or null) and how much the label matters. */
-  record Tick(double value, String label, int priority) {}
+  /**
+   * A tick: its rank value, label (or null), how much the label matters, and whether it is where
+   * one tier ends and the next begins. Labels between two whole ranks name a tier and have no tick.
+   */
+  record Tick(double value, String label, int priority, boolean boundary) {}
 
   /**
    * A point on the ruler: a black or white stone, or the accent knob when {@code stone} is null.
@@ -47,16 +50,21 @@ final class StrengthScale {
     String kyu = bundle.getString("PlayerStrengthEstimate.scale.kyu");
     String dan = bundle.getString("PlayerStrengthEstimate.scale.dan");
     List<Tick> ticks = new ArrayList<>();
-    ticks.add(new Tick(-13, MessageFormat.format(kyu, 15), 5));
-    ticks.add(new Tick(-8, MessageFormat.format(kyu, 10), 3));
-    ticks.add(new Tick(-3, MessageFormat.format(kyu, 5), 4));
+    ticks.add(new Tick(-13, MessageFormat.format(kyu, 15), 5, false));
+    ticks.add(new Tick(-8, MessageFormat.format(kyu, 10), 3, false));
+    ticks.add(new Tick(-3, MessageFormat.format(kyu, 5), 4, false));
     for (int rank = 1; rank <= 9; rank++) {
       int priority = rank == 1 ? 0 : rank == 5 || rank == 9 ? 1 : rank % 2 == 1 ? 2 : -1;
-      ticks.add(new Tick(rank, priority < 0 ? null : MessageFormat.format(dan, rank), priority));
+      ticks.add(
+          new Tick(
+              rank, priority < 0 ? null : MessageFormat.format(dan, rank), priority, rank == 1));
     }
-    ticks.add(new Tick(10.5, bundle.getString("PlayerStrengthEstimate.scale.pro"), 1));
-    ticks.add(new Tick(11.5, bundle.getString("PlayerStrengthEstimate.scale.topPro"), 2));
-    ticks.add(new Tick(12.5, bundle.getString("PlayerStrengthEstimate.scale.ai"), 0));
+    for (int boundary = 10; boundary <= 12; boundary++) {
+      ticks.add(new Tick(boundary, null, -1, true));
+    }
+    ticks.add(new Tick(10.5, bundle.getString("PlayerStrengthEstimate.scale.pro"), 1, false));
+    ticks.add(new Tick(11.5, bundle.getString("PlayerStrengthEstimate.scale.topPro"), 2, false));
+    ticks.add(new Tick(12.5, bundle.getString("PlayerStrengthEstimate.scale.ai"), 0, false));
     return ticks;
   }
 
@@ -64,22 +72,17 @@ final class StrengthScale {
     return ticks;
   }
 
-  private double gap() {
-    return style.px(3);
-  }
-
   /** How far from the left of a ruler {@code width} wide the rank {@code value} sits. */
   double x(double value, double width) {
-    double usable = width - gap() * (TIERS.length - 1);
     double clamped = Math.max(TIERS[0][0], Math.min(TIERS[TIERS.length - 1][1], value));
     double x = 0;
     for (int i = 0; i < TIERS.length; i++) {
-      double tierWidth = usable * WEIGHTS[i];
+      double tierWidth = width * WEIGHTS[i];
       if (clamped < TIERS[i][1] || i == TIERS.length - 1) {
         double share = (clamped - TIERS[i][0]) / (TIERS[i][1] - TIERS[i][0]);
         return x + tierWidth * Math.max(0, Math.min(1, share));
       }
-      x += tierWidth + gap();
+      x += tierWidth;
     }
     return x;
   }
@@ -112,30 +115,19 @@ final class StrengthScale {
   }
 
   /**
-   * Paints the ruler {@code width} wide from {@code x}, {@code top} with {@code markers} on it.
-   * With {@code fill}, the track is filled up to the first marker, the tiers below it more lightly.
+   * Paints the ruler {@code width} wide from {@code x}, {@code top} with {@code markers} on it: one
+   * unbroken track, with {@code fill} filled in one colour up to the first marker.
    */
   void paint(Graphics2D g, int x, int top, int width, List<Marker> markers, boolean fill) {
     double track = trackHeight();
     double marker = markerSize();
     double trackY = top + (marker - track) / 2.0;
-    double usable = width - gap() * (TIERS.length - 1);
-    double filledTo =
-        fill && !markers.isEmpty() && Double.isFinite(markers.get(0).rankValue())
-            ? x + x(markers.get(0).rankValue(), width)
-            : Double.NaN;
-    double tierX = x;
-    for (int i = 0; i < TIERS.length; i++) {
-      double tierWidth = usable * WEIGHTS[i];
-      g.setColor(style.sunken);
-      g.fill(new RoundRectangle2D.Double(tierX, trackY, tierWidth, track, track, track));
-      if (!Double.isNaN(filledTo) && filledTo > tierX) {
-        double end = Math.min(tierX + tierWidth, Math.max(tierX + track, filledTo));
-        boolean active = filledTo <= tierX + tierWidth;
-        g.setColor(active ? style.accent : StrengthStyle.alpha(style.accent, 120));
-        g.fill(new RoundRectangle2D.Double(tierX, trackY, end - tierX, track, track, track));
-      }
-      tierX += tierWidth + gap();
+    g.setColor(style.sunken);
+    g.fill(new RoundRectangle2D.Double(x, trackY, width, track, track, track));
+    if (fill && !markers.isEmpty() && Double.isFinite(markers.get(0).rankValue())) {
+      double filled = Math.max(track, x(markers.get(0).rankValue(), width));
+      g.setColor(style.accent);
+      g.fill(new RoundRectangle2D.Double(x, trackY, filled, track, track, track));
     }
     paintTicks(g, x, top, width, trackY + track);
     paintMarkers(g, x, top, width, markers);
@@ -145,7 +137,6 @@ final class StrengthScale {
     Font font = labelFont();
     FontMetrics metrics = g.getFontMetrics(font);
     double tickTop = trackBottom + style.px(2);
-    double tickLength = style.px(3);
     int baseline = top + markerSize() + style.px(7) + metrics.getAscent();
     g.setFont(font);
     List<Rectangle> placed = new ArrayList<>();
@@ -154,10 +145,10 @@ final class StrengthScale {
     g.setStroke(new BasicStroke(1f));
     for (Tick tick : byPriority) {
       double tickX = x + x(tick.value(), width);
-      boolean tier = tick.value() % 1 != 0;
-      if (!tier) {
-        g.setColor(StrengthStyle.alpha(style.tertiaryText, 150));
-        g.draw(new Line2D.Double(tickX, tickTop, tickX, tickTop + tickLength));
+      if (tick.value() % 1 == 0) {
+        double length = style.px(tick.boundary() ? 5 : 3);
+        g.setColor(StrengthStyle.alpha(style.tertiaryText, tick.boundary() ? 200 : 150));
+        g.draw(new Line2D.Double(tickX, tickTop, tickX, tickTop + length));
       }
       if (tick.label() == null) {
         continue;
