@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -34,6 +35,9 @@ class StrengthDialogTest {
     boolean analysisReady = true;
     int analyzed = 326;
     int total = 326;
+    int[] phaseBounds = {80, 180};
+    final List<int[]> savedBounds = new ArrayList<>();
+    boolean failSaving;
     final List<PlayerStrengthEstimator.StrengthModel> activated = new ArrayList<>();
 
     FakeHost(PlayerStrengthEstimator.Report report) {
@@ -118,6 +122,19 @@ class StrengthDialogTest {
     @Override
     public boolean humanStyleInstalled() {
       return true;
+    }
+
+    @Override
+    public int[] phaseBounds() {
+      return phaseBounds;
+    }
+
+    @Override
+    public void setPhaseBounds(int[] bounds) throws IOException {
+      if (failSaving) {
+        throw new IOException("read-only configuration");
+      }
+      savedBounds.add(bounds);
     }
   }
 
@@ -297,6 +314,46 @@ class StrengthDialogTest {
           dialog.refresh();
           assertEquals(StrengthDashboard.Stage.READY, dialog.dashboard().stage());
           assertTrue(dialog.dashboard().analysisBanner().isVisible(), "the analysis goes on");
+        });
+  }
+
+  @Test
+  void dialogStartsWithTheSavedPhaseBoundsAndSavesNewOnes() throws Exception {
+    FakeHost host = new FakeHost(StrengthFixtures.readyReport());
+    host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
+          assertArrayEquals(new int[] {80, 180}, dialog.dashboard().phaseBounds());
+          dialog.savePhaseBounds(new int[] {70, 160});
+          assertArrayEquals(new int[] {70, 160}, host.savedBounds.get(0));
+          host.failSaving = true;
+          dialog.savePhaseBounds(new int[] {75, 160});
+          assertEquals(1, host.savedBounds.size(), "a failed save is only logged");
+        });
+  }
+
+  @Test
+  void phaseDetailsListEveryFigureOfEveryPhase() throws Exception {
+    PlayerStrengthEstimator.Report report = StrengthFixtures.readyReport();
+    SwingUtilities.invokeAndWait(
+        () -> {
+          var panel =
+              StrengthDialog.phaseDetailPanel(
+                  report,
+                  StrengthPhases.split(report, StrengthPhases.DEFAULT_BOUNDS, 6),
+                  STYLE,
+                  BUNDLE);
+          assertTrue(panel.getComponent(0) instanceof StrengthPhaseTable);
+          StrengthPhaseTable table = (StrengthPhaseTable) panel.getComponent(0);
+          assertEquals(8, table.rows().size());
+          for (StrengthPhaseTable.Row row : table.rows()) {
+            assertEquals(6, row.values().size(), row.label());
+          }
+          assertEquals(
+              BUNDLE.getString("PlayerStrengthEstimate.detail.rank"), table.rows().get(0).label());
+          assertEquals("3", table.rows().get(2).values().get(0), "Black's three opening moves");
+          assertEquals("\u2014", table.rows().get(2).values().get(2), "no middle game was played");
         });
   }
 

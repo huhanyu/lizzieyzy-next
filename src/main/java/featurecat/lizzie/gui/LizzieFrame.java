@@ -17245,15 +17245,9 @@ public class LizzieFrame extends JFrame {
       Utils.showMsg(Lizzie.resourceBundle.getString("PlayerStrengthEstimate.needMoreData"), this);
       return;
     }
-    StrengthDialog.show(
-        this,
-        new StrengthDialogHost(this, () -> Lizzie.board.getHistory().getStart()),
-        new StrengthStyle(
-            AppleStyleSupport.isAppleStyleEnabled(),
-            Lizzie.config.useMorandiColors,
-            Lizzie.config.uiFontName,
-            Config.frameFontSize),
-        Lizzie.resourceBundle);
+    StrengthDialogHost host =
+        new StrengthDialogHost(this, () -> Lizzie.board.getHistory().getStart(), Lizzie.config);
+    StrengthDialog.show(this, host, host.style(), Lizzie.resourceBundle);
   }
 
   public HumanSlStrengthPreparation humanSlStrengthPreparation() {

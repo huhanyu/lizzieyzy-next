@@ -1,7 +1,6 @@
 package featurecat.lizzie.gui;
 
 import featurecat.lizzie.analysis.PlayerStrengthEstimator;
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -10,8 +9,8 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.event.MouseEvent;
-import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
+import java.util.List;
 import java.util.ResourceBundle;
 import javax.swing.JPanel;
 import javax.swing.JToolTip;
@@ -19,13 +18,12 @@ import javax.swing.JToolTip;
 /** One side's predicted rank, and where it sits on the scale from amateur to AI. */
 final class StrengthRankCard extends JPanel {
   private static final long serialVersionUID = 1L;
-  private static final double[] TIER_WEIGHTS = {0.46, 0.18, 0.18, 0.18};
-  private static final double[][] TIER_RANGES = {{-18, 10}, {10, 11}, {11, 12}, {12, 13}};
   private final transient StrengthStyle style;
   private final transient ResourceBundle bundle;
   private final transient PlayerStrengthEstimator.SideReport report;
   private final String sideName;
   private final boolean black;
+  private final transient StrengthScale scale;
   private Rectangle chip = new Rectangle();
 
   StrengthRankCard(
@@ -39,6 +37,7 @@ final class StrengthRankCard extends JPanel {
     this.report = report;
     this.bundle = bundle;
     this.style = style;
+    scale = new StrengthScale(bundle, style);
     setOpaque(false);
     setToolTipText(
         StrengthText.scaleTooltip(
@@ -105,22 +104,15 @@ final class StrengthRankCard extends JPanel {
     return metrics.getAscent() + metrics.getDescent();
   }
 
-  private int markerSize() {
-    return style.px(12);
-  }
-
   @Override
   public Dimension getPreferredSize() {
-    FontMetrics caption = getFontMetrics(captionFont(false));
     int height =
         padding()
             + headerHeight()
             + style.px(12)
             + heroHeight()
             + style.px(12)
-            + markerSize()
-            + style.px(8)
-            + caption.getHeight()
+            + scale.height(this)
             + padding();
     return new Dimension(style.px(400), height);
   }
@@ -256,61 +248,12 @@ final class StrengthRankCard extends JPanel {
   }
 
   private void paintScale(Graphics2D g, int x, int top, int width) {
-    String[][] scale = StrengthText.scale(bundle);
-    int active = hasRank() ? StrengthText.tier(report.rankValue) : -1;
-    double gap = style.px(3);
-    double usable = width - gap * (scale.length - 1);
-    double trackHeight = style.px(6);
-    double marker = markerSize();
-    double trackY = top + (marker - trackHeight) / 2.0;
-    double markerX = Double.NaN;
-    double segmentX = x;
-    Font plain = captionFont(false);
-    Font bold = captionFont(true);
-    FontMetrics captionMetrics = g.getFontMetrics(plain);
-    int nameBaseline = (int) (top + marker + style.px(8)) + captionMetrics.getAscent();
-    for (int i = 0; i < scale.length; i++) {
-      double segmentWidth = usable * TIER_WEIGHTS[i];
-      g.setColor(style.sunken);
-      g.fill(
-          new RoundRectangle2D.Double(
-              segmentX, trackY, segmentWidth, trackHeight, trackHeight, trackHeight));
-      double filled = 0;
-      if (i < active) {
-        filled = segmentWidth;
-      } else if (i == active) {
-        double[] range = TIER_RANGES[i];
-        double position =
-            StrengthStats.clamp((report.rankValue - range[0]) / (range[1] - range[0]));
-        filled = Math.max(trackHeight, segmentWidth * position);
-        markerX = segmentX + filled;
-      }
-      if (filled > 0) {
-        g.setColor(i == active ? style.accent : StrengthStyle.alpha(style.accent, 120));
-        g.fill(
-            new RoundRectangle2D.Double(
-                segmentX, trackY, filled, trackHeight, trackHeight, trackHeight));
-      }
-      StrengthPaint.text(
-          g,
-          scale[i][1],
-          i == active ? bold : plain,
-          style.font(Font.PLAIN, -3).getSize(),
-          i == active ? style.accent : style.secondaryText,
-          (float) segmentX,
-          nameBaseline,
-          (int) segmentWidth - style.px(4),
-          StrengthPaint.LEFT);
-      segmentX += segmentWidth + gap;
-    }
-    if (!Double.isNaN(markerX)) {
-      double left = Math.max(x, Math.min(x + width - marker, markerX - marker / 2.0));
-      Ellipse2D knob = new Ellipse2D.Double(left, top, marker, marker);
-      g.setColor(style.surface);
-      g.fill(knob);
-      g.setColor(style.accent);
-      g.setStroke(new BasicStroke(2f));
-      g.draw(new Ellipse2D.Double(left + 1, top + 1, marker - 2, marker - 2));
-    }
+    scale.paint(
+        g,
+        x,
+        top,
+        width,
+        List.of(new StrengthScale.Marker(hasRank() ? report.rankValue : Double.NaN, null)),
+        true);
   }
 }

@@ -36,9 +36,10 @@ import javax.swing.SwingConstants;
 final class StrengthDashboard extends JPanel {
   private static final long serialVersionUID = 1L;
   static final int ASSESSMENT = 0;
-  static final int MATCH = 1;
-  static final int PERFORMANCE = 2;
-  private static final String[] VIEWS = {"assessment", "match", "performance"};
+  static final int PHASES = 1;
+  static final int MATCH = 2;
+  static final int PERFORMANCE = 3;
+  private static final String[] VIEWS = {"assessment", "phases", "match", "performance"};
   private static final String ANALYSIS_CARD = "analysis";
   private static final String HUMAN_STYLE_CARD = "humanStyle";
 
@@ -57,6 +58,9 @@ final class StrengthDashboard extends JPanel {
 
     /** Starts analyzing the whole game in the main window. */
     void analyzeGame();
+
+    /** Keeps the phase boundaries the user set for the next games. */
+    void savePhaseBounds(int[] bounds);
   }
 
   /** How the HumanSL preparation is doing, which colours the dot before its status. */
@@ -108,11 +112,13 @@ final class StrengthDashboard extends JPanel {
   private transient PlayerStrengthEstimator.Report report;
   private transient Context context;
   private Stage stage;
+  private int[] phaseBounds;
 
   StrengthDashboard(
       PlayerStrengthEstimator.Report report,
       PlayerStrengthEstimator.StrengthModel[] models,
       boolean backgroundEnabled,
+      int[] phaseBounds,
       Context context,
       StrengthStyle style,
       ResourceBundle bundle,
@@ -121,6 +127,7 @@ final class StrengthDashboard extends JPanel {
     this.style = style;
     this.bundle = bundle;
     this.actions = actions;
+    this.phaseBounds = StrengthPhases.normalize(phaseBounds);
     blackName = bundle.getString("SidebarHeader.black");
     whiteName = bundle.getString("SidebarHeader.white");
     setOpaque(true);
@@ -137,6 +144,7 @@ final class StrengthDashboard extends JPanel {
         new StrengthTabs(
             List.of(
                 bundle.getString("PlayerStrengthEstimate.tab.assessment"),
+                bundle.getString("PlayerStrengthEstimate.tab.phases"),
                 bundle.getString("PlayerStrengthEstimate.tab.match"),
                 bundle.getString("PlayerStrengthEstimate.tab.performance")),
             ASSESSMENT,
@@ -420,8 +428,48 @@ final class StrengthDashboard extends JPanel {
   private void buildViews() {
     clearViews();
     views.add(assessmentView(), VIEWS[ASSESSMENT]);
+    views.add(phasesView(), VIEWS[PHASES]);
     views.add(matchView(), VIEWS[MATCH]);
     views.add(performanceView(), VIEWS[PERFORMANCE]);
+  }
+
+  private JComponent phasesView() {
+    return new StrengthPhaseView(
+        report,
+        phaseBounds,
+        lastMove(),
+        blackName,
+        whiteName,
+        bundle,
+        style,
+        bounds -> {
+          phaseBounds = bounds.clone();
+          actions.savePhaseBounds(bounds.clone());
+        });
+  }
+
+  /** The last move of the game: the main line's length, or the last analysed move if later. */
+  private int lastMove() {
+    int last = context.totalMoves();
+    for (PlayerStrengthEstimator.SideReport side :
+        new PlayerStrengthEstimator.SideReport[] {report.black, report.white}) {
+      if (side != null) {
+        for (PlayerStrengthEstimator.Sample sample : side.samples) {
+          last = Math.max(last, sample.moveNumber);
+        }
+      }
+    }
+    return last;
+  }
+
+  /** Where the phases are split now. */
+  int[] phaseBounds() {
+    return phaseBounds.clone();
+  }
+
+  /** The phases of the game as the phases view shows them. */
+  List<StrengthPhases.Phase> phases() {
+    return StrengthPhases.split(report, phaseBounds, lastMove());
   }
 
   private static JPanel column(int gap) {
