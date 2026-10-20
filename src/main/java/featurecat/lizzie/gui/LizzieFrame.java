@@ -109,7 +109,6 @@ import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 import javax.swing.table.TableModel;
 import javax.swing.text.html.HTMLDocument;
-import javax.swing.text.html.HTMLEditorKit;
 import javax.swing.text.html.StyleSheet;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -11975,7 +11974,7 @@ public class LizzieFrame extends JFrame {
     Lizzie.frame.refresh();
   }
 
-  public static class HtmlKit extends HTMLEditorKit {
+  public static class HtmlKit extends KerningHtmlEditorKit {
     private StyleSheet style = new StyleSheet();
 
     @Override
