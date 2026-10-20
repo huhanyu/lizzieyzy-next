@@ -2,7 +2,6 @@ package featurecat.lizzie.gui;
 
 import static java.awt.RenderingHints.KEY_ANTIALIASING;
 import static java.awt.RenderingHints.VALUE_ANTIALIAS_ON;
-import static java.lang.Math.min;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
@@ -29,7 +28,6 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.awt.font.TextAttribute;
 import java.io.File;
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -37,10 +35,8 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
@@ -3192,13 +3188,6 @@ public class MoveListFrame extends JFrame {
     }
   }
 
-  private Font makeFont(Font fontBase, int style) {
-    Font font = fontBase.deriveFont(style, 100);
-    Map<TextAttribute, Object> atts = new HashMap<>();
-    atts.put(TextAttribute.KERNING, TextAttribute.KERNING_ON);
-    return font.deriveFont(atts);
-  }
-
   private void drawString(
       Graphics2D g,
       int x,
@@ -3209,17 +3198,11 @@ public class MoveListFrame extends JFrame {
       float maximumFontHeight,
       double maximumFontWidth,
       int aboveOrBelow) {
-
-    Font font = makeFont(fontBase, style);
-
-    // set maximum size of font
-    FontMetrics fm = g.getFontMetrics(font);
-    font = font.deriveFont((float) (font.getSize2D() * maximumFontWidth / fm.stringWidth(string)));
-    font = font.deriveFont(min(maximumFontHeight, font.getSize()));
-    //    if(font.getSize()<15)
-    //    	font=new Font(font.getName(),Font.BOLD,font.getSize());
+    Font font =
+        FittedFont.fit(
+            g, fontBase, style, string, maximumFontHeight, maximumFontWidth, Integer.MAX_VALUE);
     g.setFont(font);
-    fm = g.getFontMetrics(font);
+    FontMetrics fm = g.getFontMetrics(font);
     int height = fm.getAscent() - fm.getDescent();
     int verticalOffset;
     if (aboveOrBelow == -1) {
@@ -6790,20 +6773,11 @@ public class MoveListFrame extends JFrame {
       String string,
       double maximumFontWidth,
       double maximumFontHeight) {
-    Font font = makeFont(fontBase, style);
-    // set maximum size of font
-    FontMetrics fm = g.getFontMetrics(font);
-    font = font.deriveFont((float) (font.getSize2D() * maximumFontWidth / fm.stringWidth(string)));
-    font = font.deriveFont((float) min(maximumFontHeight, font.getSize()));
-    if (font.getSize() > Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 6) {
-      font =
-          new Font(
-              font.getName(),
-              font.getStyle(),
-              Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 6);
-    }
+    int maxSize = Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 6;
+    Font font =
+        FittedFont.fit(g, fontBase, style, string, maximumFontHeight, maximumFontWidth, maxSize);
     g.setFont(font);
-    fm = g.getFontMetrics(font);
+    FontMetrics fm = g.getFontMetrics(font);
     int length = g.getFontMetrics().stringWidth(string);
     int height = fm.getAscent() - fm.getDescent();
     g.drawString(

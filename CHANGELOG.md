@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Fix the status line under the win-rate bar on macOS losing its digits and punctuation ("黑领先 4 最后一手 19 8" instead of "黑领先:0.4 最后一手: +19.8%"). When the label was too large and its size was capped, the font was rebuilt without its kerning attribute. That sent the text through a JDK drawing path that, on macOS, draws Latin glyphs blank in a string that also needs a fallback font for Chinese, Japanese or Korean, and keeps the blank glyphs cached for that size. The fitted font now keeps the attribute (`FittedFont`), which also fixes the same labels in the move-list window.
 - Add an architecture budget to CI: the largest classes, references to the global `Lizzie.*` fields and engine-to-UI package references may no longer grow (`scripts/check_architecture_budget.py`, ADR 0004). Add `AGENTS.md` with the build, threading, security, test and localization rules for coding agents, and design notes for the engine-session refactor, on-demand browser/readboard components and slimmer release assets.
 - Fix the KataGo rules editor sometimes staying open after the engine confirmed the new rules: the status watcher could read the confirmed result a moment before the rules operation completed, then never look again.
 - Format all Java sources once with google-java-format and check formatting in CI (`fmt:check` in the java-linux job). The formatting commit is listed in `.git-blame-ignore-revs`.
