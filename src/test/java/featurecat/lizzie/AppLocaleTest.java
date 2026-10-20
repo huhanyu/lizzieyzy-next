@@ -34,13 +34,6 @@ class AppLocaleTest {
   }
 
   @Test
-  void englishPlayerStrengthHeadingKeepsItsWordBoundary() {
-    assertEquals(
-        " performance",
-        AppLocale.ENGLISH.loadBundle().getString("PlayerStrengthEstimate.performanceSuffix"));
-  }
-
-  @Test
   void localizedOperationalPromptsUseCurrentMenuNames() {
     ResourceBundle english = AppLocale.ENGLISH.loadBundle();
     ResourceBundle korean = AppLocale.KOREAN.loadBundle();

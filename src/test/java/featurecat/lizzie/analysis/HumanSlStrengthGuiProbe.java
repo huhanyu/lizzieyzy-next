@@ -70,6 +70,20 @@ public final class HumanSlStrengthGuiProbe {
     }
   }
 
+  /** The estimate on Black's rank card of the strength dashboard in {@code window}. */
+  private static PlayerStrengthEstimator.SideReport cardReport(Window window) {
+    Component card =
+        find(window, Component.class, c -> c.getClass().getSimpleName().equals("StrengthRankCard"));
+    if (card == null) return null;
+    try {
+      var field = card.getClass().getDeclaredField("report");
+      field.setAccessible(true);
+      return (PlayerStrengthEstimator.SideReport) field.get(card);
+    } catch (ReflectiveOperationException error) {
+      throw new RuntimeException(error);
+    }
+  }
+
   private static Window dashboard() {
     for (Window window : Window.getWindows())
       if (window.isVisible()
@@ -160,9 +174,9 @@ public final class HumanSlStrengthGuiProbe {
                                           instanceof PlayerStrengthEstimator.StrengthModel);
                       combo.setSelectedItem(PlayerStrengthEstimator.StrengthModel.HUMANSL40);
                     });
-                Window completed = null;
-                while (completed == null) {
-                  AtomicReference<Window> candidate = new AtomicReference<>();
+                // The dashboard shows the new model in place, in the same window.
+                AtomicReference<Boolean> switched = new AtomicReference<>(false);
+                while (!switched.get()) {
                   SwingUtilities.invokeAndWait(
                       () -> {
                         for (Window window : Window.getWindows()) {
@@ -171,24 +185,21 @@ public final class HumanSlStrengthGuiProbe {
                               && find(window, JTextField.class, f -> true) != null)
                             throw new AssertionError("Unexpected model settings");
                         }
-                        Window current = dashboard();
-                        if (current != null && current != selected) {
-                          JComboBox<?> combo =
-                              find(
-                                  current,
-                                  JComboBox.class,
-                                  c ->
-                                      PlayerStrengthEstimator.StrengthModel.HUMANSL40.equals(
-                                          c.getSelectedItem()));
-                          if (combo != null) candidate.set(current);
-                        }
+                        JComboBox<?> combo =
+                            find(
+                                selected,
+                                JComboBox.class,
+                                c ->
+                                    PlayerStrengthEstimator.StrengthModel.HUMANSL40.equals(
+                                        c.getSelectedItem()));
+                        var report = cardReport(selected);
+                        switched.set(combo != null && report != null && report.model.isHumanSl40());
                       });
-                  completed = candidate.get();
                   if (System.nanoTime() > deadline)
                     throw new IllegalStateException("Assessment timeout");
                   Thread.sleep(200);
                 }
-                Window pending = completed;
+                Window pending = selected;
                 Thread.sleep(400);
                 SwingUtilities.invokeAndWait(
                     () -> {
@@ -218,19 +229,22 @@ public final class HumanSlStrengthGuiProbe {
                                 AbstractButton.class,
                                 b -> "strength40-run".equals(b.getName()))
                             .doClick());
-                completed = null;
-                while (completed == null) {
-                  AtomicReference<Window> ready = new AtomicReference<>();
+                AtomicReference<Boolean> prepared = new AtomicReference<>(false);
+                while (!prepared.get()) {
                   SwingUtilities.invokeAndWait(
                       () -> {
-                        Window current = dashboard();
-                        if (current != null && current != pending) ready.set(current);
+                        var report = cardReport(pending);
+                        prepared.set(
+                            report != null
+                                && report.model.isHumanSl40()
+                                && Double.isFinite(report.rankValue)
+                                && report.sampleCount >= 6);
                       });
-                  completed = ready.get();
                   if (System.nanoTime() > deadline)
                     throw new IllegalStateException("Manual supplement timeout");
                   Thread.sleep(150);
                 }
+                Window completed = pending;
                 AtomicReference<String> after = new AtomicReference<>();
                 SwingUtilities.invokeAndWait(
                     () -> after.set(HumanSlStrengthReuseSession.capture().base().toString()));
@@ -238,29 +252,6 @@ public final class HumanSlStrengthGuiProbe {
                   throw new AssertionError("Board analysis was modified");
                 screenshot(completed, work.resolve("dashboard-humansl40.png"));
                 Window finalDashboard = completed;
-                SwingUtilities.invokeAndWait(
-                    () -> {
-                      try {
-                        Component card =
-                            find(
-                                finalDashboard,
-                                Component.class,
-                                c ->
-                                    c.getClass()
-                                        .getSimpleName()
-                                        .equals("PlayerStrengthAssessmentCard"));
-                        var field = card.getClass().getDeclaredField("report");
-                        field.setAccessible(true);
-                        var report = (PlayerStrengthEstimator.SideReport) field.get(card);
-                        if (!report.model.isHumanSl40()
-                            || !Double.isFinite(report.rankValue)
-                            || report.sampleCount < 6)
-                          throw new AssertionError(
-                              "Original card did not receive a completed HumanSL prediction");
-                      } catch (ReflectiveOperationException error) {
-                        throw new RuntimeException(error);
-                      }
-                    });
                 for (String tab : new String[] {"match", "performance"}) {
                   SwingUtilities.invokeAndWait(
                       () ->
@@ -315,22 +306,11 @@ public final class HumanSlStrengthGuiProbe {
                 while (!cleared.get()) {
                   SwingUtilities.invokeAndWait(
                       () -> {
-                        Component card =
-                            find(
-                                finalDashboard,
-                                Component.class,
-                                c ->
-                                    c.getClass()
-                                        .getSimpleName()
-                                        .equals("PlayerStrengthAssessmentCard"));
-                        try {
-                          var field = card.getClass().getDeclaredField("report");
-                          field.setAccessible(true);
-                          var report = (PlayerStrengthEstimator.SideReport) field.get(card);
-                          cleared.set(!report.hasSamples() && Double.isNaN(report.rankValue));
-                        } catch (ReflectiveOperationException error) {
-                          throw new RuntimeException(error);
-                        }
+                        var report = cardReport(finalDashboard);
+                        cleared.set(
+                            report != null
+                                && !report.hasSamples()
+                                && Double.isNaN(report.rankValue));
                       });
                   if (System.nanoTime() > deadline)
                     throw new IllegalStateException(
