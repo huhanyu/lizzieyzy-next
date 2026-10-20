@@ -33,6 +33,7 @@ import org.slf4j.ILoggerFactory;
 import org.slf4j.LoggerFactory;
 
 public final class LoggingRuntime {
+  private static final long AWAIT_IDLE_SECONDS = 10;
   public static final String STDERR_PREFIX = "LizzieYzy logging: ";
   private static final String PATTERN =
       "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%logger] %corr %msg%n%ex";
@@ -513,8 +514,16 @@ public final class LoggingRuntime {
     notice("crash", "unwritten events=" + unwritten);
   }
 
+  /**
+   * Waits until every event logged before this call has been written (or abandoned) and the
+   * appenders are quiet, for at most {@value #AWAIT_IDLE_SECONDS} seconds; it returns as soon as
+   * that holds. Callers read the log files next, so a fixed spin is not enough: on a slow disk the
+   * last events would still be queued and the read would miss them.
+   */
   void awaitIdle() {
-    awaitIdle(40);
+    if (awaitIdle(AWAIT_IDLE_SECONDS, TimeUnit.SECONDS)) {
+      awaitIdle(40);
+    }
   }
 
   void awaitIdle(int spins) {
@@ -541,6 +550,16 @@ public final class LoggingRuntime {
         return;
       }
     }
+  }
+
+  /** Waits until every event logged to {@code stream} before this call has been written. */
+  boolean awaitWritten(LogStream stream, long timeout, TimeUnit unit) {
+    BoundedAsyncAppender appender = appenders.get(stream);
+    if (appender == null) {
+      return true;
+    }
+    long deadline = System.nanoTime() + unit.toNanos(Math.max(0L, timeout));
+    return appender.awaitSubmitted(appender.submittedCount(), deadline);
   }
 
   boolean awaitIdle(long timeout, TimeUnit unit) {
