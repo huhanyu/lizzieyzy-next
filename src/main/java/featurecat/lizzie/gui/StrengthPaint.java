@@ -8,6 +8,7 @@ import java.awt.Graphics2D;
 import java.awt.Shape;
 import java.awt.Stroke;
 import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
 import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.List;
@@ -115,11 +116,32 @@ final class StrengthPaint {
         new Ellipse2D.Double(centerX - diameter / 2, centerY - diameter / 2, diameter, diameter));
   }
 
+  /** A small outlined circle with an "i", the mark of something that has an explanation. */
+  static void infoMark(Graphics2D g, Color color, double x, double y, double size) {
+    Stroke stroke = g.getStroke();
+    g.setColor(color);
+    g.setStroke(new BasicStroke((float) Math.max(1.0, size / 12.0)));
+    g.draw(new Ellipse2D.Double(x + 0.5, y + 0.5, size - 1, size - 1));
+    double centerX = x + size / 2.0;
+    double dot = Math.max(1.6, size * 0.14);
+    g.fill(new Ellipse2D.Double(centerX - dot / 2, y + size * 0.22, dot, dot));
+    g.setStroke(
+        new BasicStroke(
+            (float) Math.max(1.3, size * 0.12), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+    g.draw(new Line2D.Double(centerX, y + size * 0.44, centerX, y + size * 0.74));
+    g.setStroke(stroke);
+  }
+
   /** Outlines {@code shape} in the accent colour to show keyboard focus. */
   static void focusRing(Graphics2D g, StrengthStyle style, Shape shape) {
+    focusRing(g, style.accent, shape);
+  }
+
+  /** Outlines {@code shape} in {@code color} to show keyboard focus. */
+  static void focusRing(Graphics2D g, Color color, Shape shape) {
     Stroke stroke = g.getStroke();
     g.setStroke(new BasicStroke(2f));
-    g.setColor(StrengthStyle.alpha(style.accent, 220));
+    g.setColor(StrengthStyle.alpha(color, 220));
     g.draw(shape);
     g.setStroke(stroke);
   }

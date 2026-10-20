@@ -8,10 +8,13 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
 import java.util.ResourceBundle;
 import javax.swing.JPanel;
+import javax.swing.JToolTip;
 
 /** One side's predicted rank, and where it sits on the scale from amateur to AI. */
 final class StrengthRankCard extends JPanel {
@@ -23,6 +26,7 @@ final class StrengthRankCard extends JPanel {
   private final transient PlayerStrengthEstimator.SideReport report;
   private final String sideName;
   private final boolean black;
+  private Rectangle chip = new Rectangle();
 
   StrengthRankCard(
       String sideName,
@@ -36,13 +40,39 @@ final class StrengthRankCard extends JPanel {
     this.bundle = bundle;
     this.style = style;
     setOpaque(false);
-    setToolTipText(StrengthText.scaleTooltip(report, bundle));
+    setToolTipText(
+        StrengthText.scaleTooltip(
+            report, bundle, getFontMetrics(style.font(Font.PLAIN, 0)), style.px(300)));
     getAccessibleContext().setAccessibleName(sideName + " " + StrengthText.rank(report, bundle));
     getAccessibleContext().setAccessibleDescription(StrengthText.scaleDescription(report, bundle));
   }
 
   PlayerStrengthEstimator.SideReport report() {
     return report;
+  }
+
+  /** What confidence means over the confidence chip, else the rank and the rank scale. */
+  @Override
+  public String getToolTipText(MouseEvent event) {
+    if (hasRank() && chip.contains(event.getPoint())) {
+      return StrengthText.wrappedTooltip(
+          bundle.getString("PlayerStrengthEstimate.help.confidence"),
+          getFontMetrics(style.font(Font.PLAIN, 0)),
+          style.px(300));
+    }
+    return getToolTipText();
+  }
+
+  @Override
+  public JToolTip createToolTip() {
+    JToolTip tip = super.createToolTip();
+    tip.setFont(style.font(Font.PLAIN, 0));
+    return tip;
+  }
+
+  /** Where the confidence chip was drawn. */
+  Rectangle chipBounds() {
+    return new Rectangle(chip);
   }
 
   private boolean hasRank() {
@@ -90,7 +120,7 @@ final class StrengthRankCard extends JPanel {
             + style.px(12)
             + markerSize()
             + style.px(8)
-            + caption.getHeight() * 2
+            + caption.getHeight()
             + padding();
     return new Dimension(style.px(400), height);
   }
@@ -154,6 +184,7 @@ final class StrengthRankCard extends JPanel {
     int width = style.px(9) + dot + style.px(6) + metrics.stringWidth(text) + style.px(10);
     double x = right - width;
     double y = top + (rowHeight - height) / 2.0;
+    chip = new Rectangle((int) x, (int) y, width, height);
     g.setColor(style.sunken);
     g.fill(new RoundRectangle2D.Double(x, y, width, height, height, height));
     Color tone =
@@ -268,16 +299,6 @@ final class StrengthRankCard extends JPanel {
           i == active ? style.accent : style.secondaryText,
           (float) segmentX,
           nameBaseline,
-          (int) segmentWidth - style.px(4),
-          StrengthPaint.LEFT);
-      StrengthPaint.text(
-          g,
-          scale[i][0],
-          plain,
-          style.font(Font.PLAIN, -3).getSize(),
-          style.tertiaryText,
-          (float) segmentX,
-          nameBaseline + captionMetrics.getHeight(),
           (int) segmentWidth - style.px(4),
           StrengthPaint.LEFT);
       segmentX += segmentWidth + gap;

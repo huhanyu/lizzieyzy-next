@@ -5,9 +5,11 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
 import java.util.List;
 import javax.swing.JPanel;
+import javax.swing.JToolTip;
 
 /**
  * Black's and White's figures in pairs, Black on the left and White on the right, each pair over a
@@ -16,9 +18,13 @@ import javax.swing.JPanel;
 final class StrengthCompareCard extends JPanel {
   private static final long serialVersionUID = 1L;
 
-  /** One compared figure; {@code better} is 1 when more is better, -1 when less is, else 0. */
+  /**
+   * One compared figure with a sentence that explains it; {@code better} is 1 when more is better,
+   * -1 when less is, else 0.
+   */
   record Row(
       String label,
+      String help,
       String blackText,
       String whiteText,
       double blackValue,
@@ -44,6 +50,7 @@ final class StrengthCompareCard extends JPanel {
     this.rows = List.copyOf(rows);
     this.style = style;
     setOpaque(false);
+    setToolTipText("");
     StringBuilder description = new StringBuilder();
     for (Row row : rows) {
       if (description.length() > 0) {
@@ -61,6 +68,48 @@ final class StrengthCompareCard extends JPanel {
 
   List<Row> rows() {
     return rows;
+  }
+
+  /** The explanation of the row under the pointer. */
+  @Override
+  public String getToolTipText(MouseEvent event) {
+    int index = rowAt(event.getY());
+    if (index < 0 || rows.get(index).help() == null) {
+      return null;
+    }
+    return StrengthText.wrappedTooltip(
+        rows.get(index).help(), getFontMetrics(style.font(Font.PLAIN, 0)), style.px(300));
+  }
+
+  @Override
+  public JToolTip createToolTip() {
+    JToolTip tip = super.createToolTip();
+    tip.setFont(style.font(Font.PLAIN, 0));
+    return tip;
+  }
+
+  private int rowHeight() {
+    return Math.max(
+        minimumRowHeight(),
+        Math.min(minimumRowHeight() + style.px(22), (getHeight() - padding() * 2) / rows.size()));
+  }
+
+  private int rowsTop() {
+    return (getHeight() - rowHeight() * rows.size()) / 2;
+  }
+
+  /** The row at height {@code y}, or -1. */
+  int rowAt(int y) {
+    if (rows.isEmpty()) {
+      return -1;
+    }
+    int index = Math.floorDiv(y - rowsTop(), rowHeight());
+    return index >= 0 && index < rows.size() ? index : -1;
+  }
+
+  /** The vertical middle of row {@code index}. */
+  int rowCenter(int index) {
+    return rowsTop() + rowHeight() * index + rowHeight() / 2;
   }
 
   private Font valueFont(boolean bold) {
@@ -97,11 +146,8 @@ final class StrengthCompareCard extends JPanel {
         return;
       }
       int pad = padding();
-      int rowHeight =
-          Math.max(
-              minimumRowHeight(),
-              Math.min(minimumRowHeight() + style.px(22), (height - pad * 2) / rows.size()));
-      int top = (height - rowHeight * rows.size()) / 2;
+      int rowHeight = rowHeight();
+      int top = rowsTop();
       for (Row row : rows) {
         paintRow(g, row, pad, top, width - pad * 2, rowHeight);
         top += rowHeight;
@@ -118,18 +164,32 @@ final class StrengthCompareCard extends JPanel {
     int blockTop = top + (rowHeight - block) / 2;
     int baseline = blockTop + valueMetrics.getAscent();
     int leader = row.leader();
-    Font label = style.font(Font.PLAIN, 1);
     int valueWidth = Math.max(style.px(64), width / 4);
-    StrengthPaint.text(
-        g,
-        row.label(),
-        label,
-        label.getSize() - 2,
-        style.secondaryText,
-        x + width / 2f,
-        baseline,
-        width - valueWidth * 2,
-        StrengthPaint.CENTER);
+    int mark = row.help() == null ? 0 : style.px(13);
+    int markGap = mark == 0 ? 0 : style.px(6);
+    Font label =
+        StrengthPaint.fit(
+            g,
+            row.label(),
+            style.font(Font.PLAIN, 1),
+            style.font(Font.PLAIN, -1).getSize(),
+            width - valueWidth * 2 - mark - markGap);
+    FontMetrics labelMetrics = g.getFontMetrics(label);
+    String labelText =
+        StrengthPaint.ellipsize(row.label(), labelMetrics, width - valueWidth * 2 - mark - markGap);
+    int group = labelMetrics.stringWidth(labelText) + markGap + mark;
+    float labelX = x + (width - group) / 2f;
+    g.setFont(label);
+    g.setColor(style.secondaryText);
+    g.drawString(labelText, labelX, baseline);
+    if (mark > 0) {
+      StrengthPaint.infoMark(
+          g,
+          style.tertiaryText,
+          labelX + labelMetrics.stringWidth(labelText) + markGap,
+          baseline - labelMetrics.getAscent() / 2.0 - mark / 2.0 + labelMetrics.getDescent() / 2.0,
+          mark);
+    }
     StrengthPaint.text(
         g,
         row.blackText(),

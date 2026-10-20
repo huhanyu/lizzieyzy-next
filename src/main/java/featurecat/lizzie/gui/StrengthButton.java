@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -14,7 +15,10 @@ import java.awt.geom.RoundRectangle2D;
 import javax.swing.ButtonModel;
 import javax.swing.JButton;
 
-/** A rounded secondary button of the player-strength dialog, with an optional line icon. */
+/**
+ * A rounded button of the player-strength dialog: a quiet secondary button with an optional line
+ * icon, or the filled primary button of a step the user is invited to take.
+ */
 final class StrengthButton extends JButton {
   private static final long serialVersionUID = 1L;
 
@@ -26,13 +30,19 @@ final class StrengthButton extends JButton {
 
   private final transient StrengthStyle style;
   private final Glyph glyph;
+  private final boolean primary;
 
   StrengthButton(String text, Glyph glyph, StrengthStyle style) {
+    this(text, glyph, false, style);
+  }
+
+  private StrengthButton(String text, Glyph glyph, boolean primary, StrengthStyle style) {
     super(text);
     this.style = style;
     this.glyph = glyph;
-    setFont(style.font(Font.BOLD, 0));
-    setForeground(style.text);
+    this.primary = primary;
+    setFont(style.font(Font.BOLD, primary ? 1 : 0));
+    setForeground(primary ? style.onAccent : style.text);
     setContentAreaFilled(false);
     setBorderPainted(false);
     setFocusPainted(false);
@@ -43,13 +53,23 @@ final class StrengthButton extends JButton {
     StrengthFocus.install(this);
   }
 
+  /** The filled button of the main step on a page, such as starting a calculation. */
+  static StrengthButton primary(String text, StrengthStyle style) {
+    return new StrengthButton(text, Glyph.NONE, true, style);
+  }
+
+  boolean isPrimary() {
+    return primary;
+  }
+
   @Override
   public Dimension getPreferredSize() {
     FontMetrics metrics = getFontMetrics(getFont());
     int icon = glyph == Glyph.NONE ? 0 : iconSize() + style.px(7);
+    int padding = style.px(primary ? 22 : 14);
     return new Dimension(
-        style.px(14) * 2 + icon + metrics.stringWidth(getText()),
-        Math.max(style.px(34), metrics.getHeight() + style.px(12)));
+        padding * 2 + icon + metrics.stringWidth(getText()),
+        Math.max(style.px(primary ? 40 : 34), metrics.getHeight() + style.px(12)));
   }
 
   @Override
@@ -66,6 +86,22 @@ final class StrengthButton extends JButton {
     return style.px(14);
   }
 
+  /** Fades a secondary button while it cannot be used. */
+  @Override
+  public void paint(Graphics graphics) {
+    if (isEnabled() || primary) {
+      super.paint(graphics);
+      return;
+    }
+    Graphics2D g = (Graphics2D) graphics.create();
+    try {
+      g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
+      super.paint(g);
+    } finally {
+      g.dispose();
+    }
+  }
+
   @Override
   protected void paintComponent(Graphics graphics) {
     Graphics2D g = StrengthStyle.smooth(graphics);
@@ -74,17 +110,29 @@ final class StrengthButton extends JButton {
       double arc = style.px(10);
       RoundRectangle2D shape =
           new RoundRectangle2D.Double(0.5, 0.5, getWidth() - 1, getHeight() - 1, arc, arc);
-      g.setColor(
-          model.isPressed() && model.isArmed()
-              ? style.pressed
-              : model.isRollover() ? style.sunken : style.surface);
-      g.fill(shape);
-      g.setColor(style.border);
-      g.draw(shape);
+      if (primary) {
+        g.setColor(
+            !isEnabled()
+                ? style.sunken
+                : model.isPressed() && model.isArmed()
+                    ? StrengthStyle.mix(style.accent, style.text, 0.2)
+                    : model.isRollover()
+                        ? StrengthStyle.mix(style.accent, style.surface, 0.12)
+                        : style.accent);
+        g.fill(shape);
+      } else {
+        g.setColor(
+            model.isPressed() && model.isArmed()
+                ? style.pressed
+                : model.isRollover() ? style.sunken : style.surface);
+        g.fill(shape);
+        g.setColor(style.border);
+        g.draw(shape);
+      }
       if (StrengthFocus.visible(this)) {
         StrengthPaint.focusRing(
             g,
-            style,
+            primary ? style.onAccent : style.accent,
             new RoundRectangle2D.Double(1.5, 1.5, getWidth() - 3, getHeight() - 3, arc, arc));
       }
 

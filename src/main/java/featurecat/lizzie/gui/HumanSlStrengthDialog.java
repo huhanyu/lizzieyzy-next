@@ -36,21 +36,27 @@ public final class HumanSlStrengthDialog extends JDialog {
       }
       if (assets.human() == null
           && JOptionPane.showConfirmDialog(
-                  owner, text("HumanSL40.downloadPrompt"), "HumanSL 40", JOptionPane.YES_NO_OPTION)
+                  owner,
+                  text("HumanSL40.downloadPrompt"),
+                  text("PlayerStrengthEstimate.model.humanStyle"),
+                  JOptionPane.YES_NO_OPTION)
               != JOptionPane.YES_OPTION) return null;
       var dialog = new HumanSlStrengthDialog(owner, capture, assets.human());
       dialog.setVisible(true);
       return dialog.result;
     } catch (RuntimeException error) {
       JOptionPane.showMessageDialog(
-          owner, errorText(error), "HumanSL 40", JOptionPane.WARNING_MESSAGE);
+          owner,
+          errorText(error),
+          text("PlayerStrengthEstimate.model.humanStyle"),
+          JOptionPane.WARNING_MESSAGE);
       return null;
     }
   }
 
   private HumanSlStrengthDialog(
       LizzieFrame owner, HumanSlStrengthReuseSession.Capture capture, Path installedHuman) {
-    super(owner, "HumanSL 40", true);
+    super(owner, text("PlayerStrengthEstimate.model.humanStyle"), true);
     setDefaultCloseOperation(DISPOSE_ON_CLOSE);
     JPanel content = new JPanel(new BorderLayout(12, 12));
     content.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
@@ -136,7 +142,7 @@ public final class HumanSlStrengthDialog extends JDialog {
             JOptionPane.showMessageDialog(
                 HumanSlStrengthDialog.this,
                 errorText(cause),
-                "HumanSL 40",
+                text("PlayerStrengthEstimate.model.humanStyle"),
                 JOptionPane.ERROR_MESSAGE);
         } finally {
           dispose();

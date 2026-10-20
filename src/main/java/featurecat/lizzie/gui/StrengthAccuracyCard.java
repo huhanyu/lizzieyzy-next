@@ -8,9 +8,11 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Stroke;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Arc2D;
 import java.util.ResourceBundle;
 import javax.swing.JPanel;
+import javax.swing.JToolTip;
 
 /** One side's overall agreement with the AI as a ring, with the figures behind it. */
 final class StrengthAccuracyCard extends JPanel {
@@ -21,6 +23,8 @@ final class StrengthAccuracyCard extends JPanel {
   private final boolean black;
   private final String caption;
   private final String[][] stats;
+  private final String[] helps;
+  private final String matchHelp;
 
   StrengthAccuracyCard(
       String sideName,
@@ -33,6 +37,14 @@ final class StrengthAccuracyCard extends JPanel {
     this.report = report;
     this.style = style;
     caption = bundle.getString("PlayerStrengthEstimate.match.overallMatch");
+    matchHelp = bundle.getString("PlayerStrengthEstimate.help.overallMatch");
+    helps =
+        new String[] {
+          bundle.getString("PlayerStrengthEstimate.help.firstChoice"),
+          bundle.getString("PlayerStrengthEstimate.help.goodMoveRate"),
+          bundle.getString("PlayerStrengthEstimate.help.mistakeRate"),
+          bundle.getString("PlayerStrengthEstimate.help.moves")
+        };
     boolean known = report != null && report.hasSamples();
     stats =
         new String[][] {
@@ -59,6 +71,7 @@ final class StrengthAccuracyCard extends JPanel {
       description.append("; ").append(stat[0]).append(": ").append(stat[1]);
     }
     getAccessibleContext().setAccessibleName(sideName + " " + caption);
+    setToolTipText("");
     getAccessibleContext().setAccessibleDescription(description.toString());
   }
 
@@ -107,6 +120,36 @@ final class StrengthAccuracyCard extends JPanel {
   @Override
   public Dimension getMinimumSize() {
     return new Dimension(style.px(360), getPreferredSize().height);
+  }
+
+  /** The explanation of the ring or of the figure under the pointer. */
+  @Override
+  public String getToolTipText(MouseEvent event) {
+    String help = helpAt(event.getX());
+    return help == null
+        ? null
+        : StrengthText.wrappedTooltip(
+            help, getFontMetrics(style.font(Font.PLAIN, 0)), style.px(300));
+  }
+
+  @Override
+  public JToolTip createToolTip() {
+    JToolTip tip = super.createToolTip();
+    tip.setFont(style.font(Font.PLAIN, 0));
+    return tip;
+  }
+
+  /** What the ring or the figure at {@code x} means. */
+  String helpAt(int x) {
+    int pad = padding();
+    int ring = ringSize();
+    if (x < pad + ring + style.px(12)) {
+      return matchHelp;
+    }
+    int left = pad + ring + style.px(24);
+    int column = Math.max(1, (getWidth() - pad - left) / stats.length);
+    int index = (x - left) / column;
+    return x >= left && index < stats.length ? helps[index] : null;
   }
 
   @Override

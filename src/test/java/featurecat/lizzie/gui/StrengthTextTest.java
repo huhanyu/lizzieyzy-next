@@ -101,7 +101,12 @@ class StrengthTextTest {
   @Test
   void scaleTooltipListsEveryTierInFull() throws Exception {
     ResourceBundle bundle = AppLocale.SIMPLIFIED_CHINESE.loadBundle();
-    String tooltip = StrengthText.scaleTooltip(StrengthFixtures.twoMoveReport().black, bundle);
+    String tooltip =
+        StrengthText.scaleTooltip(
+            StrengthFixtures.twoMoveReport().black,
+            bundle,
+            new javax.swing.JLabel().getFontMetrics(new java.awt.Font("Dialog", 0, 12)),
+            300);
     assertTrue(tooltip.contains("12+"));
     assertTrue(tooltip.contains("11+"));
     assertTrue(tooltip.contains("10+"));

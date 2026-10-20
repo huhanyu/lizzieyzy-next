@@ -25,7 +25,6 @@ import featurecat.lizzie.analysis.HumanSlStrengthReuseSession;
 import featurecat.lizzie.analysis.KataGoRules;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.MoveData;
-import featurecat.lizzie.analysis.PlayerStrengthEstimator;
 import featurecat.lizzie.analysis.ReadBoard;
 import featurecat.lizzie.analysis.ReadBoardTrackingEligibilityAdapter;
 import featurecat.lizzie.analysis.ReadBoardUpdateInstaller;
@@ -584,6 +583,7 @@ public class LizzieFrame extends JFrame {
   public ArrayList<String> priorityMoveCoords = new ArrayList<String>();
 
   public AnalysisEngine analysisEngine;
+  private volatile boolean flashAnalysisStarting;
   private WholeGameAnalysisSession wholeGameAnalysisSession;
   private WholeGameAnalysisDialog wholeGameAnalysisDialog;
   private boolean reopenWholeGameAnalysisAfterHandoff;
@@ -17019,8 +17019,15 @@ public class LizzieFrame extends JFrame {
     return !isAnalysisEngineReusable(analysisEngine);
   }
 
+  /** Whether flash analysis is starting its engine or still waiting for results. */
+  boolean isFlashAnalysisRunning() {
+    return flashAnalysisStarting
+        || (analysisEngine != null && analysisEngine.hasRequestLifecycleInProgress());
+  }
+
   private void startFlashAnalyzeGameWithNewEngine(boolean isAllGame, boolean isAllBranches) {
     WaitForAnalysis waitFrame = createFlashAnalysisLoadingFrame();
+    flashAnalysisStarting = true;
     Thread starter =
         new Thread(
             () -> {
@@ -17030,6 +17037,7 @@ public class LizzieFrame extends JFrame {
                 SwingUtilities.invokeLater(
                     () -> {
                       if (isWholeGameAnalysisStartingOrRunning()) {
+                        flashAnalysisStarting = false;
                         if (waitFrame != null) waitFrame.setVisible(false);
                         newAnalysisEngine.clearRequestCallbacks();
                         newAnalysisEngine.normalQuit();
@@ -17037,6 +17045,7 @@ public class LizzieFrame extends JFrame {
                       }
                       analysisEngine = newAnalysisEngine;
                       if (!newAnalysisEngine.isLoaded()) {
+                        flashAnalysisStarting = false;
                         if (waitFrame != null) waitFrame.setVisible(false);
                         showFlashAnalysisReuseUnavailable(newAnalysisEngine);
                       } else {
@@ -17046,6 +17055,7 @@ public class LizzieFrame extends JFrame {
                     });
               } catch (IOException e) {
                 e.printStackTrace();
+                flashAnalysisStarting = false;
                 SwingUtilities.invokeLater(
                     () -> {
                       if (waitFrame != null) waitFrame.setVisible(false);
@@ -17067,8 +17077,10 @@ public class LizzieFrame extends JFrame {
   private void startFlashAnalyzeRequestsInBackground(
       AnalysisEngine targetEngine, boolean isAllGame, boolean isAllBranches) {
     if (isWholeGameAnalysisStartingOrRunning() || targetEngine != analysisEngine) {
+      flashAnalysisStarting = false;
       return;
     }
+    flashAnalysisStarting = true;
     if (targetEngine.waitFrame == null) {
       targetEngine.waitFrame = createFlashAnalysisLoadingFrame();
       targetEngine.waitFrame.setVisible(true);
@@ -17076,15 +17088,19 @@ public class LizzieFrame extends JFrame {
     Thread requestSender =
         new Thread(
             () -> {
-              if (isWholeGameAnalysisStartingOrRunning() || targetEngine != analysisEngine) {
-                return;
+              try {
+                if (isWholeGameAnalysisStartingOrRunning() || targetEngine != analysisEngine) {
+                  return;
+                }
+                if (isAllBranches) targetEngine.startRequestAllBranches(true);
+                else
+                  targetEngine.startRequest(
+                      isAllGame ? -1 : Lizzie.config.analysisStartMove,
+                      isAllGame ? -1 : Lizzie.config.analysisEndMove,
+                      true);
+              } finally {
+                flashAnalysisStarting = false;
               }
-              if (isAllBranches) targetEngine.startRequestAllBranches(true);
-              else
-                targetEngine.startRequest(
-                    isAllGame ? -1 : Lizzie.config.analysisStartMove,
-                    isAllGame ? -1 : Lizzie.config.analysisEndMove,
-                    true);
             },
             "flash-analysis-request-sender");
     requestSender.setDaemon(true);
@@ -17231,67 +17247,7 @@ public class LizzieFrame extends JFrame {
     }
     StrengthDialog.show(
         this,
-        new StrengthDialog.Host() {
-          @Override
-          public PlayerStrengthEstimator.Report report() {
-            if (!PlayerStrengthEstimator.activeModel().isHumanSl40()) {
-              return PlayerStrengthEstimator.estimate(Lizzie.board.getHistory().getStart());
-            }
-            PlayerStrengthEstimator.Report ready = currentHumanSlReport();
-            return ready != null
-                ? ready
-                : PlayerStrengthEstimator.estimate(
-                    null, PlayerStrengthEstimator.StrengthModel.HUMANSL40);
-          }
-
-          @Override
-          public PlayerStrengthEstimator.StrengthModel activeModel() {
-            return PlayerStrengthEstimator.activeModel();
-          }
-
-          @Override
-          public void setActiveModel(PlayerStrengthEstimator.StrengthModel model) {
-            PlayerStrengthEstimator.setActiveModel(model);
-          }
-
-          @Override
-          public PlayerStrengthEstimator.StrengthModel[] models() {
-            return PlayerStrengthEstimator.selectableModels();
-          }
-
-          @Override
-          public PlayerStrengthEstimator.StrengthModel importModel(java.nio.file.Path path)
-              throws IOException {
-            return PlayerStrengthEstimator.importStrengthModel(path);
-          }
-
-          @Override
-          public HumanSlStrengthPreparation.Status preparationStatus() {
-            return humanSlStrengthPreparation.status();
-          }
-
-          @Override
-          public long preparationStamp() {
-            return humanSlPreparationStamp();
-          }
-
-          @Override
-          public boolean backgroundEnabled() {
-            return HumanSlStrengthPreparation.backgroundEnabled();
-          }
-
-          @Override
-          public void setBackgroundEnabled(boolean enabled) throws IOException {
-            HumanSlStrengthPreparation.saveBackgroundEnabled(enabled);
-            humanSlStrengthPreparation.resetBackground();
-            pollHumanSlPreparation();
-          }
-
-          @Override
-          public void prepareNow() {
-            HumanSlStrengthDialog.prepare(LizzieFrame.this);
-          }
-        },
+        new StrengthDialogHost(this, () -> Lizzie.board.getHistory().getStart()),
         new StrengthStyle(
             AppleStyleSupport.isAppleStyleEnabled(),
             Lizzie.config.useMorandiColors,
@@ -17339,37 +17295,6 @@ public class LizzieFrame extends JFrame {
     } catch (RuntimeException unsupportedGame) {
       humanSlStrengthPreparation.invalidate();
     }
-  }
-
-  private PlayerStrengthEstimator.Report currentHumanSlReport() {
-    try {
-      return humanSlStrengthPreparation.readyReport(HumanSlStrengthReuseSession.capture());
-    } catch (RuntimeException incomplete) {
-      return null;
-    }
-  }
-
-  /** Changes whenever the HumanSL preparation or the analysis of the first 210 moves does. */
-  private long humanSlPreparationStamp() {
-    long stamp = humanSlStrengthPreparation.status().revision();
-    BoardHistoryNode node = Lizzie.board.getHistory().getStart();
-    stamp = 31 * stamp + System.identityHashCode(node);
-    stamp = 31 * stamp + humanSlStrengthPreparation.contextKey().hashCode();
-    for (int i = 0; i <= 210; i++) {
-      var data = node.getData();
-      synchronized (data) {
-        stamp = 31 * stamp + data.getPlayouts();
-        stamp = 31 * stamp + Double.doubleToLongBits(data.scoreMean);
-        stamp = 31 * stamp + Double.doubleToLongBits(data.winrate);
-        stamp = 31 * stamp + java.util.Objects.hashCode(data.engineName);
-        stamp = 31 * stamp + System.identityHashCode(data.bestMoves);
-        stamp = 31 * stamp + System.identityHashCode(data.bestMovesOutOfRange);
-      }
-      var next = node.next(true);
-      if (next.isEmpty()) break;
-      node = next.get();
-    }
-    return stamp;
   }
 
   public static void redo(int movesToAdvance) {
@@ -18204,7 +18129,7 @@ public class LizzieFrame extends JFrame {
     return new AutomaticQuickAnalysisEngineAdapter(this);
   }
 
-  private boolean hasActiveAutomaticQuickAnalysis() {
+  boolean hasActiveAutomaticQuickAnalysis() {
     return automaticQuickAnalysisTask != null && automaticQuickAnalysisTask.isActive();
   }
 
