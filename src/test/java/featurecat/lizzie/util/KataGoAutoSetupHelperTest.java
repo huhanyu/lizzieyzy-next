@@ -2199,6 +2199,12 @@ public class KataGoAutoSetupHelperTest {
           }
           String relocated =
               managed.commands.replace(previousRoot.toString(), currentRoot.toString());
+          // A custom analysis command stays the user's; only one whose program is gone, which
+          // cannot start, moves to this package, keeping its options.
+          String expectedAnalysis =
+              removeOldEngine
+                  ? customAnalysis.replace(previousRoot.toString(), currentRoot.toString())
+                  : customAnalysis;
           System.setProperty("user.dir", currentRoot.toString());
           for (int restart = 0; restart < 2; restart++) {
             Lizzie.config = ConfigTestHelper.createBootstrapped(currentRoot);
@@ -2213,7 +2219,8 @@ public class KataGoAutoSetupHelperTest {
             assertTrue(entries.get(1).isDefault);
             assertTrue(entries.get(1).preload);
             assertEquals(1, Lizzie.config.uiConfig.getInt("default-engine"));
-            assertEquals(customAnalysis, Lizzie.config.analysisEngineCommand);
+            assertEquals(expectedAnalysis, Lizzie.config.analysisEngineCommand);
+            assertTrue(Lizzie.config.uiConfig.getBoolean("analysis-engine-command-customized"));
           }
         });
   }

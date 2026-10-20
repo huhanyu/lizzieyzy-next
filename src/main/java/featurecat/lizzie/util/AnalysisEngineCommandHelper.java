@@ -2,11 +2,13 @@ package featurecat.lizzie.util;
 
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.remote.RemoteComputeConfig;
 import featurecat.lizzie.gui.EngineData;
 import featurecat.lizzie.logging.LogCategories;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -276,6 +278,36 @@ public final class AnalysisEngineCommandHelper {
       copyTemplate(analysisConfig);
     }
     return analysisConfig;
+  }
+
+  /**
+   * Whether {@code command} starts a local program that is not there: its first token is a path to
+   * a file that does not exist. Program names looked up on the PATH, remote-compute commands and
+   * empty commands are not judged.
+   */
+  public static boolean isMissingLocalExecutable(String command) {
+    if (command == null
+        || command.isBlank()
+        || RemoteComputeConfig.isRemoteComputeEngineCommand(command)) {
+      return false;
+    }
+    List<String> parts = Utils.splitCommand(command);
+    if (parts.isEmpty()) {
+      return false;
+    }
+    String program = parts.get(0);
+    if (program.indexOf('/') < 0 && program.indexOf('\\') < 0) {
+      return false;
+    }
+    try {
+      Path path = Path.of(program);
+      if (!path.isAbsolute()) {
+        path = Path.of(System.getProperty("user.dir", ".")).resolve(path);
+      }
+      return !Files.exists(path);
+    } catch (InvalidPathException invalid) {
+      return false;
+    }
   }
 
   public static boolean isAnalysisCommandCustomized(

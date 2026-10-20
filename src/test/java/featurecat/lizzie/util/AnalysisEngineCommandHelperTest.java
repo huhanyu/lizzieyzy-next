@@ -128,6 +128,20 @@ class AnalysisEngineCommandHelperTest {
   }
 
   @Test
+  void missingProgramIsOnlyReportedForPathsToFilesThatAreGone() throws Exception {
+    Path present = Files.createFile(tempDir.resolve("katago"));
+    assertTrue(
+        AnalysisEngineCommandHelper.isMissingLocalExecutable(
+            "\"" + tempDir.resolve("gone") + "\" analysis -model x"));
+    assertFalse(
+        AnalysisEngineCommandHelper.isMissingLocalExecutable("\"" + present + "\" analysis"));
+    assertFalse(AnalysisEngineCommandHelper.isMissingLocalExecutable("katago analysis"));
+    assertFalse(AnalysisEngineCommandHelper.isMissingLocalExecutable("remote-compute://zhizi"));
+    assertFalse(AnalysisEngineCommandHelper.isMissingLocalExecutable(""));
+    assertFalse(AnalysisEngineCommandHelper.isMissingLocalExecutable(null));
+  }
+
+  @Test
   void rejectsRemoteSavedEngines() {
     EngineData engine = engine("Remote", "katago gtp -model model.bin.gz -config gtp.cfg");
     engine.useJavaSSH = true;

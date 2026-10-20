@@ -11,6 +11,7 @@ import featurecat.lizzie.logging.LoggingSettings;
 import featurecat.lizzie.logging.WorkDirectoryResolver;
 import featurecat.lizzie.theme.Theme;
 import featurecat.lizzie.util.AnalysisEngineCommandHelper;
+import featurecat.lizzie.util.BundledCommandRelocation;
 import featurecat.lizzie.util.BundledKataGoProfile;
 import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.LocaleFontSupport;
@@ -623,34 +624,6 @@ public class Config {
         appRoot.resolve(BUNDLED_WEIGHT_ROOT).resolve(BUNDLED_WEIGHT_NAME));
   }
 
-  private static String rebindManagedBundledCommand(String command, Path currentRoot) {
-    List<String> parts = Utils.splitCommand(command);
-    if (parts.size() < 2 || !("gtp".equals(parts.get(1)) || "analysis".equals(parts.get(1))))
-      return command;
-    Path executable = Path.of(parts.get(0));
-    Path platform = executable.getParent();
-    Path katago = platform == null ? null : platform.getParent();
-    Path engines = katago == null ? null : katago.getParent();
-    Path previousRoot = engines == null ? null : engines.getParent();
-    if (previousRoot == null
-        || previousRoot.equals(currentRoot)
-        || !"katago".equals(katago.getFileName().toString())
-        || !"engines".equals(engines.getFileName().toString())) return command;
-
-    // Auto Setup quotes these paths. Replace only whole path tokens, retaining all other options.
-    for (int i = 0; i < parts.size(); i++) {
-      if (i != 0 && !"-model".equals(parts.get(i - 1)) && !"-config".equals(parts.get(i - 1)))
-        continue;
-      Path original = Path.of(parts.get(i));
-      if (!original.isAbsolute() || !original.startsWith(previousRoot)) continue;
-      Path relocated = currentRoot.resolve(previousRoot.relativize(original));
-      if (Files.isRegularFile(relocated)) {
-        command = command.replace('"' + parts.get(i) + '"', quotePath(relocated));
-      }
-    }
-    return command;
-  }
-
   private boolean applyBundledKataGoDefaults() {
     BundledKataGoConfig bundledConfig = detectBundledKataGoConfig();
     if (bundledConfig == null) {
@@ -678,7 +651,7 @@ public class Config {
         // discovery chooses the default, even when the old portable directory still exists.
         entry.put(
             "command",
-            rebindManagedBundledCommand(entry.optString("command"), bundledConfig.appRoot));
+            BundledCommandRelocation.rebind(entry.optString("command"), bundledConfig.appRoot));
         BundledKataGoProfile.claim(entry);
         if (bundledIndex < 0) bundledIndex = i;
       } else if (BundledKataGoProfile.canMigrate(entry, bundledConfig.appRoot)) {
@@ -727,7 +700,7 @@ public class Config {
     if (!managedBundledProfile) {
       bundledCommand = bundledConfig.engineCommand;
     } else {
-      bundledCommand = rebindManagedBundledCommand(bundledCommand, bundledConfig.appRoot);
+      bundledCommand = BundledCommandRelocation.rebind(bundledCommand, bundledConfig.appRoot);
     }
     bundledEngine.put("command", bundledCommand);
     BundledKataGoProfile.claim(bundledEngine);
@@ -746,9 +719,13 @@ public class Config {
         ui.put(
             "analysis-engine-command",
             managedBundledProfile && !brokenAnalysisLauncher && !analysisCommand.isBlank()
-                ? rebindManagedBundledCommand(analysisCommand, bundledConfig.appRoot)
+                ? BundledCommandRelocation.rebind(analysisCommand, bundledConfig.appRoot)
                 : bundledConfig.analysisCommand);
         ui.put("analysis-engine-command-customized", false);
+      } else if (!analysisCommandUsesJavaSsh(leelaz) && isBundledKataGoCommand(analysisCommand)) {
+        ui.put(
+            "analysis-engine-command",
+            BundledCommandRelocation.repairGoneBundle(analysisCommand, bundledConfig.appRoot));
       }
       if (bundledConfig.transformerDefault) {
         ui.put(DEFAULT_TRANSFORMER_MIGRATION_KEY, true);

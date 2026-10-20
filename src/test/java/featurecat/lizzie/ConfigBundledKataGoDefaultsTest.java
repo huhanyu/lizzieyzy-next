@@ -828,6 +828,42 @@ public class ConfigBundledKataGoDefaultsTest {
   }
 
   @Test
+  void customizedAnalysisCommandOfAGoneBundleKeepsItsOptionsOnTheCurrentBundle() throws Exception {
+    Path currentRoot = Files.createTempDirectory("lizzie-gone-custom-analysis");
+    Path previousRoot = Files.createTempDirectory("lizzie-gone-custom-analysis-old");
+    Files.writeString(currentRoot.resolve("config.txt"), "{}");
+    createBundledKataGoAssets(currentRoot);
+    String options = " -override-config numSearchThreads=4";
+    String previousAnalysis = bundledAnalysisCommand(previousRoot) + options;
+    Files.deleteIfExists(previousRoot);
+
+    Config config = ConfigTestHelper.createForTests(currentRoot);
+    JSONObject ui =
+        new JSONObject()
+            .put("first-time-load", false)
+            .put("autoload-empty", true)
+            .put("analysis-engine-command", previousAnalysis)
+            .put("analysis-engine-command-customized", true);
+    JSONObject leelaz =
+        new JSONObject()
+            .put(
+                "engine-settings-list",
+                new JSONArray()
+                    .put(
+                        new JSONObject()
+                            .put("name", "KataGo Bundled")
+                            .put("command", bundledGtpCommand(currentRoot))
+                            .put("isDefault", true)));
+    config.config = new JSONObject().put("ui", ui).put("leelaz", leelaz);
+
+    withUserDir(currentRoot, () -> applyBundledKataGoDefaults(config));
+
+    assertEquals(
+        bundledAnalysisCommand(currentRoot) + options, ui.getString("analysis-engine-command"));
+    assertTrue(ui.getBoolean("analysis-engine-command-customized"), "the options stay the user's");
+  }
+
+  @Test
   void sshRemoteAndJavaSshCommandsAreNotReboundToCurrentPackage() throws Exception {
     Path currentRoot = Files.createTempDirectory("lizzie-copied-remote-engines");
     Files.writeString(currentRoot.resolve("config.txt"), "{}");
