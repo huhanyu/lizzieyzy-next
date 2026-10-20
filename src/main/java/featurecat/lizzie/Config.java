@@ -239,7 +239,7 @@ public class Config {
   public boolean move = true;
   public boolean moveRank = false;
   public boolean coords = true;
-  public boolean liveButton = true;
+  public boolean liveButton = false;
   public boolean badMoves = false;
   public boolean autoPlay = true;
   public boolean deleteMove = true;
@@ -1888,7 +1888,7 @@ public class Config {
     coords = uiConfig.optBoolean("coords", true);
     autoPlay = uiConfig.optBoolean("autoPlay", true);
     showQuickLinks = uiConfig.optBoolean("show-quick-links", false);
-    liveButton = uiConfig.optBoolean("liveButton", true);
+    liveButton = uiConfig.optBoolean("liveButton", false); // Sync has its own window menu.
     flashAnalyze =
         uiConfig.optBoolean("flash-analyze", showDoubleMenu && showTopToolBar ? false : true);
     badMoves = uiConfig.optBoolean("badMoves", showDoubleMenu && showTopToolBar ? false : true);
