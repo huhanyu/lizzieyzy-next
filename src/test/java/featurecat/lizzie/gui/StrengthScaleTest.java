@@ -27,6 +27,25 @@ class StrengthScaleTest {
   }
 
   @Test
+  void filledTrackIsOneUnbrokenColourPastTheFirstDan() {
+    StrengthScale scale = new StrengthScale(BUNDLE, STYLE);
+    int width = 300;
+    BufferedImage image = new BufferedImage(width, 40, BufferedImage.TYPE_INT_ARGB);
+    Graphics2D g = image.createGraphics();
+    try {
+      scale.paint(g, 0, 0, width, List.of(new StrengthScale.Marker(3.0, null)), true);
+    } finally {
+      g.dispose();
+    }
+    int y = scale.markerSize() / 2;
+    int end = (int) scale.x(3.0, width) - scale.markerSize();
+    assertTrue(end > scale.x(1.0, width) + 4, "the fill passes the 1 dan tick");
+    for (int x = STYLE.px(6); x < end; x++) {
+      assertEquals(STYLE.accent.getRGB(), image.getRGB(x, y), "pixel " + x + " of the fill");
+    }
+  }
+
+  @Test
   void rulerRisesWithTheRankAndKeepsItsEnds() {
     StrengthScale scale = new StrengthScale(BUNDLE, STYLE);
     double previous = -1;
