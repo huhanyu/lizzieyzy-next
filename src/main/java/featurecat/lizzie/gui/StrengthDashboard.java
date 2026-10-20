@@ -3,25 +3,22 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.analysis.PlayerStrengthEstimator;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.LayoutManager;
 import java.awt.Rectangle;
+import java.text.MessageFormat;
 import java.util.List;
 import java.util.ResourceBundle;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.DefaultComboBoxModel;
-import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -32,8 +29,9 @@ import javax.swing.SwingConstants;
 
 /**
  * The content of the player-strength dialog: the title, a toolbar with the view switch and the
- * model controls, the assessment, match and performance views, and a footer for the HumanSL
- * background preparation.
+ * model controls, then the assessment, match and performance views. While the figures cannot be
+ * computed yet it shows what to do instead: analyze the game, or run the human-style model's
+ * one-time calculation. HumanSL's background preparation appears only with that model.
  */
 final class StrengthDashboard extends JPanel {
   private static final long serialVersionUID = 1L;
@@ -41,6 +39,8 @@ final class StrengthDashboard extends JPanel {
   static final int MATCH = 1;
   static final int PERFORMANCE = 2;
   private static final String[] VIEWS = {"assessment", "match", "performance"};
+  private static final String ANALYSIS_CARD = "analysis";
+  private static final String HUMAN_STYLE_CARD = "humanStyle";
 
   /** What the dashboard asks of the dialog around it. */
   interface Actions {
@@ -54,6 +54,9 @@ final class StrengthDashboard extends JPanel {
     boolean setBackgroundEnabled(boolean enabled);
 
     void prepareNow();
+
+    /** Starts analyzing the whole game in the main window. */
+    void analyzeGame();
   }
 
   /** How the HumanSL preparation is doing, which colours the dot before its status. */
@@ -64,6 +67,26 @@ final class StrengthDashboard extends JPanel {
     PROBLEM
   }
 
+  /** What the dashboard shows: the figures, or what to do before they can be computed. */
+  enum Stage {
+    READY,
+    NEEDS_ANALYSIS,
+    NEEDS_HUMAN_STYLE
+  }
+
+  /**
+   * Facts about the game beyond the estimate: whether the standard model has enough analysis,
+   * whether analysis is running and how far it got, and whether the human-style weights are here.
+   */
+  record Context(
+      boolean analysisReady,
+      boolean analyzing,
+      int analyzedMoves,
+      int totalMoves,
+      boolean humanStyleInstalled) {
+    static final Context NONE = new Context(true, false, 0, 0, true);
+  }
+
   private final transient StrengthStyle style;
   private final transient ResourceBundle bundle;
   private final transient Actions actions;
@@ -72,26 +95,29 @@ final class StrengthDashboard extends JPanel {
   private final JLabel subtitle;
   private final StrengthTabs tabs;
   private final StrengthModelPicker picker;
-  private final StrengthButton importButton;
   private final StrengthButton detailsButton;
   private final CardLayout cards = new CardLayout();
   private final ViewStack views;
+  private final StrengthBanner analysisBanner;
+  private final StrengthEmptyState analysisState;
+  private final StrengthEmptyState humanStyleState;
+  private final JPanel footer;
   private final StrengthSwitch background;
-  private final StrengthButton prepare;
   private final JLabel status;
-  private final DotIcon statusDot;
+  private final transient StrengthDot statusDot;
   private transient PlayerStrengthEstimator.Report report;
-  private boolean updatingPicker;
+  private transient Context context;
+  private Stage stage;
 
   StrengthDashboard(
       PlayerStrengthEstimator.Report report,
       PlayerStrengthEstimator.StrengthModel[] models,
       boolean backgroundEnabled,
+      Context context,
       StrengthStyle style,
       ResourceBundle bundle,
       Actions actions) {
     super(new BorderLayout());
-    this.report = report;
     this.style = style;
     this.bundle = bundle;
     this.actions = actions;
@@ -116,29 +142,10 @@ final class StrengthDashboard extends JPanel {
             ASSESSMENT,
             this::showView,
             style);
-
     picker =
-        new StrengthModelPicker(models, bundle.getString("PlayerStrengthEstimate.model"), style);
+        new StrengthModelPicker(
+            models, report.model, bundle, style, actions::chooseModel, actions::importModel);
     picker.setName("strength40-selector");
-    picker.setToolTipText(bundle.getString("PlayerStrengthEstimate.model.tooltip"));
-    picker
-        .getAccessibleContext()
-        .setAccessibleName(bundle.getString("PlayerStrengthEstimate.model"));
-    picker.setSelectedItem(report.model);
-    picker.addActionListener(
-        event -> {
-          if (!updatingPicker
-              && picker.getSelectedItem() instanceof PlayerStrengthEstimator.StrengthModel model) {
-            actions.chooseModel(model);
-          }
-        });
-    importButton =
-        new StrengthButton(
-            bundle.getString("PlayerStrengthEstimate.importModel"),
-            StrengthButton.Glyph.IMPORT,
-            style);
-    importButton.setToolTipText(bundle.getString("PlayerStrengthEstimate.importModel.tooltip"));
-    importButton.addActionListener(event -> actions.importModel());
     detailsButton =
         new StrengthButton(
             bundle.getString("PlayerStrengthEstimate.detailData"),
@@ -149,7 +156,6 @@ final class StrengthDashboard extends JPanel {
     JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, style.px(8), 0));
     controls.setOpaque(false);
     controls.add(picker);
-    controls.add(importButton);
     controls.add(detailsButton);
     JPanel header = new JPanel(new HeaderLayout(title, subtitle, tabs, controls));
     header.setOpaque(false);
@@ -161,6 +167,12 @@ final class StrengthDashboard extends JPanel {
     header.add(controls);
     add(header, BorderLayout.NORTH);
 
+    analysisState = new StrengthEmptyState(StrengthEmptyState.Kind.ANALYSIS, false, bundle, style);
+    analysisState.actionButton().addActionListener(event -> actions.analyzeGame());
+    humanStyleState =
+        new StrengthEmptyState(
+            StrengthEmptyState.Kind.HUMAN_STYLE, backgroundEnabled, bundle, style);
+    humanStyleState.actionButton().addActionListener(event -> actions.prepareNow());
     views = new ViewStack(cards);
     JScrollPane scroll =
         new JScrollPane(
@@ -173,9 +185,13 @@ final class StrengthDashboard extends JPanel {
     scroll.getVerticalScrollBar().setUI(new SlimScrollBarUI(style.tertiaryText));
     scroll.getVerticalScrollBar().setOpaque(false);
     scroll.getVerticalScrollBar().setUnitIncrement(style.px(16));
-    JPanel body = new JPanel(new BorderLayout());
+    analysisBanner =
+        new StrengthBanner(bundle.getString("PlayerStrengthEstimate.empty.analysis.action"), style);
+    analysisBanner.actionButton().addActionListener(event -> actions.analyzeGame());
+    JPanel body = new JPanel(new BorderLayout(0, style.px(12)));
     body.setOpaque(false);
     body.setBorder(BorderFactory.createEmptyBorder(0, style.px(28), style.px(18), style.px(28)));
+    body.add(analysisBanner, BorderLayout.NORTH);
     body.add(scroll, BorderLayout.CENTER);
     add(body, BorderLayout.CENTER);
 
@@ -183,20 +199,18 @@ final class StrengthDashboard extends JPanel {
         new StrengthSwitch(
             bundle.getString("HumanSL40.backgroundToggle"), backgroundEnabled, style);
     background.setName("strength40-background");
-    background.addActionListener(
-        event -> background.setSelected(actions.setBackgroundEnabled(background.isSelected())));
-    statusDot = new DotIcon(style.tertiaryText, style.px(7));
+    background.setToolTipText(bundle.getString("HumanSL40.backgroundToggle.description"));
+    statusDot = new StrengthDot(style, style.px(7));
     status = new JLabel(" ", statusDot, SwingConstants.LEADING);
     status.setName("strength40-status");
     status.setIconTextGap(style.px(7));
     status.setFont(style.font(Font.PLAIN, 0));
     status.setForeground(style.secondaryText);
-    prepare =
-        new StrengthButton(
-            bundle.getString("HumanSL40.manualRun"), StrengthButton.Glyph.NONE, style);
-    prepare.setName("strength40-run");
-    prepare.addActionListener(event -> actions.prepareNow());
-    JPanel footer =
+    for (StrengthSwitch control : List.of(background, humanStyleState.backgroundSwitch())) {
+      control.addActionListener(
+          event -> showBackgroundEnabled(actions.setBackgroundEnabled(control.isSelected())));
+    }
+    footer =
         new JPanel() {
           private static final long serialVersionUID = 1L;
 
@@ -210,47 +224,121 @@ final class StrengthDashboard extends JPanel {
     footer.setOpaque(false);
     footer.setBorder(
         BorderFactory.createEmptyBorder(style.px(12), style.px(28), style.px(12), style.px(28)));
-    footer.add(background);
-    footer.add(Box.createHorizontalStrut(style.px(20)));
     footer.add(status);
     footer.add(Box.createHorizontalGlue());
-    footer.add(prepare);
-    footer.add(Box.createVerticalStrut(prepare.getPreferredSize().height));
+    footer.add(background);
+    footer.add(Box.createRigidArea(new Dimension(0, style.px(26))));
     add(footer, BorderLayout.SOUTH);
 
-    buildViews();
+    showReport(report, models, context);
   }
 
   /** Shows a new estimate in place, keeping the selected view. */
   void showReport(
-      PlayerStrengthEstimator.Report report, PlayerStrengthEstimator.StrengthModel[] models) {
+      PlayerStrengthEstimator.Report report,
+      PlayerStrengthEstimator.StrengthModel[] models,
+      Context context) {
     this.report = report;
-    updatingPicker = true;
-    try {
-      picker.setModel(new DefaultComboBoxModel<>(models));
-      picker.setSelectedItem(report.model);
-    } finally {
-      updatingPicker = false;
+    this.context = context == null ? Context.NONE : context;
+    picker.setModels(models, report.model);
+    Stage next = stageFor(report, this.context);
+    if (next == Stage.READY) {
+      buildViews();
+    } else if (stage == Stage.READY || stage == null) {
+      clearViews();
     }
-    buildViews();
+    stage = next;
+    boolean ready = stage == Stage.READY;
+    tabs.setEnabled(ready);
+    detailsButton.setEnabled(ready);
+    footer.setVisible(ready && isHumanStyle());
+    boolean analyzing = this.context.analyzing();
+    analysisState.setActionEnabled(!analyzing);
+    analysisState.showShortGame(
+        stage == Stage.NEEDS_ANALYSIS
+            && !analyzing
+            && this.context.analyzedMoves() >= this.context.totalMoves());
+    analysisState.showProgress(analysisText(), Tone.WORKING, this.context.analyzedMoves(), total());
+    humanStyleState.setDownloadNoteVisible(!this.context.humanStyleInstalled());
+    if (ready && analyzing) {
+      analysisBanner.showText(analysisText(), false);
+    } else if (ready && isPartlyAnalyzed()) {
+      analysisBanner.showText(
+          MessageFormat.format(
+              bundle.getString("PlayerStrengthEstimate.partial"),
+              this.context.analyzedMoves(),
+              total()),
+          true);
+    } else {
+      analysisBanner.showText(null, false);
+    }
+    cards.show(
+        views,
+        switch (stage) {
+          case NEEDS_ANALYSIS -> ANALYSIS_CARD;
+          case NEEDS_HUMAN_STYLE -> HUMAN_STYLE_CARD;
+          default -> VIEWS[tabs.selectedIndex()];
+        });
     revalidate();
     repaint();
   }
 
-  void showStatus(String text, Tone tone) {
-    status.setText(text == null || text.isBlank() ? " " : text);
-    statusDot.color =
-        switch (tone) {
-          case WORKING -> style.caution;
-          case READY -> style.accent;
-          case PROBLEM -> style.negative;
-          default -> style.tertiaryText;
-        };
+  /** The figures need enough analysed moves; the human-style model also its own data. */
+  static Stage stageFor(PlayerStrengthEstimator.Report report, Context context) {
+    if (report.hasEnoughData()) {
+      return Stage.READY;
+    }
+    boolean humanStyle = report.model != null && report.model.isHumanSl40();
+    return humanStyle && context.analysisReady() ? Stage.NEEDS_HUMAN_STYLE : Stage.NEEDS_ANALYSIS;
+  }
+
+  private boolean isHumanStyle() {
+    return report.model != null && report.model.isHumanSl40();
+  }
+
+  private int total() {
+    return Math.max(context.totalMoves(), context.analyzedMoves());
+  }
+
+  /** Less than nine in ten moves of the game have analysis, so the figures may be off. */
+  private boolean isPartlyAnalyzed() {
+    return context.analyzedMoves() * 10L < total() * 9L;
+  }
+
+  /** "Analyzing the whole game: 42 of 326 moves done", or null when no analysis is running. */
+  private String analysisText() {
+    if (!context.analyzing()) {
+      return null;
+    }
+    return MessageFormat.format(
+        bundle.getString("PlayerStrengthEstimate.empty.analysis.running"),
+        context.analyzedMoves(),
+        total());
+  }
+
+  /**
+   * Shows how the HumanSL preparation is doing in the footer and on the human-style page, with its
+   * progress when {@code total} moves are known.
+   */
+  void showStatus(String text, Tone tone, int done, int total) {
+    String shown = text == null || text.isBlank() ? " " : text;
+    status.setText(shown);
+    statusDot.setTone(tone);
     status.repaint();
+    humanStyleState.showProgress(text, tone, done, total);
+  }
+
+  private void showBackgroundEnabled(boolean enabled) {
+    background.setSelected(enabled);
+    humanStyleState.backgroundSwitch().setSelected(enabled);
   }
 
   PlayerStrengthEstimator.Report report() {
     return report;
+  }
+
+  Stage stage() {
+    return stage;
   }
 
   int selectedView() {
@@ -258,7 +346,7 @@ final class StrengthDashboard extends JPanel {
   }
 
   boolean isPickerOpen() {
-    return picker.isPopupVisible();
+    return picker.isMenuOpen();
   }
 
   StrengthTabs tabs() {
@@ -269,20 +357,29 @@ final class StrengthDashboard extends JPanel {
     return picker;
   }
 
-  StrengthButton importButton() {
-    return importButton;
-  }
-
   StrengthButton detailsButton() {
     return detailsButton;
   }
 
+  /** The background switch in the footer, shown with the human-style figures. */
   StrengthSwitch backgroundSwitch() {
     return background;
   }
 
-  StrengthButton prepareButton() {
-    return prepare;
+  JPanel footer() {
+    return footer;
+  }
+
+  StrengthEmptyState analysisState() {
+    return analysisState;
+  }
+
+  StrengthEmptyState humanStyleState() {
+    return humanStyleState;
+  }
+
+  StrengthBanner analysisBanner() {
+    return analysisBanner;
   }
 
   JLabel subtitle() {
@@ -309,16 +406,22 @@ final class StrengthDashboard extends JPanel {
 
   private void showView(int view) {
     subtitle.setText(subtitleText(view));
-    cards.show(views, VIEWS[view]);
+    if (stage == Stage.READY) {
+      cards.show(views, VIEWS[view]);
+    }
+  }
+
+  private void clearViews() {
+    views.removeAll();
+    views.add(analysisState, ANALYSIS_CARD);
+    views.add(humanStyleState, HUMAN_STYLE_CARD);
   }
 
   private void buildViews() {
-    views.removeAll();
+    clearViews();
     views.add(assessmentView(), VIEWS[ASSESSMENT]);
     views.add(matchView(), VIEWS[MATCH]);
     views.add(performanceView(), VIEWS[PERFORMANCE]);
-    cards.show(views, VIEWS[tabs.selectedIndex()]);
-    prepare.setVisible(report.model != null && report.model.isHumanSl40());
   }
 
   private static JPanel column(int gap) {
@@ -343,15 +446,16 @@ final class StrengthDashboard extends JPanel {
             new StrengthRankCard(whiteName, false, report.white, bundle, style)),
         BorderLayout.NORTH);
     view.add(new StrengthCompareCard(compareRows(), style), BorderLayout.CENTER);
-    boolean enough = report.hasEnoughData();
     String note =
         report.model.isHumanSl40()
-            ? enough ? "HumanSL40.reviewNote" : "HumanSL40.unavailable"
-            : enough
-                ? "PlayerStrengthEstimate.reviewOnlyNote"
-                : "PlayerStrengthEstimate.needMoreData";
-    view.add(new StrengthNote(bundle.getString(note), !enough, style), BorderLayout.SOUTH);
+            ? "HumanSL40.reviewNote"
+            : "PlayerStrengthEstimate.reviewOnlyNote";
+    view.add(new StrengthNote(bundle.getString(note), false, style), BorderLayout.SOUTH);
     return view;
+  }
+
+  private String help(String key) {
+    return bundle.getString("PlayerStrengthEstimate.help." + key);
   }
 
   private List<StrengthCompareCard.Row> compareRows() {
@@ -362,6 +466,7 @@ final class StrengthDashboard extends JPanel {
     return List.of(
         new StrengthCompareCard.Row(
             bundle.getString("PlayerStrengthEstimate.firstChoice"),
+            help("firstChoice"),
             blackKnown ? StrengthText.precisePercent(black.firstChoiceRate) : "-",
             whiteKnown ? StrengthText.precisePercent(white.firstChoiceRate) : "-",
             blackKnown ? black.firstChoiceRate : Double.NaN,
@@ -369,6 +474,7 @@ final class StrengthDashboard extends JPanel {
             1),
         new StrengthCompareCard.Row(
             bundle.getString("PlayerStrengthEstimate.goodMoveRate"),
+            help("goodMoveRate"),
             blackKnown ? StrengthText.precisePercent(black.moveRankGoodMoveRate) : "-",
             whiteKnown ? StrengthText.precisePercent(white.moveRankGoodMoveRate) : "-",
             blackKnown ? black.moveRankGoodMoveRate : Double.NaN,
@@ -376,6 +482,7 @@ final class StrengthDashboard extends JPanel {
             1),
         new StrengthCompareCard.Row(
             bundle.getString("PlayerStrengthEstimate.avgScoreLoss"),
+            help("avgScoreLoss"),
             blackKnown ? black.averageScoreLossText() : "-",
             whiteKnown ? white.averageScoreLossText() : "-",
             blackKnown && black.scoreSampleCount > 0 ? black.averageScoreLoss : Double.NaN,
@@ -383,6 +490,7 @@ final class StrengthDashboard extends JPanel {
             -1),
         new StrengthCompareCard.Row(
             bundle.getString("PlayerStrengthEstimate.weightedScoreLoss"),
+            help("weightedScoreLoss"),
             blackKnown ? black.weightedScoreLossText() : "-",
             whiteKnown ? white.weightedScoreLossText() : "-",
             blackKnown ? black.weightedScoreLoss : Double.NaN,
@@ -390,6 +498,7 @@ final class StrengthDashboard extends JPanel {
             -1),
         new StrengthCompareCard.Row(
             bundle.getString("PlayerStrengthEstimate.moves"),
+            help("moves"),
             String.valueOf(black == null ? 0 : black.sampleCount),
             String.valueOf(white == null ? 0 : white.sampleCount),
             black == null ? 0 : black.sampleCount,
@@ -552,37 +661,6 @@ final class StrengthDashboard extends JPanel {
             controlSize.height);
         ((FlowLayout) ((JPanel) controls).getLayout()).setAlignment(FlowLayout.RIGHT);
       }
-    }
-  }
-
-  /** The coloured dot before the HumanSL status. */
-  private static final class DotIcon implements Icon {
-    private Color color;
-    private final int size;
-
-    private DotIcon(Color color, int size) {
-      this.color = color;
-      this.size = size;
-    }
-
-    @Override
-    public void paintIcon(Component component, Graphics graphics, int x, int y) {
-      Graphics2D g = StrengthStyle.smooth(graphics);
-      try {
-        StrengthPaint.dot(g, color, x + size / 2.0, y + size / 2.0, size);
-      } finally {
-        g.dispose();
-      }
-    }
-
-    @Override
-    public int getIconWidth() {
-      return size;
-    }
-
-    @Override
-    public int getIconHeight() {
-      return size;
     }
   }
 }

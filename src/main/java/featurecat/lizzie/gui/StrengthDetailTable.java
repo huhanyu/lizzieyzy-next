@@ -6,12 +6,14 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Line2D;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ResourceBundle;
 import java.util.function.Function;
 import javax.swing.JPanel;
+import javax.swing.JToolTip;
 
 /**
  * Every figure of the estimate, one row per figure with Black's and White's values side by side.
@@ -32,65 +34,83 @@ final class StrengthDetailTable extends JPanel {
     this.style = style;
     this.blackName = blackName;
     this.whiteName = whiteName;
+    String help = "PlayerStrengthEstimate.help.";
     add(
         report,
         bundle,
-        "PlayerStrengthEstimate.match.strength",
+        "PlayerStrengthEstimate.detail.band",
+        help + "band",
         side -> StrengthText.band(side.strengthBand, bundle));
     add(
         report,
         bundle,
-        "PlayerStrengthEstimate.rank.scale",
+        "PlayerStrengthEstimate.detail.rank",
+        help + "rank",
         side -> StrengthText.rank(side, bundle));
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.confidence",
+        help + "confidence",
         side -> StrengthText.confidence(side.confidence, bundle));
-    add(report, bundle, "PlayerStrengthEstimate.moves", side -> String.valueOf(side.sampleCount));
+    add(
+        report,
+        bundle,
+        "PlayerStrengthEstimate.moves",
+        help + "moves",
+        side -> String.valueOf(side.sampleCount));
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.firstChoice",
+        help + "firstChoice",
         side -> StrengthText.precisePercent(side.firstChoiceRate));
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.goodMoveRate",
+        help + "goodMoveRate",
         side -> StrengthText.precisePercent(side.moveRankGoodMoveRate));
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.weightedScoreLoss",
+        help + "weightedScoreLoss",
         PlayerStrengthEstimator.SideReport::weightedScoreLossText);
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.match.avgScoreLoss",
+        help + "avgScoreLoss",
         PlayerStrengthEstimator.SideReport::averageScoreLossText);
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.mistakeRate",
+        help + "mistakeRate",
         side -> StrengthText.precisePercent(side.mistakeRate));
     add(
         report,
         bundle,
         "PlayerStrengthEstimate.match.overallMatch",
+        help + "overallMatch",
         PlayerStrengthEstimator.SideReport::matchRateText);
     if (report.model.isHumanSl40()) {
       add(
           report,
           bundle,
           "HumanSL40.difficulty",
+          null,
           PlayerStrengthEstimator.SideReport::difficultyText);
       add(
           report,
           bundle,
           "HumanSL40.coverage",
+          null,
           PlayerStrengthEstimator.SideReport::humanSlCoverageText);
     }
     setOpaque(false);
+    setToolTipText("");
     StringBuilder description = new StringBuilder();
     for (String[] row : rows) {
       description
@@ -108,9 +128,15 @@ final class StrengthDetailTable extends JPanel {
       PlayerStrengthEstimator.Report report,
       ResourceBundle bundle,
       String key,
+      String helpKey,
       Function<PlayerStrengthEstimator.SideReport, String> value) {
     rows.add(
-        new String[] {bundle.getString(key), text(report.black, value), text(report.white, value)});
+        new String[] {
+          bundle.getString(key),
+          text(report.black, value),
+          text(report.white, value),
+          helpKey == null ? null : bundle.getString(helpKey)
+        });
   }
 
   private static String text(
@@ -123,9 +149,27 @@ final class StrengthDetailTable extends JPanel {
     return text == null || text.isBlank() ? "-" : text;
   }
 
-  /** The label, Black's value and White's value of each row. */
+  /** The label, Black's value, White's value and the explanation of each row. */
   List<String[]> rows() {
     return rows;
+  }
+
+  /** The explanation of the row under the pointer. */
+  @Override
+  public String getToolTipText(MouseEvent event) {
+    int index = Math.floorDiv(event.getY() - padding() - headerHeight(), rowHeight());
+    if (index < 0 || index >= rows.size() || rows.get(index)[3] == null) {
+      return null;
+    }
+    return StrengthText.wrappedTooltip(
+        rows.get(index)[3], getFontMetrics(style.font(Font.PLAIN, 0)), style.px(300));
+  }
+
+  @Override
+  public JToolTip createToolTip() {
+    JToolTip tip = super.createToolTip();
+    tip.setFont(style.font(Font.PLAIN, 0));
+    return tip;
   }
 
   private int padding() {
@@ -180,16 +224,26 @@ final class StrengthDetailTable extends JPanel {
             top
                 + (rowHeight() - valueMetrics.getAscent() - valueMetrics.getDescent()) / 2
                 + valueMetrics.getAscent();
-        StrengthPaint.text(
-            g,
-            row[0],
-            label,
-            label.getSize() - 3,
-            style.secondaryText,
-            pad,
-            baseline,
-            labelWidth - style.px(12),
-            StrengthPaint.LEFT);
+        int labelDrawn =
+            StrengthPaint.text(
+                g,
+                row[0],
+                label,
+                label.getSize() - 3,
+                style.secondaryText,
+                pad,
+                baseline,
+                labelWidth - style.px(32),
+                StrengthPaint.LEFT);
+        if (row[3] != null) {
+          int mark = style.px(13);
+          StrengthPaint.infoMark(
+              g,
+              style.tertiaryText,
+              pad + labelDrawn + style.px(6),
+              top + (rowHeight() - mark) / 2.0,
+              mark);
+        }
         StrengthPaint.text(
             g,
             row[1],

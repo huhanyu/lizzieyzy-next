@@ -1,6 +1,7 @@
 package featurecat.lizzie.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,6 +29,11 @@ class StrengthDialogTest {
     long stamp;
     int reports;
     int preparations;
+    int analyses;
+    boolean analyzing;
+    boolean analysisReady = true;
+    int analyzed = 326;
+    int total = 326;
     final List<PlayerStrengthEstimator.StrengthModel> activated = new ArrayList<>();
 
     FakeHost(PlayerStrengthEstimator.Report report) {
@@ -86,12 +92,40 @@ class StrengthDialogTest {
     public void prepareNow() {
       preparations++;
     }
+
+    @Override
+    public boolean analyzing() {
+      return analyzing;
+    }
+
+    /** Starts the analysis at once, as the main window does when an engine is ready. */
+    @Override
+    public void analyzeGame() {
+      analyses++;
+      analyzing = true;
+    }
+
+    @Override
+    public StrengthDialog.Progress analysisProgress() {
+      return new StrengthDialog.Progress(analyzed, total);
+    }
+
+    @Override
+    public boolean analysisReady() {
+      return analysisReady;
+    }
+
+    @Override
+    public boolean humanStyleInstalled() {
+      return true;
+    }
   }
 
   @Test
   void humanSlEstimateIsRebuiltOnlyWhenItsDataChanges() throws Exception {
     FakeHost host = new FakeHost(StrengthFixtures.emptyReport());
-    PlayerStrengthEstimator.Report ready = StrengthFixtures.twoMoveReport();
+    PlayerStrengthEstimator.Report ready =
+        StrengthFixtures.readyReport(PlayerStrengthEstimator.StrengthModel.HUMANSL40);
     SwingUtilities.invokeAndWait(
         () -> {
           StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
@@ -112,7 +146,7 @@ class StrengthDialogTest {
 
   @Test
   void otherModelsAreNotRebuiltByTheTimer() throws Exception {
-    FakeHost host = new FakeHost(StrengthFixtures.twoMoveReport());
+    FakeHost host = new FakeHost(StrengthFixtures.readyReport());
     host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
     SwingUtilities.invokeAndWait(
         () -> {
@@ -125,7 +159,7 @@ class StrengthDialogTest {
 
   @Test
   void statusFollowsThePreparationOnEveryTick() throws Exception {
-    FakeHost host = new FakeHost(StrengthFixtures.twoMoveReport());
+    FakeHost host = new FakeHost(StrengthFixtures.readyReport());
     host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
     SwingUtilities.invokeAndWait(
         () -> {
@@ -142,7 +176,7 @@ class StrengthDialogTest {
 
   @Test
   void choosingAModelActivatesItAndShowsItsEstimate() throws Exception {
-    FakeHost host = new FakeHost(StrengthFixtures.twoMoveReport());
+    FakeHost host = new FakeHost(StrengthFixtures.readyReport());
     host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
     PlayerStrengthEstimator.Report humanSl = StrengthFixtures.emptyReport();
     SwingUtilities.invokeAndWait(
@@ -164,7 +198,8 @@ class StrengthDialogTest {
   @Test
   void preparingNowShowsTheNewEstimate() throws Exception {
     FakeHost host = new FakeHost(StrengthFixtures.emptyReport());
-    PlayerStrengthEstimator.Report ready = StrengthFixtures.twoMoveReport();
+    PlayerStrengthEstimator.Report ready =
+        StrengthFixtures.readyReport(PlayerStrengthEstimator.StrengthModel.HUMANSL40);
     SwingUtilities.invokeAndWait(
         () -> {
           StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
@@ -172,6 +207,96 @@ class StrengthDialogTest {
           dialog.prepareNow();
           assertEquals(1, host.preparations);
           assertSame(ready, dialog.dashboard().report());
+        });
+  }
+
+  @Test
+  void analyzeButtonStartsTheAnalysisAndShowsItRunning() throws Exception {
+    FakeHost host =
+        new FakeHost(
+            StrengthFixtures.emptyReport(PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN));
+    host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
+    host.analysisReady = false;
+    host.analyzed = 0;
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
+          StrengthEmptyState state = dialog.dashboard().analysisState();
+          assertEquals(StrengthDashboard.Stage.NEEDS_ANALYSIS, dialog.dashboard().stage());
+          assertTrue(state.actionButton().isEnabled());
+          state.actionButton().doClick(0);
+          assertEquals(1, host.analyses);
+          assertFalse(state.actionButton().isEnabled(), "the analysis is running");
+          assertTrue(state.status().isVisible());
+        });
+  }
+
+  @Test
+  void analysisStartedElsewhereShowsAtOnce() throws Exception {
+    FakeHost host =
+        new FakeHost(
+            StrengthFixtures.emptyReport(PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN));
+    host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
+    host.analysisReady = false;
+    host.analyzed = 0;
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
+          dialog.refresh();
+          int reports = host.reports;
+          host.analyzing = true;
+          dialog.refresh();
+          assertEquals(reports + 1, host.reports, "no move is analysed yet, but it has started");
+          assertFalse(dialog.dashboard().analysisState().actionButton().isEnabled());
+        });
+  }
+
+  @Test
+  void runningAnalysisRebuildsShownFiguresEveryFewTicksAndOnceAtTheEnd() throws Exception {
+    FakeHost host = new FakeHost(StrengthFixtures.readyReport());
+    host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
+    host.analyzing = true;
+    host.analyzed = 100;
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
+          assertEquals(1, host.reports);
+          for (int tick = 1; tick <= 3; tick++) {
+            host.analyzed += 10;
+            dialog.refresh();
+          }
+          assertEquals(2, host.reports, "rebuilt on the third tick only");
+          assertTrue(dialog.dashboard().analysisBanner().text().contains("130"));
+
+          host.analyzing = false;
+          host.analyzed = 326;
+          dialog.refresh();
+          assertEquals(3, host.reports, "the finished analysis shows at once");
+          assertFalse(dialog.dashboard().analysisBanner().isVisible());
+          dialog.refresh();
+          assertEquals(3, host.reports, "nothing runs any more");
+        });
+  }
+
+  @Test
+  void figuresAppearOnceTheAnalysisHasEnoughMoves() throws Exception {
+    FakeHost host =
+        new FakeHost(
+            StrengthFixtures.emptyReport(PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN));
+    host.active = PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN;
+    host.analysisReady = false;
+    host.analyzing = true;
+    host.analyzed = 2;
+    PlayerStrengthEstimator.Report ready = StrengthFixtures.readyReport();
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDialog dialog = new StrengthDialog(host, STYLE, BUNDLE);
+          host.next = ready;
+          host.analysisReady = true;
+          host.analyzed = 40;
+          dialog.refresh();
+          assertEquals(StrengthDashboard.Stage.READY, dialog.dashboard().stage());
+          assertTrue(dialog.dashboard().analysisBanner().isVisible(), "the analysis goes on");
         });
   }
 
@@ -210,7 +335,7 @@ class StrengthDialogTest {
           StrengthDetailTable rows = (StrengthDetailTable) table.getComponent(0);
           assertEquals(10, rows.rows().size());
           assertEquals(
-              BUNDLE.getString("PlayerStrengthEstimate.match.strength"), rows.rows().get(0)[0]);
+              BUNDLE.getString("PlayerStrengthEstimate.detail.band"), rows.rows().get(0)[0]);
           var chart = StrengthDialog.detailPanel(report, true, STYLE, BUNDLE);
           assertTrue(chart.getComponent(0) instanceof StrengthSegmentChart);
         });

@@ -1,6 +1,8 @@
 package featurecat.lizzie.gui;
 
 import featurecat.lizzie.analysis.PlayerStrengthEstimator;
+import java.awt.FontMetrics;
+import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.regex.Matcher;
@@ -111,6 +113,40 @@ final class StrengthText {
     return name == null || name.isBlank() ? "-" : name.trim();
   }
 
+  /** The everyday name of a model: "Standard" and "Human style" for the bundled ones. */
+  static String modelTitle(PlayerStrengthEstimator.StrengthModel model, ResourceBundle bundle) {
+    if (PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN.equals(model)) {
+      return bundle.getString("PlayerStrengthEstimate.model.standard");
+    }
+    if (model != null && model.isHumanSl40()) {
+      return bundle.getString("PlayerStrengthEstimate.model.humanStyle");
+    }
+    return modelName(model);
+  }
+
+  /** One sentence on what a model looks at and what it costs. */
+  static String modelDescription(
+      PlayerStrengthEstimator.StrengthModel model, ResourceBundle bundle) {
+    if (PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN.equals(model)) {
+      return bundle.getString("PlayerStrengthEstimate.model.standard.description");
+    }
+    if (model != null && model.isHumanSl40()) {
+      return bundle.getString("PlayerStrengthEstimate.model.humanStyle.description");
+    }
+    return bundle.getString("PlayerStrengthEstimate.model.imported.description");
+  }
+
+  /** "Recommended" for the standard model, "Experimental" for human style, else empty. */
+  static String modelBadge(PlayerStrengthEstimator.StrengthModel model, ResourceBundle bundle) {
+    if (PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN.equals(model)) {
+      return bundle.getString("PlayerStrengthEstimate.model.recommended");
+    }
+    if (model != null && model.isHumanSl40()) {
+      return bundle.getString("PlayerStrengthEstimate.model.experimental");
+    }
+    return "";
+  }
+
   /** The rank-scale tier of {@code rankValue}: 0 amateur, 1 professional, 2 top pro, 3 AI. */
   static int tier(double rankValue) {
     if (!Double.isFinite(rankValue) || rankValue < 10.0) {
@@ -145,10 +181,19 @@ final class StrengthText {
     return text.toString();
   }
 
-  /** The rank of {@code report} followed by the whole rank scale, one tier per line. */
-  static String scaleTooltip(PlayerStrengthEstimator.SideReport report, ResourceBundle bundle) {
+  /**
+   * What the estimated rank means, then the rank of {@code report} and the whole rank scale, one
+   * tier per line.
+   */
+  static String scaleTooltip(
+      PlayerStrengthEstimator.SideReport report,
+      ResourceBundle bundle,
+      FontMetrics metrics,
+      int width) {
     StringBuilder html =
         new StringBuilder("<html>")
+            .append(wrapped(bundle.getString("PlayerStrengthEstimate.help.rank"), metrics, width))
+            .append("<br><br>")
             .append(escape(bundle.getString("PlayerStrengthEstimate.rank.scale")))
             .append(": ")
             .append(escape(rank(report, bundle)));
@@ -163,5 +208,23 @@ final class StrengthText {
     return value == null
         ? ""
         : value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  }
+
+  /**
+   * A tooltip that shows {@code text} broken into lines about {@code width} wide, so that a long
+   * explanation does not become one very wide line.
+   */
+  static String wrappedTooltip(String text, FontMetrics metrics, int width) {
+    return "<html>" + wrapped(text, metrics, width) + "</html>";
+  }
+
+  /** {@code text} in lines no wider than {@code width}, escaped and joined by line breaks. */
+  private static String wrapped(String text, FontMetrics metrics, int width) {
+    StringBuilder html = new StringBuilder();
+    List<String> lines = StrengthPaint.wrap(text, metrics, width, 6);
+    for (int i = 0; i < lines.size(); i++) {
+      html.append(i > 0 ? "<br>" : "").append(escape(lines.get(i)));
+    }
+    return html.toString();
   }
 }

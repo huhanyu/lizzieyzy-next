@@ -212,17 +212,31 @@ final class StrengthFixtures {
         PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN);
   }
 
+  /**
+   * Three moves a side, just enough for the dialog to show the figures: Black plays the AI's first
+   * choice each time, White a good second choice.
+   */
+  static PlayerStrengthEstimator.Report readyReport(PlayerStrengthEstimator.StrengthModel model)
+      throws Exception {
+    return report(
+        side(moves(Stone.BLACK, 1, 3, PlayerStrengthEstimator.MoveCategory.EXCELLENT), 1.0, 1.0),
+        side(moves(Stone.WHITE, 2, 3, PlayerStrengthEstimator.MoveCategory.GREAT), 0.0, 1.0),
+        model);
+  }
+
+  static PlayerStrengthEstimator.Report readyReport() throws Exception {
+    return readyReport(PlayerStrengthEstimator.StrengthModel.XGBOOST20TUN);
+  }
+
   /** A report of a game with no analysed moves, as HumanSL shows before its data is ready. */
   static PlayerStrengthEstimator.Report emptyReport() throws Exception {
+    return emptyReport(PlayerStrengthEstimator.StrengthModel.HUMANSL40);
+  }
+
+  static PlayerStrengthEstimator.Report emptyReport(PlayerStrengthEstimator.StrengthModel model)
+      throws Exception {
     PlayerStrengthEstimator.SideReport empty =
-        side(
-            List.of(),
-            PlayerStrengthEstimator.StrengthModel.HUMANSL40,
-            Double.NaN,
-            0,
-            0,
-            "-",
-            PlayerStrengthEstimator.Confidence.LOW);
-    return report(empty, empty, PlayerStrengthEstimator.StrengthModel.HUMANSL40);
+        side(List.of(), model, Double.NaN, 0, 0, "-", PlayerStrengthEstimator.Confidence.LOW);
+    return report(empty, empty, model);
   }
 }

@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -64,6 +65,14 @@ final class StrengthTabs extends JPanel {
     return segments.get(index);
   }
 
+  @Override
+  public void setEnabled(boolean enabled) {
+    super.setEnabled(enabled);
+    for (JToggleButton segment : segments) {
+      segment.setEnabled(enabled);
+    }
+  }
+
   private void bindArrow(JToggleButton segment, String key, int target) {
     if (target < 0 || target >= segments.size()) {
       return;
@@ -119,6 +128,22 @@ final class StrengthTabs extends JPanel {
     int width = segments.isEmpty() ? 0 : (getWidth() - padding * 2) / segments.size();
     for (int i = 0; i < segments.size(); i++) {
       segments.get(i).setBounds(padding + i * width, padding, width, getHeight() - padding * 2);
+    }
+  }
+
+  /** Fades the whole control while the views cannot be shown. */
+  @Override
+  public void paint(Graphics graphics) {
+    if (isEnabled()) {
+      super.paint(graphics);
+      return;
+    }
+    Graphics2D g = (Graphics2D) graphics.create();
+    try {
+      g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
+      super.paint(g);
+    } finally {
+      g.dispose();
     }
   }
 
@@ -178,7 +203,10 @@ final class StrengthTabs extends JPanel {
         }
         FontMetrics metrics = g.getFontMetrics(getFont());
         g.setFont(getFont());
-        g.setColor(isSelected() || getModel().isRollover() ? style.text : style.secondaryText);
+        g.setColor(
+            !isEnabled()
+                ? style.tertiaryText
+                : isSelected() || getModel().isRollover() ? style.text : style.secondaryText);
         String text = StrengthPaint.ellipsize(getText(), metrics, getWidth() - style.px(12));
         int baseline =
             (getHeight() - metrics.getAscent() - metrics.getDescent()) / 2 + metrics.getAscent();

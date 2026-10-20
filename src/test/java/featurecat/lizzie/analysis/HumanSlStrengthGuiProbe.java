@@ -16,7 +16,6 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
-import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -84,16 +83,42 @@ public final class HumanSlStrengthGuiProbe {
     }
   }
 
+  /** What the strength dashboard in {@code window} answers to its accessor {@code name}. */
+  private static Object dashboardValue(Window window, String name) {
+    Component dashboard =
+        find(
+            window, Component.class, c -> c.getClass().getSimpleName().equals("StrengthDashboard"));
+    if (dashboard == null) return null;
+    try {
+      var accessor = dashboard.getClass().getDeclaredMethod(name);
+      accessor.setAccessible(true);
+      return accessor.invoke(dashboard);
+    } catch (ReflectiveOperationException error) {
+      throw new RuntimeException(error);
+    }
+  }
+
+  /** Chooses {@code model} in the model menu of the strength dashboard in {@code window}. */
+  private static void chooseModel(Window window, PlayerStrengthEstimator.StrengthModel model) {
+    Component picker =
+        find(window, Component.class, c -> "strength40-selector".equals(c.getName()));
+    try {
+      var choose =
+          picker
+              .getClass()
+              .getDeclaredMethod("choose", PlayerStrengthEstimator.StrengthModel.class);
+      choose.setAccessible(true);
+      choose.invoke(picker, model);
+    } catch (ReflectiveOperationException error) {
+      throw new RuntimeException(error);
+    }
+  }
+
   private static Window dashboard() {
     for (Window window : Window.getWindows())
       if (window.isVisible()
-          && find(
-                  window,
-                  JComboBox.class,
-                  c ->
-                      c.getItemCount() > 0
-                          && c.getItemAt(0) instanceof PlayerStrengthEstimator.StrengthModel)
-              != null) return window;
+          && find(window, Component.class, c -> "strength40-selector".equals(c.getName())) != null)
+        return window;
     return null;
   }
 
@@ -162,18 +187,7 @@ public final class HumanSlStrengthGuiProbe {
                 screenshot(original, work.resolve("dashboard-before.png"));
                 Window selected = original;
                 SwingUtilities.invokeLater(
-                    () -> {
-                      @SuppressWarnings("unchecked")
-                      JComboBox<PlayerStrengthEstimator.StrengthModel> combo =
-                          find(
-                              selected,
-                              JComboBox.class,
-                              c ->
-                                  c.getItemCount() > 0
-                                      && c.getItemAt(0)
-                                          instanceof PlayerStrengthEstimator.StrengthModel);
-                      combo.setSelectedItem(PlayerStrengthEstimator.StrengthModel.HUMANSL40);
-                    });
+                    () -> chooseModel(selected, PlayerStrengthEstimator.StrengthModel.HUMANSL40));
                 // The dashboard shows the new model in place, in the same window.
                 AtomicReference<Boolean> switched = new AtomicReference<>(false);
                 while (!switched.get()) {
@@ -185,15 +199,9 @@ public final class HumanSlStrengthGuiProbe {
                               && find(window, JTextField.class, f -> true) != null)
                             throw new AssertionError("Unexpected model settings");
                         }
-                        JComboBox<?> combo =
-                            find(
-                                selected,
-                                JComboBox.class,
-                                c ->
-                                    PlayerStrengthEstimator.StrengthModel.HUMANSL40.equals(
-                                        c.getSelectedItem()));
-                        var report = cardReport(selected);
-                        switched.set(combo != null && report != null && report.model.isHumanSl40());
+                        var report =
+                            (PlayerStrengthEstimator.Report) dashboardValue(selected, "report");
+                        switched.set(report != null && report.model.isHumanSl40());
                       });
                   if (System.nanoTime() > deadline)
                     throw new IllegalStateException("Assessment timeout");
@@ -211,7 +219,7 @@ public final class HumanSlStrengthGuiProbe {
                           find(
                               pending,
                               javax.swing.JCheckBox.class,
-                              c -> "strength40-background".equals(c.getName()));
+                              c -> "strength40-background".equals(c.getName()) && c.isShowing());
                       if (background == null || background.isSelected())
                         throw new AssertionError("Background computation must require opt-in");
                       background.doClick();
@@ -227,7 +235,7 @@ public final class HumanSlStrengthGuiProbe {
                         find(
                                 pending,
                                 AbstractButton.class,
-                                b -> "strength40-run".equals(b.getName()))
+                                b -> "strength40-run".equals(b.getName()) && b.isShowing())
                             .doClick());
                 AtomicReference<Boolean> prepared = new AtomicReference<>(false);
                 while (!prepared.get()) {
@@ -306,11 +314,15 @@ public final class HumanSlStrengthGuiProbe {
                 while (!cleared.get()) {
                   SwingUtilities.invokeAndWait(
                       () -> {
-                        var report = cardReport(finalDashboard);
+                        var report =
+                            (PlayerStrengthEstimator.Report)
+                                dashboardValue(finalDashboard, "report");
                         cleared.set(
                             report != null
-                                && !report.hasSamples()
-                                && Double.isNaN(report.rankValue));
+                                && !report.black.hasSamples()
+                                && "NEEDS_ANALYSIS"
+                                    .equals(
+                                        String.valueOf(dashboardValue(finalDashboard, "stage"))));
                       });
                   if (System.nanoTime() > deadline)
                     throw new IllegalStateException(

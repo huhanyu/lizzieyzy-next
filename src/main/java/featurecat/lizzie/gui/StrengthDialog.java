@@ -31,6 +31,12 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 final class StrengthDialog implements StrengthDashboard.Actions {
   private static final int REFRESH_MILLIS = 700;
 
+  /** While analysis runs, shown figures are rebuilt on every third tick at most. */
+  private static final int REBUILD_TICKS_WHILE_ANALYZING = 3;
+
+  /** Main-line moves that have analysis, and all main-line moves. */
+  record Progress(int analyzed, int total) {}
+
   /** What the dialog needs from the main window. */
   interface Host {
     /** The estimate of the current game with the active model. */
@@ -55,6 +61,21 @@ final class StrengthDialog implements StrengthDashboard.Actions {
 
     /** Prepares the HumanSL data of the whole game now, showing its own progress. */
     void prepareNow();
+
+    /** Whether whole-game, flash or automatic analysis is running in the main window. */
+    boolean analyzing();
+
+    /** Starts analyzing the whole game in the main window. */
+    void analyzeGame();
+
+    /** How many moves of the main line have analysis, of how many. */
+    Progress analysisProgress();
+
+    /** Whether the standard model has enough analysed moves to estimate the game. */
+    boolean analysisReady();
+
+    /** Whether the human-style (HumanSL) weights are installed on this computer. */
+    boolean humanStyleInstalled();
   }
 
   private final Host host;
@@ -63,15 +84,35 @@ final class StrengthDialog implements StrengthDashboard.Actions {
   private final StrengthDashboard dashboard;
   private Component window;
   private long shownStamp = Long.MIN_VALUE;
+  private boolean humanStyleInstalled;
+  private boolean wasAnalyzing;
+  private int quietTicks;
 
   StrengthDialog(Host host, StrengthStyle style, ResourceBundle bundle) {
     this.host = host;
     this.style = style;
     this.bundle = bundle;
+    humanStyleInstalled = host.humanStyleInstalled();
+    wasAnalyzing = host.analyzing();
     dashboard =
         new StrengthDashboard(
-            host.report(), host.models(), host.backgroundEnabled(), style, bundle, this);
+            host.report(),
+            host.models(),
+            host.backgroundEnabled(),
+            context(host.analysisProgress()),
+            style,
+            bundle,
+            this);
     showStatus();
+  }
+
+  private StrengthDashboard.Context context(Progress progress) {
+    return new StrengthDashboard.Context(
+        host.analysisReady(),
+        host.analyzing(),
+        progress.analyzed(),
+        progress.total(),
+        humanStyleInstalled);
   }
 
   /** Opens the dialog over {@code owner} and returns when it is closed. */
@@ -113,28 +154,44 @@ final class StrengthDialog implements StrengthDashboard.Actions {
   }
 
   /**
-   * Updates the HumanSL status and, while the HumanSL model is active, shows a new estimate once
-   * the data behind it has changed. The model menu is left alone while it is open.
+   * Updates the HumanSL status and shows a new estimate once the analysis or the HumanSL data
+   * behind it has changed: always while the human-style model is chosen, the figures are not ready
+   * or analysis is running, and as soon as analysis starts or finishes. While analysis runs, shown
+   * figures are rebuilt every few ticks rather than on every one. The model menu is left alone
+   * while it is open.
    */
   void refresh() {
     if (window != null && !window.isDisplayable()) {
       return;
     }
     showStatus();
-    if (!host.activeModel().isHumanSl40() || dashboard.isPickerOpen()) {
+    if (dashboard.isPickerOpen()) {
       return;
     }
-    long stamp = host.preparationStamp();
-    if (stamp == shownStamp) {
+    boolean analyzing = host.analyzing();
+    boolean switched = analyzing != wasAnalyzing;
+    wasAnalyzing = analyzing;
+    boolean ready = dashboard.stage() == StrengthDashboard.Stage.READY;
+    if (!analyzing && !switched && ready && !host.activeModel().isHumanSl40()) {
       return;
     }
+    Progress progress = host.analysisProgress();
+    long stamp = 31 * host.preparationStamp() + progress.analyzed();
+    if (stamp == shownStamp && !switched) {
+      return;
+    }
+    if (analyzing && ready && !switched && ++quietTicks < REBUILD_TICKS_WHILE_ANALYZING) {
+      return;
+    }
+    quietTicks = 0;
     shownStamp = stamp;
-    dashboard.showReport(host.report(), host.models());
+    dashboard.showReport(host.report(), host.models(), context(progress));
   }
 
   private void showStatus() {
     HumanSlStrengthPreparation.Status status = host.preparationStatus();
-    dashboard.showStatus(statusText(status, bundle), tone(status.key()));
+    dashboard.showStatus(
+        statusText(status, bundle), tone(status.key()), status.completed(), status.total());
   }
 
   /** The footer text for a HumanSL preparation status. */
@@ -169,7 +226,7 @@ final class StrengthDialog implements StrengthDashboard.Actions {
 
   private void showEstimate() {
     shownStamp = Long.MIN_VALUE;
-    dashboard.showReport(host.report(), host.models());
+    dashboard.showReport(host.report(), host.models(), context(host.analysisProgress()));
   }
 
   @Override
@@ -273,6 +330,14 @@ final class StrengthDialog implements StrengthDashboard.Actions {
   @Override
   public void prepareNow() {
     host.prepareNow();
+    humanStyleInstalled = host.humanStyleInstalled();
+    showEstimate();
+  }
+
+  @Override
+  public void analyzeGame() {
+    host.analyzeGame();
+    wasAnalyzing = host.analyzing();
     showEstimate();
   }
 }

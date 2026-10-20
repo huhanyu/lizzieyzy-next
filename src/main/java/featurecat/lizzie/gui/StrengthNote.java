@@ -20,7 +20,7 @@ final class StrengthNote extends JPanel {
   private static final long serialVersionUID = 1L;
   private static final int MAX_LINES = 2;
   private final transient StrengthStyle style;
-  private final String text;
+  private String text;
   private final boolean caution;
 
   StrengthNote(String text, boolean caution, StrengthStyle style) {
@@ -34,6 +34,17 @@ final class StrengthNote extends JPanel {
 
   String text() {
     return text;
+  }
+
+  void setText(String value) {
+    String next = value == null ? "" : value;
+    if (next.equals(text)) {
+      return;
+    }
+    text = next;
+    getAccessibleContext().setAccessibleName(next);
+    revalidate();
+    repaint();
   }
 
   boolean isCaution() {
@@ -53,7 +64,7 @@ final class StrengthNote extends JPanel {
     return StrengthPaint.wrap(text, metrics, Math.max(40, width - textX()), MAX_LINES);
   }
 
-  private int heightFor(int width) {
+  int heightFor(int width) {
     FontMetrics metrics = getFontMetrics(getFont());
     return Math.max(markSize(), lines(width).size() * metrics.getHeight());
   }
