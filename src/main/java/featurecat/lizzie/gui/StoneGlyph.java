@@ -1,11 +1,13 @@
 package featurecat.lizzie.gui;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.MultipleGradientPaint;
 import java.awt.RadialGradientPaint;
+import java.awt.Stroke;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Point2D;
 
@@ -31,8 +33,11 @@ final class StoneGlyph {
             MultipleGradientPaint.CycleMethod.NO_CYCLE));
     g.fill(stone);
     // A hairline keeps a black stone visible on dark rows and a white stone on light rows.
+    Stroke stroke = g.getStroke();
+    g.setStroke(new BasicStroke(1f));
     g.setColor(black ? new Color(255, 255, 255, 70) : new Color(0, 0, 0, 90));
     g.draw(new Ellipse2D.Double(x + 0.5, y + 0.5, size - 1, size - 1));
+    g.setStroke(stroke);
   }
 
   /** Paints a stone with {@code number} centred on it, as move numbers appear in a game record. */

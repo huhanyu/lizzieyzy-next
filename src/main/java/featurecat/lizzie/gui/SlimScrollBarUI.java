@@ -6,13 +6,24 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.util.function.Supplier;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.plaf.basic.BasicScrollBarUI;
 
-/** A slim scroll bar for the sidebar lists: a rounded thumb, no track and no arrow buttons. */
+/** A slim scroll bar: a rounded thumb, no track and no arrow buttons. */
 final class SlimScrollBarUI extends BasicScrollBarUI {
   private static final int THICKNESS = 10;
+  private final Supplier<Color> thumbColor;
+
+  /** A scroll bar whose thumb follows the sidebar's secondary text colour. */
+  SlimScrollBarUI() {
+    this.thumbColor = SidebarPanel::secondaryTextColor;
+  }
+
+  SlimScrollBarUI(Color thumbColor) {
+    this.thumbColor = () -> thumbColor;
+  }
 
   @Override
   protected void configureScrollBarColors() {}
@@ -52,7 +63,7 @@ final class SlimScrollBarUI extends BasicScrollBarUI {
     Graphics2D g = (Graphics2D) graphics.create();
     try {
       g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-      Color base = SidebarPanel.secondaryTextColor();
+      Color base = thumbColor.get();
       int alpha = isDragging || isThumbRollover() ? 170 : 110;
       g.setColor(new Color(base.getRed(), base.getGreen(), base.getBlue(), alpha));
       boolean vertical = thumb.height >= thumb.width;

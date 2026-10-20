@@ -38,11 +38,25 @@ class PlayerStrengthRankFormatterTest {
         "\u696d\u99181.4\u7d1a",
         PlayerStrengthRankFormatter.format(0.6, bundle(Locale.TRADITIONAL_CHINESE)));
     assertEquals("1.4\u7d1a", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.JAPAN)));
-    assertEquals("1.4 \ud050", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.KOREA)));
+    assertEquals("1.4\uae09", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.KOREA)));
     assertEquals(
-        "1.4 \u0e04\u0e22\u0e39",
+        "1.4 \u0e04\u0e34\u0e27",
         PlayerStrengthRankFormatter.format(0.6, bundle(Locale.forLanguageTag("th-TH"))));
     assertEquals("1.4 kyu", PlayerStrengthRankFormatter.format(0.6, bundle(Locale.US)));
+  }
+
+  @Test
+  void localizesDanRanksInGoTerms() {
+    assertEquals(
+        "\u4e1a\u4f599.0\u6bb5",
+        PlayerStrengthRankFormatter.format(9.04, bundle(Locale.SIMPLIFIED_CHINESE)));
+    assertEquals(
+        "\u30a2\u30de9.0\u6bb5", PlayerStrengthRankFormatter.format(9.04, bundle(Locale.JAPAN)));
+    assertEquals(
+        "\uc544\ub9c8 9.0\ub2e8", PlayerStrengthRankFormatter.format(9.04, bundle(Locale.KOREA)));
+    assertEquals(
+        "9.0 \u0e14\u0e31\u0e49\u0e07",
+        PlayerStrengthRankFormatter.format(9.04, bundle(Locale.forLanguageTag("th-TH"))));
   }
 
   @Test

@@ -24,7 +24,9 @@ class UiLocalizationGuardTest {
           "FoxKifuDownload.java",
           "TencentKifuDownload.java",
           "LizzieFrame.java",
-          "SidebarHeaderPanel.java");
+          "SidebarHeaderPanel.java",
+          "StrengthDashboard.java",
+          "StrengthDialog.java");
   private static final Pattern BLOCK_COMMENT = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL);
   private static final Pattern LINE_COMMENT = Pattern.compile("//.*");
   private static final Pattern DIRECT_UI_LITERAL =
