@@ -1017,12 +1017,8 @@ public class AnalysisFrame extends JFrame {
           case 3:
             if (data.isNextMove) {
               if (data.order != 0) {
-                double diff = data.winrate - data.bestWinrate;
-                return (diff > 0 ? "↑" : "↓")
-                    + String.format(Locale.ENGLISH, "%.1f", diff)
-                    + "("
-                    + String.format(Locale.ENGLISH, "%.1f", data.winrate)
-                    + ")";
+                return CandidateTableText.valueWithDifference(
+                    data.winrate, data.winrate - data.bestWinrate);
               }
             }
             return String.format(Locale.ENGLISH, "%.1f", data.winrate);
@@ -1058,12 +1054,8 @@ public class AnalysisFrame extends JFrame {
               }
             }
             if (data.isNextMove && data.order != 0) {
-              double diff = data.scoreMean - data.bestScoreMean;
-              return (diff > 0 ? "↑" : "↓")
-                  + String.format(Locale.ENGLISH, "%.1f", diff)
-                  + "("
-                  + String.format(Locale.ENGLISH, "%.1f", score)
-                  + ")";
+              return CandidateTableText.valueWithDifference(
+                  score, data.scoreMean - data.bestScoreMean);
             } else return String.format(Locale.ENGLISH, "%.1f", score);
           case 8:
             return String.format(Locale.ENGLISH, "%.1f", data.scoreStdev);

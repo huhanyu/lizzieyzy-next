@@ -3,7 +3,7 @@
   "max_unlisted_file_lines": 2000,
   "max_lines": {
     "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25606,
-    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18851,
+    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18791,
     "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15779,
     "src/main/java/featurecat/lizzie/gui/Menu.java": 11224,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
@@ -28,10 +28,10 @@
     "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 2009
   },
   "max_static_references": {
-    "Lizzie.config": 6976,
+    "Lizzie.config": 6961,
     "Lizzie.frame": 3232,
     "Lizzie.board": 1952,
-    "Lizzie.leelaz": 1093,
+    "Lizzie.leelaz": 1090,
     "Lizzie.leelaz2": 115,
     "Lizzie.engineManager": 156
   },

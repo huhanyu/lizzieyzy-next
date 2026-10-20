@@ -62,7 +62,10 @@ final class InFrameLayout {
     final boolean showVariationGraph;
     final boolean showListPane;
     final boolean showStatus;
-    final boolean userKnownX;
+
+    /** Height reserved for the engine status line when {@link #showStatus} is set. */
+    final int statusHeight;
+
     final boolean showCaptured;
     final boolean showWinrateGraph;
 
@@ -81,7 +84,7 @@ final class InFrameLayout {
         boolean showVariationGraph,
         boolean showListPane,
         boolean showStatus,
-        boolean userKnownX) {
+        int statusHeight) {
       this(
           width,
           height,
@@ -98,7 +101,7 @@ final class InFrameLayout {
           showVariationGraph,
           showListPane,
           showStatus,
-          userKnownX,
+          statusHeight,
           true,
           true);
     }
@@ -119,7 +122,7 @@ final class InFrameLayout {
         boolean showVariationGraph,
         boolean showListPane,
         boolean showStatus,
-        boolean userKnownX,
+        int statusHeight,
         boolean showCaptured,
         boolean showWinrateGraph) {
       this(
@@ -140,7 +143,7 @@ final class InFrameLayout {
           showVariationGraph,
           showListPane,
           showStatus,
-          userKnownX,
+          statusHeight,
           showCaptured,
           showWinrateGraph);
     }
@@ -163,7 +166,7 @@ final class InFrameLayout {
         boolean showVariationGraph,
         boolean showListPane,
         boolean showStatus,
-        boolean userKnownX,
+        int statusHeight,
         boolean showCaptured,
         boolean showWinrateGraph) {
       this.width = width;
@@ -184,7 +187,7 @@ final class InFrameLayout {
       this.showVariationGraph = showVariationGraph;
       this.showListPane = showListPane;
       this.showStatus = showStatus;
-      this.userKnownX = userKnownX;
+      this.statusHeight = statusHeight;
       this.showCaptured = showCaptured;
       this.showWinrateGraph = showWinrateGraph;
     }
@@ -208,7 +211,7 @@ final class InFrameLayout {
           showVariationGraph,
           showListPane,
           showStatus,
-          userKnownX,
+          statusHeight,
           showCaptured,
           showWinrateGraph);
     }
@@ -266,7 +269,6 @@ final class InFrameLayout {
     int topInset = request.topInset;
     int rightInset = request.rightInset;
     int bottomInset = request.bottomInset;
-    int maxBound = Math.max(width, height);
     int maxSize = Math.min(width - leftInset - rightInset, height - topInset - bottomInset);
     maxSize = Math.max(maxSize, Math.max(request.boardWidth, request.boardHeight) + 5);
     int panelMargin = (int) (maxSize * 0.02);
@@ -302,10 +304,9 @@ final class InFrameLayout {
     int vw = width - vx - rightInset;
     int vh = height - vy - bottomInset;
 
-    double ponderingSize = request.userKnownX ? 0.025 : 0.04;
     int ponderingY = Math.max(0, height - Math.max(0, bottomInset));
     if (request.showStatus) {
-      ponderingY = ponderingY - (int) (maxSize * 0.023) - (int) (maxBound * ponderingSize);
+      ponderingY -= request.statusHeight;
     }
 
     int subBoardY = gry + grh;

@@ -9,6 +9,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class InFrameLayoutTest {
+  // Height reserved for the one-line engine status at the bottom of the left column.
+  private static final int STATUS = 27;
 
   @Test
   void defaultNormalLandscapeMatchesCurrentFormulaIncludingCommentSwap() {
@@ -17,7 +19,7 @@ class InFrameLayoutTest {
     assertEquals(new Rectangle(348, 0, 900, 900), layout.board);
     assertEquals(new Rectangle(0, 0, 330, 900), layout.leftColumn);
     assertEquals(new Rectangle(1266, 0, 334, 900), layout.rightColumn);
-    assertEquals(new Rectangle(0, 502, 330, 314), layout.comment);
+    assertEquals(new Rectangle(0, 502, 330, 371), layout.comment);
     assertEquals(new Rectangle(1266, 0, 334, 283), layout.variationGraph);
     assertEquals(new Rectangle(1266, 283, 334, 283), layout.candidateTable);
     assertEquals(Optional.of(new Rectangle(348, 0, 1, 900)), layout.boardLeftDivider);
@@ -33,7 +35,7 @@ class InFrameLayoutTest {
     assertEquals(new Rectangle(488, 0, 938, 938), layout.board);
     assertEquals(new Rectangle(0, 0, 470, 938), layout.leftColumn);
     assertEquals(new Rectangle(1444, 0, 476, 938), layout.rightColumn);
-    assertEquals(new Rectangle(0, 522, 470, 319), layout.comment);
+    assertEquals(new Rectangle(0, 522, 470, 389), layout.comment);
     assertEquals(new Rectangle(1444, 0, 476, 234), layout.variationGraph);
     assertEquals(new Rectangle(1444, 234, 476, 234), layout.candidateTable);
   }
@@ -43,7 +45,7 @@ class InFrameLayoutTest {
     InFrameLayout layout =
         InFrameLayout.layout(
             new InFrameLayout.Request(
-                1600, 900, 0, 0, 0, 0, 19, 19, 4, false, true, true, true, true, false));
+                1600, 900, 0, 0, 0, 0, 19, 19, 4, false, true, true, true, true, STATUS));
 
     assertEquals(new Rectangle(348, 0, 900, 900), layout.board);
     assertEquals(new Rectangle(0, 0, 330, 900), layout.leftColumn);
@@ -107,7 +109,7 @@ class InFrameLayoutTest {
                 true,
                 true,
                 true,
-                false,
+                STATUS,
                 false,
                 false));
     InFrameLayout noRight =
@@ -128,7 +130,7 @@ class InFrameLayoutTest {
                 false,
                 false,
                 true,
-                false,
+                STATUS,
                 true,
                 true));
 
@@ -162,17 +164,17 @@ class InFrameLayoutTest {
     InFrameLayout baseline = InFrameLayout.layout(allVisible(1600, 900, 4));
     InFrameLayout layout = InFrameLayout.layout(allVisible(1600, 900, 4, null, 0.5, null));
 
-    assertEquals(new Rectangle(0, 408, 330, 408), layout.comment);
+    assertEquals(new Rectangle(0, 436, 330, 437), layout.comment);
     assertEquals(new Rectangle(0, 0, 330, 112), layout.captured);
     assertEquals(new Rectangle(0, 112, 330, 90), layout.moveStatistics);
-    assertEquals(new Rectangle(0, 202, 330, 206), layout.winrateGraph);
+    assertEquals(new Rectangle(0, 202, 330, 234), layout.winrateGraph);
     assertEquals(baseline.board, layout.board);
     assertEquals(baseline.rightColumn, layout.rightColumn);
     assertEquals(baseline.variationGraph, layout.variationGraph);
     assertEquals(baseline.candidateTable, layout.candidateTable);
     assertTrue(layout.comment.height > baseline.comment.height);
     assertTrue(layout.comment.y < baseline.comment.y);
-    assertEquals(Optional.of(new Rectangle(0, 408, 330, 1)), layout.commentTopDivider);
+    assertEquals(Optional.of(new Rectangle(0, 436, 330, 1)), layout.commentTopDivider);
   }
 
   @Test
@@ -207,7 +209,7 @@ class InFrameLayoutTest {
 
     assertEquals(Optional.empty(), hiddenComment.commentTopDivider);
     assertEquals(new Rectangle(), hiddenComment.comment);
-    assertEquals(new Rectangle(0, 408, 330, 408), restoredComment.comment);
+    assertEquals(new Rectangle(0, 436, 330, 437), restoredComment.comment);
     assertEquals(Optional.empty(), hiddenVariation.variationListDivider);
     assertEquals(Optional.empty(), hiddenList.variationListDivider);
     assertEquals(listOnlyDefault.candidateTable, hiddenVariation.candidateTable);
@@ -220,10 +222,10 @@ class InFrameLayoutTest {
     InFrameLayout commentMax = InFrameLayout.layout(allVisible(1600, 900, 4, null, 1.0, null));
     InFrameLayout listMin = InFrameLayout.layout(allVisible(1600, 900, 4, null, null, 1.0));
 
-    assertEquals(new Rectangle(0, 748, 330, 68), commentMin.comment);
+    assertEquals(new Rectangle(0, 805, 330, 68), commentMin.comment);
     assertEquals(baseline.board, commentMin.board);
     assertEquals(baseline.rightColumn, commentMin.rightColumn);
-    assertEquals(new Rectangle(0, 0, 330, 816), commentMax.comment);
+    assertEquals(new Rectangle(0, 0, 330, 873), commentMax.comment);
     assertEquals(0, commentMax.winrateGraph.height);
     assertEquals(baseline.board, commentMax.board);
     assertEquals(36, listMin.candidateTable.height);
@@ -241,7 +243,7 @@ class InFrameLayoutTest {
     assertEquals(new Rectangle(348, 0, 900, 900), restored.board);
     assertEquals(new Rectangle(0, 0, 330, 900), restored.leftColumn);
     assertEquals(new Rectangle(1266, 0, 334, 900), restored.rightColumn);
-    assertEquals(new Rectangle(0, 502, 330, 314), restored.comment);
+    assertEquals(new Rectangle(0, 502, 330, 371), restored.comment);
     assertEquals(new Rectangle(1266, 0, 334, 283), restored.variationGraph);
     assertEquals(new Rectangle(1266, 283, 334, 283), restored.candidateTable);
     assertEquals(Optional.of(new Rectangle(348, 0, 1, 900)), restored.boardLeftDivider);
@@ -328,7 +330,7 @@ class InFrameLayoutTest {
         showVariationGraph,
         showListPane,
         true,
-        false,
+        STATUS,
         true,
         true);
   }

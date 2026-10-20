@@ -1595,11 +1595,10 @@ public class LizzieFrame extends JFrame {
                 if (speed >= 0) {
                   visitsString =
                       String.format(
-                          " %d " + Lizzie.resourceBundle.getString("LizzieFrame.speedUnit"), speed);
+                          "%d " + Lizzie.resourceBundle.getString("LizzieFrame.speedUnit"), speed);
                   visitsStringTime = System.currentTimeMillis();
                 }
-              } else if (System.currentTimeMillis() - visitsStringTime > 5000)
-                visitsString = " - " + Lizzie.resourceBundle.getString("LizzieFrame.speedUnit");
+              } else if (System.currentTimeMillis() - visitsStringTime > 5000) visitsString = "";
               visitsCount++;
               if (visitsCount > 3) visitsCount = 0;
               if (totalPlayouts > 0) {
@@ -6389,7 +6388,6 @@ public class LizzieFrame extends JFrame {
       if (!showControls) {
         BufferedImage cachedImage = acquirePaintBuffer(width, height);
         Graphics2D g = (Graphics2D) cachedImage.getGraphics();
-        int deferredStatusHintTop = -1;
         // g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         if (Lizzie.config.isFourSubMode()) {
           int topInset = mainPanel.getInsets().top;
@@ -6990,37 +6988,15 @@ public class LizzieFrame extends JFrame {
             LizzieFrame.boardRenderer = independentMainBoard.boardRenderer;
           int maxBound = Math.max(width, height);
           int ponderingX = leftInset;
-          double ponderingSize = Lizzie.config.userKnownX ? 0.025 : 0.04;
           maxSize = (int) (min(width - leftInset - rightInset, height - topInset - bottomInset));
 
           int ponderingY = statusAreaBottom(height, bottomInset);
           if (Lizzie.config.showStatus) {
-            ponderingY = ponderingY - (int) (maxSize * 0.023) - (int) (maxBound * ponderingSize);
+            ponderingY -= statusReservedHeight();
           }
-          if (Lizzie.config.showStatus && !Lizzie.config.userKnownX)
-            deferredStatusHintTop = ponderingY;
           if (Lizzie.config.showStatus) {
             if (Lizzie.leelaz != null && (Lizzie.leelaz.isLoaded() || Lizzie.leelaz.isNormalEnd)) {
-              String statusKey =
-                  "LizzieFrame.display." + (Lizzie.leelaz.isPondering() ? "on" : "off");
-              String statusText =
-                  Lizzie.resourceBundle.getString(statusKey)
-                      + (Lizzie.config.userKnownX
-                          ? ""
-                          : Lizzie.resourceBundle.getString("LizzieFrame.display.space"));
-              String ponderingText =
-                  Lizzie.resourceBundle.getString("LizzieFrame.display.pondering");
-              //            String switching =
-              // Lizzie.resourceBundle.getString("LizzieFrame.prompt.switching");
-              //            String switchingText = Lizzie.leelaz.switching() ? switching : "";
-              String weightText = "";
-              if (isContributing)
-                weightText = Lizzie.resourceBundle.getString("LizzieFrame.weightText.contributing");
-              if (EngineManager.isEmpty)
-                weightText = Lizzie.resourceBundle.getString("LizzieFrame.noEngineText");
-              else weightText = statusEngineName(Lizzie.leelaz);
-              String text2 = ponderingText + " " + statusText; // + " " + switchingText;
-              drawPonderingState(g, weightText, text2, ponderingX, ponderingY);
+              drawEngineStatus(g, ponderingX, ponderingY);
               vh = ponderingY;
             } else {
               drawLoadingState(g, ponderingX, ponderingY);
@@ -7187,7 +7163,6 @@ public class LizzieFrame extends JFrame {
           int vy;
           int vw;
           int vh;
-          double ponderingSize = Lizzie.config.userKnownX ? 0.025 : 0.04;
           int ponderingX = leftInset;
           int ponderingY;
           int subBoardY;
@@ -7222,7 +7197,7 @@ public class LizzieFrame extends JFrame {
                         Lizzie.config.showVariationGraph,
                         showListPane,
                         Lizzie.config.showStatus,
-                        Lizzie.config.userKnownX,
+                        statusReservedHeight(),
                         Lizzie.config.showCaptured,
                         Lizzie.config.showWinrateGraph));
             maxSize = inFrameLayout.board.width;
@@ -7287,7 +7262,7 @@ public class LizzieFrame extends JFrame {
 
             ponderingY = statusAreaBottom(height, bottomInset);
             if (Lizzie.config.showStatus) {
-              ponderingY = ponderingY - (int) (maxSize * 0.023) - (int) (maxBound * ponderingSize);
+              ponderingY -= statusReservedHeight();
             }
 
             int subBoardGap = 0;
@@ -7455,8 +7430,6 @@ public class LizzieFrame extends JFrame {
             //     g.setRenderingHint(RenderingHints.KEY_RENDERING,
             // RenderingHints.VALUE_RENDER_QUALITY);
 
-            if (Lizzie.config.showStatus && !Lizzie.config.isMinMode() && !Lizzie.config.userKnownX)
-              deferredStatusHintTop = ponderingY;
             //
             //          if (boardPos != boardX + maxSize / 2) {
             //            boardPos = boardX + maxSize / 2;
@@ -7531,27 +7504,7 @@ public class LizzieFrame extends JFrame {
             if (Lizzie.config.showStatus && !Lizzie.config.isMinMode()) {
               if (Lizzie.leelaz != null
                   && (Lizzie.leelaz.isLoaded() || Lizzie.leelaz.isNormalEnd)) {
-                String statusKey =
-                    "LizzieFrame.display." + (Lizzie.leelaz.isPondering() ? "on" : "off");
-                String statusText =
-                    Lizzie.resourceBundle.getString(statusKey)
-                        + (Lizzie.config.userKnownX
-                            ? ""
-                            : Lizzie.resourceBundle.getString("LizzieFrame.display.space"));
-                String ponderingText =
-                    Lizzie.resourceBundle.getString("LizzieFrame.display.pondering");
-                //   String switching
-                // =Lizzie.resourceBundle.getString("LizzieFrame.prompt.switching");
-                // String switchingText = Lizzie.leelaz.switching() ? switching : "";
-                String weightText = "";
-                if (isContributing)
-                  weightText =
-                      Lizzie.resourceBundle.getString("LizzieFrame.weightText.contributing");
-                else if (EngineManager.isEmpty)
-                  weightText = Lizzie.resourceBundle.getString("LizzieFrame.noEngineText");
-                else weightText = statusEngineName(Lizzie.leelaz);
-                String text2 = ponderingText + " " + statusText; // + " " + switchingText;
-                drawPonderingState(g, weightText, text2, ponderingX, ponderingY);
+                drawEngineStatus(g, ponderingX, ponderingY);
               } else {
                 drawLoadingState(g, ponderingX, ponderingY);
               }
@@ -7747,8 +7700,6 @@ public class LizzieFrame extends JFrame {
             // comment panel
             int cx = capx, cy = vy, cw = spaceW, ch = vh;
             if (Lizzie.config.showVariationGraph || showListPane) cw = spaceW * 4 / 10;
-            if (Lizzie.config.showStatus && !Lizzie.config.isMinMode() && !Lizzie.config.userKnownX)
-              deferredStatusHintTop = ponderingY;
 
             if (Lizzie.config.showWinrateGraph) {
               drawMoveStatistics(g, statx, staty, statw, stath);
@@ -7756,27 +7707,7 @@ public class LizzieFrame extends JFrame {
 
             if (Lizzie.config.showStatus && !Lizzie.config.isMinMode()) {
               if (Lizzie.leelaz != null && Lizzie.leelaz.isLoaded()) {
-                String statusKey =
-                    "LizzieFrame.display." + (Lizzie.leelaz.isPondering() ? "on" : "off");
-                String statusText =
-                    Lizzie.resourceBundle.getString(statusKey)
-                        + (Lizzie.config.userKnownX
-                            ? ""
-                            : Lizzie.resourceBundle.getString("LizzieFrame.display.space"));
-                String ponderingText =
-                    Lizzie.resourceBundle.getString("LizzieFrame.display.pondering");
-                //      String switching
-                // =Lizzie.resourceBundle.getString("LizzieFrame.prompt.switching");
-                // String switchingText = Lizzie.leelaz.switching() ? switching : "";
-                String weightText = "";
-                if (isContributing)
-                  weightText =
-                      Lizzie.resourceBundle.getString("LizzieFrame.weightText.contributing");
-                if (EngineManager.isEmpty)
-                  weightText = Lizzie.resourceBundle.getString("LizzieFrame.noEngineText");
-                else weightText = statusEngineName(Lizzie.leelaz);
-                String text2 = ponderingText + " " + statusText; // + " " + switchingText;
-                drawPonderingState(g, weightText, text2, ponderingX, ponderingY);
+                drawEngineStatus(g, ponderingX, ponderingY);
               }
             }
             boardRenderer.setLocation(boardX, boardY);
@@ -7835,10 +7766,6 @@ public class LizzieFrame extends JFrame {
               drawWinratePane(grx, gry, grw, grh);
             }
           }
-        }
-        // Use the finalized board geometry and paint the shortcut hint above all panel content.
-        if (deferredStatusHintTop >= 0) {
-          drawCommandString(g, deferredStatusHintTop);
         }
         // cleanup
         g.dispose();
@@ -8266,8 +8193,7 @@ public class LizzieFrame extends JFrame {
           Lizzie.resourceBundle.getString(featurecat.lizzie.fox.FoxLiveSession.browsingStatusKey());
       text2 = Lizzie.resourceBundle.getString("Fox.returnLive");
     }
-    int lineCount = Lizzie.config.userKnownX ? 2 : 3;
-    int[][] lines = statusLineBounds(statusAreaTop, currentStatusAreaBottom(), lineCount);
+    int[][] lines = statusLineBounds(statusAreaTop, currentStatusAreaBottom(), 2);
     drawStatusTextInBounds(g, text1, x, lines[0], true);
     drawStatusTextInBounds(g, text2, x, lines[1], false);
   }
@@ -8372,14 +8298,8 @@ public class LizzieFrame extends JFrame {
     if (hasEngineStartupNotice()) {
       return;
     }
-    int lineCount = Lizzie.config.userKnownX ? 1 : 3;
-    int[][] lines = statusLineBounds(statusAreaTop, currentStatusAreaBottom(), lineCount);
-    int[] bounds = lines[0];
-    if (lineCount > 1) {
-      int secondBottom = lines[1][0] + lines[1][1];
-      bounds = new int[] {lines[0][0], secondBottom - lines[0][0]};
-    }
-    drawStatusTextInBounds(g, text, x, bounds, true);
+    drawStatusTextInBounds(
+        g, text, x, statusLineBounds(statusAreaTop, currentStatusAreaBottom(), 1)[0], true);
   }
 
   private void drawPonderingState2(Graphics2D g, String text, int x, int y, double size) {
@@ -8702,13 +8622,42 @@ public class LizzieFrame extends JFrame {
 
   // private boolean userAlreadyKnowsAboutCommandString = false;
 
-  private void drawCommandString(Graphics2D g, int statusAreaTop) {
-    String commandString =
-        hasActiveAutomaticQuickAnalysis() && automaticQuickAnalysisTask.isRetrying()
-            ? Lizzie.resourceBundle.getString("LizzieFrame.quickAnalysis.retrying")
-            : Lizzie.resourceBundle.getString("LizzieFrame.prompt.showControlsHint");
-    int[][] lines = statusLineBounds(statusAreaTop, currentStatusAreaBottom(), 3);
-    drawStatusTextInBounds(g, commandString, mainPanel.getInsets().left, lines[2], false);
+  private int statusReservedHeight() {
+    return StatusOverlay.reservedHeight(
+        Config.frameFontSize,
+        Lizzie.leelaz != null && (Lizzie.leelaz.isLoaded() || Lizzie.leelaz.isNormalEnd));
+  }
+
+  /** Draws the one-line engine status at the bottom left: engine, state and the keys to press. */
+  private void drawEngineStatus(Graphics2D g, int x, int top) {
+    if (Lizzie.readMode || hasEngineStartupNotice()) return;
+    ResourceBundle strings = Lizzie.resourceBundle;
+    String text;
+    if (featurecat.lizzie.fox.FoxLiveSession.isBrowsingHistory()) {
+      text =
+          StatusOverlay.line(
+              strings.getString(featurecat.lizzie.fox.FoxLiveSession.browsingStatusKey()),
+              strings.getString("Fox.returnLive"),
+              "");
+    } else {
+      boolean auto = hasActiveAutomaticQuickAnalysis();
+      boolean pondering = Lizzie.leelaz.isPondering();
+      String engine =
+          isContributing
+              ? strings.getString("LizzieFrame.weightText.contributing")
+              : EngineManager.isEmpty
+                  ? strings.getString("LizzieFrame.noEngineText")
+                  : statusEngineName(Lizzie.leelaz);
+      String hint =
+          auto && automaticQuickAnalysisTask.isRetrying()
+              ? strings.getString("LizzieFrame.quickAnalysis.retrying")
+              : StatusOverlay.hint(strings, auto, pondering, Lizzie.config.userKnownX);
+      text = StatusOverlay.line(engine, StatusOverlay.state(strings, auto, pondering), hint);
+    }
+    int fontSize = StatusOverlay.fontSize(Config.frameFontSize);
+    int height = StatusOverlay.lineHeight(Config.frameFontSize) - 2;
+    StatusOverlay.draw(
+        g, createStatusFont(text, fontSize), text, x, top + 2, height, statusTextMaxWidth(x));
   }
 
   private void drawMoveStatistics(Graphics2D g, int posX, int posY, int width, int height) {
@@ -8859,12 +8808,13 @@ public class LizzieFrame extends JFrame {
         scoreStdev = curData.scoreStdev;
       } // +"目差:""复杂度:"
 
-      text +=
-          (Lizzie.config.showKataGoScoreLeadWithKomi
-                  ? Lizzie.resourceBundle.getString("LizzieFrame.scoreLeadWithKomi")
-                  : Lizzie.resourceBundle.getString("LizzieFrame.scoreLeadJustScore"))
-              + String.format(Locale.ENGLISH, "%.1f", scoreLead);
-      if (Lizzie.config.isThinkingMode() || Lizzie.config.isFourSubMode())
+      if (Lizzie.config.showKataGoScoreLeadWithKomi)
+        text +=
+            Lizzie.resourceBundle.getString("LizzieFrame.scoreLeadWithKomi")
+                + String.format(Locale.ENGLISH, "%.1f", scoreLead);
+      else if (!curData.bestMoves.isEmpty())
+        text += MoveStatusText.lead(Lizzie.resourceBundle, scoreLead);
+      if (!text.isEmpty() && (Lizzie.config.isThinkingMode() || Lizzie.config.isFourSubMode()))
         text += " (±" + String.format(Locale.ENGLISH, "%.1f", curData.scoreStdev) + ")";
       if (engineGame.playing() && !Lizzie.leelaz.isSai)
         text =
@@ -8897,20 +8847,16 @@ public class LizzieFrame extends JFrame {
           0,
           false);
     } else {
-      double wr = validLastWinrate ? 100 - lastWR - curWR : 0;
-      double score = validLastWinrate ? (-lastScore) - curScore : 0;
-      text = text + " " + Lizzie.resourceBundle.getString("LizzieFrame.display.lastMove");
-      int lastNo = Lizzie.board.getData().lastMoveMatchCandidteNo;
-      if (lastNo > 0) {
-        text += "(#" + lastNo + ")";
-      } else text += "(#  )";
-      text += ": " + ((wr > 0 ? "+" : "-") + String.format(Locale.ENGLISH, "%.1f%%", Math.abs(wr)));
-      if (isKataStyle && !engineGame.playing()) {
-        text +=
-            " "
-                + ((score > 0 ? "+" : "-") + String.format(Locale.ENGLISH, "%.1f", Math.abs(score)))
-                + Lizzie.resourceBundle.getString("LizzieFrame.pts"); // + "目";
-      }
+      if (validLastWinrate && validWinrate)
+        text =
+            MainWindowTitle.join(
+                "  ",
+                text,
+                MoveStatusText.previousMove(
+                    Lizzie.resourceBundle,
+                    Lizzie.board.getData().lastMoveMatchCandidteNo,
+                    100 - lastWR - curWR,
+                    isKataStyle ? (-lastScore) - curScore : null));
 
       drawString(
           g,
@@ -8934,10 +8880,13 @@ public class LizzieFrame extends JFrame {
       int barPosxW = barPosxB + barWidthB;
       int barHeight = height / 3;
 
-      // Draw winrate bars
+      // Draw winrate bars: warm white, Black at least 2 px, outlined so Black shows on the panel
+      g.setColor(new Color(0xEF, 0xEB, 0xE3));
       g.fillRect(barPosxW, barPosY, barWidthW, barHeight);
       g.setColor(Color.BLACK);
-      g.fillRect(barPosxB, barPosY, barWidthB, barHeight);
+      g.fillRect(barPosxB, barPosY, blackWR > 0 ? Math.max(2, barWidthB) : 0, barHeight);
+      g.setColor(new Color(0xC9, 0xC3, 0xB8));
+      g.drawRect(barPosxB, barPosY, maxBarwidth - 1, barHeight - 1);
       // Draw change of winrate bars
       if (validWinrate && validLastWinrate) {
         double gain = 100 - lastWR - curWR;
@@ -8985,13 +8934,19 @@ public class LizzieFrame extends JFrame {
         }
       }
 
-      // Show percentage above bars
+      // Show percentage above bars; "白 99.2%" mixes scripts, so draw it with TextLayout
+      // (FittedFont)
       setPanelFont(g, (int) (min(maxBarwidth * 0.63, height) * 0.24));
+      g.setFont(FittedFont.withKerning(g.getFont()));
 
       int fontHeigt = g.getFontMetrics().getAscent() - g.getFontMetrics().getDescent();
       g.setColor(Color.WHITE);
-      String winStringB = String.format(Locale.ENGLISH, "%.1f%%", blackWR);
-      String winStringW = String.format(Locale.ENGLISH, "%.1f%%", whiteWR);
+      String winStringB =
+          Lizzie.resourceBundle.getString("Menu.Black")
+              + String.format(Locale.ENGLISH, " %.1f%%", blackWR);
+      String winStringW =
+          Lizzie.resourceBundle.getString("Menu.White")
+              + String.format(Locale.ENGLISH, " %.1f%%", whiteWR);
       g.drawString(
           winStringB, barPosxB + 2 * strokeRadius, posY + barHeight - (barHeight - fontHeigt) / 2);
       int swW = g.getFontMetrics().stringWidth(winStringW);
@@ -9022,6 +8977,12 @@ public class LizzieFrame extends JFrame {
         g.drawLine(x, barPosY, x, barPosY + barHeight);
       }
       g.setStroke(oldstroke);
+      g.setColor(new Color(0x6B, 0x70, 0x79));
+      g.drawLine(
+          barPosxB + maxBarwidth / 2,
+          barPosY - 2,
+          barPosxB + maxBarwidth / 2,
+          barPosY + barHeight + 1);
     } else {
       if (shouldDrawMoveNumberDown()) {
         setPanelFont(g, (int) (min(width * 0.63, height) * 0.24));
@@ -10927,11 +10888,11 @@ public class LizzieFrame extends JFrame {
   public void setPlayers(String whitePlayer, String blackPlayer) {
     playerTitle =
         String.format(
-            "- ["
+            "["
                 + Lizzie.resourceBundle.getString("Menu.Black")
-                + "]%s vs["
+                + "] %s vs ["
                 + Lizzie.resourceBundle.getString("Menu.White")
-                + "]%s",
+                + "] %s",
             blackPlayer,
             whitePlayer);
     //  updateTitle();
@@ -11031,36 +10992,26 @@ public class LizzieFrame extends JFrame {
         sb.append("[ ---   ---   --- ] ");
       }
     }
-    if (hasEnginePkTitile && enginePkTitile != null) {
-      sb.append(Lizzie.leelaz.oriEnginename);
-      sb.append(visitsString + " ");
-      appendSpeedModelNotice(sb, Lizzie.leelaz);
-      setTitle(enginePkTitile + " " + DEFAULT_TITLE + " - " + sb.toString() + webBoardSuffix);
-    } else {
-      String titlePrefix = sb.toString();
-      sb.setLength(0);
-      sb.append(DEFAULT_TITLE);
-      if (!titlePrefix.trim().isEmpty()) {
-        sb.append(" - ");
-        sb.append(titlePrefix);
-      }
-      if (EngineManager.isEmpty) {
-        sb.append(" ");
-      } else sb.append(Lizzie.leelaz.oriEnginename);
-      if (!EngineManager.isEmpty) {
-        if (Lizzie.leelaz.isPondering()) sb.append(visitsString + " ");
-        else sb.append(" - " + Lizzie.resourceBundle.getString("LizzieFrame.speedUnit") + " ");
-        appendSpeedModelNotice(sb, Lizzie.leelaz);
-      }
-      sb.append(playerTitle);
-      sb.append(resultTitle);
-      if (!fileNameTitle.equals("")) sb.append(" - " + fileNameTitle);
-
-      //      if (Lizzie.leelaz.engineCommand().length() < 100)
-      //        sb.append(" [" + Lizzie.leelaz.engineCommand() + "]");
-      //      else sb.append(" [" + Lizzie.leelaz.engineCommand().substring(0, 100) + "...]");
-      setTitle(sb.toString() + webBoardSuffix);
-    }
+    boolean pk = hasEnginePkTitile && enginePkTitile != null;
+    StringBuilder speed = new StringBuilder();
+    if (pk || (!EngineManager.isEmpty && Lizzie.leelaz.isPondering())) speed.append(visitsString);
+    if (pk || !EngineManager.isEmpty) appendSpeedModelNotice(speed, Lizzie.leelaz);
+    String engine = pk || !EngineManager.isEmpty ? Lizzie.leelaz.oriEnginename : "";
+    String title =
+        pk
+            ? enginePkTitile
+                + " "
+                + MainWindowTitle.compose(
+                    DEFAULT_TITLE, sb.toString(), engine, speed.toString(), "", "", "")
+            : MainWindowTitle.compose(
+                DEFAULT_TITLE,
+                sb.toString(),
+                engine,
+                speed.toString(),
+                playerTitle,
+                resultTitle,
+                fileNameTitle);
+    setTitle(title + webBoardSuffix);
   }
 
   static void appendSpeedModelNotice(StringBuilder title, Leelaz engine) {
@@ -14820,18 +14771,11 @@ public class LizzieFrame extends JFrame {
           case 2:
             if (data.isNextMove) {
               if (data.order != 0) {
-                double diff = data.winrate - data.bestWinrate;
-                return (diff > 0 ? "↑" : "↓")
-                    + String.format(Locale.ENGLISH, "%.1f", diff)
-                    + "("
-                    + String.format(
-                        "%.1f",
-                        Lizzie.config.winrateAlwaysBlack
-                            ? (Lizzie.board.getHistory().isBlacksTurn()
-                                ? data.winrate
-                                : 100 - data.winrate)
-                            : data.winrate)
-                    + ")";
+                return CandidateTableText.valueWithDifference(
+                    Lizzie.config.winrateAlwaysBlack && !Lizzie.board.getHistory().isBlacksTurn()
+                        ? 100 - data.winrate
+                        : data.winrate,
+                    data.winrate - data.bestWinrate);
               }
             }
             return String.format(
@@ -14873,12 +14817,8 @@ public class LizzieFrame extends JFrame {
               }
             }
             if (data.isNextMove && data.order != 0) {
-              double diff = data.scoreMean - data.bestScoreMean;
-              return (diff > 0 ? "↑" : "↓")
-                  + String.format(Locale.ENGLISH, "%.1f", diff)
-                  + "("
-                  + String.format(Locale.ENGLISH, "%.1f", score)
-                  + ")";
+              return CandidateTableText.valueWithDifference(
+                  score, data.scoreMean - data.bestScoreMean);
             } else return String.format(Locale.ENGLISH, "%.1f", score);
           default:
             return "";

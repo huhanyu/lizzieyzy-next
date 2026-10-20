@@ -52,6 +52,41 @@ class KataGoRulesTest {
   }
 
   @Test
+  void japaneseAndKoreanAsKataGoReportsThemAreNamedJapanese() {
+    // kata-get-rules of KataGo 1.18.1 started with rules = japanese; korean reports the same.
+    KataGoRules reported =
+        KataGoRules.parse(
+                "= {\"friendlyPassOk\":false,\"hasButton\":false,\"ko\":\"SIMPLE\","
+                    + "\"scoring\":\"TERRITORY\",\"suicide\":false,\"tax\":\"SEKI\","
+                    + "\"whiteHandicapBonus\":\"0\"}")
+            .orElseThrow();
+
+    assertEquals(KataGoRules.Summary.JAPANESE, reported.summary());
+    // Japanese and Korean are the same rules to KataGo, so either name identifies them.
+    assertTrue(
+        Set.of("japanese", "korean").contains(KataGoRules.officialNameOf(reported).orElse("")));
+    assertTrue(KataGoRules.parse("korean").orElseThrow().semanticallyEquals(reported));
+  }
+
+  @Test
+  void territoryRulesKeepTheirNameWhateverFriendlyPassSays() {
+    KataGoRules savedByEarlierVersions =
+        KataGoRules.parse("japanese")
+            .orElseThrow()
+            .overlayEditor("TERRITORY", "SIMPLE", false, "SEKI", "0", false, true);
+    KataGoRules chineseWithoutFriendlyPass =
+        KataGoRules.parse("chinese")
+            .orElseThrow()
+            .overlayEditor("AREA", "SIMPLE", false, "NONE", "N", false, false);
+
+    assertEquals(KataGoRules.Summary.JAPANESE, savedByEarlierVersions.summary());
+    assertEquals(
+        KataGoRules.Summary.OTHER,
+        chineseWithoutFriendlyPass.summary(),
+        "area scoring uses friendly passes, so they still decide the name");
+  }
+
+  @Test
   void goeMatchesKataGoAndDiffersFromTrompTaylorOnlyByFriendlyPass() {
     KataGoRules goe = KataGoRules.parse("GOE").orElseThrow();
     KataGoRules kataGoReadback =

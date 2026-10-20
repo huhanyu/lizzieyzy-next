@@ -202,7 +202,7 @@ public final class KataGoRules {
     if (matchesOfficial("chinese") || matchesOfficial("chinese-ogs")) {
       return Summary.CHINESE;
     }
-    if (matchesOfficial("japanese")) {
+    if (matchesOfficialApartFromFriendlyPass("japanese")) {
       return Summary.JAPANESE;
     }
     if (matchesOfficial("stone-scoring")) {
@@ -270,6 +270,22 @@ public final class KataGoRules {
   private boolean matchesOfficial(String name) {
     KataGoRules preset = PRESETS.get(name);
     return preset != null && semanticallyEquals(preset);
+  }
+
+  /**
+   * Like {@link #matchesOfficial}, but ignores friendlyPassOk, which territory scoring does not use
+   * (the rules editor disables it there), so rules saved with either value keep their name.
+   */
+  private boolean matchesOfficialApartFromFriendlyPass(String name) {
+    KataGoRules preset = PRESETS.get(name);
+    if (preset == null || !"TERRITORY".equals(preset.fields.get(SCORING))) {
+      return matchesOfficial(name);
+    }
+    Map<String, Object> mine = new TreeMap<>(fields);
+    Map<String, Object> theirs = new TreeMap<>(preset.fields);
+    mine.remove(FRIENDLY_PASS_OK);
+    theirs.remove(FRIENDLY_PASS_OK);
+    return mine.equals(theirs);
   }
 
   private static String stripGtpPrefix(String raw) {
@@ -346,8 +362,9 @@ public final class KataGoRules {
     presets.put("chinese", preset("SIMPLE", "AREA", "NONE", false, false, "N", true));
     presets.put("chinese-ogs", preset("POSITIONAL", "AREA", "NONE", false, false, "N", true));
     presets.put("chinese-kgs", preset("POSITIONAL", "AREA", "NONE", false, false, "N", true));
-    presets.put("japanese", preset("SIMPLE", "TERRITORY", "SEKI", false, false, "0", true));
-    presets.put("korean", preset("SIMPLE", "TERRITORY", "SEKI", false, false, "0", true));
+    // KataGo reports friendlyPassOk false for its territory presets (kata-get-rules, 1.18.1).
+    presets.put("japanese", preset("SIMPLE", "TERRITORY", "SEKI", false, false, "0", false));
+    presets.put("korean", preset("SIMPLE", "TERRITORY", "SEKI", false, false, "0", false));
     presets.put("stone-scoring", preset("SIMPLE", "AREA", "ALL", false, false, "0", true));
     presets.put("aga", preset("SITUATIONAL", "AREA", "NONE", false, false, "N-1", true));
     presets.put("bga", preset("SITUATIONAL", "AREA", "NONE", false, false, "N-1", true));
