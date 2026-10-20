@@ -55,6 +55,19 @@ class LoggingRuntimeTest {
   }
 
   @Test
+  void awaitIdleWaitsForEarlierEventsWhenTheWriterIsSlow() throws Exception {
+    LoggingRuntime runtime = start();
+    runtime.awaitIdle();
+    // Slower than the fixed ~400 ms spin after which awaitIdle() used to give up silently.
+    runtime.delayNestedAppendForTests(LogStream.APP, 800L);
+    LoggerFactory.getLogger(LogCategories.APP).warn("slow-writer-canary");
+
+    runtime.awaitIdle();
+
+    assertTrue(read("logs/app.log").contains("slow-writer-canary"));
+  }
+
+  @Test
   void repeatedInitializeReusesRuntimeWithoutDuplicateStartupEvents() throws Exception {
     LoggingRuntime first = start();
     LoggingRuntime second =
@@ -190,7 +203,8 @@ class LoggingRuntimeTest {
     }
     long elapsedNanos = System.nanoTime() - started;
     LoggerFactory.getLogger(LogCategories.APP).error("app-while-trace-blocked");
-    runtime.awaitIdle();
+    // Only the app stream: the trace stream stays blocked until the gate opens.
+    assertTrue(runtime.awaitWritten(LogStream.APP, 10, TimeUnit.SECONDS));
     gate.countDown();
 
     assertTrue(elapsedNanos < TimeUnit.SECONDS.toNanos(1));
