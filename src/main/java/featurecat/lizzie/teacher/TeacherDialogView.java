@@ -1,5 +1,6 @@
 package featurecat.lizzie.teacher;
 
+import featurecat.lizzie.gui.KerningHtmlEditorKit;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
@@ -349,7 +350,7 @@ final class TeacherDialogView extends JPanel {
   }
 
   private HTMLEditorKit createEditorKit() {
-    HTMLEditorKit kit = new HTMLEditorKit();
+    HTMLEditorKit kit = new KerningHtmlEditorKit();
     StyleSheet style = kit.getStyleSheet();
     String fontFamily = output.getFont().getFamily();
     int bodySize = output.getFont().getSize();
