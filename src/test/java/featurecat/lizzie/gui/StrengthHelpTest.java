@@ -47,6 +47,9 @@ class StrengthHelpTest {
 
         @Override
         public void analyzeGame() {}
+
+        @Override
+        public void savePhaseBounds(int[] bounds) {}
       };
 
   private static String help(String key) {
@@ -87,6 +90,7 @@ class StrengthHelpTest {
                   report,
                   new PlayerStrengthEstimator.StrengthModel[] {report.model},
                   false,
+                  StrengthPhases.DEFAULT_BOUNDS,
                   new StrengthDashboard.Context(true, false, 6, 6, true),
                   STYLE,
                   BUNDLE,

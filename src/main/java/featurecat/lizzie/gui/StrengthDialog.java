@@ -2,6 +2,7 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.analysis.HumanSlStrengthPreparation;
 import featurecat.lizzie.analysis.PlayerStrengthEstimator;
+import featurecat.lizzie.logging.LogCategories;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dialog;
@@ -23,12 +24,15 @@ import javax.swing.JPanel;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The player-strength dialog. It shows the dashboard for the current game, rebuilds it in place
  * when the model changes or HumanSL data arrives, and opens the detail view and the model import.
  */
 final class StrengthDialog implements StrengthDashboard.Actions {
+  private static final Logger LOG = LoggerFactory.getLogger(LogCategories.APP);
   private static final int REFRESH_MILLIS = 700;
 
   /** While analysis runs, shown figures are rebuilt on every third tick at most. */
@@ -76,6 +80,12 @@ final class StrengthDialog implements StrengthDashboard.Actions {
 
     /** Whether the human-style (HumanSL) weights are installed on this computer. */
     boolean humanStyleInstalled();
+
+    /** The last move of the opening and of the middle game that the user chose, or the defaults. */
+    int[] phaseBounds();
+
+    /** Keeps the phase boundaries for the next games. */
+    void setPhaseBounds(int[] bounds) throws IOException;
   }
 
   private final Host host;
@@ -99,6 +109,7 @@ final class StrengthDialog implements StrengthDashboard.Actions {
             host.report(),
             host.models(),
             host.backgroundEnabled(),
+            host.phaseBounds(),
             context(host.analysisProgress()),
             style,
             bundle,
@@ -263,6 +274,15 @@ final class StrengthDialog implements StrengthDashboard.Actions {
   }
 
   @Override
+  public void savePhaseBounds(int[] bounds) {
+    try {
+      host.setPhaseBounds(bounds);
+    } catch (IOException error) {
+      LOG.warn("Could not save the strength phase boundaries", error);
+    }
+  }
+
+  @Override
   public void showDetails(int view) {
     PlayerStrengthEstimator.Report report = dashboard.report();
     boolean match = view == StrengthDashboard.MATCH;
@@ -275,7 +295,10 @@ final class StrengthDialog implements StrengthDashboard.Actions {
                 + bundle.getString("PlayerStrengthEstimate.detailData"),
             Dialog.ModalityType.DOCUMENT_MODAL);
     details.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-    details.setContentPane(detailPanel(report, match, style, bundle));
+    details.setContentPane(
+        view == StrengthDashboard.PHASES
+            ? phaseDetailPanel(report, dashboard.phases(), style, bundle)
+            : detailPanel(report, match, style, bundle));
     details.pack();
     int height = details.getHeight();
     place(
@@ -293,22 +316,42 @@ final class StrengthDialog implements StrengthDashboard.Actions {
       ResourceBundle bundle) {
     String blackName = bundle.getString("SidebarHeader.black");
     String whiteName = bundle.getString("SidebarHeader.white");
-    JPanel panel = new JPanel(new BorderLayout(0, style.px(14)));
-    panel.setBackground(style.background);
-    panel.setBorder(
-        BorderFactory.createEmptyBorder(style.px(22), style.px(24), style.px(20), style.px(24)));
-    panel.add(
+    return detailPanel(
         match
             ? new StrengthSegmentChart(report, new String[] {blackName, whiteName}, bundle, style)
             : new StrengthDetailTable(report, blackName, whiteName, bundle, style),
-        BorderLayout.CENTER);
-    String note =
         match
             ? "PlayerStrengthEstimate.match.reviewNote"
             : report.model.isHumanSl40()
                 ? "HumanSL40.reviewNote"
-                : "PlayerStrengthEstimate.reviewOnlyNote";
-    panel.add(new StrengthNote(bundle.getString(note), false, style), BorderLayout.SOUTH);
+                : "PlayerStrengthEstimate.reviewOnlyNote",
+        style,
+        bundle);
+  }
+
+  /** The content of the detail dialog of the phases view: every figure of every phase. */
+  static JComponent phaseDetailPanel(
+      PlayerStrengthEstimator.Report report,
+      java.util.List<StrengthPhases.Phase> phases,
+      StrengthStyle style,
+      ResourceBundle bundle) {
+    return detailPanel(
+        new StrengthPhaseTable(phases, bundle, style),
+        report.model.isHumanSl40()
+            ? "HumanSL40.reviewNote"
+            : "PlayerStrengthEstimate.reviewOnlyNote",
+        style,
+        bundle);
+  }
+
+  private static JComponent detailPanel(
+      JComponent content, String noteKey, StrengthStyle style, ResourceBundle bundle) {
+    JPanel panel = new JPanel(new BorderLayout(0, style.px(14)));
+    panel.setBackground(style.background);
+    panel.setBorder(
+        BorderFactory.createEmptyBorder(style.px(22), style.px(24), style.px(20), style.px(24)));
+    panel.add(content, BorderLayout.CENTER);
+    panel.add(new StrengthNote(bundle.getString(noteKey), false, style), BorderLayout.SOUTH);
     return panel;
   }
 

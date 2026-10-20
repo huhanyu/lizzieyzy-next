@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,6 +43,7 @@ class StrengthDashboardTest {
     int imports;
     int preparations;
     int analyses;
+    final List<int[]> savedBounds = new ArrayList<>();
 
     @Override
     public void chooseModel(PlayerStrengthEstimator.StrengthModel model) {
@@ -72,12 +74,18 @@ class StrengthDashboardTest {
     public void analyzeGame() {
       analyses++;
     }
+
+    @Override
+    public void savePhaseBounds(int[] bounds) {
+      savedBounds.add(bounds);
+    }
   }
 
   private static StrengthDashboard dashboard(
       PlayerStrengthEstimator.Report report, StrengthDashboard.Context context, Recorder actions) {
     StrengthDashboard dashboard =
-        new StrengthDashboard(report, MODELS, false, context, STYLE, BUNDLE, actions);
+        new StrengthDashboard(
+            report, MODELS, false, StrengthPhases.DEFAULT_BOUNDS, context, STYLE, BUNDLE, actions);
     dashboard.setSize(STYLE.px(1120), STYLE.px(732));
     layout(dashboard);
     return dashboard;
@@ -152,6 +160,56 @@ class StrengthDashboardTest {
   }
 
   @Test
+  void phasesTabSplitsTheGameIntoOpeningMiddleGameAndEndgame() throws Exception {
+    PlayerStrengthEstimator.Report report = StrengthFixtures.readyReport();
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDashboard dashboard = dashboard(report, new Recorder());
+          dashboard.tabs().segment(StrengthDashboard.PHASES).doClick(0);
+          assertEquals(
+              BUNDLE.getString("PlayerStrengthEstimate.subtitle.phases"),
+              dashboard.subtitle().getText());
+          StrengthPhaseView view = find(dashboard.currentView(), StrengthPhaseView.class);
+          assertNotNull(view);
+          assertEquals(3, view.phases().size());
+          assertEquals(1, view.card(0).phase().first());
+          assertEquals(60, view.card(0).phase().last());
+          assertEquals(61, view.card(1).phase().first());
+        });
+  }
+
+  @Test
+  void movedDividersAreSavedAndKeptForNewEstimates() throws Exception {
+    PlayerStrengthEstimator.Report report = StrengthFixtures.readyReport();
+    Recorder actions = new Recorder();
+    SwingUtilities.invokeAndWait(
+        () -> {
+          StrengthDashboard dashboard = dashboard(report, actions);
+          dashboard.tabs().segment(StrengthDashboard.PHASES).doClick(0);
+          StrengthPhaseView view = find(dashboard.currentView(), StrengthPhaseView.class);
+          StrengthPhaseTimeline.Divider divider = view.timeline().divider(0);
+          Object right =
+              divider
+                  .getInputMap(JComponent.WHEN_FOCUSED)
+                  .get(KeyStroke.getKeyStroke("shift RIGHT"));
+          divider.getActionMap().get(right).actionPerformed(new ActionEvent(divider, 0, "right"));
+          assertEquals(1, actions.savedBounds.size());
+          assertArrayEquals(new int[] {70, 150}, actions.savedBounds.get(0));
+          assertArrayEquals(new int[] {70, 150}, dashboard.phaseBounds());
+          assertTrue(
+              view.resetButton().isVisible(), "the boundaries are not the defaults any more");
+
+          dashboard.showReport(report, MODELS, ANALYZED);
+          StrengthPhaseView rebuilt = find(dashboard.currentView(), StrengthPhaseView.class);
+          assertEquals(70, rebuilt.card(0).phase().last(), "a new estimate keeps the boundaries");
+          rebuilt.resetButton().doClick(0);
+          assertArrayEquals(StrengthPhases.DEFAULT_BOUNDS, dashboard.phaseBounds());
+          assertFalse(rebuilt.resetButton().isVisible());
+        });
+    assertEquals(2, actions.savedBounds.size());
+  }
+
+  @Test
   void arrowKeysMoveToTheNeighbouringSegment() throws Exception {
     PlayerStrengthEstimator.Report report = StrengthFixtures.readyReport();
     SwingUtilities.invokeAndWait(
@@ -161,7 +219,7 @@ class StrengthDashboardTest {
           Object right =
               first.getInputMap(JComponent.WHEN_FOCUSED).get(KeyStroke.getKeyStroke("RIGHT"));
           first.getActionMap().get(right).actionPerformed(new ActionEvent(first, 0, "RIGHT"));
-          assertEquals(StrengthDashboard.MATCH, dashboard.selectedView());
+          assertEquals(StrengthDashboard.PHASES, dashboard.selectedView());
           JToggleButton second = dashboard.tabs().segment(1);
           Object left =
               second.getInputMap(JComponent.WHEN_FOCUSED).get(KeyStroke.getKeyStroke("LEFT"));
@@ -495,12 +553,13 @@ class StrengthDashboardTest {
                       report,
                       MODELS,
                       true,
+                      new int[] {90, 200},
                       new StrengthDashboard.Context(true, false, 30, 326, true),
                       style,
                       bundle,
                       new Recorder());
               dashboard.setSize(style.px(960) - 16, style.px(660) - 28);
-              for (int view = 0; view < 3; view++) {
+              for (int view = 0; view <= StrengthDashboard.PERFORMANCE; view++) {
                 dashboard.tabs().segment(view).doClick(0);
                 layout(dashboard);
                 layout(dashboard);

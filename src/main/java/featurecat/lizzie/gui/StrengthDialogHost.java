@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import featurecat.lizzie.Config;
 import featurecat.lizzie.analysis.HumanSlStrengthPreparation;
 import featurecat.lizzie.analysis.HumanSlStrengthReuseSession;
 import featurecat.lizzie.analysis.PlayerStrengthEstimator;
@@ -9,6 +10,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.function.Supplier;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  * Connects the player-strength dialog to the main window: the game on its board, its whole-game
@@ -18,13 +21,56 @@ final class StrengthDialogHost implements StrengthDialog.Host {
   /** HumanSL 40 looks at the first 210 moves of a game. */
   private static final int HUMAN_STYLE_MOVES = 210;
 
+  /** Where the phase boundaries are kept in the ui section of the configuration. */
+  static final String PHASE_BOUNDS_KEY = "strength-phase-bounds";
+
   private final LizzieFrame frame;
   private final Supplier<BoardHistoryNode> mainLine;
+  private final Config config;
 
   /** {@code mainLine} gives the first position of the game on the board. */
-  StrengthDialogHost(LizzieFrame frame, Supplier<BoardHistoryNode> mainLine) {
+  StrengthDialogHost(LizzieFrame frame, Supplier<BoardHistoryNode> mainLine, Config config) {
     this.frame = frame;
     this.mainLine = mainLine;
+    this.config = config;
+  }
+
+  /** The look of the dialog: the Apple style or not, the colour theme and the interface font. */
+  StrengthStyle style() {
+    return new StrengthStyle(
+        AppleStyleSupport.isAppleStyleEnabled(),
+        config.useMorandiColors,
+        config.uiFontName,
+        Config.frameFontSize);
+  }
+
+  @Override
+  public int[] phaseBounds() {
+    return parseBounds(
+        config == null || config.uiConfig == null
+            ? null
+            : config.uiConfig.optJSONArray(PHASE_BOUNDS_KEY));
+  }
+
+  @Override
+  public void setPhaseBounds(int[] bounds) throws IOException {
+    int[] normal = StrengthPhases.normalize(bounds);
+    JSONObject ui = new JSONObject(config.uiConfig.toString());
+    ui.put(PHASE_BOUNDS_KEY, new JSONArray(normal));
+    config.saveConfigSections(ui, config.leelazConfig);
+  }
+
+  /** The boundaries kept in {@code saved}, or the defaults when there are none or they are odd. */
+  static int[] parseBounds(JSONArray saved) {
+    if (saved == null || saved.length() != 2) {
+      return StrengthPhases.DEFAULT_BOUNDS.clone();
+    }
+    int opening = saved.optInt(0, -1);
+    int middle = saved.optInt(1, -1);
+    if (opening <= 0 || middle <= opening) {
+      return StrengthPhases.DEFAULT_BOUNDS.clone();
+    }
+    return StrengthPhases.normalize(new int[] {opening, middle});
   }
 
   @Override

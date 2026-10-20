@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -61,7 +62,7 @@ class StrengthDialogHostTest {
   @Test
   void flashAnalysisCountsAsAnalyzingFromTheStartOfItsEngine() throws Exception {
     LizzieFrame frame = allocate(LizzieFrame.class);
-    StrengthDialogHost host = new StrengthDialogHost(frame, () -> null);
+    StrengthDialogHost host = new StrengthDialogHost(frame, () -> null, null);
     assertFalse(host.analyzing());
 
     setField(frame, "flashAnalysisStarting", true);
@@ -100,5 +101,26 @@ class StrengthDialogHostTest {
         }
       }
     }
+  }
+
+  @Test
+  void savedPhaseBoundsAreReadBackOrReplacedByTheDefaults() {
+    assertArrayEquals(
+        new int[] {80, 180}, StrengthDialogHost.parseBounds(new org.json.JSONArray("[80, 180]")));
+    assertArrayEquals(
+        StrengthPhases.DEFAULT_BOUNDS,
+        StrengthDialogHost.parseBounds(new org.json.JSONArray("[150, 60]")));
+    assertArrayEquals(
+        StrengthPhases.DEFAULT_BOUNDS,
+        StrengthDialogHost.parseBounds(new org.json.JSONArray("[\"x\", 60]")));
+    assertArrayEquals(StrengthPhases.DEFAULT_BOUNDS, StrengthDialogHost.parseBounds(null));
+    assertArrayEquals(
+        new int[] {10, 20}, StrengthDialogHost.parseBounds(new org.json.JSONArray("[3, 12]")));
+  }
+
+  @Test
+  void phaseBoundsWithoutAConfigurationAreTheDefaults() throws Exception {
+    StrengthDialogHost host = new StrengthDialogHost(allocate(LizzieFrame.class), () -> null, null);
+    assertArrayEquals(StrengthPhases.DEFAULT_BOUNDS, host.phaseBounds());
   }
 }
