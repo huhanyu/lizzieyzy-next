@@ -83,7 +83,6 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.awt.font.TextAttribute;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Arc2D;
 import java.awt.image.AffineTransformOp;
@@ -12360,13 +12359,6 @@ public class LizzieFrame extends JFrame {
     thread.start();
   }
 
-  private Font makeFont(Font fontBase, int style) {
-    Font font = fontBase.deriveFont(style, 100);
-    Map<TextAttribute, Object> atts = new HashMap<>();
-    atts.put(TextAttribute.KERNING, TextAttribute.KERNING_ON);
-    return font.deriveFont(atts);
-  }
-
   private void drawString(
       Graphics2D g,
       int x,
@@ -12378,21 +12370,12 @@ public class LizzieFrame extends JFrame {
       double maximumFontWidth,
       int aboveOrBelow,
       boolean middle) {
-    Font font = makeFont(fontBase, style);
-    // set maximum size of font
-    FontMetrics fm = g.getFontMetrics(font);
-    font = font.deriveFont((float) (font.getSize2D() * maximumFontWidth / fm.stringWidth(string)));
-    font = font.deriveFont(min(maximumFontHeight, font.getSize()));
-    if (font.getSize() > Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 4) {
-      font =
-          new Font(
-              font.getName(),
-              font.getStyle(),
-              Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 4);
-    }
+    int maxSize = Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 4;
+    Font font =
+        FittedFont.fit(g, fontBase, style, string, maximumFontHeight, maximumFontWidth, maxSize);
     g.setFont(font);
     int length = g.getFontMetrics().stringWidth(string);
-    fm = g.getFontMetrics(font);
+    FontMetrics fm = g.getFontMetrics(font);
     int height = fm.getAscent() - fm.getDescent();
     int verticalOffset;
     if (aboveOrBelow == -1) {
@@ -12418,22 +12401,11 @@ public class LizzieFrame extends JFrame {
       float maximumFontHeight,
       double maximumFontWidth,
       int aboveOrBelow) {
-
-    Font font = makeFont(fontBase, style);
-
-    // set maximum size of font
-    FontMetrics fm = g.getFontMetrics(font);
-    font = font.deriveFont((float) (font.getSize2D() * maximumFontWidth / fm.stringWidth(string)));
-    font = font.deriveFont(min(maximumFontHeight, font.getSize()));
-    if (font.getSize() > Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 6) {
-      font =
-          new Font(
-              font.getName(),
-              font.getStyle(),
-              Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 6);
-    }
+    int maxSize = Math.round(Config.frameFontSize * Lizzie.javaScaleFactor) + 6;
+    Font font =
+        FittedFont.fit(g, fontBase, style, string, maximumFontHeight, maximumFontWidth, maxSize);
     g.setFont(font);
-    fm = g.getFontMetrics(font);
+    FontMetrics fm = g.getFontMetrics(font);
     int wid = fm.stringWidth(string);
     int height = fm.getAscent() - fm.getDescent();
     int verticalOffset;
