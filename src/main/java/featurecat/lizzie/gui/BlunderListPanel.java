@@ -17,10 +17,11 @@ import javax.swing.*;
 
 /** A single sorted view is shared by painting, navigation and accessibility. */
 public class BlunderListPanel extends JPanel {
+  private static final int TOOLBAR_GAP = 8;
   private final EntryModel model = new EntryModel();
   private final ReviewList list = new ReviewList();
-  private final JComboBox<ProblemListSort> sortBox = new SortControl();
-  private final JLabel count = new JLabel();
+  private final ProblemSideToggle sideToggle;
+  private final ProblemSortButton sortButton;
   private final JPanel toolbar = new JPanel(null);
   private final JScrollPane scrollPane = new JScrollPane(list);
   private final JTextArea emptyText = wrappingText();
@@ -33,6 +34,9 @@ public class BlunderListPanel extends JPanel {
   private EntryKey pressedEntry;
   private Object pressedGame;
   private int hoveredIndex = -1;
+  private double largestLoss;
+  // Every stone in the list is as wide as the longest move number, so the points line up.
+  private String widestMoveNumber = "888";
   private boolean styled;
   private boolean appleStyle;
 
@@ -44,38 +48,53 @@ public class BlunderListPanel extends JPanel {
         () ->
             Lizzie.frame == null
                 ? ProblemListSideFilter.BLACK
-                : Lizzie.frame.getProblemListSideFilter());
+                : Lizzie.frame.getProblemListSideFilter(),
+        side -> {
+          if (Lizzie.frame != null) Lizzie.frame.setProblemListSideFilter(side);
+        });
   }
 
   BlunderListPanel(
       Consumer<ProblemMoveEntry> navigate, Supplier<ProblemListSideFilter> sideFilter) {
+    this(navigate, sideFilter, side -> {});
+  }
+
+  BlunderListPanel(
+      Consumer<ProblemMoveEntry> navigate,
+      Supplier<ProblemListSideFilter> sideFilter,
+      Consumer<ProblemListSideFilter> chooseSide) {
     this.navigate = navigate;
     this.sideFilter = sideFilter;
     setOpaque(false);
-    setLayout(new BorderLayout(0, 4));
+    setLayout(new BorderLayout(0, 8));
     toolbar.setOpaque(false);
-    toolbar.add(count);
-    toolbar.add(sortBox);
-    add(toolbar, BorderLayout.NORTH);
+    sideToggle =
+        new ProblemSideToggle(
+            side -> {
+              chooseSide.accept(side);
+              rebuildRows(false);
+            });
     String saved =
         Lizzie.config == null
             ? null
             : Lizzie.config.uiConfig.optString("problem-list-sort", "loss-desc");
-    sortBox.setSelectedItem(ProblemListSort.fromConfigValue(saved));
-    sortBox.setToolTipText(text("BlunderListPanel.sort"));
-    sortBox.getAccessibleContext().setAccessibleName(text("BlunderListPanel.sort"));
-    sortBox.addActionListener(
-        event -> {
-          if (Lizzie.config != null) {
-            Lizzie.config.uiConfig.put("problem-list-sort", sortOrder().configValue);
-          }
-          rebuildRows(false);
-          if (list.getSelectedIndex() < 0) {
-            scrollPane.getViewport().setViewPosition(new Point());
-          } else {
-            list.ensureIndexIsVisible(list.getSelectedIndex());
-          }
-        });
+    sortButton =
+        new ProblemSortButton(
+            ProblemListSort.fromConfigValue(saved),
+            order -> {
+              if (Lizzie.config != null) {
+                Lizzie.config.uiConfig.put("problem-list-sort", order.configValue);
+              }
+              rebuildRows(false);
+              if (list.getSelectedIndex() < 0) {
+                scrollPane.getViewport().setViewPosition(new Point());
+              } else {
+                list.ensureIndexIsVisible(list.getSelectedIndex());
+              }
+            });
+    toolbar.add(sideToggle);
+    toolbar.add(sortButton);
+    add(toolbar, BorderLayout.NORTH);
     list.setModel(model);
     list.setCellRenderer(new ProblemRow());
     list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -89,7 +108,8 @@ public class BlunderListPanel extends JPanel {
       pane.getViewport().setOpaque(false);
       pane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
       pane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
-      pane.getVerticalScrollBar().setUI(new DemoScrollBarUI());
+      pane.getVerticalScrollBar().setUI(new SlimScrollBarUI());
+      pane.getVerticalScrollBar().setOpaque(false);
     }
     emptyText.setBorder(BorderFactory.createEmptyBorder(16, 8, 16, 8));
     body.setOpaque(false);
@@ -191,13 +211,24 @@ public class BlunderListPanel extends JPanel {
     Rectangle bounds = first < 0 ? null : list.getCellBounds(first, first);
     int offset = bounds == null ? 0 : scrollPane.getViewport().getViewPosition().y - bounds.y;
     List<ProblemMoveEntry> entries = new ArrayList<>();
+    ProblemListSideFilter side = sideFilter.get();
+    if (side == null || side == ProblemListSideFilter.ALL) side = ProblemListSideFilter.BLACK;
     if (snapshot != null) {
-      ProblemListSideFilter side = sideFilter.get();
-      if (side == null || side == ProblemListSideFilter.ALL) side = ProblemListSideFilter.BLACK;
       entries.addAll(
           side == ProblemListSideFilter.BLACK ? snapshot.blackEntries : snapshot.whiteEntries);
     }
+    sideToggle.update(
+        side,
+        snapshot == null ? 0 : snapshot.blackEntries.size(),
+        snapshot == null ? 0 : snapshot.whiteEntries.size());
     entries.sort(sortOrder().comparator());
+    largestLoss = 0;
+    int digits = 3;
+    for (ProblemMoveEntry entry : entries) {
+      largestLoss = Math.max(largestLoss, entry.winrateLossAbs);
+      digits = Math.max(digits, Integer.toString(entry.moveNumber).length());
+    }
+    widestMoveNumber = "8".repeat(digits);
     if (!model.sameEntries(entries)) {
       hoveredIndex = -1;
       model.replace(entries);
@@ -221,8 +252,6 @@ public class BlunderListPanel extends JPanel {
       pressedEntry = null;
       scrollPane.getViewport().setViewPosition(new Point());
     }
-    count.setText(format("BlunderListPanel.count", entries.size()));
-    count.getAccessibleContext().setAccessibleName(count.getText());
     String empty = emptyStateText(snapshot, bundle());
     if (!empty.equals(emptyText.getText())) {
       emptyText.setText(empty);
@@ -259,29 +288,34 @@ public class BlunderListPanel extends JPanel {
     return list;
   }
 
-  JComboBox<ProblemListSort> sortControl() {
-    return sortBox;
+  ProblemSortButton sortControl() {
+    return sortButton;
+  }
+
+  ProblemSideToggle sideControl() {
+    return sideToggle;
   }
 
   ProblemListSort sortOrder() {
-    return (ProblemListSort) sortBox.getSelectedItem();
+    return sortButton.order();
   }
 
   private void refreshStyle() {
-    Font font = AppleStyleSupport.workspaceFont(Font.PLAIN, Config.frameFontSize);
+    // Kerning makes Swing lay the Chinese-and-digits text out with TextLayout (see FittedFont).
+    Font font =
+        FittedFont.withKerning(AppleStyleSupport.workspaceFont(Font.PLAIN, Config.frameFontSize));
     boolean apple = Lizzie.config != null && Lizzie.config.isAppleStyle;
     if (styled
         && appleStyle == apple
         && font.equals(list.getFont())
-        && SidebarPanel.secondaryTextColor().equals(count.getForeground())) return;
+        && SidebarPanel.secondaryTextColor().equals(emptyText.getForeground())) return;
     styled = true;
     appleStyle = apple;
     setFont(font);
     list.setFont(font);
-    count.setFont(font);
-    count.setForeground(SidebarPanel.secondaryTextColor());
-    AppleStyleSupport.installComboBoxStyle(sortBox);
-    sortBox.setRenderer(new SortRenderer());
+    sideToggle.setFont(font);
+    sortButton.setFont(font);
+    sortButton.refreshText();
     emptyText.setFont(font);
     emptyText.setForeground(SidebarPanel.secondaryTextColor());
   }
@@ -289,78 +323,22 @@ public class BlunderListPanel extends JPanel {
   @Override
   public void doLayout() {
     int width = Math.max(1, getWidth());
-    FontMetrics metrics = sortBox.getFontMetrics(sortBox.getFont());
-    int naturalWidth = 0;
-    for (ProblemListSort order : ProblemListSort.values()) {
-      naturalWidth = Math.max(naturalWidth, metrics.stringWidth(order.toString()) + 72);
-    }
-    int sortWidth = Math.min(width, naturalWidth);
-    JTextArea measure = wrappingText();
-    measure.setFont(sortBox.getFont());
-    int sortHeight = 0;
-    for (ProblemListSort order : ProblemListSort.values()) {
-      measure.setText(order.toString());
-      measure.setSize(Math.max(1, sortWidth - 64), Short.MAX_VALUE);
-      sortHeight = Math.max(sortHeight, measure.getPreferredSize().height + 12);
-    }
-    Dimension number = count.getPreferredSize();
-    int height = Math.max(sortHeight, number.height);
-    boolean wrap = number.width + sortWidth + 16 > width;
-    toolbar.setPreferredSize(new Dimension(1, wrap ? number.height + height + 4 : height));
+    Dimension side = sideToggle.sizeFor(width);
+    Dimension sort = sortButton.sizeFor(width);
+    boolean wrap = side.width + TOOLBAR_GAP + sort.width > width;
+    int rowHeight = Math.max(side.height, sort.height);
+    toolbar.setPreferredSize(
+        new Dimension(1, wrap ? side.height + TOOLBAR_GAP + sort.height : rowHeight));
     super.doLayout();
-    count.setBounds(0, 0, Math.min(width, number.width), wrap ? number.height : height);
-    sortBox.setBounds(
-        wrap ? 0 : width - sortWidth, wrap ? number.height + 4 : 0, sortWidth, height);
+    if (wrap) {
+      sideToggle.setBounds(0, 0, side.width, side.height);
+      sortButton.setBounds(0, side.height + TOOLBAR_GAP, sort.width, sort.height);
+    } else {
+      sideToggle.setBounds(0, (rowHeight - side.height) / 2, side.width, side.height);
+      sortButton.setBounds(
+          width - sort.width, (rowHeight - sort.height) / 2, sort.width, sort.height);
+    }
     body.doLayout();
-  }
-
-  private static final class SortControl extends JComboBox<ProblemListSort> {
-    SortControl() {
-      super(ProblemListSort.values());
-    }
-
-    @Override
-    public void doLayout() {
-      super.doLayout();
-      // BasicComboBoxUI otherwise makes the arrow as wide as a multi-line field is tall.
-      for (Component child : getComponents()) {
-        if (child instanceof JButton) {
-          Insets insets = getInsets();
-          int width = Math.min(24, Math.max(1, getWidth() - insets.left - insets.right));
-          child.setBounds(
-              getWidth() - insets.right - width,
-              insets.top,
-              width,
-              Math.max(1, getHeight() - insets.top - insets.bottom));
-        }
-      }
-    }
-  }
-
-  private final class SortRenderer extends JTextArea implements ListCellRenderer<ProblemListSort> {
-    SortRenderer() {
-      setEditable(false);
-      setFocusable(false);
-      setLineWrap(true);
-      setWrapStyleWord(true);
-      setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
-    }
-
-    @Override
-    public Component getListCellRendererComponent(
-        JList<? extends ProblemListSort> owner,
-        ProblemListSort order,
-        int index,
-        boolean selected,
-        boolean focused) {
-      setFont(sortBox.getFont());
-      setText(order == null ? "" : order.toString());
-      setForeground(sortBox.getForeground());
-      setBackground(selected ? AppleStyleSupport.workspaceSelection() : sortBox.getBackground());
-      int width = Math.max(1, sortBox.getWidth() - 52);
-      setSize(width, Short.MAX_VALUE);
-      return this;
-    }
   }
 
   static ResourceBundle bundle() {
@@ -412,6 +390,11 @@ public class BlunderListPanel extends JPanel {
     return entry.hasScoreLoss
         ? format("BlunderListPanel.score", decimal(entry.scoreLossAbs)) + "  \u00b7  " + searches
         : searches;
+  }
+
+  /** The score lost, shown under the point; empty when the engine reported no score. */
+  static String visibleDetail(ProblemMoveEntry entry) {
+    return entry.hasScoreLoss ? format("BlunderListPanel.score", decimal(entry.scoreLossAbs)) : "";
   }
 
   static String accessibleRow(ProblemMoveEntry entry, int index) {
@@ -525,26 +508,43 @@ public class BlunderListPanel extends JPanel {
     }
   }
 
+  /**
+   * One problem move: a stone with the move number, the point, the score lost and, on the right,
+   * the winrate lost with a bar scaled to the largest loss in the list. Colour and position are
+   * left to the stone and the filter; the full sentence stays in the tooltip and accessible name.
+   */
   private final class ProblemRow extends JPanel implements ListCellRenderer<ProblemMoveEntry> {
-    private final JLabel ordinal = new JLabel("", SwingConstants.RIGHT);
+    private static final int TOP = 9;
+    private static final int BOTTOM = 9;
+    private static final int LEFT = 12;
+    private static final int RIGHT = 10;
+    private static final int GAP = 10;
+    private static final int BAR = 4;
     private final JTextArea title = wrappingText();
     private final JTextArea detail = wrappingText();
     private final JLabel loss = new JLabel("", SwingConstants.RIGHT);
-    private final JTextArea lossCaption = wrappingText();
+    private final JTextArea lossLine = wrappingText();
+    private ProblemMoveEntry entry;
+    private Font badgeFont;
     private boolean selected;
     private boolean current;
     private boolean focused;
     private boolean hovered;
     private int rowWidth;
+    private final Rectangle badge = new Rectangle();
+    private final Rectangle bar = new Rectangle();
 
     ProblemRow() {
       super(null);
       setOpaque(false);
-      add(ordinal);
+      title.setName("problem-point");
+      detail.setName("problem-detail");
+      loss.setName("problem-loss");
+      lossLine.setName("problem-loss-line");
       add(title);
       add(detail);
       add(loss);
-      add(lossCaption);
+      add(lossLine);
     }
 
     @Override
@@ -554,6 +554,7 @@ public class BlunderListPanel extends JPanel {
         int index,
         boolean selected,
         boolean focused) {
+      this.entry = entry;
       this.selected = selected;
       this.current = entry.isCurrent;
       this.focused = focused;
@@ -562,22 +563,21 @@ public class BlunderListPanel extends JPanel {
           Math.max(1, owner.getFixedCellWidth() > 0 ? owner.getFixedCellWidth() : owner.getWidth());
       Font primary = owner.getFont();
       Font secondary = primary.deriveFont(Math.max(12f, primary.getSize2D() - 1f));
-      ordinal.setFont(secondary);
+      badgeFont = secondary.deriveFont(Font.BOLD);
       title.setFont(primary.deriveFont(Font.BOLD));
       detail.setFont(secondary);
       loss.setFont(primary.deriveFont(Font.BOLD));
-      lossCaption.setFont(secondary);
-      Color text = SidebarPanel.primaryTextColor();
-      Color muted = SidebarPanel.secondaryTextColor();
-      ordinal.setForeground(muted);
-      title.setForeground(text);
-      detail.setForeground(muted);
-      lossCaption.setForeground(muted);
-      loss.setForeground(entry.severityTier >= 5 ? SidebarPanel.lossTextColor() : text);
-      ordinal.setText(Integer.toString(index + 1));
-      title.setText(moveLabel(entry));
-      detail.setText(detailLabel(entry));
+      lossLine.setFont(secondary.deriveFont(Font.BOLD));
+      Color severity = SidebarPanel.severityTextColor(entry.severityTier);
+      title.setForeground(SidebarPanel.primaryTextColor());
+      detail.setForeground(SidebarPanel.secondaryTextColor());
+      loss.setForeground(severity);
+      lossLine.setForeground(severity);
+      title.setText(entry.coords);
+      detail.setText(visibleDetail(entry));
       loss.setText(decimal(entry.winrateLossAbs) + "%");
+      loss.setToolTipText(text("BlunderListPanel.loss"));
+      lossLine.setText(format("BlunderListPanel.lossValue", loss.getText()));
       String accessible = accessibleRow(entry, index);
       getAccessibleContext().setAccessibleName(accessible);
       getAccessibleContext().setAccessibleDescription(accessible);
@@ -592,42 +592,45 @@ public class BlunderListPanel extends JPanel {
     }
 
     private int arrange() {
-      lossCaption.setText(text("BlunderListPanel.loss"));
       int width = Math.max(1, rowWidth);
-      int numberWidth =
-          Math.max(
-              18,
-              ordinal
-                  .getFontMetrics(ordinal.getFont())
-                  .stringWidth(Integer.toString(Math.max(1, model.getSize()))));
-      int start = numberWidth + 16;
-      int content = Math.max(1, width - start - 8);
-      int rightWidth =
-          Math.max(
-                  loss.getPreferredSize().width,
-                  lossCaption
-                      .getFontMetrics(lossCaption.getFont())
-                      .stringWidth(lossCaption.getText()))
-              + 8;
-      boolean stacked = content < rightWidth + getFontMetrics(title.getFont()).charWidth('M') * 12;
-      int mainWidth = stacked ? content : Math.max(1, content - rightWidth - 12);
+      FontMetrics badgeMetrics = getFontMetrics(badgeFont);
+      int stone = StoneGlyph.numberedSize(badgeMetrics, widestMoveNumber);
+      int start = LEFT + stone + GAP;
+      int content = Math.max(1, width - start - RIGHT);
+      int lossWidth = loss.getPreferredSize().width;
+      int barWidth = Math.max(lossWidth, getFontMetrics(loss.getFont()).charWidth('0') * 5);
+      // Keep the loss beside the point while the point still gets a few characters.
+      boolean stacked =
+          content < barWidth + GAP + getFontMetrics(title.getFont()).charWidth('M') * 4;
+      int mainWidth = stacked ? content : Math.max(1, content - barWidth - GAP);
       int titleHeight = wrappedHeight(title, mainWidth);
-      int detailHeight = wrappedHeight(detail, mainWidth);
-      ordinal.setBounds(0, 8, numberWidth, ordinal.getPreferredSize().height);
-      title.setBounds(start, 8, mainWidth, titleHeight);
-      detail.setBounds(start, 8 + titleHeight + 4, mainWidth, detailHeight);
-      if (stacked) {
-        // Use a wrapping, fully labelled loss on narrow sidebars; never shrink the font.
-        lossCaption.setText(format("BlunderListPanel.lossValue", loss.getText()));
-        int height = wrappedHeight(lossCaption, content);
-        lossCaption.setBounds(start, 8 + titleHeight + detailHeight + 8, content, height);
-        loss.setBounds(0, 0, 0, 0);
-        return 8 + titleHeight + detailHeight + 8 + height + 9;
+      int y = TOP + titleHeight;
+      title.setBounds(start, TOP, mainWidth, titleHeight);
+      if (detail.getText().isEmpty()) {
+        detail.setBounds(0, 0, 0, 0);
+      } else {
+        int detailHeight = wrappedHeight(detail, mainWidth);
+        detail.setBounds(start, y + 2, mainWidth, detailHeight);
+        y += 2 + detailHeight;
       }
-      int captionHeight = wrappedHeight(lossCaption, rightWidth);
-      loss.setBounds(width - rightWidth - 8, 8, rightWidth, titleHeight);
-      lossCaption.setBounds(width - rightWidth - 8, 8 + titleHeight + 4, rightWidth, captionHeight);
-      return 8 + titleHeight + 4 + Math.max(detailHeight, captionHeight) + 9;
+      if (stacked) {
+        loss.setBounds(0, 0, 0, 0);
+        int lineHeight = wrappedHeight(lossLine, content);
+        lossLine.setBounds(start, y + 4, content, lineHeight);
+        y += 4 + lineHeight;
+        bar.setBounds(start, y + 6, Math.min(content, barWidth * 2), BAR);
+        y += 6 + BAR;
+      } else {
+        lossLine.setBounds(0, 0, 0, 0);
+        int lossHeight = loss.getPreferredSize().height;
+        loss.setBounds(width - RIGHT - barWidth, TOP, barWidth, Math.max(lossHeight, titleHeight));
+        int barY = Math.max(y - BAR - 3, TOP + Math.max(lossHeight, titleHeight) + 6);
+        bar.setBounds(width - RIGHT - barWidth, barY, barWidth, BAR);
+        y = Math.max(y, barY + BAR);
+      }
+      int height = y + BOTTOM;
+      badge.setBounds(LEFT, (height - stone) / 2, stone, stone);
+      return height;
     }
 
     @Override
@@ -643,13 +646,14 @@ public class BlunderListPanel extends JPanel {
     @Override
     protected void paintComponent(Graphics graphics) {
       super.paintComponent(graphics);
+      // Highlight, marker, separator and focus ring stay crisp, unantialiased rectangles.
       if (selected || current || hovered) {
         graphics.setColor(SidebarPanel.rowHighlightColor(selected || current));
         graphics.fillRect(0, 0, getWidth(), getHeight() - 1);
       }
       if (current || selected) {
         graphics.setColor(SidebarPanel.accentTextColor());
-        graphics.fillRect(0, 5, 2, Math.max(0, getHeight() - 11));
+        graphics.fillRect(0, 5, 3, Math.max(0, getHeight() - 11));
       }
       graphics.setColor(SidebarPanel.rowSeparatorColor());
       graphics.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
@@ -657,6 +661,38 @@ public class BlunderListPanel extends JPanel {
         graphics.setColor(SidebarPanel.accentTextColor());
         graphics.drawRect(1, 1, Math.max(0, getWidth() - 3), Math.max(0, getHeight() - 4));
       }
+      if (entry == null) return;
+      Graphics2D g = (Graphics2D) graphics.create();
+      try {
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        StoneGlyph.paintNumbered(
+            g,
+            badge.x,
+            badge.y,
+            badge.width,
+            entry.isBlack,
+            Integer.toString(entry.moveNumber),
+            badgeFont);
+        paintLossBar(g);
+      } finally {
+        g.dispose();
+      }
+    }
+
+    private void paintLossBar(Graphics2D g) {
+      if (bar.isEmpty()) return;
+      Color track = SidebarPanel.secondaryTextColor();
+      g.setColor(new Color(track.getRed(), track.getGreen(), track.getBlue(), 46));
+      g.fillRoundRect(bar.x, bar.y, bar.width, bar.height, bar.height, bar.height);
+      double share = largestLoss <= 0 ? 0 : Math.min(1, entry.winrateLossAbs / largestLoss);
+      int filled = Math.max(bar.height, (int) Math.round(bar.width * share));
+      g.setColor(
+          entry.severityTier >= 3
+              ? SidebarPanel.severityTextColor(entry.severityTier)
+              : SidebarPanel.secondaryTextColor());
+      // The bar grows from the right, under the right-aligned number.
+      g.fillRoundRect(
+          bar.x + bar.width - filled, bar.y, filled, bar.height, bar.height, bar.height);
     }
   }
 }

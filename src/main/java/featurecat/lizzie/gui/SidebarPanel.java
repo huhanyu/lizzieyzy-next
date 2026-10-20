@@ -138,6 +138,18 @@ public class SidebarPanel extends JPanel {
     return surfacePalette().loss();
   }
 
+  /**
+   * Text colour for a problem move's loss: red for the worst tier, orange and amber for the next
+   * two, and the primary text colour below that. Readable at 4.5:1 on plain and highlighted rows.
+   */
+  static Color severityTextColor(int tier) {
+    SurfacePalette palette = surfacePalette();
+    if (tier >= 5) return palette.loss();
+    if (tier == 4) return palette.major();
+    if (tier == 3) return palette.moderate();
+    return palette.primary();
+  }
+
   static Color rowSeparatorColor() {
     return surfacePalette().dark() ? new Color(255, 255, 255, 28) : new Color(0, 0, 0, 24);
   }
@@ -172,6 +184,8 @@ public class SidebarPanel extends JPanel {
     Color secondary = dark ? new Color(185, 195, 191) : new Color(72, 83, 79);
     Color accent = dark ? new Color(105, 211, 186) : new Color(18, 107, 98);
     Color loss = dark ? new Color(255, 176, 164) : new Color(155, 43, 35);
+    Color major = dark ? new Color(255, 190, 122) : new Color(160, 78, 10);
+    Color moderate = dark ? new Color(236, 210, 128) : new Color(118, 92, 8);
     if (!supportsTextContrast(surfaces)) {
       // An unknown wallpaper behind a low-alpha fill can span both light and dark pixels.
       // No single foreground guarantees contrast there. Preserve user alpha and the
@@ -184,6 +198,8 @@ public class SidebarPanel extends JPanel {
           dark ? new Color(185, 195, 191) : new Color(72, 83, 79),
           dark ? new Color(105, 211, 186) : new Color(18, 107, 98),
           dark ? new Color(255, 176, 164) : new Color(155, 43, 35),
+          major,
+          moderate,
           dark ? new Color(105, 211, 186) : new Color(18, 107, 98),
           25);
     }
@@ -200,6 +216,8 @@ public class SidebarPanel extends JPanel {
         readableColor(secondary, painted, 4.5),
         readableColor(accent, painted, 3.0),
         readableColor(loss, painted, 4.5),
+        readableColor(major, painted, 4.5),
+        readableColor(moderate, painted, 4.5),
         tint,
         highlightAlpha);
   }
@@ -211,6 +229,8 @@ public class SidebarPanel extends JPanel {
       Color secondary,
       Color accent,
       Color loss,
+      Color major,
+      Color moderate,
       Color highlight,
       int highlightAlpha) {}
 
