@@ -18350,7 +18350,7 @@ public class LizzieFrame extends JFrame {
             isCurrentPrimaryEngineRemote(),
             isCurrentPrimaryEngineBundledOpenCl(),
             isCurrentPrimaryEngineBundledNvidia(),
-            Lizzie.config != null && Lizzie.config.analysisReuseCurrentEngine);
+            AnalysisEngine.reusesPrimaryForQuickAnalysis());
     boolean primaryLoaded =
         !dependsOnPrimary || (Lizzie.leelaz != null && Lizzie.leelaz.isLoaded());
     boolean primaryFailed =

@@ -31,6 +31,7 @@ import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,6 +46,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class AnalysisEngineRequestTest {
   private static final int BOARD_SIZE = 3;
@@ -278,31 +280,120 @@ class AnalysisEngineRequestTest {
   }
 
   @Test
+  void automaticAnalysisUsesTheMainEngineWhenTheAnalysisEngineIsGone(@TempDir Path folder)
+      throws Exception {
+    assertTrue(
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            false,
+            false,
+            false,
+            false,
+            true));
+    assertFalse(
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            false,
+            false,
+            false,
+            true,
+            true),
+        "a lightweight quick model has its own working command");
+    assertFalse(
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS,
+            false,
+            false,
+            false,
+            false,
+            true),
+        "flash analysis keeps reporting its broken engine");
+
+    Config config = allocate(Config.class);
+    Path missing = folder.resolve("katago");
+    config.analysisEngineCommand = "\"" + missing + "\" analysis -model \"x.bin.gz\"";
+    assertTrue(QuickAnalysisPrimaryReuse.analysisEngineMissing(config, () -> false));
+    assertTrue(QuickAnalysisPrimaryReuse.reusesPrimary(config, () -> false));
+    assertFalse(
+        QuickAnalysisPrimaryReuse.analysisEngineMissing(config, () -> true),
+        "an engine reached over SSH is not on this computer");
+    config.analysisReuseCurrentEngine = true;
+    assertFalse(QuickAnalysisPrimaryReuse.analysisEngineMissing(config, () -> false));
+    assertTrue(QuickAnalysisPrimaryReuse.reusesPrimary(config, () -> false));
+    config.analysisReuseCurrentEngine = false;
+    config.analysisEngineCommand = "katago analysis -model x.bin.gz";
+    assertFalse(
+        QuickAnalysisPrimaryReuse.analysisEngineMissing(config, () -> false),
+        "a program found on the PATH is not judged");
+    assertFalse(QuickAnalysisPrimaryReuse.reusesPrimary(config, () -> false));
+  }
+
+  @Test
   void automaticQuickAnalysisReusesRemoteAndBundledNvidiaForegroundWhenAppropriate() {
     assertTrue(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true, false, false, false));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            true,
+            false,
+            false,
+            false,
+            false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, true, false, false, true));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            true,
+            false,
+            false,
+            true,
+            false));
     assertTrue(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, true, true));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            false,
+            true,
+            true,
+            true,
+            false));
     assertTrue(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, false, false));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            false,
+            true,
+            false,
+            false,
+            false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, true, false, true));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            false,
+            true,
+            false,
+            true,
+            false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS, true, true, true, false));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.USER_QUICK_ANALYSIS,
+            true,
+            true,
+            true,
+            false,
+            false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.WHOLE_GAME_ANALYSIS, true, true, true, false));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.WHOLE_GAME_ANALYSIS,
+            true,
+            true,
+            true,
+            false,
+            false));
     assertFalse(
-        AnalysisEngine.shouldAutomaticallyReusePrimaryForeground(
-            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS, false, false, false, false));
+        QuickAnalysisPrimaryReuse.shouldReuse(
+            AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
+            false,
+            false,
+            false,
+            false,
+            false));
   }
 
   @Test
@@ -2243,6 +2334,38 @@ class AnalysisEngineRequestTest {
           0,
           frame.fullRefreshCalls,
           "an intermediate silent result must not rebuild the full board render surface.");
+      waitForMovelistRefreshThreads();
+    }
+  }
+
+  @Test
+  void analysisWithAProgressWindowAlsoFillsTheGraphAsResultsArrive() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      history.add(
+          moveNode(stones(placement(0, 0, Stone.BLACK)), new int[] {0, 0}, Stone.BLACK, false, 1));
+      history.add(
+          moveNode(
+              stones(placement(0, 0, Stone.BLACK), placement(1, 1, Stone.WHITE)),
+              new int[] {1, 1},
+              Stone.WHITE,
+              true,
+              2));
+      boardWithHistory(history);
+      SilentProgressTrackingFrame frame = allocate(SilentProgressTrackingFrame.class);
+      Lizzie.frame = frame;
+      TrackingAnalysisEngine engine = TrackingAnalysisEngine.create();
+      ProgressWindow window = allocate(ProgressWindow.class);
+      engine.waitFrame = window;
+
+      assertEquals(2, engine.startRequestMissingMainline(true));
+      engine.parseResult(analysisResult(1, 200, 62.0));
+
+      assertEquals(1, window.lastProgress, "the progress window still counts the result");
+      assertEquals(
+          1,
+          frame.silentProgressRefreshCalls,
+          "the winrate graph shows the result while the analysis runs, not only at the end.");
       waitForMovelistRefreshThreads();
     }
   }
@@ -4591,6 +4714,27 @@ class AnalysisEngineRequestTest {
     protected void showContributeBenchmarkConflict() {
       contributeBenchmarkConflictCount++;
     }
+  }
+
+  /** A progress window that only remembers the progress it was given. */
+  private static final class ProgressWindow extends featurecat.lizzie.gui.WaitForAnalysis {
+    private int lastProgress = -1;
+
+    @Override
+    public void setProgress(int curMove, int allMove) {
+      lastProgress = curMove;
+    }
+
+    @Override
+    public void setLocationRelativeTo(java.awt.Component component) {}
+
+    @Override
+    public boolean isVisible() {
+      return true;
+    }
+
+    @Override
+    public void setVisible(boolean visible) {}
   }
 
   private static final class SilentProgressTrackingFrame extends LizzieFrame {

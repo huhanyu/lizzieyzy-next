@@ -17,7 +17,7 @@
     "src/main/java/featurecat/lizzie/gui/BoardRenderer.java": 4846,
     "src/main/java/featurecat/lizzie/gui/OnlineDialog.java": 4565,
     "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4314,
-    "src/main/java/featurecat/lizzie/Config.java": 4054,
+    "src/main/java/featurecat/lizzie/Config.java": 4031,
     "src/main/java/featurecat/lizzie/analysis/AnalysisEngine.java": 3273,
     "src/main/java/featurecat/lizzie/gui/WinrateGraph.java": 3216,
     "src/main/java/featurecat/lizzie/gui/FloatBoardRenderer.java": 3061,
@@ -29,8 +29,8 @@
   },
   "max_static_references": {
     "Lizzie.config": 6976,
-    "Lizzie.frame": 3233,
-    "Lizzie.board": 1953,
+    "Lizzie.frame": 3232,
+    "Lizzie.board": 1952,
     "Lizzie.leelaz": 1093,
     "Lizzie.leelaz2": 115,
     "Lizzie.engineManager": 156

@@ -332,24 +332,20 @@ public class AnalysisEngine {
   public static boolean automaticallyReusesPrimaryForeground(
       boolean lightweightQuickModelRequested) {
     String command = Lizzie.leelaz == null ? null : Lizzie.leelaz.engineCommand();
-    return shouldAutomaticallyReusePrimaryForeground(
+    return QuickAnalysisPrimaryReuse.shouldReuse(
         AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS,
         RemoteComputeConfig.isRemoteComputeEngineCommand(command),
         KataGoRuntimeHelper.isBundledNvidiaCommand(command),
         KataGoRuntimeHelper.isBundledTensorRtCommand(command),
-        lightweightQuickModelRequested);
+        lightweightQuickModelRequested,
+        QuickAnalysisPrimaryReuse.analysisEngineMissing(
+            Lizzie.config, () -> Utils.getAnalysisEngineRemoteEngineData().useJavaSSH));
   }
 
-  static boolean shouldAutomaticallyReusePrimaryForeground(
-      AnalysisResourceCoordinator.Purpose purpose,
-      boolean remotePrimary,
-      boolean bundledNvidiaPrimary,
-      boolean bundledTensorRtPrimary,
-      boolean lightweightQuickModelRequested) {
-    return purpose == AnalysisResourceCoordinator.Purpose.AUTO_QUICK_ANALYSIS
-        && ((remotePrimary && !lightweightQuickModelRequested)
-            || (bundledNvidiaPrimary
-                && (bundledTensorRtPrimary || !lightweightQuickModelRequested)));
+  /** Whether automatic analysis uses the main engine, by choice or as the only one that works. */
+  public static boolean reusesPrimaryForQuickAnalysis() {
+    return QuickAnalysisPrimaryReuse.reusesPrimary(
+        Lizzie.config, () -> Utils.getAnalysisEngineRemoteEngineData().useJavaSSH);
   }
 
   static boolean shouldShowGeneratedConfigNotice(boolean isPreLoad, boolean generatedConfig) {
@@ -732,12 +728,7 @@ public class AnalysisEngine {
     }
     notifyProgress();
     Lizzie.frame.requestProblemListRefresh();
-    if (waitFrame != null) {
-      waitFrame.setProgress(resultCount, analyzeMap.size());
-    } else if (silentProgress && shouldRefreshSilentProgress(resultCount, analyzeMap.size())) {
-      Lizzie.board.setMovelistAll();
-      Lizzie.frame.refreshSilentAnalysisProgress();
-    }
+    showProgress(true);
     if (canFinalizeCurrentRequest() && responseCount == analyzeMap.size()) setResult();
   }
 
@@ -1082,12 +1073,7 @@ public class AnalysisEngine {
     }
     notifyProgress();
     Lizzie.frame.requestProblemListRefresh();
-    if (waitFrame != null && (sharedForegroundEngine == null || resultCount < analyzeMap.size())) {
-      waitFrame.setProgress(resultCount, analyzeMap.size());
-    } else if (silentProgress && shouldRefreshSilentProgress(resultCount, analyzeMap.size())) {
-      Lizzie.board.setMovelistAll();
-      Lizzie.frame.refreshSilentAnalysisProgress();
-    }
+    showProgress(sharedForegroundEngine == null || resultCount < analyzeMap.size());
     return true;
   }
 
@@ -1198,6 +1184,20 @@ public class AnalysisEngine {
       Lizzie.board.updateMovelist(node);
       return explicitRequestTargetVisits <= 0
           || data.hasCompletePrimaryAnalysis(explicitRequestTargetVisits, ownershipRequired);
+    }
+  }
+
+  /**
+   * Shows the progress in the progress window, when there is one and {@code window} is set, and
+   * every few results on the winrate graph, which so fills in while the analysis runs.
+   */
+  private void showProgress(boolean window) {
+    if (waitFrame != null && window) {
+      waitFrame.setProgress(resultCount, analyzeMap.size());
+    }
+    if (shouldRefreshSilentProgress(resultCount, analyzeMap.size())) {
+      Lizzie.board.setMovelistAll();
+      Lizzie.frame.refreshSilentAnalysisProgress();
     }
   }
 
