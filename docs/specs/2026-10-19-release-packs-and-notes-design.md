@@ -22,9 +22,11 @@ Status: proposed (2026-10-19).
 2. **App releases.**
    - Pre-releases ship only `core-update`, the `without.engine` packages, and the
      catalog/manifest/envelope files.
-   - Full bundles (`with-katago`, `nvidia`, …) are built for stable releases only.
-   - The updater installs engine packs as components, using the same flow as
-     [optional components](2026-10-19-optional-components-design.md).
+   - Full bundles (`with-katago`, `nvidia`, …) are built for stable releases only. They stay the
+     only fresh-install path, complete and usable right after unzipping
+     ([package size](2026-10-19-package-size-design.md)).
+   - For updates, the in-app updater installs a changed engine pack as a component, so users never
+     re-download a whole bundle by hand. Fresh installs never download parts.
 3. **Release notes.** Each language section contains only "what's new" (from `## Unreleased` in
    CHANGELOG.md) and one link to the download chooser on goagent.top. The download guide lives
    in [docs/PACKAGES.md](../PACKAGES.md) and on the website, not in every release.
@@ -35,7 +37,7 @@ Status: proposed (2026-10-19).
    `scripts/validate_release_notes.py` to accept it. This has no effect on users.
 2. Publish engine packs as their own releases. Point the catalog at them, and keep full bundles
    for stable releases.
-3. Let the updater install engine packs as components.
+3. Let the updater install changed engine packs as components during updates.
 
 ## How success is measured
 
