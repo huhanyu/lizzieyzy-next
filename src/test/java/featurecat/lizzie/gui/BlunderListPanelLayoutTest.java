@@ -59,47 +59,57 @@ class BlunderListPanelLayoutTest {
   }
 
   @Test
-  void classicSideSelectionIsVisibleOnLightAndDarkBackgrounds() throws Exception {
-    Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
-    field.setAccessible(true);
-    LizzieFrame previousFrame = Lizzie.frame;
-    Lizzie.frame =
-        (LizzieFrame) ((sun.misc.Unsafe) field.get(null)).allocateInstance(LizzieFrame.class);
-    try {
-      edt(
-          () -> {
-            Lizzie.config.isShowingBlunderTabel = true;
-            for (Color background : readableThemeSurfaces()) {
-              Lizzie.config.commentBackgroundColor = background;
-              for (String side : new String[] {"black", "white"}) {
-                Lizzie.config.problemListSideFilter = side;
-                SidebarHeaderPanel header = new SidebarHeaderPanel(null);
-                header.setSize(500, 56);
-                BufferedImage image = new BufferedImage(500, 56, BufferedImage.TYPE_INT_RGB);
-                Graphics2D graphics = image.createGraphics();
-                try {
-                  graphics.setColor(background);
-                  graphics.fillRect(0, 0, 500, 56);
-                  header.paint(graphics);
-                  FontMetrics metrics =
-                      graphics.getFontMetrics(new Font(Lizzie.config.uiFontName, Font.BOLD, 12));
-                  SidebarHeaderPanel.HeaderLayout layout =
-                      SidebarHeaderPanel.headerLayout(false, true, metrics, 500, "");
-                  int x = side.equals("black") ? layout.blackTextX : layout.whiteTextX;
-                  Color marker = new Color(image.getRGB(x + 5, layout.sideBaseline + 8));
-                  assertEquals(SidebarPanel.accentTextColor(), marker);
-                  double a = luminance(background);
-                  double b = luminance(marker);
-                  assertTrue((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 3.0);
-                } finally {
-                  graphics.dispose();
-                }
+  void selectedSideIsVisibleOnLightAndDarkBackgrounds() throws Exception {
+    edt(
+        () -> {
+          for (Color background : readableThemeSurfaces()) {
+            Lizzie.config.commentBackgroundColor = background;
+            for (ProblemListSideFilter side :
+                new ProblemListSideFilter[] {
+                  ProblemListSideFilter.BLACK, ProblemListSideFilter.WHITE
+                }) {
+              BlunderListPanel panel = new BlunderListPanel(e -> {}, () -> side);
+              panel.updateSnapshot(
+                  new ProblemListSnapshot(
+                      ProblemListMetric.WINRATE_LOSS,
+                      List.of(row(13, 25)),
+                      List.of(white(18, 40), white(20, 30)),
+                      100,
+                      100,
+                      false),
+                  null);
+              panel.setSize(500, 300);
+              layoutTree(panel);
+              ProblemSideToggle toggle = panel.sideControl();
+              assertEquals(side, toggle.selectedSide());
+              JToggleButton selected = toggle.half(side);
+              assertTrue(selected.isSelected());
+              assertEquals(side == ProblemListSideFilter.BLACK ? "1" : "2", countShown(selected));
+              BufferedImage image =
+                  new BufferedImage(
+                      toggle.getWidth(), toggle.getHeight(), BufferedImage.TYPE_INT_RGB);
+              Graphics2D graphics = image.createGraphics();
+              try {
+                graphics.setColor(background);
+                graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+                toggle.paint(graphics);
+              } finally {
+                graphics.dispose();
               }
+              // The accent outline of the selected half must stand out from the sidebar.
+              int x = selected.getX() + selected.getWidth() / 2;
+              double best = 0;
+              for (int y = selected.getY(); y < selected.getY() + 4; y++) {
+                best = Math.max(best, contrastRatio(new Color(image.getRGB(x, y)), background));
+              }
+              assertTrue(best >= 3.0, background + " " + side + " outline contrast " + best);
             }
-          });
-    } finally {
-      Lizzie.frame = previousFrame;
-    }
+          }
+        });
+  }
+
+  private static String countShown(JToggleButton half) {
+    return half.getAccessibleContext().getAccessibleDescription().replaceAll("\\D+", "");
   }
 
   @Test
@@ -108,9 +118,9 @@ class BlunderListPanelLayoutTest {
         () -> {
           BlunderListPanel panel = panel();
           panel.updateSnapshot(snapshot(row(101, 20), row(3, 30), row(7, 20)), null);
-          panel.sortControl().setSelectedItem(ProblemListSort.MOVE_ASC);
+          panel.sortControl().setOrder(ProblemListSort.MOVE_ASC);
           assertEquals(List.of(3, 7, 101), moves(panel));
-          panel.sortControl().setSelectedItem(ProblemListSort.MOVE_DESC);
+          panel.sortControl().setOrder(ProblemListSort.MOVE_DESC);
           assertEquals(List.of(101, 7, 3), moves(panel));
           JList<ProblemMoveEntry> list = panel.reviewList();
           JComponent renderer =
@@ -131,7 +141,7 @@ class BlunderListPanelLayoutTest {
           Lizzie.config.uiConfig.put("problem-list-side-filter", "white");
           Lizzie.config.uiConfig.put("problem-list-winrate-threshold", 17);
           BlunderListPanel first = panel();
-          first.sortControl().setSelectedItem(ProblemListSort.MOVE_DESC);
+          first.sortControl().setOrder(ProblemListSort.MOVE_DESC);
           JSONObject diskRoundTrip = new JSONObject(Lizzie.config.uiConfig.toString());
           Lizzie.config.uiConfig = diskRoundTrip;
           assertEquals(ProblemListSort.MOVE_DESC, panel().sortOrder());
@@ -211,7 +221,7 @@ class BlunderListPanelLayoutTest {
           panel.reviewList().setSelectedIndex(1);
           panel.updateSnapshot(snapshot(row(5, 10), row(9, 60)), game);
           assertEquals(9, panel.reviewList().getSelectedValue().moveNumber);
-          panel.sortControl().setSelectedItem(ProblemListSort.MOVE_ASC);
+          panel.sortControl().setOrder(ProblemListSort.MOVE_ASC);
           assertEquals(9, panel.reviewList().getSelectedValue().moveNumber);
           panel.updateSnapshot(snapshot(row(5, 10), row(9, 60)), new Object());
           assertNull(panel.reviewList().getSelectedValue());
@@ -253,7 +263,7 @@ class BlunderListPanelLayoutTest {
           int first = list.getFirstVisibleIndex();
           assertEquals(101, list.getModel().getElementAt(first).moveNumber);
           assertEquals(7, viewport.getViewPosition().y - list.getCellBounds(first, first).y);
-          panel.sortControl().setSelectedItem(ProblemListSort.MOVE_ASC);
+          panel.sortControl().setOrder(ProblemListSort.MOVE_ASC);
           assertEquals(0, viewport.getViewPosition().y);
           viewport.setViewPosition(new Point(0, 200));
           panel.updateSnapshot(snapshot(rows), new Object());
@@ -293,7 +303,7 @@ class BlunderListPanelLayoutTest {
   }
 
   @Test
-  void sortChoicesWrapAtLargeFontsWithoutChangingFieldHeight() throws Exception {
+  void sortChipWrapsInsteadOfClippingAndItsMenuOffersEveryOrder() throws Exception {
     edt(
         () -> {
           Config.frameFontSize = 20;
@@ -301,28 +311,40 @@ class BlunderListPanelLayoutTest {
             if (locale == AppLocale.SYSTEM) continue;
             selectLocale(locale);
             BlunderListPanel panel = panel();
-            panel.setSize(160, 400);
-            panel.doLayout();
-            JComboBox<ProblemListSort> combo = panel.sortControl();
-            int height = combo.getHeight();
             for (ProblemListSort order : ProblemListSort.values()) {
-              combo.setSelectedItem(order);
+              panel.sortControl().setOrder(order);
+              panel.setSize(160, 400);
               panel.doLayout();
-              combo.doLayout();
-              Component rendered =
-                  combo
-                      .getRenderer()
-                      .getListCellRendererComponent(new JList<>(), order, -1, false, false);
-              assertEquals(height, combo.getHeight());
-              assertTrue(rendered instanceof JTextArea);
-              assertTrue(
-                  rendered.getPreferredSize().height <= height - 2,
-                  locale + " " + order + " " + rendered.getPreferredSize() + " / " + height);
-              for (Component child : combo.getComponents()) {
-                if (child instanceof JButton) assertTrue(child.getWidth() <= 24);
+              ProblemSortButton chip = panel.sortControl();
+              Dimension oneLine = chip.getPreferredSize();
+              Dimension fitted = chip.sizeFor(160);
+              assertTrue(fitted.width <= 160, locale + " " + order + " " + fitted);
+              assertTrue(fitted.height >= oneLine.height, locale + " " + order);
+              assertTrue(chip.getX() + chip.getWidth() <= 160, locale + " " + order);
+              JPopupMenu menu = chip.createMenu();
+              assertEquals(ProblemListSort.values().length, menu.getComponentCount());
+              for (int i = 0; i < menu.getComponentCount(); i++) {
+                JRadioButtonMenuItem item = (JRadioButtonMenuItem) menu.getComponent(i);
+                assertEquals(ProblemListSort.values()[i].toString(), item.getText());
+                assertEquals(ProblemListSort.values()[i] == order, item.isSelected());
               }
             }
           }
+        });
+  }
+
+  @Test
+  void choosingFromTheSortMenuReordersTheList() throws Exception {
+    edt(
+        () -> {
+          BlunderListPanel panel = panel();
+          panel.updateSnapshot(snapshot(row(101, 20), row(3, 30), row(7, 20)), null);
+          JPopupMenu menu = panel.sortControl().createMenu();
+          ((JRadioButtonMenuItem) menu.getComponent(ProblemListSort.MOVE_DESC.ordinal()))
+              .doClick(0);
+          assertEquals(ProblemListSort.MOVE_DESC, panel.sortOrder());
+          assertEquals(List.of(101, 7, 3), moves(panel));
+          assertEquals("move-desc", Lizzie.config.uiConfig.getString("problem-list-sort"));
         });
   }
 
@@ -800,23 +822,64 @@ class BlunderListPanelLayoutTest {
   }
 
   @Test
-  void recycledNarrowRendererAlwaysShowsItsOwnLossWithoutAnotherLayoutPass() throws Exception {
+  void recycledRendererAlwaysShowsItsOwnLossWithoutAnotherLayoutPass() throws Exception {
+    edt(
+        () -> {
+          for (int width : new int[] {360, 120}) {
+            BlunderListPanel panel = panel();
+            panel.updateSnapshot(snapshot(row(57, 32.8), row(7, 8.5)), null);
+            prepareList(panel, width, 400);
+            JList<ProblemMoveEntry> list = panel.reviewList();
+            for (int index : new int[] {0, 1, 0}) {
+              JPanel cell =
+                  (JPanel)
+                      list.getCellRenderer()
+                          .getListCellRendererComponent(
+                              list, list.getModel().getElementAt(index), index, false, false);
+              String loss = index == 0 ? "32.8%" : "8.5%";
+              Component inline = named(cell, "problem-loss");
+              Component line = named(cell, "problem-loss-line");
+              if (inline.getWidth() > 0) {
+                assertEquals(loss, ((JLabel) inline).getText(), "wide row " + width);
+                assertEquals(0, line.getWidth());
+              } else {
+                assertEquals("胜率损失 " + loss, ((JTextArea) line).getText(), "narrow row " + width);
+                assertTrue(line.getWidth() > 0);
+              }
+            }
+          }
+        });
+  }
+
+  @Test
+  void rowShowsThePointAndScoreButKeepsTheFullSentenceForScreenReaders() throws Exception {
     edt(
         () -> {
           BlunderListPanel panel = panel();
-          panel.updateSnapshot(snapshot(row(57, 32.8), row(7, 8.5)), null);
-          prepareList(panel, 200, 400);
+          panel.updateSnapshot(
+              snapshot(new ProblemMoveEntry(true, 161, "B8", 31.1, 3.4, true, 2, false, 5)), null);
+          prepareList(panel, 360, 400);
           JList<ProblemMoveEntry> list = panel.reviewList();
-          for (int index : new int[] {0, 1, 0}) {
-            JPanel cell =
-                (JPanel)
-                    list.getCellRenderer()
-                        .getListCellRendererComponent(
-                            list, list.getModel().getElementAt(index), index, false, false);
-            JTextArea caption = (JTextArea) cell.getComponent(4);
-            assertEquals("胜率损失 " + (index == 0 ? "32.8%" : "8.5%"), caption.getText());
-          }
+          JPanel cell =
+              (JPanel)
+                  list.getCellRenderer()
+                      .getListCellRendererComponent(
+                          list, list.getModel().getElementAt(0), 0, false, false);
+          assertEquals("B8", ((JTextArea) named(cell, "problem-point")).getText());
+          assertEquals("目损 3.4", ((JTextArea) named(cell, "problem-detail")).getText());
+          assertEquals(SidebarPanel.lossTextColor(), named(cell, "problem-loss").getForeground());
+          String name = cell.getAccessibleContext().getAccessibleName();
+          assertTrue(name.contains("第161手"), name);
+          assertTrue(name.contains("黑棋"), name);
+          assertTrue(name.contains("搜索"), name);
         });
+  }
+
+  private static Component named(Container parent, String name) {
+    for (Component child : parent.getComponents()) {
+      if (name.equals(child.getName())) return child;
+    }
+    throw new AssertionError("no child named " + name);
   }
 
   private static BlunderListPanel panel() {

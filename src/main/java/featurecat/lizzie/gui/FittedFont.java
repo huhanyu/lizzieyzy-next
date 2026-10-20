@@ -23,6 +23,11 @@ final class FittedFont {
 
   private FittedFont() {}
 
+  /** Returns {@code font} with kerning, so that {@code drawString} lays it out with TextLayout. */
+  static Font withKerning(Font font) {
+    return font.deriveFont(KERNING);
+  }
+
   /**
    * Returns the largest font based on {@code base} in which {@code text} is at most {@code
    * maxWidth} wide and at most {@code maxHeight} high, and never larger than {@code maxSize}.
@@ -35,7 +40,7 @@ final class FittedFont {
       double maxHeight,
       double maxWidth,
       int maxSize) {
-    Font font = base.deriveFont(style, 100f).deriveFont(KERNING);
+    Font font = withKerning(base.deriveFont(style, 100f));
     FontMetrics metrics = g.getFontMetrics(font);
     font = font.deriveFont((float) (font.getSize2D() * maxWidth / metrics.stringWidth(text)));
     font = font.deriveFont((float) Math.min(maxHeight, font.getSize()));
