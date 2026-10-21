@@ -122,6 +122,29 @@ class WindowMenuStripTest {
   }
 
   @Test
+  void openingATopMenuGivesItAndItsSubmenusTheTopMenuLook() {
+    JMenuBar menuBar = new JMenuBar();
+    JMenu file = new JMenu("文件");
+    JMenuItem save = new JMenuItem("保存(Ctrl+S)");
+    JMenu recent = new JMenu("最近打开");
+    file.add(save);
+    file.add(recent);
+    menuBar.add(file);
+    WindowMenuStrip strip = new WindowMenuStrip(menuBar);
+
+    JPopupMenu popup = file.getPopupMenu();
+    popup.setInvoker(strip.getComponent(0));
+    popup.setVisible(true);
+    try {
+      assertTrue(popup.getUI() instanceof TopMenuStyle.Surface);
+      assertTrue(save.getUI() instanceof TopMenuItemUI);
+      assertTrue(recent.getUI() instanceof TopMenuItemUI.Submenu);
+    } finally {
+      popup.setVisible(false);
+    }
+  }
+
+  @Test
   void secondPressOnOpenTopMenuClosesInsteadOfReopening() {
     JMenuBar menuBar = new JMenuBar();
     JMenu view = new JMenu("显示");

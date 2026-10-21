@@ -199,7 +199,6 @@ public class WindowMenuStrip extends JPanel {
     }
 
     notifyMenuSelected(button.menu);
-    AppleStyleSupport.installPopupStyle(popup);
     popup.show(button, 0, button.getHeight() + 3);
     repaint();
   }
@@ -241,6 +240,8 @@ public class WindowMenuStrip extends JPanel {
         new PopupMenuListener() {
           @Override
           public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+            // Every time, so a theme switch carries over to the next opening.
+            TopMenuStyle.install(popup);
             repaint();
           }
 

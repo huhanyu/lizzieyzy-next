@@ -582,12 +582,12 @@ public final class AppleStyleSupport {
     return isClassicEnabled() ? new Color(246, 247, 249) : MorandiPalette.CREAM_WHITE;
   }
 
-  private static Color popupSurfaceColor() {
+  static Color popupSurfaceColor() {
     if (isAppleStyleEnabled()) return new Color(38, 41, 47);
     return isClassicEnabled() ? Color.WHITE : MorandiPalette.CREAM_WHITE;
   }
 
-  private static Color popupSelectionColor() {
+  static Color popupSelectionColor() {
     if (isAppleStyleEnabled()) return accentFillColor(180);
     return isClassicEnabled() ? workspaceSelection() : MorandiPalette.MENU_ITEM_SELECTED;
   }
@@ -687,7 +687,7 @@ public final class AppleStyleSupport {
     return new Font(family, style, Math.max(Config.frameFontSize, Math.round(size)));
   }
 
-  private static Color controlTextColor() {
+  static Color controlTextColor() {
     if (isAppleStyleEnabled()) return new Color(244, 247, 251);
     return isClassicEnabled() ? new Color(31, 41, 38) : MorandiPalette.MENU_ITEM_TEXT;
   }
