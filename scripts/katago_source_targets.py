@@ -27,7 +27,7 @@ TARGETS = {
 # Reviewed changes applied on top of SOURCE_COMMIT, by file name under scripts/katago_patches, with
 # the SHA-256 of each patch file. See docs/KATAGO_SOURCE_BUILD.md for why each one exists.
 SOURCE_PATCHES = {
-    "metal-fixed-batch.patch": "cdca795929189219ae9b8f6460818c63c460b1e5c32821cf1489772d8776ba55",
+    "metal-fixed-batch.patch": "426b2e2267fc8fc03849486e2ea2b45e13c30a321b94fb778e73471b30a62f44",
 }
 
 # Patches per target, in application order. Targets not listed build the pinned source unchanged.

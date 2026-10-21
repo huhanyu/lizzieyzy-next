@@ -1,16 +1,29 @@
 diff --git a/cpp/neuralnet/metalbackend.cpp b/cpp/neuralnet/metalbackend.cpp
-index e8b774f..e5bb2b1 100644
+index e8b774f..1d7981e 100644
 --- a/cpp/neuralnet/metalbackend.cpp
 +++ b/cpp/neuralnet/metalbackend.cpp
-@@ -493,6 +493,7 @@ metalContext(createMetalComputeContext(nnX, nnY, useFP16Mode != enabled_t::False
+@@ -493,11 +493,20 @@ metalContext(createMetalComputeContext(nnX, nnY, useFP16Mode != enabled_t::False
    this->useFP16Mode = useFP16Mode;
    this->nnXLen = nnX;
    this->nnYLen = nnY;
-+  this->padBatchMode = enabled_t::Auto;
++  this->padBatch = true;
  }
  
  ComputeContext::~ComputeContext() {
-@@ -524,10 +525,10 @@ ComputeContext* NeuralNet::createComputeContext(
+ }
+ 
++// metalPadBatch: whether GPU (MPSGraph) batches run padded up to nnMaxBatchSize, see getBatchPolicy.
++static bool metalPadsBatch(ConfigParser& cfg) {
++  enabled_t padBatchMode = cfg.contains("metalPadBatch") ? cfg.getEnabled("metalPadBatch") : enabled_t::Auto;
++  if(padBatchMode == enabled_t::Auto)
++    return !cfg.contains("nnMaxBatchSize");
++  return padBatchMode == enabled_t::True;
++}
++
+ ComputeContext* NeuralNet::createComputeContext(
+   const vector<int>& gpuIdxs,
+   Logger* logger,
+@@ -524,10 +533,10 @@ ComputeContext* NeuralNet::createComputeContext(
    (void)logger;
    (void)homeDataDirOverride;
    (void)loadedModel;
@@ -18,19 +31,19 @@ index e8b774f..e5bb2b1 100644
  
    ComputeContext* context = new ComputeContext(nnXLen, nnYLen, useFP16Mode);
    context->aneOnly = aneOnly;
-+  context->padBatchMode = cfg.contains("metalPadBatch") ? cfg.getEnabled("metalPadBatch") : enabled_t::Auto;
++  context->padBatch = metalPadsBatch(cfg);
    return context;
  }
  
-@@ -676,6 +677,7 @@ mpsGraphOnlyHandle(createMPSGraphHandleIfNeeded(context, loadedModel, requireExa
+@@ -676,6 +685,7 @@ mpsGraphOnlyHandle(createMPSGraphHandleIfNeeded(context, loadedModel, requireExa
  coremlOnlyHandle(createCoreMLOnlyHandleIfNeeded(context, loadedModel, requireExactNNLen, maxBatchSize, gpuIdx, serverThreadIdx)) {
    bool hasMPSGraph = static_cast<bool>(mpsGraphOnlyHandle);
    bool hasCoreML = static_cast<bool>(coremlOnlyHandle);
-+  padBatch = hasMPSGraph && context->padBatchMode != enabled_t::False;
++  padBatch = hasMPSGraph && context->padBatch;
    if(hasMPSGraph == hasCoreML) {
      throw runtime_error("Metal backend: Logic error - expected exactly one compute handle, got " + string(hasMPSGraph && hasCoreML ? "both" : "neither") + " (gpuIdx=" + to_string(gpuIdx) + ")");
    }
-@@ -775,8 +777,12 @@ std::string NeuralNet::getRuntimeBackendDetail(ConfigParser& cfg) {
+@@ -775,8 +785,14 @@ std::string NeuralNet::getRuntimeBackendDetail(ConfigParser& cfg) {
  }
  
  NeuralNet::BatchPolicy NeuralNet::getBatchPolicy(ConfigParser& cfg) {
@@ -39,13 +52,15 @@ index e8b774f..e5bb2b1 100644
 +  // MPSGraph compiles a new executable the first time it runs at each batch size, which takes
 +  // seconds and stalls every search thread waiting on the GPU. So by default (metalPadBatch) the
 +  // GPU path holds the batch size fixed and pads short batches, and the batch is sized the
-+  // fixed-shape way (about half the concurrent evaluations) to keep the padding cheap.
-+  enabled_t padBatchMode = cfg.contains("metalPadBatch") ? cfg.getEnabled("metalPadBatch") : enabled_t::Auto;
-+  return padBatchMode == enabled_t::False ? NeuralNet::BatchPolicy::Dynamic : NeuralNet::BatchPolicy::FixedShape;
++  // fixed-shape way (about half the concurrent evaluations) to keep the padding cheap. An
++  // nnMaxBatchSize set in the config is normally sized for dynamic batching (analysis_example.cfg
++  // asks for at least the total number of search threads), and padding every batch up to it would
++  // multiply the GPU work, so by default such a config keeps dynamic batches.
++  return metalPadsBatch(cfg) ? NeuralNet::BatchPolicy::FixedShape : NeuralNet::BatchPolicy::Dynamic;
  }
  
  int NeuralNet::getNumEffectiveDevices(ConfigParser& cfg, const std::vector<int>& gpuIdxByServerThread) {
-@@ -1186,6 +1192,24 @@ void MetalProcess::getMetalOutput(
+@@ -1186,6 +1202,24 @@ void MetalProcess::getMetalOutput(
        batchSize);
    } else if(gpuHandle->mpsGraphOnlyHandle) {
      // GPU mode: Use MPSGraph (GPU)
@@ -70,7 +85,7 @@ index e8b774f..e5bb2b1 100644
      gpuHandle->mpsGraphOnlyHandle.get().apply(
        inputBuffers->userInputBuffer,
        inputBuffers->userInputGlobalBuffer,
-@@ -1195,7 +1219,7 @@ void MetalProcess::getMetalOutput(
+@@ -1195,7 +1229,7 @@ void MetalProcess::getMetalOutput(
        inputBuffers->valueResults,
        inputBuffers->scoreValuesResults,
        inputBuffers->ownershipResults,
@@ -80,7 +95,7 @@ index e8b774f..e5bb2b1 100644
      throw runtime_error("Metal backend: No valid compute handle available");
    }
 diff --git a/cpp/neuralnet/metalbackend.h b/cpp/neuralnet/metalbackend.h
-index e77dd18..ad7d681 100644
+index e77dd18..b4429a3 100644
 --- a/cpp/neuralnet/metalbackend.h
 +++ b/cpp/neuralnet/metalbackend.h
 @@ -113,6 +113,11 @@ struct ComputeContext {
@@ -90,7 +105,7 @@ index e77dd18..ad7d681 100644
 +  /**
 +   * @brief metalPadBatch: whether GPU (MPSGraph) threads run every batch at the max batch size.
 +   */
-+  enabled_t padBatchMode;
++  bool padBatch;
 +
    /**
     * @brief True only when every configured device is METAL_MUX_ANE, so no

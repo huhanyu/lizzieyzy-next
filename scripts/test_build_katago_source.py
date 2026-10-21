@@ -205,6 +205,17 @@ class SourceBuildTest(unittest.TestCase):
             with (build_katago_source.PATCH_DIR / name).open("rb") as handle:
                 self.assertEqual(sha256, hashlib.file_digest(handle, "sha256").hexdigest(), name)
 
+    def test_metal_padding_leaves_a_configured_batch_size_dynamic(self):
+        # The bundled analysis.cfg (KataGo's analysis_example.cfg) sets nnMaxBatchSize = 64, and
+        # whole-game quick analysis runs it with two search threads. Padding every batch to 64 rows
+        # made that analysis about 30 times slower on an M4 Pro, so only a batch size KataGo derives
+        # itself (none in the config) is padded. Metal cannot run in CI, so this pins the reviewed
+        # patch's rule; docs/KATAGO_SOURCE_BUILD.md has the hardware measurement.
+        text = (build_katago_source.PATCH_DIR / "metal-fixed-batch.patch").read_text(encoding="utf-8")
+        self.assertIn('+    return !cfg.contains("nnMaxBatchSize");', text)
+        self.assertIn("+  context->padBatch = metalPadsBatch(cfg);", text)
+        self.assertIn("+  return metalPadsBatch(cfg) ? NeuralNet::BatchPolicy::FixedShape", text)
+
     def test_a_patch_that_differs_from_its_pin_is_never_applied(self):
         with tempfile.TemporaryDirectory() as root:
             patches = Path(root)
