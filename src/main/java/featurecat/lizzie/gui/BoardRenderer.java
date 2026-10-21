@@ -421,11 +421,11 @@ public class BoardRenderer {
           drawFocusStone(Lizzie.frame.clickbadmove[0], Lizzie.frame.clickbadmove[1], g);
         g.drawImage(cachedStonesShadowImagedraged, x, y, null);
         g.drawImage(cachedStonesImagedraged, x, y, null);
-        // timer.lap("leelaz");
       }
     }
     cachedShowCoords = showCoordinates();
-    // timer.print();
+    EmptyBoardHint.paintOnMainBoard(
+        g, !isIndependBoard && boardIndex == 0, x, y, boardWidth, boardHeight);
   }
 
   private void drawLastMoveMark(Graphics2D g, BoardHistoryNode mouseOnNode) {

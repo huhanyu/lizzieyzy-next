@@ -593,6 +593,16 @@ public class WinrateGraph {
     RenderableMetrics renderableMetrics = suppressGraphContent ? null : currentRenderableMetrics();
     String baselineText = baselineMark(renderableMetrics);
     boolean baselineActive = hasHighlightedBaseline(renderableMetrics);
+    // The legend gets a band above the plot when the graph is wide enough; x stays as it was.
+    Font frameFont =
+        new Font(Config.sysDefaultFontName, Font.PLAIN, largeEnough ? Utils.zoomOut(11) : 11);
+    int legendBand =
+        WinrateGraphFrame.legendBand(
+            origParams[2],
+            !lineLegendLabels(renderableMetrics, Lizzie.resourceBundle).isEmpty(),
+            largeEnough);
+    posy += legendBand;
+    height -= legendBand;
     gBackground.setColor(resolveGridLineColor());
     int winRateGridLines = Lizzie.frame.winRateGridLines;
     for (int i = 1; i <= winRateGridLines; i++) {
@@ -603,6 +613,10 @@ public class WinrateGraph {
       int y = posy + height - (int) (height * percent / 100);
       gBackground.drawLine(posx, y, posx + width, y);
     }
+    if (origParams[2] >= WinrateGraphFrame.MIN_WIDTH
+        && renderableMetrics != null
+        && renderableMetrics.winrateRenderable)
+      WinrateGraphFrame.drawScale(gBackground, frameFont, posx, posy, height, baselineText != null);
     if (suppressGraphContent) return;
     boolean engineOrPkBoard = engineGamePlaying() || Lizzie.board.isPkBoard;
     boolean fillEnabled =
@@ -1746,17 +1760,10 @@ public class WinrateGraph {
   }
 
   private void drawLineLegend(Graphics2D g, int graphX, int graphY, int graphWidth) {
-    if (graphWidth < 240) return;
-    Font font =
-        new Font(Config.sysDefaultFontName, Font.PLAIN, largeEnough ? Utils.zoomOut(11) : 11);
-    g.setFont(font);
-    FontMetrics fm = g.getFontMetrics();
-
+    if (graphWidth < WinrateGraphFrame.MIN_WIDTH) return;
     RenderableMetrics metrics = currentRenderableMetrics();
     List<String> labels = lineLegendLabels(metrics, Lizzie.resourceBundle);
-    if (labels.isEmpty()) {
-      return;
-    }
+    if (labels.isEmpty()) return;
     List<Color> colors =
         lineLegendColors(
             metrics,
@@ -1764,43 +1771,9 @@ public class WinrateGraph {
             Lizzie.config != null && Lizzie.config.scoreMeanLineColor != null
                 ? Lizzie.config.scoreMeanLineColor
                 : Color.YELLOW);
-
-    int lineLen = largeEnough ? Utils.zoomOut(16) : 16;
-    int gap = largeEnough ? Utils.zoomOut(12) : 12;
-    int innerPad = 5;
-
-    int totalWidth = 0;
-    for (String label : labels) {
-      totalWidth += lineLen + innerPad + fm.stringWidth(label) + gap;
-    }
-    totalWidth -= gap;
-
-    int paddingX = 8;
-    int paddingY = 3;
-    int boxWidth = totalWidth + paddingX * 2;
-    int boxHeight = fm.getHeight() + paddingY * 2;
-    int boxX = graphX + graphWidth - boxWidth - 6;
-    int boxY = graphY + 4;
-
-    g.setColor(new Color(0, 0, 0, 150));
-    g.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 8, 8);
-    g.setColor(new Color(255, 255, 255, 25));
-    g.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 8, 8);
-
-    int cx = boxX + paddingX;
-    int textY = boxY + paddingY + fm.getAscent();
-    int lineY = textY - fm.getAscent() / 2;
-    Stroke prevStroke = g.getStroke();
-    g.setStroke(new BasicStroke(2.0f));
-    for (int i = 0; i < labels.size(); i++) {
-      g.setColor(colors.get(i));
-      g.drawLine(cx, lineY, cx + lineLen, lineY);
-      cx += lineLen + innerPad;
-      g.setColor(new Color(210, 210, 210));
-      g.drawString(labels.get(i), cx, textY);
-      cx += fm.stringWidth(labels.get(i)) + gap;
-    }
-    g.setStroke(prevStroke);
+    Font font =
+        new Font(Config.sysDefaultFontName, Font.PLAIN, largeEnough ? Utils.zoomOut(11) : 11);
+    WinrateGraphFrame.drawLegend(g, font, graphX, graphY, graphWidth, labels, colors);
   }
 
   private QuickOverviewLayout drawQuickOverview(
