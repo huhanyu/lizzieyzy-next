@@ -9071,112 +9071,33 @@ public class LizzieFrame extends JFrame {
   private void drawCaptured(
       Graphics2D g, int posX, int posY, int width, int height, boolean isSmallCap) {
     if (width < 5 || height < 5) return;
-    // Draw border
     g.setColor(new Color(0, 0, 0, 130));
     g.fillRect(posX, posY, width, height);
-
-    // border. does not include bottom edge
     int strokeRadius = 1;
-    g.setStroke(new BasicStroke(strokeRadius == 1 ? strokeRadius : 2 * strokeRadius));
-    //    if (Lizzie.config.showBorder) {
-    //      g.drawLine(
-    //          posX + strokeRadius,
-    //          posY + strokeRadius,
-    //          posX - strokeRadius + width,
-    //          posY + strokeRadius);
-    //      g.drawLine(
-    //          posX + strokeRadius,
-    //          posY + 3 * strokeRadius,
-    //          posX + strokeRadius,
-    //          posY - strokeRadius + height);
-    //      g.drawLine(
-    //          posX - strokeRadius + width,
-    //          posY + 3 * strokeRadius,
-    //          posX - strokeRadius + width,
-    //          posY - strokeRadius + height);
-    //    }
+    g.setStroke(new BasicStroke(strokeRadius));
 
-    // Draw middle line
-    g.drawLine(
-        posX - strokeRadius + width / 2,
-        posY + 3 * strokeRadius,
-        posX - strokeRadius + width / 2,
-        posY - strokeRadius + height);
-    g.setColor(Color.white);
-
-    // Draw black and white "stone"
+    // Black and white stones; the side to move has the larger one.
+    boolean blackToPlay = Lizzie.board.getHistory().isBlacksTurn();
     int diam = min(width / 2, height) / 3;
     int smallDiam = diam / 2;
-    int bdiam = diam, wdiam = diam;
-    if (Lizzie.board.getHistory().isBlacksTurn()) {
-      wdiam = smallDiam;
-      bdiam = smallDiam * 3 / 2;
-    } else {
-      bdiam = smallDiam;
-      wdiam = smallDiam * 3 / 2;
-    }
-    g.setColor(Color.black);
-    // if (isSmallCap) {
+    int bdiam = (blackToPlay ? smallDiam * 3 / 2 : smallDiam) * 3 / 2;
+    int wdiam = (blackToPlay ? smallDiam : smallDiam * 3 / 2) * 3 / 2;
     diam = diam * 3 / 2;
-    bdiam = bdiam * 3 / 2;
-    wdiam = wdiam * 3 / 2;
+    g.setColor(Color.black);
     g.fillOval(posX + width / 4 - bdiam / 2, posY + (diam - bdiam) / 2, bdiam, bdiam);
-
     g.setColor(Color.WHITE);
     g.fillOval(posX + width * 3 / 4 - wdiam / 2, posY + (diam - wdiam) / 2, wdiam, wdiam);
-    // Status Indicator
-    int statusDiam = 10;
-    if ((height / 4) < 10) statusDiam = height / 4;
-
-    g.setColor((Lizzie.leelaz != null && Lizzie.leelaz.isPondering()) ? Color.GREEN : Color.RED);
-    g.fillOval(
-        posX - strokeRadius + width / 2 - statusDiam / 2,
-        posY + height * 7 / 26 + (diam - statusDiam) / 2,
-        statusDiam,
-        statusDiam);
-    // }
-    //    else {
-    //    	bdiam=bdiam*4/3;
-    //    	wdiam=wdiam*4/3;
-    //      g.fillOval(
-    //          posX + width / 4 - bdiam / 2, posY  + (diam - bdiam), bdiam, bdiam);
-    //
-    //      g.setColor(Color.WHITE);
-    //      g.fillOval(
-    //          posX + width * 3 / 4 - wdiam / 2,
-    //          posY + (diam - wdiam) ,
-    //          wdiam,
-    //          wdiam);
-    //      // Status Indicator
-    //      int statusDiam = height / 8;
-    //      g.setColor((Lizzie.leelaz != null && Lizzie.leelaz.isPondering()) ? Color.GREEN :
-    // Color.RED);
-    //      g.fillOval(
-    //          posX - strokeRadius + width / 2 - statusDiam / 2,
-    //          posY + height * 3 / 8 + (diam - statusDiam) / 2,
-    //          statusDiam,
-    //          statusDiam);
-    //    }
-    // Draw captures
-    String bval = "", wval = "";
-    if (isSmallCap)
-      setPanelFont(
-          g,
-          (float) (min(width * 0.4, height * 0.85) * 0.2) > 18
-              ? 18
-              : (float) (min(width * 0.4, height * 0.85) * 0.2));
-    else setPanelFont(g, (float) (height * 0.18));
-
-    bval = String.format(Locale.ENGLISH, "%d", Lizzie.board.getData().blackCaptures);
-    wval = String.format(Locale.ENGLISH, "%d", Lizzie.board.getData().whiteCaptures);
+    // The engine status dot stays where it was, followed by the side to move when there is room.
+    InfoPanelText.drawStatusAndTurn(
+        g,
+        uiFont.deriveFont(Font.PLAIN, Math.max(11f, height * 0.13f)),
+        posX - strokeRadius + width / 2,
+        posY + height * 7 / 26 + diam / 2,
+        Math.min(10, height / 4),
+        Lizzie.leelaz != null && Lizzie.leelaz.isPondering(),
+        isSmallCap ? null : InfoPanelText.turn(Lizzie.resourceBundle, blackToPlay));
 
     g.setColor(Color.WHITE);
-    //    int bw = g.getFontMetrics().stringWidth(bval);
-    //    int ww = g.getFontMetrics().stringWidth(wval);
-    //  boolean largeSubBoard = Lizzie.config.showLargeSubBoard() || extraMode == 1;
-    //  int bx = (largeSubBoard ? width / 12 : -bw / 2);
-    //  int wx = (largeSubBoard ? width / 12 : -ww / 2);
-
     int analyzedBlack = 0;
     int analyzedWhite = 0;
     double blackValue = 0;
@@ -9208,78 +9129,38 @@ public class LizzieFrame extends JFrame {
         }
       }
     }
-    String bAiScore = String.format(Locale.ENGLISH, "%.1f", blackValue * 100 / analyzedBlack);
-    String wAiScore = String.format(Locale.ENGLISH, "%.1f", whiteValue * 100 / analyzedWhite);
-    if (!isSmallCap) {
-      drawStringMid(
-          g,
-          posX + width / 4,
-          posY + height * 28 / 32,
-          uiFont,
-          Font.PLAIN,
-          Lizzie.resourceBundle.getString("LizzieFrame.captures") + bval, // 提子
-          height / 6,
-          width * 3 / 10,
-          0);
-      drawStringMid(
-          g,
-          posX + width * 3 / 4,
-          posY + height * 28 / 32,
-          uiFont,
-          Font.PLAIN,
-          Lizzie.resourceBundle.getString("LizzieFrame.captures") + wval,
-          height / 6,
-          width * 3 / 10,
-          0);
-
-      if (analyzedBlack > 0)
+    // Each side's accuracy and captures under its stone, labelled.
+    BoardData data = Lizzie.board.getData();
+    for (int side = 0; side < 2; side++) {
+      boolean black = side == 0;
+      int centerX = posX + width * (black ? 1 : 3) / 4;
+      int analyzed = black ? analyzedBlack : analyzedWhite;
+      if (!isSmallCap)
         drawStringMid(
             g,
-            posX + width / 4,
-            posY + height * 19 / 32,
+            centerX,
+            posY + height * 28 / 32,
             uiFont,
             Font.PLAIN,
-            Lizzie.resourceBundle.getString("LizzieFrame.AIscore") + bAiScore, // "AI总评分:"
-            height / 5,
-            width * 4 / 10,
+            InfoPanelText.captures(
+                Lizzie.resourceBundle, black ? data.blackCaptures : data.whiteCaptures),
+            height / 6,
+            width * 3 / 10,
             0);
-      if (analyzedWhite > 0)
+      if (analyzed > 0)
         drawStringMid(
             g,
-            posX + width * 3 / 4,
-            posY + height * 19 / 32,
+            centerX,
+            isSmallCap ? posY + height * 5 / 7 : posY + height * 19 / 32,
             uiFont,
             Font.PLAIN,
-            Lizzie.resourceBundle.getString("LizzieFrame.AIscore") + wAiScore,
-            height / 5,
-            width * 4 / 10,
-            0);
-      //   drawString(g,wAiScore, posX + width * 3 / 4 + wx, posY + height * 7 / 8);
-    } else {
-      if (analyzedBlack > 0)
-        drawStringMid(
-            g,
-            posX + width / 4,
-            posY + height * 5 / 7,
-            uiFont,
-            Font.PLAIN,
-            Lizzie.resourceBundle.getString("LizzieFrame.AIscore") + bAiScore,
-            height * 2 / 5,
-            width * 4 / 10,
-            0);
-      if (analyzedWhite > 0)
-        drawStringMid(
-            g,
-            posX + width * 3 / 4,
-            posY + height * 5 / 7,
-            uiFont,
-            Font.PLAIN,
-            Lizzie.resourceBundle.getString("LizzieFrame.AIscore") + wAiScore,
-            height * 2 / 5,
+            InfoPanelText.accuracy(
+                Lizzie.resourceBundle, (black ? blackValue : whiteValue) * 100 / analyzed),
+            isSmallCap ? height * 2 / 5 : height / 5,
             width * 4 / 10,
             0);
     }
-    // Komi
+    // Komi on the captures row; the panel font also sets the rules caption below.
     if (isSmallCap)
       setPanelFont(
           g,
@@ -9287,12 +9168,20 @@ public class LizzieFrame extends JFrame {
               ? Config.frameFontSize + 6
               : Math.max((float) (min(width * 0.4, height * 0.85) * 0.2), 11f));
     else setPanelFont(g, Math.max(11f, (float) (height * 0.18)));
-    String komi = String.valueOf(Lizzie.board.getHistory().getGameInfo().getKomi());
-    int kw = g.getFontMetrics().stringWidth(komi);
-    // g.setFont(new Font(g.getFont().getName(),Font.BOLD,g.getFont().getSize()));
-    if (isSmallCap)
-      g.drawString(komi, posX - strokeRadius + width / 2 - kw / 2, posY + height * 15 / 16);
-    else g.drawString(komi, posX - strokeRadius + width / 2 - kw / 2, posY + height * 7 / 8);
+    Font panelFont = g.getFont();
+    drawStringMid(
+        g,
+        posX - strokeRadius + width / 2,
+        posY + height * 7 / 8,
+        uiFont,
+        Font.PLAIN,
+        InfoPanelText.komi(
+            Lizzie.resourceBundle, Lizzie.board.getHistory().getGameInfo().getKomi()),
+        panelFont.getSize(),
+        width * 2 / 10,
+        0);
+    g.setFont(panelFont);
+    g.setColor(Color.WHITE);
 
     // Move or rules
     String moveOrRules = "";

@@ -523,6 +523,41 @@ class BlunderListPanelLayoutTest {
   }
 
   @Test
+  void pointAndScoreLossShareOneLineInLargerTypeWhenTheyFit() throws Exception {
+    edt(
+        () -> {
+          selectLocale(AppLocale.SIMPLIFIED_CHINESE);
+          Config.frameFontSize = 14;
+          BlunderListPanel panel = panel();
+          panel.updateSnapshot(
+              snapshot(new ProblemMoveEntry(true, 127, "Q4", 5.3, 1.9, true, 800, false, 3)), null);
+          prepareList(panel, 360, 500);
+          JList<ProblemMoveEntry> list = panel.reviewList();
+          JPanel cell =
+              (JPanel)
+                  list.getCellRenderer()
+                      .getListCellRendererComponent(
+                          list, list.getModel().getElementAt(0), 0, false, false);
+          cell.setSize(cell.getPreferredSize());
+          cell.doLayout();
+          Component point = null;
+          Component detail = null;
+          for (Component child : cell.getComponents()) {
+            if ("problem-point".equals(child.getName())) point = child;
+            if ("problem-detail".equals(child.getName())) detail = child;
+          }
+          assertEquals("目损 1.9", ((JTextArea) detail).getText());
+          assertTrue(detail.getX() >= point.getX() + point.getWidth(), "目损 follows the point");
+          assertTrue(
+              detail.getY() < point.getY() + point.getHeight()
+                  && point.getY() < detail.getY() + detail.getHeight(),
+              "on the same line");
+          assertTrue(point.getFont().getSize2D() > list.getFont().getSize2D(), "larger type");
+          assertTrue(detail.getFont().getSize2D() > list.getFont().getSize2D(), "larger type");
+        });
+  }
+
+  @Test
   void listTracksWidthAndOnlyScrollsVertically() throws Exception {
     edt(
         () -> {

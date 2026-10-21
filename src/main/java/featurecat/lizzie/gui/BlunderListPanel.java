@@ -519,6 +519,7 @@ public class BlunderListPanel extends JPanel {
     private static final int LEFT = 12;
     private static final int RIGHT = 10;
     private static final int GAP = 10;
+    private static final int INLINE_GAP = 8;
     private static final int BAR = 4;
     private final JTextArea title = wrappingText();
     private final JTextArea detail = wrappingText();
@@ -562,12 +563,13 @@ public class BlunderListPanel extends JPanel {
       rowWidth =
           Math.max(1, owner.getFixedCellWidth() > 0 ? owner.getFixedCellWidth() : owner.getWidth());
       Font primary = owner.getFont();
-      Font secondary = primary.deriveFont(Math.max(12f, primary.getSize2D() - 1f));
-      badgeFont = secondary.deriveFont(Font.BOLD);
-      title.setFont(primary.deriveFont(Font.BOLD));
-      detail.setFont(secondary);
-      loss.setFont(primary.deriveFont(Font.BOLD));
-      lossLine.setFont(secondary.deriveFont(Font.BOLD));
+      // The point and the points lost share a line, which leaves room for larger type.
+      Font larger = primary.deriveFont(primary.getSize2D() + 2f);
+      badgeFont = primary.deriveFont(Font.BOLD);
+      title.setFont(larger.deriveFont(Font.BOLD));
+      detail.setFont(larger);
+      loss.setFont(larger.deriveFont(Font.BOLD));
+      lossLine.setFont(primary.deriveFont(Font.BOLD));
       Color severity = SidebarPanel.severityTextColor(entry.severityTier);
       title.setForeground(SidebarPanel.primaryTextColor());
       detail.setForeground(SidebarPanel.secondaryTextColor());
@@ -603,15 +605,42 @@ public class BlunderListPanel extends JPanel {
       boolean stacked =
           content < barWidth + GAP + getFontMetrics(title.getFont()).charWidth('M') * 4;
       int mainWidth = stacked ? content : Math.max(1, content - barWidth - GAP);
-      int titleHeight = wrappedHeight(title, mainWidth);
-      int y = TOP + titleHeight;
-      title.setBounds(start, TOP, mainWidth, titleHeight);
-      if (detail.getText().isEmpty()) {
-        detail.setBounds(0, 0, 0, 0);
+      FontMetrics titleMetrics = getFontMetrics(title.getFont());
+      FontMetrics detailMetrics = getFontMetrics(detail.getFont());
+      int titleWidth = titleMetrics.stringWidth(title.getText()) + 4;
+      int detailWidth = detailMetrics.stringWidth(detail.getText()) + 4;
+      // Measured as the text areas lay out, so neither wraps inside its one-line box.
+      boolean oneLine =
+          !detail.getText().isEmpty()
+              && titleWidth + INLINE_GAP + detailWidth <= mainWidth
+              && wrappedHeight(title, titleWidth) <= titleMetrics.getHeight()
+              && wrappedHeight(detail, detailWidth) <= detailMetrics.getHeight();
+      int titleHeight;
+      int y;
+      if (oneLine) {
+        // "Q4  目损 1.9" on one shared baseline.
+        int ascent = Math.max(titleMetrics.getAscent(), detailMetrics.getAscent());
+        titleHeight = ascent + Math.max(titleMetrics.getDescent(), detailMetrics.getDescent());
+        title.setBounds(
+            start, TOP + ascent - titleMetrics.getAscent(), titleWidth, titleMetrics.getHeight());
+        detail.setBounds(
+            start + titleWidth + INLINE_GAP,
+            TOP + ascent - detailMetrics.getAscent(),
+            detailWidth,
+            detailMetrics.getHeight());
+        y = TOP + titleHeight;
       } else {
-        int detailHeight = wrappedHeight(detail, mainWidth);
-        detail.setBounds(start, y + 2, mainWidth, detailHeight);
-        y += 2 + detailHeight;
+        // Too narrow for one line: the points lost wrap under the point.
+        titleHeight = wrappedHeight(title, mainWidth);
+        y = TOP + titleHeight;
+        title.setBounds(start, TOP, mainWidth, titleHeight);
+        if (detail.getText().isEmpty()) {
+          detail.setBounds(0, 0, 0, 0);
+        } else {
+          int detailHeight = wrappedHeight(detail, mainWidth);
+          detail.setBounds(start, y + 2, mainWidth, detailHeight);
+          y += 2 + detailHeight;
+        }
       }
       if (stacked) {
         loss.setBounds(0, 0, 0, 0);
