@@ -9,7 +9,8 @@ import zipfile
 from build_katago_source import SOURCE_COMMIT, TARGETS
 from katago_source_targets import source_patch_records, source_revision
 from katago_asset_catalog import DEFAULT_CATALOG
-from stage_katago_source_release import archive_files, normalized_name, record, stage, verify_archive
+from probe_katago_focus import QUICK_ANALYSIS_MOVES, QUICK_ANALYSIS_OVERRIDES, QUICK_ANALYSIS_VISITS
+from stage_katago_source_release import archive_files, digest, normalized_name, record, stage, verify_archive
 
 
 class SourceReleaseTest(unittest.TestCase):
@@ -52,13 +53,21 @@ class SourceReleaseTest(unittest.TestCase):
             if backend == "EIGEN":
                 hardware = dict(identity, status="PASS", steps=[
                     {"command": "kata-analyze rootInfo true " + focus, "rootVisits": (i + 1) * 10}
-                    for i, focus in enumerate(("", "focus Q4 0.5", "focus Q4,D16 0.5", "focus D16 0.5", ""))])
+                    for i, focus in enumerate(("", "focus Q4 0.5", "focus Q4,D16 0.5", "focus D16 0.5", ""))],
+                    analysis=self.quick_analysis())
             (evidence / "hardware.json").write_text(json.dumps(hardware), encoding="utf-8")
             if target.startswith("linux-"):
                 (evidence / "linux-compatibility.json").write_text(json.dumps(dict(
                     identity, status="PASS", baselineExecutableSha256="b" * 64,
                     symbolCeilings={"GLIBC": "2.34"}, distributionChecks=[{"status": "PASS", "name": "test"}])),
                     encoding="utf-8")
+
+    def quick_analysis(self, configured=0.05, reference=0.05):
+        return {"status": "PASS", "configSha256": digest(self.source / "cpp/configs/analysis_example.cfg"),
+                "overrides": QUICK_ANALYSIS_OVERRIDES, "positions": len(QUICK_ANALYSIS_MOVES),
+                "maxVisits": QUICK_ANALYSIS_VISITS,
+                "reference": {"steadySecondsPerPosition": reference},
+                "configured": {"steadySecondsPerPosition": configured}}
 
     def receipt_path(self, target):
         return self.packages / target / ("source-build.json" if target.startswith("macos-") else "source-package.json")
@@ -192,6 +201,25 @@ class SourceReleaseTest(unittest.TestCase):
     def test_missing_inference_evidence_cannot_be_handwritten_pass(self):
         self.modify(self.acceptance / "windows-cpu/hardware.json", steps=[])
         with self.assertRaisesRegex(ValueError, "incomplete real inference"):
+            self.run_stage()
+
+    def test_pass_needs_quick_analysis_timing_with_the_shipped_config(self):
+        path = self.acceptance / "windows-cpu/hardware.json"
+        for analysis in (None, dict(self.quick_analysis(), configSha256="0" * 64),
+                         dict(self.quick_analysis(), overrides="numSearchThreadsPerAnalysisThread=16"),
+                         dict(self.quick_analysis(), positions=3),
+                         dict(self.quick_analysis(), configured={"steadySecondsPerPosition": "fast"})):
+            with self.subTest(analysis=analysis):
+                self.modify(path, analysis=analysis)
+                with self.assertRaisesRegex(ValueError, "missing quick-analysis timing"):
+                    self.run_stage()
+
+    def test_a_shipped_config_that_slows_quick_analysis_cannot_pass(self):
+        # The first Metal patch on an M4 Pro: every batch of one or two positions padded to 64 rows.
+        # The record's own status is not trusted.
+        self.modify(self.acceptance / "windows-cpu/hardware.json",
+                    analysis=self.quick_analysis(configured=2.7, reference=0.05))
+        with self.assertRaisesRegex(ValueError, "slows quick analysis down"):
             self.run_stage()
 
     def test_onnx_cpu_does_not_claim_gpu_acceptance(self):

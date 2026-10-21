@@ -2,14 +2,36 @@
 
 import io
 import json
+import os
 from pathlib import Path
 import queue
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from probe_katago_focus import GtpProbe, parse_analysis, probe, sha256
+from probe_katago_focus import (QUICK_ANALYSIS_MOVES, GtpProbe, analysis_timing, parse_analysis, probe,
+                                quick_analysis_within_budget, sha256)
+
+# Stands in for `katago analysis`: answers each query in order, after FAKE_CONFIGURED_DELAY seconds
+# unless the batch size is overridden to 2, and records its arguments and queries.
+FAKE_ANALYSIS_ENGINE = '''
+import json, os, sys, time
+arguments = sys.argv[1:]
+overrides = arguments[arguments.index("-override-config") + 1]
+delay = 0.0 if "nnMaxBatchSize=2" in overrides else float(os.environ["FAKE_CONFIGURED_DELAY"])
+with open(os.environ["FAKE_RECORD"], "a", encoding="utf-8") as record:
+    record.write(json.dumps({"arguments": arguments}) + "\\n")
+    for line in sys.stdin:
+        query = json.loads(line)
+        record.write(json.dumps({"query": query}) + "\\n")
+        if os.environ.get("FAKE_REJECT"):
+            print(json.dumps({"id": query["id"], "error": "illegal move"}), flush=True)
+            continue
+        time.sleep(delay)
+        print(json.dumps({"id": query["id"], "turnNumber": len(query["moves"]), "moveInfos": []}), flush=True)
+'''
 
 
 class FocusProbeTest(unittest.TestCase):
@@ -121,6 +143,71 @@ class FocusProbeTest(unittest.TestCase):
         for timeout in (0, -1, 601, float("nan"), float("inf")):
             with self.assertRaisesRegex(ValueError, "timeout"):
                 probe(Path("unused-engine"), Path("unused-model"), Path("unused-evidence"), timeout)
+
+    def test_quick_analysis_budget_tolerates_noise_but_not_padding(self):
+        def within(configured, reference):
+            return quick_analysis_within_budget({"steadySecondsPerPosition": configured},
+                                                {"steadySecondsPerPosition": reference})
+        # The first Metal patch on an M4 Pro, padding batches of one or two positions to 64 rows.
+        self.assertFalse(within(2.7, 0.05))
+        self.assertTrue(within(0.06, 0.05))
+        # Six times slower, but under a second for the whole run: timer noise on a fast host.
+        self.assertTrue(within(0.03, 0.005))
+
+    def run_analysis_timing(self, configured_delay, reject=False, onnx_provider=None):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        fake, record, config = root / "fake_katago.py", root / "record.jsonl", root / "analysis.cfg"
+        fake.write_text(FAKE_ANALYSIS_ENGINE, encoding="utf-8")
+        config.write_text("nnMaxBatchSize = 64\n", encoding="utf-8")
+        real_popen = subprocess.Popen
+
+        def launch(command, **kwargs):
+            return real_popen([sys.executable, str(fake)] + command[1:], **kwargs)
+
+        environment = {"FAKE_CONFIGURED_DELAY": str(configured_delay), "FAKE_RECORD": str(record)}
+        if reject:
+            environment["FAKE_REJECT"] = "1"
+        with patch.dict(os.environ, environment), \
+                patch("probe_katago_focus.subprocess.Popen", side_effect=launch), \
+                patch("probe_katago_focus.MIN_SLOWDOWN_SECONDS", 0.2):
+            timing = analysis_timing(root / "katago", root / "model.bin.gz", config, root, 10, onnx_provider)
+        rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
+        return timing, rows, config
+
+    def test_quick_analysis_with_the_shipped_config_is_timed_against_a_batch_of_two(self):
+        timing, rows, config = self.run_analysis_timing(0.0)
+        self.assertEqual("PASS", timing["status"])
+        self.assertEqual(sha256(config), timing["configSha256"])
+        self.assertEqual((40, 2), (timing["positions"], timing["maxVisits"]))
+        launches = [row["arguments"] for row in rows if "arguments" in row]
+        self.assertEqual(2, len(launches))
+        for arguments in launches:
+            self.assertEqual("analysis", arguments[0])
+            self.assertEqual(str(config), arguments[arguments.index("-config") + 1])
+        reference, configured = (arguments[arguments.index("-override-config") + 1] for arguments in launches)
+        self.assertEqual(
+            "analysisPVLen=15,numSearchThreads=,numSearchThreadsPerAnalysisThread=1", configured)
+        self.assertEqual(configured + ",nnMaxBatchSize=2", reference)
+        queries = [row["query"] for row in rows if "query" in row]
+        self.assertEqual(80, len(queries))
+        self.assertEqual([["B", "R16"], ["W", "D17"], ["B", "Q3"]], queries[2]["moves"])
+        self.assertEqual(list(QUICK_ANALYSIS_MOVES), [move for _, move in queries[39]["moves"]])
+        self.assertEqual({2}, {query["maxVisits"] for query in queries})
+
+    def test_padding_the_shipped_batch_size_fails_the_probe_with_its_numbers(self):
+        timing, _, _ = self.run_analysis_timing(0.02)
+        self.assertEqual("FAIL", timing["status"])
+        self.assertGreaterEqual(timing["configured"]["steadySecondsPerPosition"], 0.02)
+        self.assertLess(timing["reference"]["steadySecondsPerPosition"], 0.02)
+
+    def test_onnx_provider_reaches_the_analysis_engine(self):
+        timing, rows, _ = self.run_analysis_timing(0.0, onnx_provider="directml")
+        self.assertTrue(timing["overrides"].endswith(",onnxProvider=directml"))
+        self.assertTrue(all("onnxProvider=directml" in row["arguments"][-1] for row in rows if "arguments" in row))
+
+    def test_a_rejected_quick_analysis_query_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "rejected a reference quick-analysis query"):
+            self.run_analysis_timing(0.0, reject=True)
 
     def test_digest_is_of_actual_bytes(self):
         with tempfile.TemporaryDirectory() as root:

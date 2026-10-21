@@ -17,6 +17,8 @@ import zipfile
 from build_katago_source import SOURCE_COMMIT, TARGETS, check_release_receipts, check_source
 from katago_source_targets import reported_revision, source_patch_records, source_revision
 from katago_asset_catalog import load_catalog, validate_catalog
+from probe_katago_focus import (QUICK_ANALYSIS_MOVES, QUICK_ANALYSIS_OVERRIDES, QUICK_ANALYSIS_VISITS,
+                                quick_analysis_within_budget)
 
 
 def digest(path: Path) -> str:
@@ -96,7 +98,23 @@ def acceptance_record(path: Path, receipt: dict, label: str) -> dict:
     return data
 
 
-def accept(root: Path, receipt: dict) -> dict:
+def check_quick_analysis(target: str, analysis: object, config_sha256: str) -> None:
+    """Rechecks the probe's quick-analysis timing from its numbers, not from its status flag."""
+    runs = ([analysis.get("reference"), analysis.get("configured")]
+            if isinstance(analysis, dict) else [])
+    if (not runs or analysis.get("configSha256") != config_sha256
+            or not str(analysis.get("overrides", "")).startswith(QUICK_ANALYSIS_OVERRIDES)
+            or analysis.get("positions") != len(QUICK_ANALYSIS_MOVES)
+            or analysis.get("maxVisits") != QUICK_ANALYSIS_VISITS
+            or not all(isinstance(run, dict)
+                       and type(run.get("steadySecondsPerPosition")) in (int, float)
+                       and run["steadySecondsPerPosition"] >= 0 for run in runs)):
+        raise ValueError(f"{target}: missing quick-analysis timing with the shipped analysis config")
+    if not quick_analysis_within_budget(analysis["configured"], analysis["reference"]):
+        raise ValueError(f"{target}: the shipped analysis config slows quick analysis down")
+
+
+def accept(root: Path, receipt: dict, analysis_config_sha256: str) -> dict:
     accepted = copy.deepcopy(receipt)
     hardware = acceptance_record(root / "hardware.json", receipt, "hardware")
     status = hardware.get("status")
@@ -114,6 +132,7 @@ def accept(root: Path, receipt: dict) -> dict:
                 or "focus D16 0.5" not in commands[3]
                 or "focus " in commands[0] or "focus " in commands[4]):
             raise ValueError(f"{receipt['target']}: incomplete real inference evidence")
+        check_quick_analysis(receipt["target"], hardware.get("analysis"), analysis_config_sha256)
     elif status == "PENDING_HARDWARE":
         if TARGETS[receipt["target"]][2] == "EIGEN" or not str(hardware.get("reason", "")).strip():
             raise ValueError("CPU execution cannot be deferred; missing GPUs require a reason")
@@ -217,6 +236,7 @@ def stage(packages: Path, acceptance: Path, base_catalog: Path, output: Path, ta
                  "analysis_example.cfg": source / "cpp/configs/analysis_example.cfg"}
     if not all(path.is_file() and not path.is_symlink() for path in templates.values()):
         raise ValueError("pinned source configuration templates missing")
+    analysis_config_sha256 = digest(templates["analysis_example.cfg"])
     catalog.update(origin="project-source-build", katagoVersion="1.18.2", katagoReleaseTag="v1.18.2",
                    katagoSourceCommit=SOURCE_COMMIT, engineReleaseRepository="wimi321/lizzieyzy-next",
                    engineReleaseTag=tag)
@@ -224,7 +244,7 @@ def stage(packages: Path, acceptance: Path, base_catalog: Path, output: Path, ta
     accepted = []
     for target in selected:
         receipt, files, receipt_name = verified_package(packages / target, target)
-        accepted.append(accept(acceptance / target, receipt))
+        accepted.append(accept(acceptance / target, receipt, analysis_config_sha256))
         verified[target] = (receipt, files, receipt_name)
     check_release_receipts(accepted, partial=partial)
     output.parent.mkdir(parents=True, exist_ok=True)

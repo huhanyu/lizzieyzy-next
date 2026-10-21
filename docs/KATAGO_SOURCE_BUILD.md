@@ -231,7 +231,8 @@ or final distribution certification: both hardware and production ABI acceptance
 python3 scripts/probe_katago_focus.py \
   --engine /path/to/self-built/katago \
   --model /path/to/model.bin.gz \
-  --evidence /path/to/new/evidence-directory
+  --evidence /path/to/new/evidence-directory \
+  --analysis-config /path/to/clean/pinned/KataGo/cpp/configs/analysis_example.cfg
 ```
 
 The probe uses one real process, numbered acknowledgements and the engine's **root** visit count.
@@ -239,6 +240,19 @@ It checks ordinary analysis, one focused point, two points, removal, clearing an
 Focused points use equal weights and probability `0.5`. Candidate visit totals are not substituted
 for root visits. Evidence directories cannot be overwritten. Rejection, exit, timeout and a reset
 search tree fail the probe; none are reclassified as unsupported hardware.
+
+The probe then times the app's whole-game quick analysis, which runs `katago analysis` with the
+shipped `analysis.cfg` (the pinned `analysis_example.cfg`, `nnMaxBatchSize = 64`), two analysis
+threads with one search thread each, and a 2-visit query per position. It sends the first 40
+positions of the ear-reddening game twice, in two new processes: once with
+`nnMaxBatchSize=2` added as a reference, then with the shipped config alone. Each run is measured
+by the time per position after its first result, which includes loading and compiling. The probe
+fails when the shipped config is more than 3 times slower than the reference and costs more than
+2 s over the whole run; the second condition keeps millisecond timer noise on fast hosts from
+failing it. The GTP checks never read the analysis config, so they passed the first Metal patch,
+which padded every quick-analysis batch to 64 rows and took about 50 times as long per position
+(see [macOS Metal: fixed batch shape](#macos-metal-fixed-batch-shape)). `result.json` records both
+runs, the overrides and the config's SHA-256.
 
 `--timeout` bounds each version/GTP operation (default 120 seconds, allowed 1-600), with no
 automatic retries. Evidence records the version-check elapsed time, including OS startup security
@@ -366,7 +380,9 @@ python3 scripts/stage_katago_source_release.py \
 
 Each acceptance directory contains `hardware.json`: either a real focus probe result
 bound to that exact executable, or an explicit `PENDING_HARDWARE` record with a reason,
-source commit and executable digest. CPU execution cannot be deferred. ONNX CPU-provider
+source commit and executable digest. A `PASS` must include the quick-analysis timing, measured with
+the pinned `analysis_example.cfg` (checked by SHA-256). Staging recomputes the verdict from the
+recorded times and does not trust the record's own status. CPU execution cannot be deferred. ONNX CPU-provider
 evidence does not certify DirectML or Intel GPU/NPU hardware. Linux additionally requires
 `linux-compatibility.json`, recording the reference executable digest, symbol ceilings
 and passing distribution checks. Do not synthesize these records from a green compile.
