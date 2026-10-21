@@ -479,10 +479,17 @@ nothing for 6 s.
 The patch uses upstream's existing fixed-shape policy, as the ONNX backend does with
 `onnxPadBatch`: GPU (MPSGraph) batches are padded to `nnMaxBatchSize`, padding rows copying row 0,
 and that size now defaults to about half of `numSearchThreads`, so the padding stays cheap. ANE
-(CoreML) threads evaluate row by row and never pad. `metalPadBatch = false` restores upstream's
-behavior.
+(CoreML) threads evaluate row by row and never pad.
 
-25 analysis restarts on the move-127 position of the ear-reddening game, B11, M4 Pro:
+Padding applies only when KataGo derives the batch size, that is when the config does not set
+`nnMaxBatchSize`, as with the bundled `gtp.cfg`. A configured size is meant for dynamic batching and
+keeps upstream's behavior. The bundled `analysis.cfg` is KataGo's `analysis_example.cfg`, which sets
+64, and the app's whole-game quick analysis runs it with two search threads, so padding to it ran 64
+rows for every one or two positions. `metalPadBatch = true` pads a configured size too, and
+`metalPadBatch = false` restores upstream's behavior everywhere.
+
+One engine start and 24 analysis restarts on the move-127 position of the ear-reddening game,
+alternating ordinary and `focus` analysis, B11, M4 Pro (freezes counted over the restarts):
 
 | Build, config | Freezes after startup | First visits after start | Visits/s, ordinary / focus |
 |---|---|---|---|
@@ -494,6 +501,16 @@ behavior.
 
 Padding to upstream's default size instead (8 rows for 6 or 8 threads) halved throughput, which is
 why the batch is sized the fixed-shape way.
+
+Whole-game quick analysis as the app runs it (`katago analysis` with the bundled `analysis.cfg`,
+`numSearchThreadsPerAnalysisThread = 1`, 2 visits per position), the first 80 positions of the same
+game, default B11 network `kata1-tf3-b11c768-s12002M-d6304M`, M4 Pro:
+
+| Engine | All 80 positions | First result |
+|---|---|---|
+| Upstream (the `next-2026-10-17.1` engine) | 6.8 s | 2.9 s |
+| First version of the patch (#662), padding to the configured 64 | 216.9 s | 6.7 s |
+| Patched (the same patch on upstream master, local build) | 6.8 s | 2.9 s |
 
 The patch file's SHA-256 is pinned in `scripts/katago_source_targets.py` (`SOURCE_PATCHES`,
 `TARGET_PATCHES`). The builder refuses a patch with any other digest. A patched executable reports
