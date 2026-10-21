@@ -17475,7 +17475,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void drawScore(GroupInfo boardGroupInfo) {
-    // TODO Auto-generated method stub
     if (Lizzie.config.isFloatBoardMode() && independentMainBoard != null)
       this.independentMainBoard.boardRenderer.drawScore(boardGroupInfo);
     else boardRenderer.drawScore(boardGroupInfo);
@@ -17483,7 +17482,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void clearScore() {
-    // TODO Auto-generated method stub
     if (Lizzie.config.isFloatBoardMode() && independentMainBoard != null)
       this.independentMainBoard.boardRenderer.clearScore();
     else boardRenderer.clearScore();
@@ -17796,8 +17794,11 @@ public class LizzieFrame extends JFrame {
   }
 
   private boolean isTrackingStillSearchingCurrentPosition() {
+    // Only evaluated points make it worth asking the engine; otherwise the hand-back is as before.
     TrackingAnalysisController controller = trackingAnalysisController;
-    return controller != null && controller.holdsSearchOf(currentTrackingContext());
+    return controller != null
+        && !controller.snapshot().selectedPoints().isEmpty()
+        && controller.holdsSearchOf(currentTrackingContext());
   }
 
   private boolean syncCurrentPositionToPrimaryEngineForAnalysis() {
@@ -18280,7 +18281,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void tryToRefreshVariation() {
-    // TODO Auto-generated method stub
     boardRenderer.refreshVariation();
     if (Lizzie.config.isDoubleEngineMode()) boardRenderer2.refreshVariation();
   }
