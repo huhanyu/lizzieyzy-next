@@ -8,12 +8,9 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.IOException;
 import java.util.ResourceBundle;
 import java.util.Timer;
 import java.util.TimerTask;
-import javax.imageio.ImageIO;
-import javax.swing.ImageIcon;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
 import javax.swing.event.PopupMenuEvent;
@@ -53,7 +50,7 @@ public class RightClickMenu extends JPopupMenu {
   private JFontMenuItem avoid;
   private JFontMenuItem previousMove;
   private JFontMenuItem addSuggestionAsBranch;
-  private JFontCheckBoxMenuItem avoid2;
+  private JFontMenuItem avoid2;
   private JFontMenuItem cancelavoid;
   private JFontMenuItem trackPoint;
   private JFontMenuItem untrackPoint;
@@ -61,8 +58,8 @@ public class RightClickMenu extends JPopupMenu {
   private JFontMenuItem reedit;
   private JFontMenuItem cleanupedit;
   private JFontMenuItem cleanedittemp;
-  Separator sep1 = new Separator();
-  Separator sep = new Separator();
+  JPopupMenu.Separator sep1 = BoardMenuStyle.separator();
+  JPopupMenu.Separator sep = BoardMenuStyle.separator();
   private BoardRenderer previewOwner;
 
   public RightClickMenu() {
@@ -99,6 +96,7 @@ public class RightClickMenu extends JPopupMenu {
           }
 
           public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+            refreshLook();
             boolean independent =
                 Lizzie.frame.independentMainBoard != null
                     && (SwingUtilities.getWindowAncestor(getInvoker())
@@ -215,84 +213,54 @@ public class RightClickMenu extends JPopupMenu {
         };
 
     this.addPopupMenuListener(listener);
-    ImageIcon iconBack = new ImageIcon();
-    ImageIcon iconBlack = new ImageIcon();
-    ImageIcon iconWhite = new ImageIcon();
-    ImageIcon iconRecycle = new ImageIcon();
-    ImageIcon iconForbidPoint = new ImageIcon();
-    ImageIcon iconSetPoint = new ImageIcon();
-    ImageIcon iconUppoint = new ImageIcon();
-    ImageIcon iconForward = new ImageIcon();
-    ImageIcon iconAddPoint = new ImageIcon();
-    ImageIcon iconRemovePoint = new ImageIcon();
-    ImageIcon iconTrackPoint = new ImageIcon();
-    ImageIcon iconSearch = new ImageIcon();
-    try {
-      iconForward.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/right.png")));
-      iconBack.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/left.png")));
-      iconBlack.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/smallblack1.png")));
-      iconWhite.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/smallwhite.png")));
-      iconRecycle.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/recycle.png")));
-      iconForbidPoint.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/forbidpoint.png")));
-      iconSetPoint.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/setpoint.png")));
-      iconUppoint.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/uppoint.png")));
-      iconAddPoint.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/addpoint.png")));
-      iconTrackPoint.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/trackingpoint.png")));
-      iconSearch.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/search.png")));
-      iconRemovePoint.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/clear.png")));
-    } catch (IOException e1) {
-      // TODO Auto-generated catch block
-      e1.printStackTrace();
-    }
     // insertmode = new JFontMenuItem("进入插入棋子模式");
     // quitinsert = new JFontMenuItem("退出插入棋子模式");
     findMove = new JFontMenuItem(resourceBundle.getString("RightClickMenu.findMove"));
-    findMove.setIcon(iconSearch);
+    findMove.setIcon(BoardMenuGlyph.FIND.icon());
     priority = new JFontMenuItem(resourceBundle.getString("RightClickMenu.priority"));
-    priority.setIcon(iconUppoint);
+    priority.setIcon(BoardMenuGlyph.PRIORITY.icon());
     clearPriority = new JFontMenuItem(resourceBundle.getString("RightClickMenu.clearPriority"));
-    clearPriority.setIcon(iconRecycle);
+    clearPriority.setIcon(BoardMenuGlyph.CLEAR.icon());
     addSuggestionAsBranch =
         new JFontMenuItem(
             resourceBundle.getString("RightClickMenu.addSuggestionAsBranch")); // ("将变化图添加为分支");
+    addSuggestionAsBranch.setIcon(BoardMenuGlyph.BRANCH.icon());
     addblack = new JFontMenuItem(resourceBundle.getString("RightClickMenu.addblack")); // ("插入黑子");
-    addblack.setIcon(iconBlack);
+    addblack.setIcon(BoardMenuGlyph.BLACK_STONE.icon());
     addwhite = new JFontMenuItem(resourceBundle.getString("RightClickMenu.addwhite")); // ("插入白子");
-    addwhite.setIcon(iconWhite);
+    addwhite.setIcon(BoardMenuGlyph.WHITE_STONE.icon());
     allow = new JFontMenuItem(resourceBundle.getString("RightClickMenu.allow")); // ("只分析此点");
-    allow.setIcon(iconSetPoint);
+    allow.setIcon(BoardMenuGlyph.ANALYZE_ONLY.icon());
     allow2 = new JFontMenuItem(resourceBundle.getString("RightClickMenu.allow2")); // ("增加分析此点");
-    allow2.setIcon(iconAddPoint);
+    allow2.setIcon(BoardMenuGlyph.ANALYZE_ADD.icon());
     allow3 = new JFontMenuItem(resourceBundle.getString("RightClickMenu.allow3")); // "去除分析此点");
-    allow3.setIcon(iconRemovePoint);
+    allow3.setIcon(BoardMenuGlyph.REMOVE.icon());
     avoid = new JFontMenuItem(resourceBundle.getString("RightClickMenu.avoid")); // ("不分析此点");
-    avoid.setIcon(iconForbidPoint);
-    avoid2 =
-        new JFontCheckBoxMenuItem(
-            resourceBundle.getString("RightClickMenu.avoid2")); // ("持续分析/不分析");
+    avoid.setIcon(BoardMenuGlyph.AVOID.icon());
+    // A plain item whose icon shows the state: a check box item would add a check column to the
+    // whole menu, pushing every icon right.
+    avoid2 = new JFontMenuItem(resourceBundle.getString("RightClickMenu.avoid2")); // ("持续分析/不分析");
     cancelavoid =
         new JFontMenuItem(resourceBundle.getString("RightClickMenu.cancelavoid")); // ("清除分析与不分析");
-    cancelavoid.setIcon(iconRecycle);
+    cancelavoid.setIcon(BoardMenuGlyph.CLEAR.icon());
     trackPoint = new JFontMenuItem(resourceBundle.getString("RightClickMenu.trackPoint"));
-    trackPoint.setIcon(iconTrackPoint);
+    trackPoint.setIcon(BoardMenuGlyph.EVALUATE.icon());
     trackPoint.setToolTipText(resourceBundle.getString("RightClickMenu.trackPoint.tooltip"));
     untrackPoint = new JFontMenuItem(resourceBundle.getString("RightClickMenu.untrackPoint"));
-    untrackPoint.setIcon(iconRemovePoint);
+    untrackPoint.setIcon(BoardMenuGlyph.REMOVE.icon());
     clearAllTracked = new JFontMenuItem(resourceBundle.getString("RightClickMenu.clearAllTracked"));
-    clearAllTracked.setIcon(iconRecycle);
+    clearAllTracked.setIcon(BoardMenuGlyph.CLEAR.icon());
     cleanedittemp =
         new JFontMenuItem(resourceBundle.getString("RightClickMenu.cleanedittemp")); // ("清除编辑缓存");
-    cleanedittemp.setIcon(iconRecycle);
+    cleanedittemp.setIcon(BoardMenuGlyph.CLEAR.icon());
     reedit = new JFontMenuItem(resourceBundle.getString("RightClickMenu.reedit")); // ("恢复到编辑前");
-    reedit.setIcon(iconForward);
+    reedit.setIcon(BoardMenuGlyph.REDO.icon());
     cleanupedit =
         new JFontMenuItem(resourceBundle.getString("RightClickMenu.cleanupedit")); // ("恢复到编辑后");
-    cleanupedit.setIcon(iconBack);
+    cleanupedit.setIcon(BoardMenuGlyph.UNDO.icon());
     previousMove =
         new JFontMenuItem(resourceBundle.getString("RightClickMenu.previousMove")); // ("回退一手");
-    previousMove.setIcon(iconBack);
+    previousMove.setIcon(BoardMenuGlyph.UNDO.icon());
     this.add(allow);
     this.add(allow2);
     this.add(allow3);
@@ -314,6 +282,7 @@ public class RightClickMenu extends JPopupMenu {
     this.add(cleanupedit);
     this.add(cleanedittemp);
     this.add(addSuggestionAsBranch);
+    refreshLook();
 
     addMouseListener(
         new MouseAdapter() {
@@ -469,6 +438,13 @@ public class RightClickMenu extends JPopupMenu {
     trackPoint.addActionListener(e -> trackPointAction());
     untrackPoint.addActionListener(e -> untrackPointAction());
     clearAllTracked.addActionListener(e -> Lizzie.frame.clearTrackingPoints());
+  }
+
+  /** The menu's frame and the keep-forcing state icon, refreshed each time the menu opens. */
+  void refreshLook() {
+    avoid2.setIcon(
+        (LizzieFrame.isKeepForcing ? BoardMenuGlyph.KEEP_ON : BoardMenuGlyph.KEEP_OFF).icon());
+    BoardMenuStyle.install(this);
   }
 
   private void cleanupedit() {

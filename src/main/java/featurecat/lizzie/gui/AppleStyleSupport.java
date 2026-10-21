@@ -387,6 +387,13 @@ public final class AppleStyleSupport {
             new EmptyBorder(4, 4, 4, 4)));
   }
 
+  /** A faint rule in the menu text colour, for separators inside popups. */
+  static Color popupRuleColor() {
+    Color text = controlTextColor();
+    return new Color(
+        text.getRed(), text.getGreen(), text.getBlue(), isAppleStyleEnabled() ? 52 : 40);
+  }
+
   public static void styleMenuItem(AbstractButton menuItem) {
     if (menuItem == null) {
       return;
