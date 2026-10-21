@@ -1,8 +1,14 @@
 package featurecat.lizzie.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import featurecat.lizzie.analysis.Leelaz.MoveFocusCapability;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.PropertyResourceBundle;
 import org.junit.jupiter.api.Test;
 
 class RightClickMenuCapabilityTest {
@@ -39,5 +45,24 @@ class RightClickMenuCapabilityTest {
     assertEquals(
         "RightClickMenu.trackPoint.requiresCapability",
         RightClickMenu.trackingUnavailableKey(MoveFocusCapability.UNKNOWN, true, false));
+  }
+
+  @Test
+  void everyUnavailableLabelKeepsTheItemsNameInEveryLanguage() throws Exception {
+    // A disabled item is still where users look for it, so it keeps its name and adds the reason.
+    for (String bundle :
+        List.of("", "_en_US", "_ja_JP", "_ko", "_th_TH", "_zh_CN", "_zh_HK", "_zh_TW")) {
+      PropertyResourceBundle strings;
+      try (InputStream in =
+          RightClickMenu.class.getResourceAsStream(
+              "/l10n/DisplayStrings" + bundle + ".properties")) {
+        strings = new PropertyResourceBundle(new InputStreamReader(in, StandardCharsets.UTF_8));
+      }
+      String name = strings.getString("RightClickMenu.trackPoint");
+      for (String reason : List.of("upgradeRequired", "paused", "requiresCapability")) {
+        String label = strings.getString("RightClickMenu.trackPoint." + reason);
+        assertTrue(label.startsWith(name), bundle + " " + reason + ": " + label);
+      }
+    }
   }
 }
