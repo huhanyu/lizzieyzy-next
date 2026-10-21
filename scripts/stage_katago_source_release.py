@@ -194,10 +194,24 @@ def verify_archive(path: Path, target: str) -> dict:
 
 
 def stage(packages: Path, acceptance: Path, base_catalog: Path, output: Path, tag: str,
-          source: Path) -> dict:
+          source: Path, targets: list[str] | None = None) -> dict:
+    """Seals all 15 targets, or with targets re-seals only those and keeps the rest of the base catalog.
+
+    Unchanged archives keep their reviewed name, size and digests; the release then copies them
+    from the base catalog's release with the transfer workflow.
+    """
     if output.exists():
         raise ValueError("release staging output must be new; never overwrite a published artifact")
-    catalog = copy.deepcopy(load_catalog(base_catalog))
+    partial = targets is not None
+    selected = list(TARGETS) if targets is None else list(targets)
+    if not selected or len(set(selected)) != len(selected) or not set(selected) <= set(TARGETS):
+        raise ValueError("re-staged targets must be distinct known targets")
+    previous = load_catalog(base_catalog)
+    if partial and (previous.get("origin") != "project-source-build"
+                    or previous.get("katagoSourceCommit") != SOURCE_COMMIT
+                    or set(previous.get("assets", {})) != set(TARGETS)):
+        raise ValueError("partial re-staging needs a complete source-build base catalog")
+    catalog = copy.deepcopy(previous)
     check_source(source)
     templates = {"default_gtp.cfg": source / "cpp/configs/gtp_example.cfg",
                  "analysis_example.cfg": source / "cpp/configs/analysis_example.cfg"}
@@ -208,16 +222,17 @@ def stage(packages: Path, acceptance: Path, base_catalog: Path, output: Path, ta
                    engineReleaseTag=tag)
     verified = {}
     accepted = []
-    for target in TARGETS:
+    for target in selected:
         receipt, files, receipt_name = verified_package(packages / target, target)
         accepted.append(accept(acceptance / target, receipt))
         verified[target] = (receipt, files, receipt_name)
-    check_release_receipts(accepted)
+    check_release_receipts(accepted, partial=partial)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".katago-source-stage-", dir=output.parent) as temporary:
         staging = Path(temporary)
-        catalog["assets"] = {}
-        baseline_assets = load_catalog(base_catalog)["assets"]
+        if not partial:
+            catalog["assets"] = {}
+        baseline_assets = previous["assets"]
         for result in accepted:
             target = result["target"]
             receipt, files, receipt_name = verified[target]
@@ -241,8 +256,11 @@ def stage(packages: Path, acceptance: Path, base_catalog: Path, output: Path, ta
         validate_catalog(catalog)
         check_source(source)
         (staging / "katago-assets.json").write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
+        evidence = {"sourceCommit": SOURCE_COMMIT, "targets": accepted}
+        if partial:
+            evidence["unchangedArchivesFrom"] = previous.get("engineReleaseTag")
         (staging / "source-release-evidence.json").write_text(
-            json.dumps({"sourceCommit": SOURCE_COMMIT, "targets": accepted}, indent=2) + "\n", encoding="utf-8")
+            json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
         # No partial catalog is visible if any source, hash, platform or acceptance gate fails.
         staging.rename(output)
     return catalog
@@ -256,5 +274,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--targets", nargs="+", choices=list(TARGETS),
+                        help="re-stage only these targets and keep the base catalog's other archives")
     args = parser.parse_args()
-    stage(args.packages, args.acceptance, args.base_catalog, args.output, args.tag, args.source)
+    stage(args.packages, args.acceptance, args.base_catalog, args.output, args.tag, args.source,
+          args.targets)

@@ -300,7 +300,8 @@ def build(source: Path, output: Path, target: str, sdk: list[str], jobs: int,
         (output / "source-build.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
 
-def check_release_receipts(receipts: list[dict]) -> None:
+def check_release_receipts(receipts: list[dict], partial: bool = False) -> None:
+    """Gates every receipt; partial re-staging checks only the targets it replaces."""
     by_target = {}
     for receipt in receipts:
         target = receipt.get("target")
@@ -333,7 +334,9 @@ def check_release_receipts(receipts: list[dict]) -> None:
                 or not re.fullmatch(r"[0-9a-f]{64}", str(executable.get("sha256", "")))):
             raise ValueError(f"{target}: missing or invalid executable identity")
         by_target[target] = receipt
-    if set(by_target) != set(TARGETS):
+    if not by_target:
+        raise ValueError("no build targets")
+    if not partial and set(by_target) != set(TARGETS):
         raise ValueError("missing build targets: " + ", ".join(sorted(set(TARGETS) - set(by_target))))
 
 

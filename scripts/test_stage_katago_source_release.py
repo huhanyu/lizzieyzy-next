@@ -231,5 +231,40 @@ class SourceReleaseTest(unittest.TestCase):
             self.root / "release" / catalog["assets"]["linux-cpu"]["assetName"], "linux-cpu")["sourcePatches"])
 
 
+    def test_partial_restage_reseals_only_the_selected_archives(self):
+        base = self.run_stage()
+        selected = ["macos-arm64", "macos-amd64"]
+        catalog = stage(self.packages, self.acceptance, self.root / "release/katago-assets.json",
+                        self.root / "restage", "next-2026-09-18.1", self.source, selected)
+        self.assertEqual("next-2026-09-18.1", catalog["engineReleaseTag"])
+        written = sorted(path.name for path in (self.root / "restage").glob("*.zip"))
+        self.assertEqual(sorted(base["assets"][target]["assetName"] for target in selected), written)
+        for target in TARGETS:
+            if target not in selected:
+                self.assertEqual(base["assets"][target], catalog["assets"][target], target)
+        for target in selected:
+            archive = self.root / "restage" / catalog["assets"][target]["assetName"]
+            self.assertEqual(catalog["assets"][target]["sha256"], record(archive, archive.name)["sha256"])
+            self.assertEqual(target, verify_archive(archive, target)["target"])
+        evidence = json.loads((self.root / "restage/source-release-evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual("next-2026-09-17.1", evidence["unchangedArchivesFrom"])
+        self.assertEqual(selected, [receipt["target"] for receipt in evidence["targets"]])
+
+    def test_partial_restage_needs_known_targets_and_a_complete_base(self):
+        self.run_stage()
+        base = self.root / "release/katago-assets.json"
+        for index, targets in enumerate(([], ["macos-arm64", "macos-arm64"], ["not-a-target"])):
+            with self.subTest(targets=targets), self.assertRaises(ValueError):
+                stage(self.packages, self.acceptance, base, self.root / f"bad-{index}",
+                      "next-2026-09-18.1", self.source, targets)
+        incomplete = json.loads(base.read_text(encoding="utf-8"))
+        del incomplete["assets"]["linux-cpu"]
+        broken = self.root / "incomplete.json"
+        broken.write_text(json.dumps(incomplete), encoding="utf-8")
+        with self.assertRaises((ValueError, KeyError)):
+            stage(self.packages, self.acceptance, broken, self.root / "bad-base",
+                  "next-2026-09-18.1", self.source, ["macos-arm64"])
+
+
 if __name__ == "__main__":
     unittest.main()
