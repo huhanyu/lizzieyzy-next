@@ -32,6 +32,23 @@ Windows 构建、依赖审计、启动与升级测试通过后，将同一批成
 身份不匹配、摘要不一致或传输失败都会停止，不改变 tag、正式频道或发布状态。
 目标应用仍须从原有固定 tag 构建并通过全部发布验收。
 
+## 更换部分固定源码引擎归档
+
+只有部分目标的引擎变了（例如 macOS 的 `metal-fixed-batch.patch`）时，其余归档原样沿用：
+
+1. 在发布提交上运行对应的 `katago-source-*.yml`，把各目标的 `katago-package/` 产物放到
+   `packages/<目标>/`。
+2. 每个目标准备 `acceptance/<目标>/hardware.json`：在对应真实硬件上运行
+   `probe_katago_focus.py` 得到的 `result.json`；没有该硬件时写 `PENDING_HARDWARE` 并说明原因。
+3. 只封装这些目标：`stage_katago_source_release.py` 加 `--targets <目标...>`，
+   `--base-catalog` 用当前 `src/main/resources/katago-assets.json`，`--source` 用固定提交的干净
+   KataGo 检出。其余资产的名称、大小和摘要原样保留。
+4. 新目录随发布请求一起提交。发布器的 prepare-only 建好 Draft 后，先在本机上传重新封装的归档：
+   `transfer_pinned_source_assets.py --target-tag <tag> --target-sha <提交> --upload-local <目录>`
+   （需要 `GITHUB_REPOSITORY` 和 `GITHUB_TOKEN`），每个文件都按目标提交的目录核对大小和 SHA-256。
+5. 再从上一个 Release 运行 `Transfer Verified Pinned Source Assets` 补齐其余归档；Draft 里已经存在
+   且摘要一致的归档会被核验后跳过，摘要不同的同名归档会让流程停止，绝不覆盖。
+
 这份清单面向维护者，目标是让每次发版都尽量稳定、可复用，而且从用户视角看起来足够清楚。
 
 ## 一、发版前先确认目标

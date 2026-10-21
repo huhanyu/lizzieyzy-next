@@ -7,8 +7,10 @@ from unittest.mock import Mock
 
 from scripts.test_upload_release_assets import FakeClient
 from scripts.transfer_pinned_source_assets import (
-    transfer_archive, validate_transfer_catalog, verify_source_inventory,
+    pending_records, transfer_archive, upload_local_archives, validate_transfer_catalog,
+    verify_source_inventory,
 )
+import tempfile
 from scripts.validate_release_workflow_identity import IdentityError
 
 
@@ -57,6 +59,35 @@ class TransferTests(unittest.TestCase):
                      [self.asset(size=1)], [self.asset(digest='sha256:' + '0' * 64)]):
             with self.subTest(rows=rows), self.assertRaises(IdentityError):
                 verify_source_inventory(rows, records)
+
+    def test_archives_already_in_the_destination_need_no_source(self):
+        new = dict(self.record, assetName='restaged.zip')
+        records = {'cpu': self.record, 'metal': new}
+        destination = {'restaged.zip': dict(self.asset(), name='restaged.zip')}
+        self.assertEqual({'cpu': self.record}, pending_records(destination.get, records))
+        # The source then only has to hold what is still missing.
+        verify_source_inventory([self.asset()], pending_records(destination.get, records))
+
+    def test_a_different_archive_in_the_destination_is_never_overwritten(self):
+        destination = {'engine.zip': self.asset(digest='sha256:' + '0' * 64)}
+        with self.assertRaises(IdentityError):
+            pending_records(destination.get, {'cpu': self.record})
+        with self.assertRaises(IdentityError):
+            pending_records({}.get, {'a': self.record, 'b': dict(self.record)})
+
+    def test_only_catalog_matching_local_archives_are_uploaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'engine.zip').write_bytes(self.data)
+            client = FakeClient(None, ['success'])
+            self.assertEqual(1, upload_local_archives(client, {'metal': self.record}, root))
+            self.assertEqual(1, client.uploads)
+            (root / 'engine.zip').write_bytes(b'tampered')
+            with self.assertRaises(IdentityError):
+                upload_local_archives(FakeClient(None, ['success']), {'metal': self.record}, root)
+            (root / 'engine.zip').unlink()
+            with self.assertRaises(IdentityError):
+                upload_local_archives(FakeClient(None, []), {'metal': self.record}, root)
 
     def test_matching_destination_skips_network(self):
         client = FakeClient(None, [], self.asset())
