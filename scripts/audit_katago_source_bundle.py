@@ -10,6 +10,7 @@ import shutil
 import tempfile
 
 from build_katago_source import SOURCE_COMMIT, TARGETS
+from katago_source_targets import source_patch_records
 from katago_asset_catalog import DEFAULT_CATALOG, engine_manifest_text, load_catalog
 from stage_katago_source_release import digest, normalized_name
 
@@ -24,6 +25,7 @@ def audit(catalog: dict, target: str, engine: Path) -> None:
             or catalog.get("katagoSourceCommit") != SOURCE_COMMIT
             or metadata.get("target") != target or metadata.get("backend") != TARGETS[target][2]
             or metadata.get("origin") != "project-source-build"
+            or metadata.get("sourcePatches", []) != source_patch_records(target)
             or metadata.get("executable", {}).get("sha256") != asset["executableSha256"]):
         raise ValueError("installed source identity differs from trusted catalog")
     manifest = engine / "lizzieyzy-next-katago-engine-manifest.txt"
@@ -65,7 +67,8 @@ def audit(catalog: dict, target: str, engine: Path) -> None:
             raise ValueError(f"installed source file missing or modified: {name}")
     if digest(engine / executable) != asset["executableSha256"]:
         raise ValueError("installed engine executable differs from trusted catalog")
-    print(f"{target}: exact source {SOURCE_COMMIT}, {len(records)} files verified")
+    patches = "".join(f" + {record['file']}" for record in source_patch_records(target))
+    print(f"{target}: exact source {SOURCE_COMMIT}{patches}, {len(records)} files verified")
 
 
 def restore_after_jpackage(catalog: dict, target: str, source: Path, engine: Path) -> None:

@@ -15,6 +15,7 @@ import tempfile
 import zipfile
 
 from build_katago_source import SOURCE_COMMIT, TARGETS, check_release_receipts, check_source
+from katago_source_targets import reported_revision, source_patch_records, source_revision
 from katago_asset_catalog import load_catalog, validate_catalog
 
 
@@ -47,7 +48,8 @@ def verified_package(root: Path, target: str) -> tuple[dict, dict[str, Path], st
     if (receipt.get("target") != target or receipt.get("sourceCommit") != SOURCE_COMMIT
             or receipt.get("sourceRepository") != "https://github.com/lightvector/KataGo"
             or receipt.get("origin") != "project-source-build"
-            or receipt.get("backend") != TARGETS[target][2]):
+            or receipt.get("backend") != TARGETS[target][2]
+            or receipt.get("sourcePatches", []) != source_patch_records(target)):
         raise ValueError(f"{target}: incorrect source package identity")
     for key in ("buildStatus", "packagingStatus", "dependencyAuditStatus"):
         if receipt.get(key) != "PASS":
@@ -56,7 +58,7 @@ def verified_package(root: Path, target: str) -> tuple[dict, dict[str, Path], st
         raise ValueError(f"{target}: failed evidence cannot be promoted")
     if (not isinstance(receipt.get("compiler"), dict) or not receipt["compiler"]
             or not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("dependencyLockSha256", "")))
-            or f"Git revision: {SOURCE_COMMIT}" not in receipt.get("versionOutput", "")):
+            or reported_revision(receipt.get("versionOutput", "")) != source_revision(target)):
         raise ValueError(f"{target}: compiler, dependency lock or version evidence missing")
     listed = {}
     folded = set()
@@ -165,6 +167,7 @@ def verify_archive(path: Path, target: str) -> dict:
         if (metadata.get("target") != target or metadata.get("sourceCommit") != SOURCE_COMMIT
                 or metadata.get("origin") != "project-source-build"
                 or metadata.get("backend") != TARGETS[target][2]
+                or metadata.get("sourcePatches", []) != source_patch_records(target)
                 or any(metadata.get(status) != "PASS" for status in
                        ("buildStatus", "packagingStatus", "dependencyAuditStatus"))):
             raise ValueError("source archive belongs to a different source or target")

@@ -13,7 +13,10 @@ import re
 import subprocess
 import shutil
 
-from katago_source_targets import SOURCE_COMMIT, TARGETS
+from katago_source_targets import (
+    SOURCE_COMMIT, SOURCE_PATCHES, TARGET_PATCHES, TARGETS, reported_revision, source_patch_records,
+    source_revision,
+)
 from build_katago_macos_dependencies import sdk_environment, verify_sdk
 import build_katago_linux_dependencies as linux_sdk_tools
 import build_katago_windows_dependencies as windows_sdk_tools
@@ -38,6 +41,38 @@ SDK_CACHE_KEYS = {
 
 def checked(*command: str, cwd: Path | None = None) -> str:
     return subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+PATCH_DIR = Path(__file__).resolve().parent / "katago_patches"
+
+
+def verified_patch(name: str) -> Path:
+    path = PATCH_DIR / name
+    with path.open("rb") as handle:
+        if hashlib.file_digest(handle, "sha256").hexdigest() != SOURCE_PATCHES[name]:
+            raise ValueError(f"source patch {name} differs from its pinned SHA-256")
+    return path
+
+
+def apply_source_patches(source: Path, target: str) -> list[Path]:
+    """Applies the target's reviewed patches to the clean pinned checkout, in order."""
+    applied = []
+    try:
+        for name in TARGET_PATCHES.get(target, ()):
+            path = verified_patch(name)
+            checked("git", "apply", "--check", str(path), cwd=source)
+            checked("git", "apply", str(path), cwd=source)
+            applied.append(path)
+    except Exception:
+        revert_source_patches(source, applied)
+        raise
+    return applied
+
+
+def revert_source_patches(source: Path, applied: list[Path]) -> None:
+    """Restores the pinned checkout, so the clean-source check after the build still holds."""
+    for path in reversed(applied):
+        checked("git", "apply", "--reverse", str(path), cwd=source)
 
 
 def check_source(source: Path) -> None:
@@ -199,6 +234,7 @@ def build(source: Path, output: Path, target: str, sdk: list[str], jobs: int,
         "backend": TARGETS[target][2],
         "experimental": TARGETS[target][3],
         "configuration": options,
+        "sourcePatches": source_patch_records(target),
         "buildStatus": "FAIL",
         "packagingStatus": "NOT_RUN",
         "dependencyAuditStatus": "NOT_RUN",
@@ -208,12 +244,16 @@ def build(source: Path, output: Path, target: str, sdk: list[str], jobs: int,
         result["dependencyLockSha256"] = sdk_receipt["lockSha256"]
         result["sdkReceipt"] = file_record(sdk_prefix / "sdk-receipt.json", sdk_prefix)
     try:
-        with (output / "build.log").open("w", encoding="utf-8") as log:
-            for command in (
-                ["cmake", "-S", str(source / "cpp"), "-B", str(output), "-G", "Ninja", *options],
-                ["cmake", "--build", str(output), "--target", "katago", "--parallel", str(jobs)],
-            ):
-                subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, env=build_env)
+        applied = apply_source_patches(source, target)
+        try:
+            with (output / "build.log").open("w", encoding="utf-8") as log:
+                for command in (
+                    ["cmake", "-S", str(source / "cpp"), "-B", str(output), "-G", "Ninja", *options],
+                    ["cmake", "--build", str(output), "--target", "katago", "--parallel", str(jobs)],
+                ):
+                    subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, env=build_env)
+        finally:
+            revert_source_patches(source, applied)
         check_source(source)
         if target in rocm_sdk_tools.TARGETS:
             rocm_sdk_tools.validate_build(output)
@@ -226,7 +266,7 @@ def build(source: Path, output: Path, target: str, sdk: list[str], jobs: int,
             [str(binary), "version"], check=True, capture_output=True, text=True, timeout=30,
             env=build_env,
         ).stdout
-        if f"Git revision: {SOURCE_COMMIT}" not in version:
+        if reported_revision(version) != source_revision(target):
             raise ValueError("built executable does not report the requested source revision")
         expected_backend = {
             "EIGEN": "Eigen(CPU)", "OPENCL": "OpenCL", "METAL": "Metal",
@@ -270,7 +310,8 @@ def check_release_receipts(receipts: list[dict]) -> None:
                 or receipt.get("sourceRepository") != "https://github.com/lightvector/KataGo"
                 or receipt.get("sourceCommit") != SOURCE_COMMIT
                 or receipt.get("origin") != "project-source-build"
-                or receipt.get("backend") != TARGETS[target][2]):
+                or receipt.get("backend") != TARGETS[target][2]
+                or receipt.get("sourcePatches", []) != source_patch_records(target)):
             raise ValueError(f"wrong source identity for {target}")
         for status in ("buildStatus", "packagingStatus", "dependencyAuditStatus"):
             if receipt.get(status) != "PASS":

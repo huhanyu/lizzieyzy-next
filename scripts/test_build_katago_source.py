@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 
 import copy
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import build_katago_source
 from build_katago_source import (
-    SOURCE_COMMIT, TARGETS, build, check_host, check_release_receipts, check_source, configuration,
-    file_record, macos_minimum_version,
+    SOURCE_COMMIT, TARGETS, apply_source_patches, build, check_host, check_release_receipts,
+    check_source, configuration, file_record, macos_minimum_version,
+)
+from katago_source_targets import (
+    SOURCE_PATCHES, TARGET_PATCHES, reported_revision, source_patch_records, source_revision,
 )
 
 
@@ -25,6 +30,7 @@ class SourceBuildTest(unittest.TestCase):
                 "hardwareAcceptanceStatus": "PASS" if TARGETS[target][2] == "EIGEN" else "PENDING_HARDWARE",
                 "hardwareAcceptanceReason": "CI runner has no corresponding GPU",
                 "productionAbiAcceptanceStatus": "PASS",
+                "sourcePatches": source_patch_records(target),
             }
             for target in TARGETS
         ]
@@ -189,6 +195,77 @@ class SourceBuildTest(unittest.TestCase):
             receipts[0][field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
                 check_release_receipts(receipts)
+
+
+    def test_only_the_metal_builds_carry_the_fixed_batch_patch(self):
+        for target in TARGETS:
+            expected = ("metal-fixed-batch.patch",) if TARGETS[target][2] == "METAL" else ()
+            self.assertEqual(expected, TARGET_PATCHES.get(target, ()), target)
+        for name, sha256 in SOURCE_PATCHES.items():
+            with (build_katago_source.PATCH_DIR / name).open("rb") as handle:
+                self.assertEqual(sha256, hashlib.file_digest(handle, "sha256").hexdigest(), name)
+
+    def test_a_patch_that_differs_from_its_pin_is_never_applied(self):
+        with tempfile.TemporaryDirectory() as root:
+            patches = Path(root)
+            (patches / "metal-fixed-batch.patch").write_text("diff --git a/x b/x\n")
+            with patch.object(build_katago_source, "PATCH_DIR", patches), \
+                    patch("build_katago_source.checked") as git:
+                with self.assertRaisesRegex(ValueError, "pinned SHA-256"):
+                    apply_source_patches(Path("source"), "macos-arm64")
+            git.assert_not_called()
+
+    def test_patched_build_restores_the_pinned_checkout_even_when_compiling_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            git = []
+            with patch("build_katago_source.check_host"), patch("build_katago_source.check_source"), \
+                    patch("build_katago_source.verify_sdk", return_value={"lockSha256": "a" * 64}), \
+                    patch("build_katago_source.file_record", return_value={"sha256": "a" * 64}), \
+                    patch("build_katago_source.sdk_environment", return_value={}), \
+                    patch("build_katago_source.checked", side_effect=lambda *args, **kw: git.append(args) or ""), \
+                    patch("build_katago_source.subprocess.run", side_effect=RuntimeError("compile failed")):
+                with self.assertRaises(RuntimeError):
+                    build(path / "source", path / "build", "macos-arm64", [], 2, macos_sdk=path / "sdk")
+            patch_file = str(build_katago_source.PATCH_DIR / "metal-fixed-batch.patch")
+            self.assertEqual([("git", "apply", "--check", patch_file), ("git", "apply", patch_file),
+                              ("git", "apply", "--reverse", patch_file)], git)
+            receipt = (path / "build/source-build.json").read_text()
+            self.assertIn('"buildStatus": "FAIL"', receipt)
+            self.assertIn('"file": "metal-fixed-batch.patch"', receipt)
+
+    def test_unpatched_targets_never_touch_the_checkout(self):
+        with patch("build_katago_source.checked") as git:
+            self.assertEqual([], apply_source_patches(Path("source"), "windows-cpu"))
+        git.assert_not_called()
+
+    def test_reported_revision_must_match_exactly(self):
+        version = "KataGo v1.18.2\nGit revision: {}\nCompile Time: now\n"
+        self.assertEqual(SOURCE_COMMIT + "-dirty", source_revision("macos-arm64"))
+        self.assertEqual(SOURCE_COMMIT, source_revision("linux-cpu"))
+        self.assertEqual(SOURCE_COMMIT + "-dirty",
+                         reported_revision(version.format(SOURCE_COMMIT + "-dirty")))
+        # A dirty build can no longer pass as the clean pinned source, nor the reverse.
+        self.assertNotEqual(source_revision("linux-cpu"),
+                            reported_revision(version.format(SOURCE_COMMIT + "-dirty")))
+        self.assertNotEqual(source_revision("macos-arm64"), reported_revision(version.format(SOURCE_COMMIT)))
+        self.assertIsNone(reported_revision("KataGo v1.18.2\n"))
+
+    def test_release_receipts_must_record_the_declared_patches(self):
+        for patches in ([], [{"file": "metal-fixed-batch.patch", "sha256": "0" * 64}], None):
+            receipts = self.receipts()
+            for receipt in receipts:
+                if receipt["target"] == "macos-arm64":
+                    if patches is None:
+                        del receipt["sourcePatches"]
+                    else:
+                        receipt["sourcePatches"] = patches
+            with self.subTest(patches=patches), self.assertRaisesRegex(ValueError, "source identity"):
+                check_release_receipts(receipts)
+        receipts = self.receipts()
+        receipts[0]["sourcePatches"] = source_patch_records("macos-arm64")
+        with self.assertRaisesRegex(ValueError, "source identity"):
+            check_release_receipts(receipts)
 
 
 if __name__ == "__main__":
