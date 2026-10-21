@@ -3614,152 +3614,20 @@ public class Menu extends JMenuBar {
     editMenu.setForeground(MorandiPalette.MENU_ITEM_TEXT);
     // editMenu.setFont(headFont);
     this.add(editMenu);
-    iconblack2 = new ImageIcon();
-    try {
-      iconblack2.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/smallblack2.png"))
-              .getScaledInstance(
-                  Config.menuIconSize / 2 * 3,
-                  Config.menuIconSize / 2 * 3,
-                  java.awt.Image.SCALE_SMOOTH));
-      // ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconblack = new ImageIcon();
-    try {
-      iconblack.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/smallblack1.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-      // ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconwhite2 = new ImageIcon();
-    try {
-      iconwhite2.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/smallwhite4.png"))
-              .getScaledInstance(
-                  Config.menuIconSize / 2 * 3,
-                  Config.menuIconSize / 2 * 3,
-                  java.awt.Image.SCALE_SMOOTH));
-      // ImageIO.read(getClass().getResourceAsStream("/assets/smallwhite.png"));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconwhite = new ImageIcon();
-    try {
-      iconwhite.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/smallwhite.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-      // ImageIO.read(getClass().getResourceAsStream("/assets/smallwhite.png"));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconbh2 = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconbh2.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/hb2.png"))
-              .getScaledInstance(
-                  Config.menuIconSize + 8, Config.menuIconSize + 8, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconbh = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconbh.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/hb.png"))
-              .getScaledInstance(
-                  Config.menuIconSize + 8, Config.menuIconSize + 8, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconAllow = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconAllow.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/blueallow.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconAvoid = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconAvoid.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/redavoid.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconAllow2 = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconAllow2.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/blueallow2.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconAvoid2 = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconAvoid2.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/redavoid2.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-
-    iconClear = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconClear.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/clear.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
-    iconplayPass = new ImageIcon();
-    try {
-      // iconbh.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/menu.png")));
-      iconplayPass.setImage(
-          ImageIO.read(getClass().getResourceAsStream("/assets/playpass.png"))
-              .getScaledInstance(
-                  Config.menuIconSize, Config.menuIconSize, java.awt.Image.SCALE_SMOOTH));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
+    boolean darkIcons = AppleStyleSupport.isAppleStyleEnabled();
+    int editIconSize = Config.menuIconSize;
+    iconblack2 = ToolbarIconCache.get("/assets/smallblack2.png", editIconSize, darkIcons);
+    iconblack = ToolbarIconCache.get("/assets/smallblack1.png", editIconSize, darkIcons);
+    iconwhite2 = ToolbarIconCache.get("/assets/smallwhite4.png", editIconSize, darkIcons);
+    iconwhite = ToolbarIconCache.get("/assets/smallwhite.png", editIconSize, darkIcons);
+    iconbh2 = ToolbarIconCache.get("/assets/hb2.png", editIconSize, darkIcons);
+    iconbh = ToolbarIconCache.get("/assets/hb.png", editIconSize, darkIcons);
+    iconAllow = ToolbarIconCache.get("/assets/blueallow.png", editIconSize, darkIcons);
+    iconAvoid = ToolbarIconCache.get("/assets/redavoid.png", editIconSize, darkIcons);
+    iconAllow2 = ToolbarIconCache.get("/assets/blueallow2.png", editIconSize, darkIcons);
+    iconAvoid2 = ToolbarIconCache.get("/assets/redavoid2.png", editIconSize, darkIcons);
+    iconClear = ToolbarIconCache.get("/assets/clear.png", editIconSize, darkIcons);
+    iconplayPass = ToolbarIconCache.get("/assets/playpass.png", editIconSize, darkIcons);
 
     final JFontMenuItem addBlack =
         new JFontMenuItem(resourceBundle.getString("Menu.addBlack")); // ("添加黑子");

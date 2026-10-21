@@ -9,7 +9,10 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 
-/** Loads and scales immutable toolbar icons once per size and visual style. */
+/**
+ * Loads toolbar icons once per size and visual style: drawn {@link ToolbarGlyph}s for the pictures
+ * they replace, scaled resources for the rest.
+ */
 final class ToolbarIconCache {
   private static final Map<IconKey, ImageIcon> CACHE = new HashMap<>();
 
@@ -28,6 +31,11 @@ final class ToolbarIconCache {
   }
 
   private static ImageIcon load(String resourcePath, int size, boolean brighten) {
+    ToolbarGlyph.Variant glyph = ToolbarGlyph.BY_ASSET.get(resourcePath);
+    if (glyph != null) {
+      // Drawn rather than scaled, in the toolbar's own colours; brighten means a dark toolbar.
+      return glyph.glyph().icon(size, brighten, glyph.selected());
+    }
     try (InputStream stream = ToolbarIconCache.class.getResourceAsStream(resourcePath)) {
       if (stream == null) {
         return new ImageIcon();
