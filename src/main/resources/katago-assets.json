@@ -171,21 +171,21 @@
       "backend": "metal",
       "releaseTier": "stable",
       "assetName": "katago-source-47aadc08518b-macos-arm64.zip",
-      "sha256": "a16693856fddbd8ec1780e703df3953321f1480bb0ec552e26364da4f2fd61c2",
-      "sizeBytes": 5789858,
-      "executableSha256": "9dbf925cd267191218f4de1e510ee8bc72b9496c82c8635952717f357406096b"
+      "sha256": "973c93b56ec3903719a713b1c023f025c21e39963ab222e30257cc824adde19a",
+      "sizeBytes": 5790199,
+      "executableSha256": "3daaf0f32276102dbf1908cf322520de440d6416392b1104da504ebde52bc887"
     },
     "macos-amd64": {
       "platform": "macos-amd64",
       "backend": "metal",
       "releaseTier": "stable",
       "assetName": "katago-source-47aadc08518b-macos-amd64.zip",
-      "sha256": "3ecedeec7aec4b45e482790feb6e87b1cc29eca545ab9b40de745f5fa9e1511f",
-      "sizeBytes": 6210715,
-      "executableSha256": "d1082662496d9994b2d626a990242d90dcc892b47cf2f07892379c4336aa833b"
+      "sha256": "2a5c34aab49e44b4a7fcc24855dab904c16aac613ebe96a1282c85f603a85c6a",
+      "sizeBytes": 6211407,
+      "executableSha256": "8c12c6dd8cd21af9c358323d0089e265ed0b588696624169c1bdf7a0d59a781c"
     }
   },
   "origin": "project-source-build",
   "engineReleaseRepository": "wimi321/lizzieyzy-next",
-  "engineReleaseTag": "next-2026-10-17.1"
+  "engineReleaseTag": "next-2026-10-21.1"
 }

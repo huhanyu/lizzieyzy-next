@@ -110,7 +110,7 @@ Installers still exist, but they are now secondary to the portable flow.
 
 Current bundled defaults:
 
-- KataGo reports `v1.18.2`: all 15 platform/backend targets are built by this project from merged upstream commit `47aadc08518b3e121f22539796c911002f699584`, not official release binaries. Linux NVIDIA remains on CUDA `12.1` for runtime compatibility
+- KataGo reports `v1.18.2`: all 15 platform/backend targets are built by this project from merged upstream commit `47aadc08518b3e121f22539796c911002f699584`, not official release binaries. The two macOS targets also apply the reviewed `metal-fixed-batch.patch` (a fixed GPU batch size, so analysis no longer freezes for about 3 s after restarting) and report the revision with `-dirty`. Linux NVIDIA remains on CUDA `12.1` for runtime compatibility
 - Downloads, full packages, and on-demand repair use the same SHA-256-pinned artifacts, never an old-engine fallback. See each archive's `source-release.json` and [source-build documentation](KATAGO_SOURCE_BUILD.md) for provenance, compilers, dependencies, and actual hardware acceptance
 - Default weight: official flagship B11 Transformer `kata1-tf3-b11c768-s12002M-d6304M.bin.gz`, shown as “Transformer B11 · 2026-09-25”
 - Default weight size: `262,017,809` bytes (about 250 MiB), SHA-256: `4a6312e80faadee7b7dd28689a2e87a1efb4640c10132f16290da7a17b4c6d9e`
