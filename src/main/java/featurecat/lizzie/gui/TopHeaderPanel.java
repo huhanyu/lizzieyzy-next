@@ -31,7 +31,7 @@ public class TopHeaderPanel extends JPanel {
     setOpaque(false);
     setBorder(new EmptyBorder(2, 6, 2, 6));
 
-    contentPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 3, 2));
+    contentPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 2));
     contentPanel.setOpaque(false);
 
     leftGroup = new GroupPanel();
@@ -45,7 +45,7 @@ public class TopHeaderPanel extends JPanel {
   }
 
   public void addSeparator(Dimension dimension) {
-    int width = dimension != null ? Math.max(6, dimension.width) : 10;
+    int width = dimension != null ? Math.max(4, dimension.width) : 10;
     int height = dimension != null ? Math.max(16, dimension.height) : 24;
     contentPanel.add(new ToolbarSeparator(width, height));
   }

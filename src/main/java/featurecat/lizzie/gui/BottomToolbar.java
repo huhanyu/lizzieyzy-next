@@ -11,6 +11,7 @@ import featurecat.lizzie.enginegame.EngineGamePresentation;
 import featurecat.lizzie.enginegame.MatchRulesTexts;
 import featurecat.lizzie.enginegame.StartFailure;
 import featurecat.lizzie.enginegame.StartObserver;
+import featurecat.lizzie.gui.web.WebBoardTrial;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Movelist;
@@ -387,16 +388,6 @@ public class BottomToolbar extends JPanel {
     for (JButton button : buttons) {
       if (button != null && button.isVisible()) {
         visible.add(button);
-      }
-    }
-    return visible;
-  }
-
-  private List<Component> visibleComponents(Component... components) {
-    List<Component> visible = new ArrayList<>();
-    for (Component component : components) {
-      if (component != null && component.isVisible()) {
-        visible.add(component);
       }
     }
     return visible;
@@ -1173,7 +1164,7 @@ public class BottomToolbar extends JPanel {
     final JFontMenuItem forceExitTrial =
         new JFontMenuItem(Lizzie.resourceBundle.getString("Menu.webBoardForceExitTrial"));
     forceExitTrial.putClientProperty(AutoAnalyzeMenu.ACTION_PROPERTY, "sync.exit-web-trial");
-    forceExitTrial.addActionListener(e -> Lizzie.frame.exitWebTrialFromToolbar());
+    forceExitTrial.addActionListener(e -> WebBoardTrial.exit(Lizzie.webBoardManager));
     yike.add(forceExitTrial);
 
     yike.addPopupMenuListener(
@@ -1184,12 +1175,7 @@ public class BottomToolbar extends JPanel {
                     Lizzie.webBoardManager.isRunning()
                         ? "Menu.webBoardStop"
                         : "Menu.webBoardStart"));
-            boolean trialActive =
-                Lizzie.webBoardManager != null
-                    && Lizzie.webBoardManager.isRunning()
-                    && Lizzie.frame != null
-                    && Lizzie.frame.isTrialActive();
-            forceExitTrial.setEnabled(trialActive);
+            forceExitTrial.setEnabled(WebBoardTrial.canExit(Lizzie.webBoardManager, Lizzie.frame));
           }
 
           public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {}
@@ -5084,17 +5070,7 @@ public class BottomToolbar extends JPanel {
             badMoves,
             refresh,
             liveButton);
-    List<Component> centerComponents =
-        visibleComponents(
-            firstButton,
-            backward10,
-            backward1,
-            txtMoveNumber,
-            gotomove,
-            forward1,
-            forward10,
-            lastButton,
-            autoPlay);
+    List<Component> centerComponents = BottomToolbarNavigation.visibleComponents(this);
     List<JButton> rightPrimary = visibleButtons(tryPlay, backMain, setMain, moveRank, move, coords);
     List<JButton> rightOptional = visibleButtons(finalScore, clearButton, deleteMove);
 

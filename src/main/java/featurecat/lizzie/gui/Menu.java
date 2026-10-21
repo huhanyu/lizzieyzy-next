@@ -11,6 +11,7 @@ import featurecat.lizzie.analysis.MoveRankEvaluationMode;
 import featurecat.lizzie.enginegame.EngineGameKomiState;
 import featurecat.lizzie.enginegame.EngineGamePresentation;
 import featurecat.lizzie.enginegame.EngineGameSnapshot;
+import featurecat.lizzie.gui.web.WebBoardTrial;
 import featurecat.lizzie.logging.LoggingRuntime;
 import featurecat.lizzie.teacher.TeacherDialog;
 import featurecat.lizzie.theme.MorandiPalette;
@@ -4219,6 +4220,11 @@ public class Menu extends JMenuBar {
         new JFontMenuItem(resourceBundle.getString("Menu.webBoardCopyUrl"));
     webBoardMenu.add(webBoardCopyUrl);
 
+    final JFontMenuItem webBoardExitTrial =
+        new JFontMenuItem(resourceBundle.getString("Menu.webBoardForceExitTrial"));
+    webBoardMenu.add(webBoardExitTrial);
+    webBoardExitTrial.addActionListener(e -> WebBoardTrial.exit(Lizzie.webBoardManager));
+
     webBoardMenu.addMenuListener(
         new javax.swing.event.MenuListener() {
           public void menuSelected(javax.swing.event.MenuEvent e) {
@@ -4227,6 +4233,8 @@ public class Menu extends JMenuBar {
                     Lizzie.webBoardManager.isRunning()
                         ? "Menu.webBoardStop"
                         : "Menu.webBoardStart"));
+            webBoardExitTrial.setEnabled(
+                WebBoardTrial.canExit(Lizzie.webBoardManager, Lizzie.frame));
           }
 
           public void menuDeselected(javax.swing.event.MenuEvent e) {}
@@ -8231,12 +8239,8 @@ public class Menu extends JMenuBar {
 
       JFontButton btnAutoSetup = new JFontButton(resourceBundle.getString("Menu.autoSetupButton"));
       btnAutoSetup.setFocusable(false);
-      btnAutoSetup.setMargin(new Insets(0, 10, 0, 10));
       AppleStyleSupport.markPrimary(btnAutoSetup);
-      btnAutoSetup.setPreferredSize(
-          new Dimension(
-              Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 6,
-              Config.menuHeight));
+      ToolbarSizing.fitText(btnAutoSetup);
       btnAutoSetup.setToolTipText(resourceBundle.getString("Menu.autoSetup"));
       btnAutoSetup.addActionListener(
           new ActionListener() {
@@ -8247,12 +8251,8 @@ public class Menu extends JMenuBar {
 
       JFontButton btnFoxKifu = new JFontButton(resourceBundle.getString("Menu.foxKifuButton"));
       btnFoxKifu.setFocusable(false);
-      btnFoxKifu.setMargin(new Insets(0, 10, 0, 10));
       AppleStyleSupport.markPrimary(btnFoxKifu);
-      btnFoxKifu.setPreferredSize(
-          new Dimension(
-              Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 6,
-              Config.menuHeight));
+      ToolbarSizing.fitText(btnFoxKifu);
       btnFoxKifu.setToolTipText(resourceBundle.getString("Menu.foxKifu"));
       btnFoxKifu.addActionListener(
           new ActionListener() {
@@ -8264,12 +8264,8 @@ public class Menu extends JMenuBar {
       JFontButton btnTencentKifu =
           new JFontButton(resourceBundle.getString("Menu.tencentKifuButton"));
       btnTencentKifu.setFocusable(false);
-      btnTencentKifu.setMargin(new Insets(0, 10, 0, 10));
       AppleStyleSupport.markPrimary(btnTencentKifu);
-      btnTencentKifu.setPreferredSize(
-          new Dimension(
-              Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 7,
-              Config.menuHeight));
+      ToolbarSizing.fitText(btnTencentKifu);
       btnTencentKifu.setToolTipText(resourceBundle.getString("Menu.tencentKifu"));
       btnTencentKifu.addActionListener(
           new ActionListener() {
@@ -8281,14 +8277,8 @@ public class Menu extends JMenuBar {
       JFontButton btnPlayerStrengthEstimate =
           new JFontButton(resourceBundle.getString("Menu.playerStrengthEstimateButton"));
       btnPlayerStrengthEstimate.setFocusable(false);
-      btnPlayerStrengthEstimate.setMargin(new Insets(0, 10, 0, 10));
       AppleStyleSupport.markPrimary(btnPlayerStrengthEstimate);
-      btnPlayerStrengthEstimate.setPreferredSize(
-          new Dimension(
-              Math.max(
-                  Lizzie.config.isChinese ? Config.menuHeight * 4 : Config.menuHeight * 6,
-                  btnPlayerStrengthEstimate.getPreferredSize().width + 12),
-              Config.menuHeight));
+      ToolbarSizing.fitText(btnPlayerStrengthEstimate);
       btnPlayerStrengthEstimate.setToolTipText(
           resourceBundle.getString("Menu.playerStrengthEstimate"));
       btnPlayerStrengthEstimate.addActionListener(
@@ -8543,7 +8533,9 @@ public class Menu extends JMenuBar {
             }
           });
 
-      Lizzie.frame.topPanel.addSeparator();
+      if (btnDoubleMenu.isVisible())
+        Lizzie.frame.topPanel.addSeparator(
+            new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
       Lizzie.frame.topPanel.leftArea.add(btnNewFile);
       Lizzie.frame.topPanel.leftArea.add(btnOpen);
       Lizzie.frame.topPanel.leftArea.add(btnSave);
@@ -8601,7 +8593,8 @@ public class Menu extends JMenuBar {
         Lizzie.frame.topPanel.rightArea.add(btnMarkupClear);
         Lizzie.frame.topPanel.rightArea.add(btnDrawPainting);
       }
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
     }
     Lizzie.frame.topPanel.add(black);
     Lizzie.frame.topPanel.add(white);
@@ -8612,7 +8605,8 @@ public class Menu extends JMenuBar {
     playPass.setPreferredSize(
         new Dimension((int) playPass.getPreferredSize().width, Config.menuHeight));
     if (Lizzie.config.showEditbar)
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
     if (Lizzie.config.showForceMenu) {
       this.remove(selectAllowMore);
       this.remove(selectAvoidMore);
@@ -8984,7 +8978,8 @@ public class Menu extends JMenuBar {
       Lizzie.frame.topPanel.add(clearSelect);
       clearSelect.setPreferredSize(
           new Dimension((int) clearSelect.getPreferredSize().width, Config.menuHeight));
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
       //  forceSep.setVisible(selectAllow.isVisible());
       //  selectAvoid.setVisible(selectAllow.isVisible());
       // clearSelect.setVisible(selectAllow.isVisible());
@@ -9116,7 +9111,8 @@ public class Menu extends JMenuBar {
       doubleMenuNewGame.setMargin(new Insets(0, 0, 0, 0));
       doubleMenuPauseGame.setMargin(new Insets(0, 0, 0, 0));
       doubleMenuResign.setMargin(new Insets(0, 0, 0, 0));
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
       toggleDoubleMenuGameStatus();
     }
     setKomiPanelInDoubleMenu();
@@ -9545,12 +9541,14 @@ public class Menu extends JMenuBar {
             : (Lizzie.config.isFrameFontMiddle()
                 ? (Lizzie.config.useJavaLooks ? 22 : 21)
                 : (Lizzie.config.useJavaLooks ? 26 : 25)));
+    // The field and its up/down buttons end at 81, 94 or 111 px.
     komiPanel.setPreferredSize(
         new Dimension(
-            Lizzie.config.isFrameFontSmall() ? 96 : (Lizzie.config.isFrameFontMiddle() ? 110 : 130),
+            Lizzie.config.isFrameFontSmall() ? 84 : (Lizzie.config.isFrameFontMiddle() ? 97 : 114),
             Config.menuHeight));
 
-    sepForPdaWrn = new JToolBar.Separator(new Dimension(8, Config.menuHeight));
+    sepForPdaWrn =
+        new JToolBar.Separator(new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight));
     Lizzie.frame.topPanel.add(komiPanel);
     Lizzie.frame.topPanel.add(sepForPdaWrn);
 
@@ -9595,7 +9593,8 @@ public class Menu extends JMenuBar {
     setPdaAndWrnByEngineForDouble();
 
     if (Lizzie.config.showTimeControlInMenu || Lizzie.config.showPlayoutControlInMenu) {
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
       Lizzie.frame.topPanel.add(
           new JFontLabel(resourceBundle.getString("Menu.lblLimit"))); // "限制:"));
 
@@ -9764,7 +9763,8 @@ public class Menu extends JMenuBar {
       JFontLabel lblShowAnalyze = new JFontLabel(resourceBundle.getString("Menu.lblShowAnalyze"));
       chkAnalyzeBlack.setSelected(Lizzie.config.analyzeBlack);
       chkAnalyzeWhite.setSelected(Lizzie.config.analyzeWhite);
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
       Lizzie.frame.topPanel.add(lblShowAnalyze);
       Lizzie.frame.topPanel.add(chkAnalyzeBlack);
       Lizzie.frame.topPanel.add(chkAnalyzeWhite);
@@ -9781,7 +9781,8 @@ public class Menu extends JMenuBar {
       if (Lizzie.config.showPlayoutsInSuggestion) chkShowPlayouts.setSelected(true);
       if (Lizzie.config.showScoremeanInSuggestion) chkShowScore.setSelected(true);
 
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
       Lizzie.frame.topPanel.add(lblShowCandidate);
       if (Lizzie.config.showDoubleMenuVar) {
         Lizzie.frame.topPanel.add(chkShowBlack);
@@ -9790,7 +9791,8 @@ public class Menu extends JMenuBar {
       if (Lizzie.config.showDoubleMenuMoveInfo) {
         //  Lizzie.frame.topPanel.add(lblMoveInfo);
         if (Lizzie.config.showDoubleMenuVar)
-          Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+          Lizzie.frame.topPanel.addSeparator(
+              new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
         Lizzie.frame.topPanel.add(chkShowWinrate);
         Lizzie.frame.topPanel.add(chkShowPlayouts);
         Lizzie.frame.topPanel.add(chkShowScore);
@@ -9805,7 +9807,8 @@ public class Menu extends JMenuBar {
         || Lizzie.config.showParamMenu
         || Lizzie.config.showGobanMenu
         || Lizzie.config.showSaveLoadMenu)
-      Lizzie.frame.topPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+      Lizzie.frame.topPanel.addSeparator(
+          new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
     if (Lizzie.config.showRuleMenu) {
       setRules.setVisible(true);
       Lizzie.frame.topPanel.add(setRules);
@@ -9894,7 +9897,8 @@ public class Menu extends JMenuBar {
   }
 
   public void setPdaAndWrnByEngineForDouble() {
-    // TODO Auto-generated method stub
+    boolean loaded = Lizzie.leelaz != null && Lizzie.leelaz.isLoaded();
+    boolean kataGo = Lizzie.leelaz != null && Lizzie.leelaz.isKatago;
     boolean needRemoveS = true;
     EngineGameSnapshot snapshot = EngineGamePresentation.current();
     if (showPDA
@@ -9903,55 +9907,33 @@ public class Menu extends JMenuBar {
       txtPDA.setVisible(true);
       more2.setVisible(true);
       customPDAMorePanel.setVisible(true);
-      if (pdaFieldPanel != null) {
-        pdaFieldPanel.setVisible(false);
-      }
-      chkPDA.setVisible(false);
-      txtGfPDA.setVisible(false);
+      ToolbarSizing.showFieldGroup(false, pdaFieldPanel, chkPDA, txtGfPDA);
       needRemoveS = false;
     } else {
       lblCustomPda.setVisible(false);
       txtPDA.setVisible(false);
       more2.setVisible(false);
       customPDAMorePanel.setVisible(false);
-      if (Lizzie.config.showPDAInMenu
-          && !isEngineGame()
-          && Lizzie.leelaz != null
-          && Lizzie.leelaz.isKatago) {
-        if (pdaFieldPanel != null) {
-          pdaFieldPanel.setVisible(true);
-        }
-        chkPDA.setVisible(true);
-        txtGfPDA.setVisible(true);
+      boolean showPda =
+          ToolbarSizing.showsKataGoFields(
+              Lizzie.config.showPDAInMenu, isEngineGame(), EngineManager.isEmpty, loaded, kataGo);
+      ToolbarSizing.showFieldGroup(showPda, pdaFieldPanel, chkPDA, txtGfPDA);
+      if (showPda) {
+        // Usable once the engine is KataGo; until then the field only keeps the row's width.
+        chkPDA.setEnabled(loaded && kataGo);
+        txtGfPDA.setEnabled(loaded && kataGo && chkPDA.isSelected());
         needRemoveS = false;
-      } else {
-        if (pdaFieldPanel != null) {
-          pdaFieldPanel.setVisible(false);
-        }
-        chkPDA.setVisible(false);
-        txtGfPDA.setVisible(false);
       }
     }
-
-    if (Lizzie.config.showWRNInMenu
-        && !isEngineGame()
-        && Lizzie.leelaz != null
-        && Lizzie.leelaz.isKatago) {
+    boolean showWrn =
+        ToolbarSizing.showsKataGoFields(
+            Lizzie.config.showWRNInMenu, isEngineGame(), EngineManager.isEmpty, loaded, kataGo);
+    ToolbarSizing.showFieldGroup(showWrn, wrnFieldPanel, chkWRN, txtWRN);
+    if (showWrn) {
       needRemoveS = false;
-      if (wrnFieldPanel != null) {
-        wrnFieldPanel.setVisible(true);
-      }
-      chkWRN.setVisible(true);
-      txtWRN.setVisible(true);
-    } else {
-      if (wrnFieldPanel != null) {
-        wrnFieldPanel.setVisible(false);
-      }
-      chkWRN.setVisible(false);
-      txtWRN.setVisible(false);
+      refreshBreadthAdmission();
     }
-    if (needRemoveS) sepForPdaWrn.setVisible(false);
-    else sepForPdaWrn.setVisible(true);
+    sepForPdaWrn.setVisible(!needRemoveS);
   }
 
   private void setKomiPanelExtra() {
@@ -9986,7 +9968,8 @@ public class Menu extends JMenuBar {
             toolPanel.add(clearSelect);
 
             if (Lizzie.config.showTimeControlInMenu || Lizzie.config.showPlayoutControlInMenu) {
-              toolPanel.addSeparator(new Dimension(8, Config.menuHeight + 2));
+              toolPanel.addSeparator(
+                  new Dimension(ToolbarSizing.SEPARATOR_WIDTH, Config.menuHeight + 2));
               toolPanel.add(new JFontLabel(resourceBundle.getString("Menu.lblLimit"))); // "限制:"));
               if (Lizzie.config.showTimeControlInMenu) {
                 toolPanel.add(chkTime);
@@ -10819,6 +10802,7 @@ public class Menu extends JMenuBar {
 
   public void toggleShowDoubleMenuButton(boolean show) {
     this.btnDoubleMenu.setVisible(show);
+    doubleMenu(false); // its separator comes and goes with it
   }
 
   public void toggleShowEditbar(boolean show) {

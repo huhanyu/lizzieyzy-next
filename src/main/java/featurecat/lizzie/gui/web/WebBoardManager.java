@@ -684,6 +684,10 @@ public class WebBoardManager {
     this.desktopRefresher = refresher;
   }
 
+  void setRunningForTest(boolean running) {
+    this.running = running;
+  }
+
   /**
    * 设置 displayNode override 并通知桌面端 EDT 重绘。 因为 manager 直接操作 BoardHistoryNode.variations 而绕过了 lizzie
    * 的常规 place/refresh 链， 必须显式触发 refresh，否则棋盘画面与历史树视图都不会更新。

@@ -123,9 +123,10 @@ public class WindowMenuStrip extends JPanel {
     int excess = required - getWidth();
     // Only abbreviate the engine caption; commands retain their labels and hit targets.
     for (MenuButton button : menuButtons) {
-      if (!Boolean.TRUE.equals(button.menu.getClientProperty("lizzie.engineMenu"))) continue;
+      if (!button.isEngineMenu()) continue;
       Dimension natural = button.getUI().getPreferredSize(button);
-      int reduction = Math.min(Math.max(0, excess), Math.max(0, natural.width - 60));
+      int minimum = 60 + (button.isEngineMenu() ? CHEVRON_SPACE : 0);
+      int reduction = Math.min(Math.max(0, excess), Math.max(0, natural.width - minimum));
       Dimension preferred = new Dimension(natural.width - reduction, natural.height);
       if (!preferred.equals(button.getPreferredSize())) button.setPreferredSize(preferred);
       excess -= reduction;
@@ -292,7 +293,7 @@ public class WindowMenuStrip extends JPanel {
       setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
       setRolloverEnabled(true);
       setMargin(new Insets(0, 0, 0, 0));
-      setBorder(new EmptyBorder(5, 10, 5, 10));
+      setBorder(new EmptyBorder(5, 10, 5, isEngineMenu() ? 10 + CHEVRON_SPACE : 10));
       AccessibilitySupport.button(this, menu.getText(), menu.getText());
       addActionListener(
           e -> {
@@ -381,8 +382,27 @@ public class WindowMenuStrip extends JPanel {
       }
       g2.dispose();
       super.paintComponent(g);
+      if (isEngineMenu()) {
+        // The engine caption is a menu like its neighbours; the chevron shows it opens a choice.
+        Graphics2D chevron = (Graphics2D) g.create();
+        chevron.setRenderingHint(
+            RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        chevron.setColor(getForeground());
+        chevron.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        int x = getWidth() - 10 - CHEVRON_SPACE + 4;
+        int y = getHeight() / 2 - 1;
+        chevron.drawPolyline(new int[] {x, x + 4, x + 8}, new int[] {y, y + 4, y}, 3);
+        chevron.dispose();
+      }
+    }
+
+    boolean isEngineMenu() {
+      return Boolean.TRUE.equals(menu.getClientProperty("lizzie.engineMenu"));
     }
   }
+
+  /** Room after the engine caption for the chevron that marks it as a menu. */
+  static final int CHEVRON_SPACE = 12;
 
   private final class ActionButton extends JButton {
     private final AbstractButton sourceButton;

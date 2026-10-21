@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
+import java.awt.Graphics2D;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.awt.image.BufferedImage;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -44,6 +46,39 @@ class WindowMenuStripTest {
     mirroredButton.doClick(0);
 
     assertEquals(1, invocationCount.get());
+  }
+
+  @Test
+  void engineMenuEndsWithAChevronInRoomOfItsOwn() {
+    JMenuBar menuBar = new JMenuBar();
+    JMenu plain = new JMenu("[1]: KataGo");
+    JMenu engine = new JMenu("[1]: KataGo");
+    engine.putClientProperty("lizzie.engineMenu", Boolean.TRUE);
+    menuBar.add(plain);
+    menuBar.add(engine);
+
+    WindowMenuStrip strip = new WindowMenuStrip(menuBar);
+
+    JButton plainButton = (JButton) strip.getComponent(0);
+    JButton engineButton = (JButton) strip.getComponent(1);
+    assertEquals(
+        plainButton.getPreferredSize().width + WindowMenuStrip.CHEVRON_SPACE,
+        engineButton.getPreferredSize().width);
+    engineButton.setSize(engineButton.getPreferredSize());
+    BufferedImage image =
+        new BufferedImage(
+            engineButton.getWidth(), engineButton.getHeight(), BufferedImage.TYPE_INT_ARGB);
+    Graphics2D g = image.createGraphics();
+    engineButton.paint(g);
+    g.dispose();
+    boolean painted = false;
+    int chevronLeft = engineButton.getWidth() - 10 - WindowMenuStrip.CHEVRON_SPACE + 2;
+    for (int x = chevronLeft; x < engineButton.getWidth() - 8; x++) {
+      for (int y = 0; y < engineButton.getHeight(); y++) {
+        painted |= (image.getRGB(x, y) >>> 24) > 0;
+      }
+    }
+    assertTrue(painted, "the chevron is painted after the engine name");
   }
 
   @Test
