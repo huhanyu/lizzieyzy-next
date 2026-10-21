@@ -614,8 +614,6 @@ public class LizzieFrame extends JFrame {
       Lizzie.config.useMorandiColors ? MorandiPalette.BG_SECONDARY : new Color(225, 225, 225);
   private Color blunderForeground =
       Lizzie.config.useMorandiColors ? MorandiPalette.TEXT_PRIMARY : Color.BLACK;
-  private Color listTableBackground =
-      Lizzie.config.useMorandiColors ? MorandiPalette.TABLE_ROW_ODD : new Color(0, 0, 0, 10);
   public boolean isAutoAnalyzingDiffNode = false;
 
   public boolean isInScoreMode = false;
@@ -2690,24 +2688,21 @@ public class LizzieFrame extends JFrame {
       return;
     }
     if (listTable == null || listScrollpane == null) return;
-    Color surface = AppleStyleSupport.workspaceSurface();
+    Color surface = CandidateTableStyle.SURFACE;
     listTable.setBackground(surface);
-    listTable.setForeground(AppleStyleSupport.dialogTextColor());
+    listTable.setForeground(CandidateTableStyle.TEXT);
+    listTable.setGridColor(CandidateTableStyle.BORDER);
     listTable.setFont(AppleStyleSupport.workspaceFont(Font.PLAIN, Config.frameFontSize));
     listScrollpane.getViewport().setBackground(surface);
     listScrollpane.setBackground(surface);
-    listScrollpane.setBorder(BorderFactory.createLineBorder(AppleStyleSupport.workspaceBorder()));
+    listScrollpane.setBorder(BorderFactory.createLineBorder(CandidateTableStyle.BORDER));
     for (int i = 0; i < listTable.getColumnCount(); i++) {
       TableCellRenderer renderer = listTable.getColumnModel().getColumn(i).getHeaderRenderer();
       if (renderer instanceof DefaultTableCellRenderer) {
         DefaultTableCellRenderer header = (DefaultTableCellRenderer) renderer;
-        header.setBackground(
-            Lizzie.config.useMorandiColors
-                ? (i == 2 || i == 4 ? MorandiPalette.TABLE_ROW_EVEN : MorandiPalette.TABLE_ROW_ODD)
-                : AppleStyleSupport.workspaceBackground());
-        header.setForeground(AppleStyleSupport.dialogTextColor());
-        header.setBorder(
-            BorderFactory.createMatteBorder(0, 0, 1, 0, AppleStyleSupport.workspaceBorder()));
+        header.setBackground(CandidateTableStyle.HEADER);
+        header.setForeground(CandidateTableStyle.HEADER_TEXT);
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, CandidateTableStyle.BORDER));
       }
     }
     ((SuggestionTableScrollPane) listScrollpane)
@@ -7972,7 +7967,6 @@ public class LizzieFrame extends JFrame {
     boolean useMorandi = Lizzie.config.useMorandiColors;
     blunderBackground = useMorandi ? MorandiPalette.BG_SECONDARY : new Color(225, 225, 225);
     blunderForeground = useMorandi ? MorandiPalette.TEXT_PRIMARY : Color.BLACK;
-    listTableBackground = useMorandi ? MorandiPalette.TABLE_ROW_ODD : new Color(0, 0, 0, 10);
     if (tempGamePanelAll != null)
       tempGamePanelAll.setBackground(
           useMorandi ? MorandiPalette.BG_PRIMARY : new Color(100, 100, 100));
@@ -14740,10 +14734,13 @@ public class LizzieFrame extends JFrame {
     boolean isNextMove;
     double diff = 0;
     double scoreDiff = 0;
+    int row;
+    int column;
 
     public Component getTableCellRendererComponent(
         JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-      // if(row%2 == 0){
+      this.row = row;
+      this.column = column;
       setHorizontalAlignment(CENTER);
       if (column == 4) {
         isPlayoutPercents = true;
@@ -14792,106 +14789,31 @@ public class LizzieFrame extends JFrame {
 
     @Override
     public void paintComponent(Graphics g) {
-      if (isPlayoutPercents) {
-        Graphics2D g2 = (Graphics2D) g;
-        g2.setColor(Color.LIGHT_GRAY);
-        g2.fillRect(
-            0,
-            0,
-            (int) (getWidth() * (Double.parseDouble(mainValue.toString()) / 100)),
-            getHeight());
-
-      } else {
-        if (isSelect) {
-          setForeground(Lizzie.config.useMorandiColors ? MorandiPalette.MUDED_TEAL : Color.BLUE);
-          setBackground(new Color(0, 0, 0, 70));
-        }
-        if (isChanged) {
-          setForeground(Lizzie.config.useMorandiColors ? MorandiPalette.MUDED_RED : Color.RED);
-        }
-        if (isNextMove) {
-          if (isSelect) {
-            if (diff <= Lizzie.config.winLossThreshold5
-                || scoreDiff <= Lizzie.config.scoreLossThreshold5)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_BLUNDER_ALPHA
-                      : new Color(85, 25, 80, 120));
-            else if (diff <= Lizzie.config.winLossThreshold4
-                || scoreDiff <= Lizzie.config.scoreLossThreshold4)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_MISTAKE_ALPHA
-                      : new Color(208, 16, 19, 100));
-            else if (diff <= Lizzie.config.winLossThreshold3
-                || scoreDiff <= Lizzie.config.scoreLossThreshold3)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_SLOW_ALPHA
-                      : new Color(200, 140, 50, 100));
-            else if (diff <= Lizzie.config.winLossThreshold2
-                || scoreDiff <= Lizzie.config.scoreLossThreshold2)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_CAUTION_ALPHA
-                      : new Color(180, 180, 0, 100));
-            else if (diff <= Lizzie.config.winLossThreshold1
-                || scoreDiff <= Lizzie.config.scoreLossThreshold1)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_GOOD_ALPHA
-                      : new Color(140, 202, 34, 100));
-            else
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_BEST_ALPHA
-                      : new Color(0, 180, 0, 100));
-          } else {
-            if (diff <= Lizzie.config.winLossThreshold5
-                || scoreDiff <= Lizzie.config.scoreLossThreshold5)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_BLUNDER_LIGHT
-                      : new Color(85, 25, 80, 70));
-            else if (diff <= Lizzie.config.winLossThreshold4
-                || scoreDiff <= Lizzie.config.scoreLossThreshold4)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_MISTAKE_LIGHT
-                      : new Color(208, 16, 19, 50));
-            else if (diff <= Lizzie.config.winLossThreshold3
-                || scoreDiff <= Lizzie.config.scoreLossThreshold3)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_SLOW_LIGHT
-                      : new Color(200, 140, 50, 50));
-            else if (diff <= Lizzie.config.winLossThreshold2
-                || scoreDiff <= Lizzie.config.scoreLossThreshold2)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_CAUTION_LIGHT
-                      : new Color(180, 180, 0, 50));
-            else if (diff <= Lizzie.config.winLossThreshold1
-                || scoreDiff <= Lizzie.config.scoreLossThreshold1)
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_GOOD_LIGHT
-                      : new Color(140, 202, 34, 50));
-            else
-              setBackground(
-                  Lizzie.config.useMorandiColors
-                      ? MorandiPalette.SUGGESTION_BEST_LIGHT
-                      : new Color(0, 180, 0, 60));
-          }
-        } else if (!isSelect && !isChanged) {
-          setForeground(AppleStyleSupport.dialogTextColor());
-          setBackground(
-              Lizzie.config.useMorandiColors
-                  ? listTableBackground
-                  : AppleStyleSupport.workspaceSurface());
-        }
+      // Dark like the sidebar; the played move keeps its colour by how far it falls short.
+      Color text = isChanged ? CandidateTableStyle.CHANGED_TEXT : CandidateTableStyle.TEXT;
+      Color background = CandidateTableStyle.rowBackground(row);
+      if (isSelect) {
+        if (!isChanged) text = CandidateTableStyle.SELECTED_TEXT;
+        background = CandidateTableStyle.SELECTED;
+      }
+      if (isNextMove)
+        background =
+            CandidateTableStyle.playedMoveBackground(Lizzie.config, diff, scoreDiff, isSelect);
+      setForeground(text);
+      setBackground(background);
+      if (isNextMove && column == 0) {
+        g.setColor(CandidateTableStyle.rowBackground(row));
+        g.fillRect(0, 0, getWidth(), getHeight());
+        g.setColor(background);
+        g.fillRect(0, 0, getWidth(), getHeight());
+        CandidateTableStyle.paintRankWithTag(
+            (Graphics2D) g, getText(), getFont(), text, getWidth(), getHeight());
+        return;
       }
       super.paintComponent(g);
+      if (isPlayoutPercents)
+        CandidateTableStyle.paintShareBar(
+            (Graphics2D) g, Double.parseDouble(mainValue.toString()), getWidth(), getHeight());
     }
   }
 

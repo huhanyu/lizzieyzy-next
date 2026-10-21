@@ -277,9 +277,9 @@ class WorkbenchStyleTest {
               frame.refreshSuggestionTableStyle();
               assertEquals(22, table.getFont().getSize());
               assertEquals(Font.PLAIN, table.getFont().getStyle());
+              // The candidate table is dark like the sidebar beside it, in both styles.
               assertEquals(
-                  AppleStyleSupport.workspaceSurface(),
-                  frame.listScrollpane.getViewport().getBackground());
+                  CandidateTableStyle.SURFACE, frame.listScrollpane.getViewport().getBackground());
               assertTrue(contrast(table.getForeground(), table.getBackground()) >= 4.5);
               frame.listScrollpane.setSize(900, 300);
               frame.listScrollpane.doLayout();

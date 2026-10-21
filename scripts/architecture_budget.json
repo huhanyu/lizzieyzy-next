@@ -3,7 +3,7 @@
   "max_unlisted_file_lines": 2000,
   "max_lines": {
     "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25606,
-    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18666,
+    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18588,
     "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15779,
     "src/main/java/featurecat/lizzie/gui/Menu.java": 11076,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
@@ -14,7 +14,7 @@
     "src/main/java/featurecat/lizzie/gui/ConfigDialog2.java": 6898,
     "src/main/java/featurecat/lizzie/gui/BottomToolbar.java": 5220,
     "src/main/java/featurecat/lizzie/rules/SGFParser.java": 5113,
-    "src/main/java/featurecat/lizzie/gui/BoardRenderer.java": 4846,
+    "src/main/java/featurecat/lizzie/gui/BoardRenderer.java": 4808,
     "src/main/java/featurecat/lizzie/gui/OnlineDialog.java": 4565,
     "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4314,
     "src/main/java/featurecat/lizzie/Config.java": 4031,
@@ -28,7 +28,7 @@
     "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 2009
   },
   "max_static_references": {
-    "Lizzie.config": 6957,
+    "Lizzie.config": 6921,
     "Lizzie.frame": 3231,
     "Lizzie.board": 1952,
     "Lizzie.leelaz": 1090,

@@ -27,10 +27,7 @@ import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.util.Utils;
 import java.awt.*;
-import java.awt.font.FontRenderContext;
 import java.awt.font.TextAttribute;
-import java.awt.font.TextLayout;
-import java.awt.geom.AffineTransform;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -859,77 +856,42 @@ public class BoardRenderer {
       Lizzie.frame.refresh();
     }
     emptyName = false;
-    if (Lizzie.board.getHistory().isBlacksTurn()) {
-      g0.setColor(Color.WHITE);
-      g0.fillOval(
-          x + boardWidth / 2 - stoneRadius * 3 / 10,
-          y - scaledMarginHeight + stoneRadius + boardHeight,
-          stoneRadius * 5 / 4,
-          stoneRadius * 5 / 4);
-
-      g0.setColor(Color.BLACK);
-      g0.fillOval(
-          x + boardWidth / 2 - stoneRadius * 9 / 10,
-          y - scaledMarginHeight + stoneRadius + boardHeight,
-          stoneRadius * 5 / 4,
-          stoneRadius * 5 / 4);
-    } else {
-      g0.setColor(Color.BLACK);
-      g0.fillOval(
-          x + boardWidth / 2 - stoneRadius * 9 / 10,
-          y - scaledMarginHeight + stoneRadius + boardHeight,
-          stoneRadius * 5 / 4,
-          stoneRadius * 5 / 4);
-      g0.setColor(Color.WHITE);
-      g0.fillOval(
-          x + boardWidth / 2 - stoneRadius * 3 / 10,
-          y - scaledMarginHeight + stoneRadius + boardHeight,
-          stoneRadius * 5 / 4,
-          stoneRadius * 5 / 4);
-    }
-
-    if (black.length() > 0) {
-      Font font =
-          new Font(
-              isKoreanBlack ? "Malgun Gothic" : Lizzie.config.uiFontName,
-              Font.PLAIN,
-              (int) (Math.min(28, this.scaledMarginHeight * 53 / 100)));
-      g0.setFont(font);
-      FontRenderContext frcb = g0.getFontRenderContext();
-
-      TextLayout tlb = new TextLayout(black, font, frcb);
-
-      Shape shab =
-          tlb.getOutline(
-              AffineTransform.getTranslateInstance(
-                  x + boardWidth / 2 - lengthB - scaledMarginWidth * 4 / 5,
-                  y - scaledMarginHeight + boardHeight + stoneRadius * 13 / 8 + (height + 2) / 4));
-      g0.setColor(Color.BLACK);
-      g0.fill(shab);
-    }
-
-    g0.setColor(Color.WHITE);
-
-    if (white.length() > 0) {
-      Font font =
-          new Font(
-              isKoreanWhite ? "Malgun Gothic" : Lizzie.config.uiFontName,
-              Font.PLAIN,
-              (int) (Math.min(28, this.scaledMarginHeight * 53 / 100)));
-      g0.setFont(font);
-      FontRenderContext frc = g0.getFontRenderContext();
-      TextLayout tl = new TextLayout(white, font, frc);
-      Shape sha =
-          tl.getOutline(
-              AffineTransform.getTranslateInstance(
-                  x + boardWidth / 2 + scaledMarginWidth * 4 / 5 + 1,
-                  y - scaledMarginHeight + boardHeight + stoneRadius * 13 / 8 + (height + 2) / 4));
-      g0.setColor(Color.BLACK);
-      g0.setStroke(new BasicStroke(2));
-      g0.draw(sha);
-      g0.setColor(Color.WHITE);
-      g0.fill(sha);
-    }
+    // A light plate under both names and the two stones, with the names in dark type.
+    int stoneSize = stoneRadius * 5 / 4;
+    int stonesTop = y - scaledMarginHeight + stoneRadius + boardHeight;
+    int blackStoneX = x + boardWidth / 2 - stoneRadius * 9 / 10;
+    int whiteStoneX = x + boardWidth / 2 - stoneRadius * 3 / 10;
+    int blackX = x + boardWidth / 2 - lengthB - scaledMarginWidth * 4 / 5;
+    int whiteX = x + boardWidth / 2 + scaledMarginWidth * 4 / 5 + 1;
+    int baseline = y - scaledMarginHeight + boardHeight + stoneRadius * 13 / 8 + (height + 2) / 4;
+    FontMetrics nameMetrics = g0.getFontMetrics();
+    int pad = nameMetrics.getHeight() / 3;
+    BoardNamePlate.paintPlate(
+        g0,
+        (black.isEmpty() ? blackStoneX : blackX) - pad * 2,
+        Math.min(stonesTop, baseline - nameMetrics.getAscent()) - pad,
+        (white.isEmpty() ? whiteStoneX + stoneSize : whiteX + lengthW) + pad * 2,
+        Math.max(stonesTop + stoneSize, baseline + nameMetrics.getDescent()) + pad);
+    BoardNamePlate.paintStones(
+        g0,
+        blackStoneX,
+        whiteStoneX,
+        stonesTop,
+        stoneSize,
+        Lizzie.board.getHistory().isBlacksTurn());
+    int nameSize = g0.getFont().getSize();
+    BoardNamePlate.paintName(
+        g0,
+        new Font(isKoreanBlack ? "Malgun Gothic" : Lizzie.config.uiFontName, Font.PLAIN, nameSize),
+        black,
+        blackX,
+        baseline);
+    BoardNamePlate.paintName(
+        g0,
+        new Font(isKoreanWhite ? "Malgun Gothic" : Lizzie.config.uiFontName, Font.PLAIN, nameSize),
+        white,
+        whiteX,
+        baseline);
   }
 
   public void reDrawGobanAnyway() {
