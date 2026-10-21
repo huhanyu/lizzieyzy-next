@@ -29,6 +29,25 @@ class InstalledSourceTest(unittest.TestCase):
     def test_unchanged_installed_source_passes(self):
         audit(self.catalog, self.target, self.engine)
 
+    def installed(self, target):
+        engine = self.fixture.root / ("installed-" + target)
+        asset = self.catalog["assets"][target]
+        unpack(self.fixture.root / "release" / asset["assetName"], engine, target, asset)
+        metadata = json.loads((engine / "source-release.json").read_text())
+        (engine / "lizzieyzy-next-katago-engine-manifest.txt").write_text(
+            engine_manifest_text(self.catalog, target, metadata["sourceCommit"]), encoding="utf-8")
+        return engine
+
+    def test_installed_metal_engine_must_keep_its_patch_record(self):
+        engine = self.installed("macos-arm64")
+        audit(self.catalog, "macos-arm64", engine)
+        path = engine / "source-release.json"
+        metadata = json.loads(path.read_text())
+        metadata["sourcePatches"] = []
+        path.write_text(json.dumps(metadata))
+        with self.assertRaisesRegex(ValueError, "source identity"):
+            audit(self.catalog, "macos-arm64", engine)
+
     def test_wrong_executable_is_rejected(self):
         (self.engine / "katago.exe").write_bytes(b"old executable")
         with self.assertRaisesRegex(ValueError, "missing or modified"):

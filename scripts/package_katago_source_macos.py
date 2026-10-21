@@ -10,6 +10,7 @@ import shutil
 import subprocess
 
 from build_katago_source import SOURCE_COMMIT, TARGETS, file_record
+from katago_source_targets import reported_revision, source_patch_records, source_revision
 from build_katago_macos_dependencies import verify_sdk
 from macos_katago_bundle import audit_bundle, build_bundle
 
@@ -19,7 +20,8 @@ def validate_build(build: Path, sdk: Path) -> dict:
     target = receipt.get("target")
     if (target not in {"macos-arm64", "macos-amd64"} or receipt.get("buildStatus") != "PASS"
             or receipt.get("sourceCommit") != SOURCE_COMMIT or receipt.get("backend") != "METAL"
-            or receipt.get("origin") != "project-source-build"):
+            or receipt.get("origin") != "project-source-build"
+            or receipt.get("sourcePatches") != source_patch_records(target)):
         raise ValueError("Not a verified pinned macOS source build")
     sdk_receipt = verify_sdk(sdk, TARGETS[target][1])
     if (receipt.get("dependencyLockSha256") != sdk_receipt["lockSha256"]
@@ -40,7 +42,8 @@ def package(build: Path, sdk: Path, output: Path) -> dict:
     shutil.copytree(build / "source-licenses", output / "licenses/KataGo")
     shutil.copy2(sdk / "sdk-receipt.json", output / "sdk-receipt.json")
     version = subprocess.check_output([str(output / "katago"), "version"], text=True, timeout=90)
-    if f"Git revision: {SOURCE_COMMIT}" not in version or "Using Metal backend" not in version:
+    if (reported_revision(version) != source_revision(receipt["target"])
+            or "Using Metal backend" not in version):
         raise ValueError("Packaged executable lost pinned source identity")
     arches = subprocess.check_output(["lipo", "-archs", str(output / "katago")], text=True).split()
     if arches != [TARGETS[receipt["target"]][1]]:

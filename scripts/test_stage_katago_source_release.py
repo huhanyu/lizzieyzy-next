@@ -7,6 +7,7 @@ from unittest import mock
 import zipfile
 
 from build_katago_source import SOURCE_COMMIT, TARGETS
+from katago_source_targets import source_patch_records, source_revision
 from katago_asset_catalog import DEFAULT_CATALOG
 from stage_katago_source_release import archive_files, normalized_name, record, stage, verify_archive
 
@@ -38,7 +39,8 @@ class SourceReleaseTest(unittest.TestCase):
                 origin="project-source-build", buildStatus="PASS", packagingStatus="PASS",
                 dependencyAuditStatus="PASS", hardwareAcceptanceStatus="NOT_RUN",
                 dependencyLockSha256="a" * 64, compiler={"CMAKE_CXX_COMPILER_ID": "test"},
-                versionOutput=f"KataGo v1.18.2\nGit revision: {SOURCE_COMMIT}\n",
+                versionOutput=f"KataGo v1.18.2\nGit revision: {source_revision(target)}\n",
+                sourcePatches=source_patch_records(target),
                 executable=record(directory / name, name),
                 files=[record(path, path.relative_to(directory).as_posix())
                        for path in sorted(directory.rglob("*")) if path.is_file()])
@@ -208,6 +210,25 @@ class SourceReleaseTest(unittest.TestCase):
         for target in ("windows-nvidia", "windows-tensorrt"):
             self.assertEqual({"katago.exe", "licenses/vendor"}, set(archive_files(target, files)))
         self.assertEqual(files, archive_files("windows-rocm-gfx120x", files))
+
+
+    def test_metal_evidence_must_declare_its_patch_and_dirty_revision(self):
+        path = self.receipt_path("macos-arm64")
+        for values in ({"sourcePatches": []},
+                       {"versionOutput": f"KataGo v1.18.2\nGit revision: {SOURCE_COMMIT}\n"}):
+            original = path.read_text(encoding="utf-8")
+            self.modify(path, **values)
+            with self.subTest(values=list(values)), self.assertRaises(ValueError):
+                self.run_stage(output="release-" + list(values)[0])
+            path.write_text(original, encoding="utf-8")
+
+    def test_staged_metal_archive_carries_the_patch_record(self):
+        catalog = self.run_stage()
+        asset = catalog["assets"]["macos-arm64"]
+        metadata = verify_archive(self.root / "release" / asset["assetName"], "macos-arm64")
+        self.assertEqual(source_patch_records("macos-arm64"), metadata["sourcePatches"])
+        self.assertEqual([], verify_archive(
+            self.root / "release" / catalog["assets"]["linux-cpu"]["assetName"], "linux-cpu")["sourcePatches"])
 
 
 if __name__ == "__main__":

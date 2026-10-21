@@ -105,6 +105,7 @@ T2 经过真实 ReadBoard 帧和导航；T3 使用普通 payload、renderer 和�
 受控 transport 只替代外部进程，不能伪造准入、缓存或 owner 校验。
 
 真实 KataGo 保树证据、实际窗口绘制和自动化回归分别记录。发布固定上游已合并提交
-`47aadc08518b3e121f22539796c911002f699584` 的自编译引擎，不凭版本字符串宣称支持。
+`47aadc08518b3e121f22539796c911002f699584` 的自编译引擎，不凭版本字符串宣称支持；macOS 构建另加
+已审查的 `metal-fixed-batch.patch`（见 KATAGO_SOURCE_BUILD.md），不改变 focus 行为。
 此前未合并实验候选的测试不替代最终引擎验收；#445 final-fence 和 Windows 整合门禁
 仍需在最终候选上验证。没有对应 GPU 的硬件项目标记为待验证，不能记为通过。

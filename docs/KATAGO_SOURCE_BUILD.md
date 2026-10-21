@@ -100,6 +100,9 @@ the production package catalog.
 - Upstream change: <https://github.com/lightvector/KataGo/pull/1252>
 - This source reports **KataGo v1.18.2**. Preserve its real version output; a version string alone
 cannot identify focus support.
+- Patches: the two macOS targets add one reviewed patch on top of this commit, see
+  [macOS Metal: fixed batch shape](#macos-metal-fixed-batch-shape). Every other target builds the
+  commit unchanged.
 
 Both macOS targets explicitly use deployment target `15.0`, matching the current release's
 Mach-O load command. The builder checks the actual executable, rather than relying on the CMake
@@ -107,7 +110,8 @@ argument. Building on macOS 26 must not silently raise the release's minimum sys
 The bundle auditor checks every non-system dylib too. A library requiring macOS 15.1 or 26
 is rejected even when the executable itself supports 15.0.
 
-The builder rejects dirty or different source checkouts, implicit dependency auto-fetching,
+The builder rejects dirty or different source checkouts (the declared patches are applied only
+after that check and reverted before the post-build check), implicit dependency auto-fetching,
 cross-host claims and reused output directories. It records the real compiler, CMake options,
 binary size/hash and source revision. A build receipt deliberately leaves packaging, dependency
 closure and hardware acceptance as `NOT_RUN`. It does not certify packaged DLLs.
@@ -460,3 +464,41 @@ external dependencies, and no driver is installed on the runner or user's system
 The log records actual libc/libstdc++ package versions. A failed loader or symbol check
 produces a retained FAIL report, never a missing-hardware waiver. GPU inference is not
 performed or claimed by this compatibility check. Final app packaging remains separate.
+
+## macOS Metal: fixed batch shape
+
+`macos-arm64` and `macos-amd64` apply
+[`metal-fixed-batch.patch`](../scripts/katago_patches/metal-fixed-batch.patch) to the pinned
+commit. Upstream's Metal backend runs MPSGraph at whatever batch size the search produces, and
+MPSGraph compiles a new executable the first time it sees each size, while every search thread
+waits for it: about 3 s each for the default B11 network on an M4 Pro. Restarting analysis (moving
+to another move, adding a point to evaluate) makes the next batches small, so early in each engine
+session analysis froze for about 3 s several times; two in a row looked like 「评估此点」 doing
+nothing for 6 s.
+
+The patch uses upstream's existing fixed-shape policy, as the ONNX backend does with
+`onnxPadBatch`: GPU (MPSGraph) batches are padded to `nnMaxBatchSize`, padding rows copying row 0,
+and that size now defaults to about half of `numSearchThreads`, so the padding stays cheap. ANE
+(CoreML) threads evaluate row by row and never pad. `metalPadBatch = false` restores upstream's
+behavior.
+
+25 analysis restarts on the move-127 position of the ear-reddening game, B11, M4 Pro:
+
+| Build, config | Freezes after startup | First visits after start | Visits/s, ordinary / focus |
+|---|---|---|---|
+| Upstream, 8 threads | 4 | 5.8 s | 57 / 28 |
+| Patched, 8 threads | 0 | 3.2 s | 54 / 28 |
+| Upstream, 6 threads (the bundled config) | 3 | 5.7 s | 54 / 28 |
+| Patched, 6 threads | 0 | 3.1 s | 54 / 27 |
+| Patched, `metalPadBatch = false` | 5 | 6.0 s | 56 / 28 |
+
+Padding to upstream's default size instead (8 rows for 6 or 8 threads) halved throughput, which is
+why the batch is sized the fixed-shape way.
+
+The patch file's SHA-256 is pinned in `scripts/katago_source_targets.py` (`SOURCE_PATCHES`,
+`TARGET_PATCHES`). The builder refuses a patch with any other digest. A patched executable reports
+`Git revision: 47aadc08518b3e121f22539796c911002f699584-dirty`. The build receipt, the macOS
+packager, release staging and the installed-engine audit all require exactly that revision and the
+declared `sourcePatches` record. Unpatched targets must report the clean revision. The change is
+offered upstream; remove the patch when the pinned commit includes it.
+

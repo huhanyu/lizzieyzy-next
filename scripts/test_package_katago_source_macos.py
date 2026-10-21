@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import package_katago_source_macos as package
 from build_katago_source import SOURCE_COMMIT, file_record
+from katago_source_targets import source_patch_records
 
 
 class SourcePackageTest(unittest.TestCase):
@@ -22,6 +23,7 @@ class SourcePackageTest(unittest.TestCase):
             "backend": "METAL", "origin": "project-source-build", "dependencyLockSha256": "locked",
             "sdkReceipt": file_record(sdk / "sdk-receipt.json", sdk),
             "executable": file_record(build / "katago", build),
+            "sourcePatches": source_patch_records("macos-arm64"),
         }
         (build / "source-build.json").write_text(json.dumps(receipt))
         return build, sdk, receipt
@@ -43,7 +45,7 @@ class SourcePackageTest(unittest.TestCase):
     def test_wrong_source_and_backend_are_rejected(self):
         for field, value in (("sourceCommit", "old"), ("buildStatus", "FAIL"),
                              ("backend", "EIGEN"), ("target", "linux-cpu"),
-                             ("origin", "official-release")):
+                             ("origin", "official-release"), ("sourcePatches", [])):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as temp:
                 build, sdk, receipt = self.fixture(Path(temp))
                 receipt[field] = value

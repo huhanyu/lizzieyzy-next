@@ -195,6 +195,7 @@ python3 scripts/generate_app_icons.py
 当前默认：
 
 - KataGo 版本输出：`v1.18.2`；15 个目标必须全都来自官方已合并提交 `47aadc08518b3e121f22539796c911002f699584` 的项目自编译产物，来源不得混用
+- 两个 macOS 目标另加已审查补丁 `metal-fixed-batch.patch`，版本输出为 `47aadc08518b3e121f22539796c911002f699584-dirty`，`source-release.json` 的 `sourcePatches` 必须与 `scripts/katago_source_targets.py` 一致；首次发布带补丁的引擎时，同步更新 PACKAGES / INSTALL 文档中「全部目标使用该提交」的说法
 - 默认模型：`kata1-tf3-b11c768-s12002M-d6304M.bin.gz`
 - 默认模型 SHA-256：`4a6312e80faadee7b7dd28689a2e87a1efb4640c10132f16290da7a17b4c6d9e`
 - 默认模型大小：`262,017,809` 字节；架构：`transformer`；最低 KataGo：`1.17.0`
