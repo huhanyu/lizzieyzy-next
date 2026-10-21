@@ -14873,14 +14873,8 @@ public class LizzieFrame extends JFrame {
       String move = table.getValueAt(row, 0).toString();
       if (move.length() > 3 && !move.toLowerCase().equals("pass")) {
         isNextMove = true;
-        String winrate = table.getValueAt(row, 2).toString();
-        if (winrate.contains("("))
-          diff = Double.parseDouble(winrate.substring(1, winrate.indexOf("(")));
-        else diff = 0;
-        String score = table.getValueAt(row, 5).toString();
-        if (score.contains("("))
-          scoreDiff = Double.parseDouble(score.substring(1, score.indexOf("(")));
-        else scoreDiff = 0;
+        diff = CandidateTableText.differenceIn(table.getValueAt(row, 2).toString());
+        scoreDiff = CandidateTableText.differenceIn(table.getValueAt(row, 5).toString());
       } else isNextMove = false;
 
       String coordsName = table.getValueAt(row, 1).toString();

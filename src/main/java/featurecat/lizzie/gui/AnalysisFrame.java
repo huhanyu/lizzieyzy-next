@@ -578,16 +578,11 @@ public class AnalysisFrame extends JFrame {
       }
       if (table.getValueAt(row, 0).toString().length() > 3) {
         isNextMove = true;
-        String winrate = table.getValueAt(row, 3).toString();
-        if (winrate.contains("("))
-          diff = Double.parseDouble(winrate.substring(1, winrate.indexOf("(")));
-        else diff = 0;
-        if (table.getColumnCount() > 7) {
-          String score = table.getValueAt(row, 7).toString();
-          if (score.contains("("))
-            scoreDiff = Double.parseDouble(score.substring(1, score.indexOf("(")));
-          else scoreDiff = 0;
-        } else scoreDiff = 0;
+        diff = CandidateTableText.differenceIn(table.getValueAt(row, 3).toString());
+        scoreDiff =
+            table.getColumnCount() > 7
+                ? CandidateTableText.differenceIn(table.getValueAt(row, 7).toString())
+                : 0;
       } else isNextMove = false;
 
       String coordsName =
