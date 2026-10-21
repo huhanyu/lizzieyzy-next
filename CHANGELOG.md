@@ -4,6 +4,7 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- When "Evaluate this point" (评估此点) is unavailable, the item keeps its name and says why: 「评估此点（需新版引擎）」 when the engine has no move focus, 「评估此点（当前不可用）」 for remote, SSH, dual-engine and game modes or while the engine starts. It used to read 「选点评估需要升级引擎」 or 「选点重点研究不可用」, so users did not recognise it as the same item. The tooltip for older engines now suggests 「只分析此点」 as a substitute as well as the full package.
 - Polish the board's right-click menus without moving anything. Every item keeps its place, name and order:
   - The icons are one line-drawn set (`BoardMenuGlyph`). Each keeps the shape of the old picture, takes the menu's text colour and fades when its item is disabled. In the dark style, the bins, arrows and magnifier no longer disappear into the background. Blue and red stay only for the analysed and avoided points, as on the board.
   - Both menus use the app's popup style and thin separators. The stone menu no longer uses toolbar separators, which drew boxes around 回看, and its items have icons too.
