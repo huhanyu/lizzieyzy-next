@@ -794,6 +794,65 @@ class TrackingProductionCutoverTest {
   }
 
   @Test
+  void pausedAnalysisDoesNotAcceptAnEvaluationThatCouldNeverRun() throws Exception {
+    try (TestEnvironment environment = TestEnvironment.open()) {
+      environment.startSupportedAnalysis();
+      environment.engine.pauseForAnalysisControl(() -> {});
+      environment.settleCommands();
+      assertFalse(environment.engine.isPondering());
+      assertFalse(environment.frame.canStartTrackingAnalysis());
+      assertEquals(
+          TrackingAnalysisController.AddResult.LEASE_UNAVAILABLE,
+          environment.frame.addTrackingPoint("A1"));
+      assertTrue(environment.frame.trackingDisplaySnapshot().selectedPoints().isEmpty());
+      environment.engine.ponder();
+      environment.settleCommands();
+      assertTrue(environment.frame.canStartTrackingAnalysis());
+      assertEquals(
+          TrackingAnalysisController.AddResult.ADDED, environment.frame.addTrackingPoint("A1"));
+    }
+  }
+
+  @Test
+  void handingBackAfterWholeGameAnalysisKeepsAttentionOnTheUnchangedPosition() throws Exception {
+    try (TestEnvironment environment = TestEnvironment.open()) {
+      environment.startSupportedAnalysis();
+      assertEquals(
+          TrackingAnalysisController.AddResult.ADDED, environment.frame.addTrackingPoint("A1"));
+      environment.settleCommands();
+      environment.sendOrdinaryInfo(payload(200, 40, 130, 0.50, 0.60));
+      String before = environment.commands();
+      // What the frame does when the automatic whole-game analysis settles.
+      Method handBack =
+          LizzieFrame.class.getDeclaredMethod(
+              "resumeForegroundAnalysisForCurrentPosition", boolean.class);
+      handBack.setAccessible(true);
+      // A resend waits for the engine's replies, which only this thread gives.
+      java.util.concurrent.CompletableFuture<Object> handedBack =
+          java.util.concurrent.CompletableFuture.supplyAsync(
+              () -> {
+                try {
+                  return handBack.invoke(environment.frame, false);
+                } catch (ReflectiveOperationException e) {
+                  throw new IllegalStateException(e);
+                }
+              });
+      while (!handedBack.isDone()) environment.settleCommands();
+      assertEquals(Boolean.TRUE, handedBack.get());
+      environment.settleCommands();
+      assertEquals(
+          java.util.Set.of("A1"), environment.frame.trackingDisplaySnapshot().selectedPoints());
+      assertEquals(
+          java.util.Set.of("A1"), environment.frame.trackingDisplaySnapshot().activePoints());
+      assertFalse(
+          environment.commands().substring(before.length()).contains("clear_board"),
+          environment.commands().substring(before.length()));
+      environment.sendOrdinaryInfo(payload(300, 70, 160, 0.52, 0.61));
+      assertEquals(70, candidate("A1").playouts);
+    }
+  }
+
+  @Test
   void clearingTheEngineTreeRetiresExplicitAdoptionEvenAtTheSameDisplayNode() throws Exception {
     try (TestEnvironment environment = TestEnvironment.open()) {
       environment.startSupportedAnalysis();

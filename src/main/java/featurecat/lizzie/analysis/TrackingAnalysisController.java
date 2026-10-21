@@ -387,6 +387,18 @@ public final class TrackingAnalysisController {
     return snapshot;
   }
 
+  /**
+   * Whether attention is still bound to {@code current} while its engine keeps searching. Every
+   * engine state change retires the context, so this also shows the engine still holds exactly that
+   * position and resending it would only clear the user's points.
+   */
+  public synchronized boolean holdsSearchOf(Context current) {
+    return context != null
+        && !selectedPoints.isEmpty()
+        && context.matches(current)
+        && context.engine.isPondering();
+  }
+
   synchronized void onFocusAnalysis(Context source, List<MoveData> moves) {
     if (context != source) return;
     boolean completed = observeProgress(moves);
