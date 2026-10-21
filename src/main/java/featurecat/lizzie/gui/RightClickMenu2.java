@@ -3,14 +3,10 @@ package featurecat.lizzie.gui;
 import featurecat.lizzie.Lizzie;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.IOException;
 import java.util.ResourceBundle;
 import java.util.Timer;
 import java.util.TimerTask;
-import javax.imageio.ImageIO;
-import javax.swing.ImageIcon;
 import javax.swing.JPopupMenu;
-import javax.swing.JToolBar.Separator;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 
@@ -22,8 +18,8 @@ public class RightClickMenu2 extends JPopupMenu {
   private JFontMenuItem switchone;
   private JFontMenuItem deleteone;
   private JFontMenuItem previousMove;
-  private Separator sep1;
-  private Separator sep2;
+  private JPopupMenu.Separator sep1;
+  private JPopupMenu.Separator sep2;
   private JFontMenuItem moveStone;
   private JFontMenuItem findStone;
   private JFontMenuItem review;
@@ -63,6 +59,7 @@ public class RightClickMenu2 extends JPopupMenu {
           }
 
           public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+            BoardMenuStyle.install(RightClickMenu2.this);
             Lizzie.frame.isShowingRightMenu = true;
             if (Lizzie.frame.isPlayingAgainstLeelaz || Lizzie.frame.isAnaPlayingAgainstLeelaz) {
               previousMove.setText(resourceBundle.getString("RightClickMenu.regretOne")); // ("悔棋");
@@ -88,25 +85,21 @@ public class RightClickMenu2 extends JPopupMenu {
         };
 
     this.addPopupMenuListener(listener);
-    ImageIcon iconBack = new ImageIcon();
-    ImageIcon iconSearch = new ImageIcon();
-    try {
-      iconBack.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/left.png")));
-      iconSearch.setImage(ImageIO.read(getClass().getResourceAsStream("/assets/upSearch.png")));
-    } catch (IOException e1) {
-      // TODO Auto-generated catch block
-      e1.printStackTrace();
-    }
     findStone = new JFontMenuItem(resourceBundle.getString("RightClickMenu2.findStone"));
-    findStone.setIcon(iconSearch);
+    findStone.setIcon(BoardMenuGlyph.JUMP.icon());
     switchone = new JFontMenuItem(resourceBundle.getString("RightClickMenu2.switchone"));
+    switchone.setIcon(BoardMenuGlyph.SWAP_COLOR.icon());
     deleteone = new JFontMenuItem(resourceBundle.getString("RightClickMenu2.deleteone"));
+    deleteone.setIcon(BoardMenuGlyph.CLEAR.icon());
     previousMove = new JFontMenuItem(resourceBundle.getString("RightClickMenu.previousMove"));
-    previousMove.setIcon(iconBack);
+    previousMove.setIcon(BoardMenuGlyph.UNDO.icon());
     moveStone = new JFontMenuItem(resourceBundle.getString("RightClickMenu2.moveStone"));
+    moveStone.setIcon(BoardMenuGlyph.MOVE.icon());
     review = new JFontMenuItem(resourceBundle.getString("RightClickMenu2.review"));
-    sep1 = new Separator();
-    sep2 = new Separator();
+    review.setIcon(BoardMenuGlyph.REVIEW.icon());
+    // Toolbar separators drew boxes here; the menus share one hairline.
+    sep1 = BoardMenuStyle.separator();
+    sep2 = BoardMenuStyle.separator();
     this.add(moveStone);
     this.add(switchone);
     this.add(deleteone);
@@ -115,6 +108,7 @@ public class RightClickMenu2 extends JPopupMenu {
     this.add(sep2);
     this.add(previousMove);
     this.add(findStone);
+    BoardMenuStyle.install(this);
     findStone.addActionListener(
         new ActionListener() {
           @Override

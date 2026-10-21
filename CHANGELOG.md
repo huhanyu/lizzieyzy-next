@@ -4,6 +4,10 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Polish the board's right-click menus without moving anything. Every item keeps its place, name and order:
+  - The icons are one line-drawn set (`BoardMenuGlyph`). Each keeps the shape of the old picture, takes the menu's text colour and fades when its item is disabled. In the dark style, the bins, arrows and magnifier no longer disappear into the background. Blue and red stay only for the analysed and avoided points, as on the board.
+  - Both menus use the app's popup style and thin separators. The stone menu no longer uses toolbar separators, which drew boxes around 回看, and its items have icons too.
+  - 持续分析/不分析 shows its state with its icon. Its check box added a second column that pushed every icon to the right.
 - Fix "Evaluate this point" (评估此点) dropping or ignoring points:
   - With a focus-capable engine, every evaluated point disappeared as soon as the automatic whole-game analysis finished. Handing the board back to the main engine resent the unchanged position, and the engine treated that as a new position. The hand-back now skips the resend while the engine is still searching the position the points belong to.
   - While analysis was paused, the item added a ring that never got any search. It now reads "Evaluate this point (analysis paused)" and asks to press Space to resume.
