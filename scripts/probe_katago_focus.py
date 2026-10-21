@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Exercise same-tree GTP focus against a real, explicitly selected KataGo process."""
+"""Exercise same-tree GTP focus against a real, explicitly selected KataGo process, then time the
+app's whole-game quick analysis with the shipped analysis config."""
 
 from __future__ import annotations
 
@@ -17,6 +18,21 @@ import time
 from katago_source_targets import SOURCE_COMMIT
 ROOT_VISITS = re.compile(r"\brootInfo visits (\d+)\b")
 CANDIDATE_VISITS = re.compile(r"\binfo move ([A-T][0-9]+|pass) visits (\d+)\b")
+# The app's automatic whole-game quick analysis, as KataGoRuntimeHelper starts it for few visits:
+# the shipped analysis.cfg (KataGo's analysis_example.cfg, nnMaxBatchSize = 64) with these
+# overrides, two analysis threads, and one 2-visit query per position, all sent at once.
+QUICK_ANALYSIS_OVERRIDES = "analysisPVLen=15,numSearchThreads=,numSearchThreadsPerAnalysisThread=1"
+QUICK_ANALYSIS_VISITS = 2
+# The first 40 moves of the ear-reddening game (1846), Black first.
+QUICK_ANALYSIS_MOVES = tuple(
+    "R16 D17 Q3 P17 C4 C14 E4 R5 Q15 O4 Q5 Q4 P4 R4 P3 P5 Q6 R3 O3 P6 "
+    "Q7 P7 Q8 N4 N3 P8 Q9 M3 M2 L2 M4 L3 R2 S2 S1 N2 O2 Q2 Q1 R1".split())
+# The shipped config may cost quick analysis at most this factor over a batch of 2. The first Metal
+# patch padded every batch of one or two positions to the configured 64 rows, about 50 times.
+MAX_SLOWDOWN = 3.0
+# Less extra time than this for the whole run is accepted whatever the ratio: on a fast host the
+# per-position times are milliseconds, and their ratio is timer noise.
+MIN_SLOWDOWN_SECONDS = 2.0
 
 
 def sha256(path: Path) -> str:
@@ -131,8 +147,115 @@ class GtpProbe:
             self.stderr.close()
 
 
+def quick_analysis(executable: Path, model: Path, config: Path, evidence: Path, timeout: float,
+                   overrides: str, label: str) -> dict:
+    """Times one run of the app's quick analysis in a new analysis-engine process.
+
+    The first result includes loading the model and compiling, so the run is measured by the time
+    per position after it. `timeout` bounds the wait for each result.
+    """
+    lines: queue.Queue[str | None] = queue.Queue()
+    finished: list[float] = []
+    with (evidence / f"analysis-{label}.log").open("w", encoding="utf-8") as stderr:
+        process = subprocess.Popen(
+            [str(executable), "analysis", "-model", str(model), "-config", str(config),
+             "-quit-without-waiting", "-override-config", overrides],
+            cwd=evidence,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            text=True,
+            encoding="utf-8",
+        )
+
+        def read() -> None:
+            try:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    lines.put(line)
+            finally:
+                lines.put(None)
+
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        try:
+            assert process.stdin is not None
+            pending = set()
+            started = time.monotonic()
+            for turn in range(1, len(QUICK_ANALYSIS_MOVES) + 1):
+                pending.add(f"{label}-{turn}")
+                moves = [["BW"[i % 2], move] for i, move in enumerate(QUICK_ANALYSIS_MOVES[:turn])]
+                process.stdin.write(json.dumps({
+                    "id": f"{label}-{turn}", "moves": moves, "rules": "chinese", "komi": 7.5,
+                    "boardXSize": 19, "boardYSize": 19, "maxVisits": QUICK_ANALYSIS_VISITS,
+                }) + "\n")
+            process.stdin.flush()
+            while pending:
+                try:
+                    line = lines.get(timeout=timeout)
+                except queue.Empty as error:
+                    raise TimeoutError(f"KataGo {label} quick analysis timed out") from error
+                if line is None:
+                    raise RuntimeError(f"KataGo exited during the {label} quick analysis")
+                response = json.loads(line)
+                if "error" in response:
+                    raise RuntimeError(f"KataGo rejected a {label} quick-analysis query: {response['error']}")
+                if response.get("id") in pending and not response.get("isDuringSearch"):
+                    pending.remove(response["id"])
+                    finished.append(time.monotonic() - started)
+            process.stdin.close()
+            if process.wait(timeout=10) != 0:
+                raise RuntimeError(f"KataGo did not exit cleanly after the {label} quick analysis")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            reader.join(timeout=5)
+            for stream in (process.stdin, process.stdout):
+                try:
+                    if stream:
+                        stream.close()
+                except OSError:
+                    pass
+    first, last = finished[0], finished[-1]
+    return {"overrides": overrides, "firstResultSeconds": round(first, 3),
+            "allResultsSeconds": round(last, 3),
+            "steadySecondsPerPosition": round((last - first) / (len(finished) - 1), 4)}
+
+
+def quick_analysis_within_budget(configured: dict, reference: dict) -> bool:
+    """Whether the shipped config costs quick analysis at most MAX_SLOWDOWN over a batch of 2."""
+    slow = configured["steadySecondsPerPosition"]
+    fast = reference["steadySecondsPerPosition"]
+    extra = (slow - fast) * (len(QUICK_ANALYSIS_MOVES) - 1)
+    return slow <= MAX_SLOWDOWN * fast or extra <= MIN_SLOWDOWN_SECONDS
+
+
+def analysis_timing(executable: Path, model: Path, config: Path, evidence: Path, timeout: float,
+                    onnx_provider: str | None = None) -> dict:
+    """Times the app's quick analysis with the shipped analysis config against a batch of 2.
+
+    The GTP checks never use the analysis config, so they missed the first Metal patch padding every
+    quick-analysis batch to the config's nnMaxBatchSize. Comparing against the same engine with
+    nnMaxBatchSize = 2 keeps the judgement independent of how fast the host is.
+    """
+    overrides = QUICK_ANALYSIS_OVERRIDES + (f",onnxProvider={onnx_provider}" if onnx_provider else "")
+    reference = quick_analysis(executable, model, config, evidence, timeout,
+                               overrides + ",nnMaxBatchSize=2", "reference")
+    configured = quick_analysis(executable, model, config, evidence, timeout, overrides, "configured")
+    return {
+        "status": "PASS" if quick_analysis_within_budget(configured, reference) else "FAIL",
+        "configSha256": sha256(config),
+        "overrides": overrides,
+        "positions": len(QUICK_ANALYSIS_MOVES),
+        "maxVisits": QUICK_ANALYSIS_VISITS,
+        "reference": reference,
+        "configured": configured,
+    }
+
+
 def probe(executable: Path, model: Path, evidence: Path, timeout: float = 120,
-          onnx_provider: str | None = None) -> dict:
+          onnx_provider: str | None = None, analysis_config: Path | None = None) -> dict:
     if not 1 <= timeout <= 600:
         raise ValueError("timeout must be between 1 and 600 seconds")
     if onnx_provider not in {None, "cpu", "directml", "openvino"}:
@@ -140,6 +263,10 @@ def probe(executable: Path, model: Path, evidence: Path, timeout: float = 120,
     executable, model, evidence = executable.resolve(), model.resolve(), evidence.resolve()
     if not executable.is_file() or not model.is_file():
         raise ValueError("explicit executable and model files are required")
+    if analysis_config is not None:
+        analysis_config = analysis_config.resolve()
+        if not analysis_config.is_file():
+            raise ValueError("the analysis config must be an existing file")
     evidence.mkdir(parents=True, exist_ok=False)
     result = {"status": "FAIL", "sourceCommit": SOURCE_COMMIT, "steps": [],
               "executionProvider": onnx_provider or "native"}
@@ -180,6 +307,16 @@ def probe(executable: Path, model: Path, evidence: Path, timeout: float = 120,
         session.command("quit")
         if session.process.wait(timeout=10) != 0:
             raise RuntimeError("KataGo did not exit cleanly")
+        session.close()
+        session = None
+        if analysis_config is not None:
+            timing = analysis_timing(executable, model, analysis_config, evidence, timeout, onnx_provider)
+            result["analysis"] = timing
+            if timing["status"] != "PASS":
+                raise RuntimeError(
+                    "the shipped analysis config slows quick analysis down: "
+                    f"{timing['configured']['steadySecondsPerPosition']} s per position against "
+                    f"{timing['reference']['steadySecondsPerPosition']} s with a batch of 2")
         result["status"] = "PASS"
         return result
     except Exception as error:
@@ -198,11 +335,20 @@ def main() -> int:
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--onnx-provider", choices=("cpu", "directml", "openvino"))
+    parser.add_argument("--analysis-config", type=Path, required=True,
+                        help="the analysis config that ships with the engine "
+                             "(the pinned source's cpp/configs/analysis_example.cfg)")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("timeout must be between 1 and 600 seconds")
-    result = probe(args.engine, args.model, args.evidence, args.timeout, args.onnx_provider)
-    print(json.dumps({"status": result["status"], "rootVisits": [s["rootVisits"] for s in result["steps"]]}))
+    result = probe(args.engine, args.model, args.evidence, args.timeout, args.onnx_provider,
+                   args.analysis_config)
+    timing = result["analysis"]
+    print(json.dumps({
+        "status": result["status"], "rootVisits": [s["rootVisits"] for s in result["steps"]],
+        "quickAnalysisSecondsPerPosition": {
+            label: timing[label]["steadySecondsPerPosition"] for label in ("reference", "configured")},
+    }))
     return 0
 
 

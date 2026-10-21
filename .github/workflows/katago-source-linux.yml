@@ -65,6 +65,7 @@ jobs:
           python3 scripts/probe_katago_focus.py --engine "$RUNNER_TEMP/katago-package/katago"
           --model upstream-katago/cpp/tests/models/g170-b6c96-s175395328-d26788732.bin.gz
           --evidence "$RUNNER_TEMP/focus-probe" --timeout 120
+          --analysis-config upstream-katago/cpp/configs/analysis_example.cfg
       - name: Verify production ABI and clean Ubuntu 22/24 compatibility
         run: >-
           python3 scripts/audit_katago_linux_compatibility.py

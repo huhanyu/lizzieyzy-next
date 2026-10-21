@@ -88,6 +88,7 @@ jobs:
           python scripts/probe_katago_focus.py --engine "$env:RUNNER_TEMP/katago-package/katago.exe"
           --model upstream-katago/cpp/tests/models/g170-b6c96-s175395328-d26788732.bin.gz
           --evidence "$env:RUNNER_TEMP/focus-probe" --timeout 120
+          --analysis-config upstream-katago/cpp/configs/analysis_example.cfg
       - name: Execute ONNX unit tests and real CPU inference
         if: matrix.target == 'windows-directml' || matrix.target == 'windows-openvino'
         shell: pwsh
@@ -101,7 +102,7 @@ jobs:
             & $engine runtinynntests "$env:RUNNER_TEMP/onnx-tiny" 1.0
             if ($LASTEXITCODE -ne 0) { throw 'ONNX CPU inference failed' }
           } finally { Pop-Location }
-          python scripts/probe_katago_focus.py --engine $engine --model upstream-katago/cpp/tests/models/g170-b6c96-s175395328-d26788732.bin.gz --evidence "$env:RUNNER_TEMP/focus-probe" --timeout 120 --onnx-provider cpu
+          python scripts/probe_katago_focus.py --engine $engine --model upstream-katago/cpp/tests/models/g170-b6c96-s175395328-d26788732.bin.gz --evidence "$env:RUNNER_TEMP/focus-probe" --timeout 120 --onnx-provider cpu --analysis-config upstream-katago/cpp/configs/analysis_example.cfg
           if ($LASTEXITCODE -ne 0) { throw 'ONNX CPU same-tree focus probe failed' }
       - name: Retain evidence, never publish a release
         if: always()

@@ -39,7 +39,9 @@ Windows 构建、依赖审计、启动与升级测试通过后，将同一批成
 1. 在发布提交上运行对应的 `katago-source-*.yml`，把各目标的 `katago-package/` 产物放到
    `packages/<目标>/`。
 2. 每个目标准备 `acceptance/<目标>/hardware.json`：在对应真实硬件上运行
-   `probe_katago_focus.py` 得到的 `result.json`；没有该硬件时写 `PENDING_HARDWARE` 并说明原因。
+   `probe_katago_focus.py` 得到的 `result.json`，`--analysis-config` 用固定提交干净检出中的
+   `cpp/configs/analysis_example.cfg`（探针据此计时整盘快速分析，封装时核对它的 SHA-256）；
+   没有该硬件时写 `PENDING_HARDWARE` 并说明原因。
 3. 只封装这些目标：`stage_katago_source_release.py` 加 `--targets <目标...>`，
    `--base-catalog` 用当前 `src/main/resources/katago-assets.json`，`--source` 用固定提交的干净
    KataGo 检出。其余资产的名称、大小和摘要原样保留。
