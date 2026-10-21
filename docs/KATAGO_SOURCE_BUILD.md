@@ -254,6 +254,13 @@ which padded every quick-analysis batch to 64 rows and took about 50 times as lo
 (see [macOS Metal: fixed batch shape](#macos-metal-fixed-batch-shape)). `result.json` records both
 runs, the overrides and the config's SHA-256.
 
+With `--onnx-provider directml`, the measured run also carries `nnMaxBatchSize=2`, because that is
+how the app launches it. KataGo's analysis mode requires `nnMaxBatchSize` from the config, and
+DirectML (like OpenVINO on an NPU) pads every batch to it. So `AnalysisEngineLaunchCommand` lowers
+the size for these backends to what KataGo itself picks for a padding backend: about half the
+concurrent evaluations, at least 2. A size set in the engine command, or a smaller one in the
+config, is kept.
+
 `--timeout` bounds each version/GTP operation (default 120 seconds, allowed 1-600), with no
 automatic retries. Evidence records the version-check elapsed time, including OS startup security
 scanning. Downloaded ad-hoc-signed CI artifacts can incur a macOS first-launch scan; they are not

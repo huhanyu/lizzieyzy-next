@@ -299,7 +299,7 @@ public class AnalysisEngine {
                 ? Math.max(2, Lizzie.config.batchAnalysisPlayouts)
                 : Lizzie.config.analysisMaxVisits + 1);
     engineCommand =
-        KataGoRuntimeHelper.optimizeAnalysisEngineCommand(
+        featurecat.lizzie.util.AnalysisEngineLaunchCommand.build(
             resolveConfiguredAnalysisEngineCommand(commandOverride),
             maxVisits,
             Lizzie.frame.isBatchAnalysisMode,
