@@ -761,6 +761,7 @@ public class Leelaz {
       AnalysisOutputOwnership outputOwner = binding.analysisOutputOwnership.get();
       return moveFocusCapabilityBinding == binding
           && moveFocusCapability == MoveFocusCapability.SUPPORTED
+          && isPondering
           && isEligibleLocalKataGoForReadBoardTracking()
           && confirmedReadBoardTrackingIncarnation() == binding.incarnation
           && ordinaryFocusBaseCommand != null
@@ -1654,7 +1655,6 @@ public class Leelaz {
             LizzieFrame.openMoreEngineDialog();
           }
         } catch (JSONException e1) {
-          // TODO Auto-generated catch block
           e1.printStackTrace();
           isDownWithError = true;
         }

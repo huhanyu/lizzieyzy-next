@@ -15921,7 +15921,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void setMarkupType(boolean isMarkuping, int type) {
-    // TODO Auto-generated method stub
     this.isMarkuping = isMarkuping;
     // 0=无 1=字母 2=圈 3=X 4=方块 5=三角
     // 增加6=数字
@@ -15929,7 +15928,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public boolean tryToRemoveMarkup(int x, int y) {
-    // TODO Auto-generated method stub
     if (isMarkuping) {
       Optional<int[]> boardCoordinates;
       if (Lizzie.config.isThinkingMode()) {
@@ -15975,7 +15973,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public boolean tryToMarkup(int x, int y) {
-    // TODO Auto-generated method stub
     if (isMarkuping) {
       Optional<int[]> boardCoordinates;
       if (Lizzie.config.isThinkingMode()) {
@@ -17478,7 +17475,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void drawScore(GroupInfo boardGroupInfo) {
-    // TODO Auto-generated method stub
     if (Lizzie.config.isFloatBoardMode() && independentMainBoard != null)
       this.independentMainBoard.boardRenderer.drawScore(boardGroupInfo);
     else boardRenderer.drawScore(boardGroupInfo);
@@ -17486,7 +17482,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void clearScore() {
-    // TODO Auto-generated method stub
     if (Lizzie.config.isFloatBoardMode() && independentMainBoard != null)
       this.independentMainBoard.boardRenderer.clearScore();
     else boardRenderer.clearScore();
@@ -17553,7 +17548,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void clearWRNforGame(boolean isGenmove) {
-    // TODO Auto-generated method stub
     if (isGenmove) {
       try {
         WRNValueBeforeGenmove = Double.parseDouble(menu.txtWRN.getText());
@@ -17591,7 +17585,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void restoreWRN(boolean isGenmove) {
-    // TODO Auto-generated method stub
     if (isGenmove) {
       menu.chkWRN.setEnabled(true);
       menu.txtWRN.setEnabled(true);
@@ -17620,7 +17613,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void refreshCurrentMove() {
-    // TODO Auto-generated method stub
     Lizzie.board.clearbestmoves();
     Lizzie.leelaz.sendCommand("clear_cache");
     if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
@@ -17628,7 +17620,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public String getPlayerName(boolean isBlack, int length) {
-    // TODO Auto-generated method stub
     String player =
         isBlack
             ? Lizzie.board.getHistory().getGameInfo().getPlayerBlack()
@@ -17790,7 +17781,9 @@ public class LizzieFrame extends JFrame {
         || EngineManager.isEmpty) {
       return false;
     }
-    if (!positionAlreadyConfirmed && !syncCurrentPositionToPrimaryEngineForAnalysis()) {
+    if (!positionAlreadyConfirmed
+        && !isTrackingStillSearchingCurrentPosition()
+        && !syncCurrentPositionToPrimaryEngineForAnalysis()) {
       return false;
     }
     if (!Lizzie.leelaz.isPondering()) {
@@ -17798,6 +17791,14 @@ public class LizzieFrame extends JFrame {
     }
     refresh();
     return true;
+  }
+
+  private boolean isTrackingStillSearchingCurrentPosition() {
+    // Only evaluated points make it worth asking the engine; otherwise the hand-back is as before.
+    TrackingAnalysisController controller = trackingAnalysisController;
+    return controller != null
+        && !controller.snapshot().selectedPoints().isEmpty()
+        && controller.holdsSearchOf(currentTrackingContext());
   }
 
   private boolean syncCurrentPositionToPrimaryEngineForAnalysis() {
@@ -18280,7 +18281,6 @@ public class LizzieFrame extends JFrame {
   }
 
   public void tryToRefreshVariation() {
-    // TODO Auto-generated method stub
     boardRenderer.refreshVariation();
     if (Lizzie.config.isDoubleEngineMode()) boardRenderer2.refreshVariation();
   }
