@@ -104,20 +104,61 @@ class AnalysisEngineRequestTest {
         assertEquals(1, getField(AnalysisEngine.class, engine, "responseCount"));
         assertEquals(200, history.getStart().getData().getPlayouts());
       } finally {
-        if (engine != null) {
-          Process process = engine.process;
-          engine.normalQuit();
-          if (process != null) assertTrue(process.waitFor(5, TimeUnit.SECONDS));
-          for (String name : List.of("executor", "executorErr")) {
-            var executor =
-                (java.util.concurrent.ExecutorService) getField(AnalysisEngine.class, engine, name);
-            if (executor != null) {
-              executor.shutdown();
-              assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
-            }
-          }
-        }
+        stopLocalProcess(engine);
         Lizzie.gtpConsole = oldConsole;
+      }
+    }
+  }
+
+  @Test
+  void directMlAnalysisEngineLaunchesWithABatchSizeItsThreadsCanFill() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      boardWithHistory(new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE)));
+      Path config = java.nio.file.Files.createTempFile("directml-analysis", ".cfg");
+      java.nio.file.Files.writeString(
+          config,
+          "numAnalysisThreads = 2\nnumSearchThreadsPerAnalysisThread = 16\nnnMaxBatchSize = 64\n");
+      Lizzie.config.leelazConfig = new JSONObject();
+      Lizzie.config.analysisMaxVisits = 1;
+      Lizzie.config.analysisEngineCommand =
+          "\""
+              + java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java")
+              + "\" -cp \""
+              + System.getProperty("java.class.path")
+              + "\" "
+              + InterleavedAnalysisProcess.class.getName()
+              + " analysis -config \""
+              + config
+              + "\" -override-config onnxProvider=directml";
+      var oldConsole = Lizzie.gtpConsole;
+      Lizzie.gtpConsole = allocate(SilentGtpConsole.class);
+      AnalysisEngine engine = null;
+      try {
+        engine = new AnalysisEngine(true);
+        // Quick analysis: two analysis threads with one search thread each, so batches of 2 rather
+        // than the config's 64 that DirectML would pad every batch to.
+        String launched = (String) getField(AnalysisEngine.class, engine, "engineCommand");
+        assertTrue(launched.contains("numSearchThreadsPerAnalysisThread=1"), launched);
+        assertTrue(launched.contains("nnMaxBatchSize=2"), launched);
+      } finally {
+        stopLocalProcess(engine);
+        Lizzie.gtpConsole = oldConsole;
+        java.nio.file.Files.deleteIfExists(config);
+      }
+    }
+  }
+
+  private static void stopLocalProcess(AnalysisEngine engine) throws Exception {
+    if (engine == null) return;
+    Process process = engine.process;
+    engine.normalQuit();
+    if (process != null) assertTrue(process.waitFor(5, TimeUnit.SECONDS));
+    for (String name : List.of("executor", "executorErr")) {
+      var executor =
+          (java.util.concurrent.ExecutorService) getField(AnalysisEngine.class, engine, name);
+      if (executor != null) {
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
       }
     }
   }

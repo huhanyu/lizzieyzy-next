@@ -200,10 +200,16 @@ class FocusProbeTest(unittest.TestCase):
         self.assertGreaterEqual(timing["configured"]["steadySecondsPerPosition"], 0.02)
         self.assertLess(timing["reference"]["steadySecondsPerPosition"], 0.02)
 
-    def test_onnx_provider_reaches_the_analysis_engine(self):
+    def test_onnx_provider_reaches_the_analysis_engine_as_the_app_launches_it(self):
+        timing, rows, _ = self.run_analysis_timing(0.0, onnx_provider="openvino")
+        self.assertTrue(timing["overrides"].endswith(",onnxProvider=openvino"))
+        self.assertTrue(all("onnxProvider=openvino" in row["arguments"][-1] for row in rows if "arguments" in row))
+        # DirectML pads every batch, so the app runs quick analysis with a batch its two threads fill.
         timing, rows, _ = self.run_analysis_timing(0.0, onnx_provider="directml")
-        self.assertTrue(timing["overrides"].endswith(",onnxProvider=directml"))
-        self.assertTrue(all("onnxProvider=directml" in row["arguments"][-1] for row in rows if "arguments" in row))
+        self.assertTrue(timing["overrides"].endswith(",onnxProvider=directml,nnMaxBatchSize=2"))
+        configured = [row["arguments"] for row in rows if "arguments" in row][1]
+        self.assertTrue(configured[configured.index("-override-config") + 1].endswith(
+            "onnxProvider=directml,nnMaxBatchSize=2"))
 
     def test_a_rejected_quick_analysis_query_fails(self):
         with self.assertRaisesRegex(RuntimeError, "rejected a reference quick-analysis query"):

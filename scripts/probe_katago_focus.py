@@ -231,6 +231,16 @@ def quick_analysis_within_budget(configured: dict, reference: dict) -> bool:
     return slow <= MAX_SLOWDOWN * fast or extra <= MIN_SLOWDOWN_SECONDS
 
 
+def quick_analysis_overrides(onnx_provider: str | None) -> str:
+    """The overrides the app's quick analysis runs an engine with this ONNX provider under."""
+    overrides = QUICK_ANALYSIS_OVERRIDES + (f",onnxProvider={onnx_provider}" if onnx_provider else "")
+    if onnx_provider == "directml":
+        # DirectML pads every batch, so AnalysisEngineLaunchCommand sizes it for the two
+        # quick-analysis threads instead of the config's 64.
+        overrides += ",nnMaxBatchSize=2"
+    return overrides
+
+
 def analysis_timing(executable: Path, model: Path, config: Path, evidence: Path, timeout: float,
                     onnx_provider: str | None = None) -> dict:
     """Times the app's quick analysis with the shipped analysis config against a batch of 2.
@@ -239,9 +249,10 @@ def analysis_timing(executable: Path, model: Path, config: Path, evidence: Path,
     quick-analysis batch to the config's nnMaxBatchSize. Comparing against the same engine with
     nnMaxBatchSize = 2 keeps the judgement independent of how fast the host is.
     """
-    overrides = QUICK_ANALYSIS_OVERRIDES + (f",onnxProvider={onnx_provider}" if onnx_provider else "")
+    provider = f",onnxProvider={onnx_provider}" if onnx_provider else ""
+    overrides = quick_analysis_overrides(onnx_provider)
     reference = quick_analysis(executable, model, config, evidence, timeout,
-                               overrides + ",nnMaxBatchSize=2", "reference")
+                               QUICK_ANALYSIS_OVERRIDES + provider + ",nnMaxBatchSize=2", "reference")
     configured = quick_analysis(executable, model, config, evidence, timeout, overrides, "configured")
     return {
         "status": "PASS" if quick_analysis_within_budget(configured, reference) else "FAIL",
