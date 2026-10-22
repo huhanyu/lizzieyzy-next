@@ -8,7 +8,7 @@
     "src/main/java/featurecat/lizzie/gui/Menu.java": 11067,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
     "src/main/java/featurecat/lizzie/gui/KataGoAutoSetupDialog.java": 8305,
-    "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 7902,
+    "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 7872,
     "src/main/java/featurecat/lizzie/rules/Board.java": 7393,
     "src/main/java/featurecat/lizzie/analysis/ReadBoard.java": 6957,
     "src/main/java/featurecat/lizzie/gui/ConfigDialog2.java": 6898,

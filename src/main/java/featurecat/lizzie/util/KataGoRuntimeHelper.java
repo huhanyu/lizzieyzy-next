@@ -6741,7 +6741,23 @@ public final class KataGoRuntimeHelper {
       return isVerifiedPackagedHumanSlCompanion(enginePath);
     }
     KataGoAssetCatalog.Asset asset = assetForNvidiaBackend(backend);
-    return isProjectStaticZlibAsset(asset) && hasVerifiedEngineProvenance(enginePath, asset);
+    return asset != null && isProjectStaticZlibBuild(enginePath, asset.backend());
+  }
+
+  /** See {@link KataGoEngineManifest#describesProjectStaticZlibBuild}. */
+  private static boolean isProjectStaticZlibBuild(Path enginePath, String backend) {
+    if (enginePath == null || enginePath.getParent() == null || !Files.isRegularFile(enginePath)) {
+      return false;
+    }
+    try {
+      return KataGoEngineManifest.describesProjectStaticZlibBuild(
+          KataGoEngineManifest.readStrict(
+              enginePath.getParent().resolve(TENSORRT_ENGINE_MANIFEST_NAME)),
+          backend,
+          sha256(enginePath));
+    } catch (IOException e) {
+      return false;
+    }
   }
 
   private static boolean isProjectStaticZlibAsset(KataGoAssetCatalog.Asset asset) {
@@ -6767,7 +6783,7 @@ public final class KataGoRuntimeHelper {
     }
     try {
       Map<String, String> manifest =
-          readStrictEngineManifest(engineDir.resolve(TENSORRT_ENGINE_MANIFEST_NAME));
+          KataGoEngineManifest.readStrict(engineDir.resolve(TENSORRT_ENGINE_MANIFEST_NAME));
       // TensorRT provenance validates the companion entry only when present; require it here.
       return manifest != null
           && HUMAN_SL_CUDA_COMPANION_NAME.equals(manifest.get("HumanSL companion"))
@@ -6797,7 +6813,7 @@ public final class KataGoRuntimeHelper {
       return false;
     }
     try {
-      Map<String, String> manifest = readStrictEngineManifest(manifestPath);
+      Map<String, String> manifest = KataGoEngineManifest.readStrict(manifestPath);
       String expectedExecutableSha256 = expectedKatagoExecutableSha256(asset);
       return manifest != null
           && "2".equals(manifest.get("Manifest schema"))
@@ -6822,52 +6838,6 @@ public final class KataGoRuntimeHelper {
     return companion == null
         || (HUMAN_SL_CUDA_COMPANION_NAME.equals(companion)
             && expectedHumanSlCompanionSha256().equals(manifest.get("HumanSL companion SHA-256")));
-  }
-
-  private static Map<String, String> readStrictEngineManifest(Path manifestPath)
-      throws IOException {
-    Map<String, String> values = new LinkedHashMap<>();
-    String[] lines =
-        Files.readString(manifestPath, StandardCharsets.UTF_8).replace("\r", "").split("\n", -1);
-    for (int index = 0; index < lines.length; index++) {
-      String line = lines[index];
-      if (line.isEmpty() && index == lines.length - 1) {
-        continue;
-      }
-      int separator = line.indexOf(": ");
-      if (separator <= 0 || separator == line.length() - 2) {
-        return null;
-      }
-      String key = line.substring(0, separator);
-      String value = line.substring(separator + 2);
-      if (!isAllowedEngineManifestKey(key) || values.putIfAbsent(key, value) != null) {
-        return null;
-      }
-    }
-    boolean hasCompanion = values.containsKey("HumanSL companion");
-    if (hasCompanion != values.containsKey("HumanSL companion SHA-256")) {
-      return null;
-    }
-    return values;
-  }
-
-  private static boolean isAllowedEngineManifestKey(String key) {
-    return switch (key) {
-      case "Manifest schema",
-          "KataGo release",
-          "Asset ID",
-          "Asset",
-          "Asset SHA-256",
-          "Executable SHA-256",
-          "Backend",
-          "Origin",
-          "Source commit",
-          "Zlib linkage",
-          "HumanSL companion",
-          "HumanSL companion SHA-256" ->
-          true;
-      default -> false;
-    };
   }
 
   static String tensorRtEngineManifestText() {

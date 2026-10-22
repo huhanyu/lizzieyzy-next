@@ -743,6 +743,41 @@ public class KataGoRuntimeHelperTest {
   }
 
   @Test
+  void aProjectCudaBuildFromAnEarlierReleaseStillNeedsNoZlibDll() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-static-zlib-earlier-release");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          Path engineDir =
+              Files.createDirectories(
+                  runtimeWorkDirectory.resolve("engines/katago/windows-x64-nvidia"));
+          Path enginePath = touch(engineDir.resolve("katago.exe"));
+          Files.writeString(engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia\n");
+          // Installed by an earlier full package; this program's catalog has moved on since.
+          writeProjectEngineManifest(engineDir, "windows-nvidia");
+          KataGoAssetCatalog catalog = KataGoAssetCatalog.get();
+          Path manifest = engineDir.resolve("lizzieyzy-next-katago-engine-manifest.txt");
+          Files.writeString(
+              manifest,
+              Files.readString(manifest)
+                  .replace(catalog.katagoReleaseTag(), "next-2026-09-01.1")
+                  .replace(catalog.asset("windows-nvidia").sha256(), "0".repeat(64))
+                  .replace(catalog.katagoSourceCommit(), "1".repeat(40)));
+          Path runtimeDir = Files.createDirectories(runtimeWorkDirectory.resolve("nvidia-runtime"));
+          touchRequiredCuda12_8Dlls(runtimeDir);
+          Files.delete(runtimeDir.resolve("z.dll"));
+
+          withConfig(
+              runtimeWorkDirectory,
+              () ->
+                  assertTrue(
+                      KataGoRuntimeHelper.inspectNvidiaRuntime(enginePath, "").ready,
+                      "An earlier project build is still statically linked."));
+        });
+  }
+
+  @Test
   void staticZlibExemptionFailsClosedWhenProvenanceOrRuntimeIsInvalid() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
