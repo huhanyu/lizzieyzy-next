@@ -400,7 +400,7 @@ class HumanSlAnalysisRunnerTest {
           new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
 
       java.util.Optional<String> best =
-          runner.bestHumanMove(history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1));
+          runner.bestHumanMove(history.getCurrentHistoryNode(), "rank_6d", Duration.ofSeconds(1));
 
       assertTrue(best.isPresent());
       assertFalse("pass".equals(best.get()));
@@ -611,12 +611,75 @@ class HumanSlAnalysisRunnerTest {
           new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
 
       java.util.Optional<String> best =
-          runner.bestHumanMove(history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1));
+          runner.bestHumanMove(history.getCurrentHistoryNode(), "rank_6d", Duration.ofSeconds(1));
 
       assertEquals(java.util.Optional.of("pass"), best);
       assertEquals(2, process.sentRequests.size());
       assertEquals(1, process.sentRequests.get(0).getInt("maxVisits"));
       assertEquals(64, process.sentRequests.get(1).getInt("maxVisits"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void chooseHumanMove_upToFiveDanSamplesTheHumanPolicyWithoutSearch() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  new JSONObject()
+                      .put("id", request.getString("id"))
+                      .put("humanPolicy", new JSONObject().put("B2", 0.6))
+                      .put(
+                          "moveInfos",
+                          new JSONArray().put(new JSONObject().put("move", "A1").put("order", 0))));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      java.util.Optional<HumanMoveChoice> choice =
+          runner.chooseHumanMove(
+              history.getCurrentHistoryNode(), "rank_3k", 64, 1, Duration.ofSeconds(1));
+
+      assertEquals("B2", choice.orElseThrow().move());
+      assertEquals(1.0, choice.orElseThrow().topHumanProbability(), 1e-12);
+      assertEquals(1, process.sentRequests.size());
+      assertEquals(1, process.sentRequests.get(0).getInt("maxVisits"));
+      assertFalse(process.sentRequests.get(0).has("allowMoves"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void chooseHumanMove_upToFiveDanAsksKataGoAloneWhetherToPassInTheEndgame() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = endgameHistory();
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  request.getJSONObject("overrideSettings").has("humanSLProfile")
+                      ? new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put("humanPolicy", new JSONObject().put("C3", 0.9).put("pass", 0.1))
+                      : new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put(
+                              "moveInfos",
+                              new JSONArray()
+                                  .put(new JSONObject().put("move", "pass").put("order", 0))));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      java.util.Optional<String> best =
+          runner.bestHumanMove(history.getCurrentHistoryNode(), "rank_2d", Duration.ofSeconds(1));
+
+      assertEquals(java.util.Optional.of("pass"), best);
+      assertEquals(2, process.sentRequests.size());
+      JSONObject passCheck = process.sentRequests.get(1);
+      assertEquals(HumanSlAnalysisRunner.PASS_CHECK_VISITS, passCheck.getInt("maxVisits"));
+      assertFalse(passCheck.getJSONObject("overrideSettings").has("humanSLProfile"));
       runner.close();
     }
   }

@@ -13,6 +13,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.ExactSnapshotRestoreProtocolFixture;
+import featurecat.lizzie.analysis.HumanMoveChoice;
 import featurecat.lizzie.analysis.HumanSlAnalysisRunner;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.rules.Board;
@@ -1601,7 +1602,7 @@ class HumanSlGameControllerIntegrationTest {
     }
 
     @Override
-    public Optional<String> bestHumanMove(
+    public Optional<HumanMoveChoice> chooseHumanMove(
         BoardHistoryNode positionNode,
         String profile,
         int maxVisits,
@@ -1617,7 +1618,7 @@ class HumanSlGameControllerIntegrationTest {
         Thread.currentThread().interrupt();
         return Optional.empty();
       }
-      return Optional.of("pass");
+      return Optional.of(HumanMoveChoice.of("pass"));
     }
 
     @Override

@@ -2,6 +2,7 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.HumanMoveChoice;
 import featurecat.lizzie.analysis.HumanSlAnalysisRunner;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.ReadBoard;
@@ -11,6 +12,7 @@ import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
+import featurecat.lizzie.training.HumanThinkTime;
 import featurecat.lizzie.training.OpponentPreset;
 import featurecat.lizzie.util.Utils;
 import java.io.File;
@@ -35,8 +37,6 @@ public final class HumanSlGameController {
   private static final int AI_MOVE_RETRIES = 2;
   private static final int FOREGROUND_RESTORE_ATTEMPTS = 2;
   private static final int PRIMARY_RESYNC_STABILITY_ATTEMPTS = 3;
-  private static final long MIN_MOVE_DELAY_MILLIS = 800L;
-  private static final long MAX_MOVE_DELAY_MILLIS = 4000L;
   private final HumanSlAnalysisRunner runner;
   private final HumanSlTrainingConfig config;
   private final HumanSlTrainingSession trainingSession;
@@ -557,21 +557,21 @@ public final class HumanSlGameController {
                 runner.cancelActiveRequests();
               }
               long startedAt = System.currentTimeMillis();
-              Optional<String> move = Optional.empty();
+              Optional<HumanMoveChoice> choice = Optional.empty();
               for (int attempt = 0;
                   attempt < AI_MOVE_RETRIES
                       && !Thread.currentThread().isInterrupted()
                       && !finished
                       && generation == requestGeneration.get();
                   attempt++) {
-                move =
-                    runner.bestHumanMove(
+                choice =
+                    runner.chooseHumanMove(
                         positionNode,
                         profile,
                         config.analysisVisits(),
                         config.rootSymmetries(),
                         moveTimeout);
-                if (move.isPresent()) {
+                if (choice.isPresent()) {
                   break;
                 }
                 if (attempt + 1 < AI_MOVE_RETRIES && generation == requestGeneration.get()) {
@@ -579,8 +579,13 @@ public final class HumanSlGameController {
                 }
               }
               waitMinimumThinkTime(
-                  startedAt, generation, requestBoard, positionNode, positionContextRevision);
-              Optional<String> resolved = move;
+                  startedAt,
+                  choice,
+                  generation,
+                  requestBoard,
+                  positionNode,
+                  positionContextRevision);
+              Optional<String> resolved = choice.map(HumanMoveChoice::move);
               SwingUtilities.invokeLater(
                   () -> {
                     if (generation == requestGeneration.get()) {
@@ -597,8 +602,24 @@ public final class HumanSlGameController {
     }
   }
 
+  /** How long the AI looks like it thinks: by how obvious the move is for players of its rank. */
+  static long thinkTimeMillis(
+      Optional<HumanMoveChoice> choice,
+      int moveNumber,
+      int boardArea,
+      double randomValue,
+      Duration moveTimeout) {
+    return HumanThinkTime.millis(
+        choice.map(HumanMoveChoice::topHumanProbability).orElse(Double.NaN),
+        moveNumber,
+        boardArea,
+        randomValue,
+        moveTimeout);
+  }
+
   private void waitMinimumThinkTime(
       long startedAt,
+      Optional<HumanMoveChoice> choice,
       long generation,
       Board requestBoard,
       BoardHistoryNode positionNode,
@@ -609,10 +630,12 @@ public final class HumanSlGameController {
       return;
     }
     long target =
-        MIN_MOVE_DELAY_MILLIS
-            + (long)
-                (ThreadLocalRandom.current().nextDouble()
-                    * (MAX_MOVE_DELAY_MILLIS - MIN_MOVE_DELAY_MILLIS));
+        thinkTimeMillis(
+            choice,
+            positionNode.getData().moveNumber,
+            Board.boardWidth * Board.boardHeight,
+            ThreadLocalRandom.current().nextDouble(),
+            moveTimeout);
     long remaining = target - (System.currentTimeMillis() - startedAt);
     if (remaining <= 0L) {
       return;

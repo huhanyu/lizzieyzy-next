@@ -43,6 +43,8 @@ import org.json.JSONObject;
 public class HumanSlAnalysisRunner implements AutoCloseable {
   private static final String GTP_COLUMNS = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
   private static final int POLICY_PROBE_VISITS = 1;
+  // KataGo's gtp_human5k_example.cfg keeps 40 visits only to judge passing and resigning.
+  static final int PASS_CHECK_VISITS = 40;
   private static final int HUMAN_LIKE_PLAY_VISITS = 64;
   private static final int MAX_ADAPTIVE_VERIFICATION_VISITS = 4_096;
   private static final int MAX_ADAPTIVE_VERIFICATION_ROUNDS = 4;
@@ -275,6 +277,21 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
       int maxVisits,
       int rootSymmetries,
       Duration timeout) {
+    return chooseHumanMove(positionNode, profile, maxVisits, rootSymmetries, timeout)
+        .map(HumanMoveChoice::move);
+  }
+
+  /**
+   * Chooses the AI's move. Up to 5 dan it is sampled straight from the HumanSL policy, as KataGo
+   * recommends for imitating a rank; stronger profiles verify human candidates with search, and
+   * only they use the search budget.
+   */
+  public Optional<HumanMoveChoice> chooseHumanMove(
+      BoardHistoryNode positionNode,
+      String profile,
+      int maxVisits,
+      int rootSymmetries,
+      Duration timeout) {
     if (positionNode == null || profile == null) {
       return Optional.empty();
     }
@@ -304,6 +321,20 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
               Board.boardHeight,
               positionNode.getData().stones,
               allowPass);
+      double topShare = HumanPolicySampler.topShare(selectableMoves);
+      if (HumanPolicySampler.playsRawPolicy(profile)) {
+        if (allowPass && passCheckPrefersPass(positionNode, deadlineNanos)) {
+          return Optional.of(new HumanMoveChoice("pass", topShare));
+        }
+        String sampled =
+            HumanPolicySampler.sample(
+                selectableMoves,
+                positionNode.getData().moveNumber,
+                Board.boardWidth,
+                Board.boardHeight,
+                ThreadLocalRandom.current().nextDouble());
+        return Optional.ofNullable(sampled).map(move -> new HumanMoveChoice(move, topShare));
+      }
       LinkedHashSet<String> verificationMoves = new LinkedHashSet<String>();
       addVerificationMoves(
           verificationMoves,
@@ -335,7 +366,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
           requestHumanMove(verificationRequest, remainingRequestTime(deadlineNanos));
       long verificationElapsedNanos = Math.max(1L, System.nanoTime() - verificationStartedNanos);
       if (allowPass && isSearchTopMovePass(verifiedResponse)) {
-        return Optional.of("pass");
+        return Optional.of(new HumanMoveChoice("pass", topShare));
       }
 
       JSONObject finalResponse = verifiedResponse;
@@ -384,7 +415,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
         }
       }
       if (allowPass && isSearchTopMovePass(finalResponse)) {
-        return Optional.of("pass");
+        return Optional.of(new HumanMoveChoice("pass", topShare));
       }
       String selected =
           HumanLikeMoveSelector.select(
@@ -396,7 +427,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
       if (!allowPass && "pass".equalsIgnoreCase(selected)) {
         return Optional.empty();
       }
-      return Optional.ofNullable(selected);
+      return Optional.ofNullable(selected).map(move -> new HumanMoveChoice(move, topShare));
     } catch (TimeoutException | IOException e) {
       stopActiveProcess(
           generation,
@@ -884,6 +915,17 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
                 MAX_ADAPTIVE_VERIFICATION_VISITS,
                 Math.max(minimumTarget, Math.floor(estimatedVisits)));
     return targetVisits > safeCompletedVisits ? targetVisits : safeCompletedVisits;
+  }
+
+  /** Asks KataGo's own search, without the human model, whether passing is best here. */
+  private boolean passCheckPrefersPass(BoardHistoryNode positionNode, long deadlineNanos)
+      throws IOException, TimeoutException {
+    String id = "humansl-pass-" + nextRequestId.getAndIncrement();
+    JSONObject request =
+        AnalysisRequestBuilder.buildRequest(
+            id, positionNode, PASS_CHECK_VISITS, false, false, false);
+    request.put("maxVisits", PASS_CHECK_VISITS);
+    return isSearchTopMovePass(requestHumanMove(request, remainingRequestTime(deadlineNanos)));
   }
 
   private JSONObject requestHumanMove(JSONObject request, Duration timeout)
