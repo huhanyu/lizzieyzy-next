@@ -4,6 +4,12 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- KataGo Auto Setup (一键设置) fixes for NVIDIA and the experimental backends.
+  - 切回 CUDA really switches back. After TensorRT was enabled, it used to rewrite KataGo Auto Setup to run TensorRT and keep it as the default.
+  - Upgrading the engine of the TensorRT full package keeps the NVIDIA runtime beside it. The upgrade used to delete it, and a 3.66 GB download followed.
+  - After updating only the program, an NVIDIA engine from the earlier full package starts as before. A changed engine catalog used to make it ask for a zlib DLL and suggest reinstalling.
+  - The lightweight quick-curve model passes the DirectML and OpenVINO settings, as the main engine does.
+
 - The players' names under the board are drawn the way LizzieYzy always drew them again, straight on the wood.
   - Black's name is in black, White's is in white with a dark edge, and the two stones sit between them as before.
   - The light plate added in #658 is gone. Users found it glaring, and it filled the bottom of the board under the first-line stones.
