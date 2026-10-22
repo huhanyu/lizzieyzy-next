@@ -39,25 +39,4 @@ public enum TrainingMode {
         return new String[] {"HumanSlTraining.mode.review", "Post-game review"};
     }
   }
-
-  /** Key of the setup dialog's one-line summary of the mode, with an English fallback. */
-  public String[] summary() {
-    switch (choice()) {
-      case LIVE_FEEDBACK:
-        return new String[] {
-          "HumanSlTraining.summary.feedback",
-          "Play {0} at {1}; each of your moves is rated as soon as you play it."
-        };
-      case LIVE_ANALYSIS:
-        return new String[] {
-          "HumanSlTraining.summary.live",
-          "Play {0} at {1} with live candidate suggestions on the board."
-        };
-      default:
-        return new String[] {
-          "HumanSlTraining.summary.review",
-          "Play {0} at {1}, then review the game on the main board."
-        };
-    }
-  }
 }

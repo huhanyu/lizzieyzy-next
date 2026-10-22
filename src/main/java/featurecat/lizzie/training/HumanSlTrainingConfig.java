@@ -16,7 +16,11 @@ public final class HumanSlTrainingConfig {
   public final int rank;
   public final boolean danRank;
   public final PlayerColor playerColor;
+  public final HumanThinkTime.Pace pace;
+
+  /** The AI's search budget per move. The setup dialog keeps it at 10 seconds for every pace. */
   public final int moveTimeSeconds;
+
   public final int handicap;
   public final double komi;
   public final boolean fromCurrentPosition;
@@ -30,6 +34,7 @@ public final class HumanSlTrainingConfig {
             : Math.max(1, Math.min(20, builder.rank));
     danRank = builder.danRank;
     playerColor = Objects.requireNonNull(builder.playerColor, "playerColor");
+    pace = Objects.requireNonNull(builder.pace, "pace");
     moveTimeSeconds = Math.max(2, builder.moveTimeSeconds);
     handicap = Math.max(0, Math.min(9, builder.handicap));
     komi = builder.komi;
@@ -52,8 +57,9 @@ public final class HumanSlTrainingConfig {
     return opponentPreset.rootSymmetries();
   }
 
+  /** With a handicap the player takes Black and receives it; otherwise as chosen. */
   public boolean resolveHumanIsBlack() {
-    if (playerColor == PlayerColor.BLACK) {
+    if (handicap >= 1 || playerColor == PlayerColor.BLACK) {
       return true;
     }
     if (playerColor == PlayerColor.WHITE) {
@@ -68,6 +74,7 @@ public final class HumanSlTrainingConfig {
     private int rank = 3;
     private boolean danRank = true;
     private PlayerColor playerColor = PlayerColor.RANDOM;
+    private HumanThinkTime.Pace pace = HumanThinkTime.Pace.NATURAL;
     private int moveTimeSeconds = 10;
     private int handicap;
     private double komi = 7.5;
@@ -91,6 +98,11 @@ public final class HumanSlTrainingConfig {
 
     public Builder playerColor(PlayerColor value) {
       playerColor = value;
+      return this;
+    }
+
+    public Builder pace(HumanThinkTime.Pace value) {
+      pace = value;
       return this;
     }
 

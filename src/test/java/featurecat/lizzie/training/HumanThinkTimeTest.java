@@ -45,7 +45,7 @@ class HumanThinkTimeTest {
   void theMoveTimeLimitCapsTheDelay() {
     // The hardest middle-game move with the slowest jitter: 1.6 s x 2.8 x 1.35.
     assertEquals(6_048L, HumanThinkTime.millis(0.0, 120, AREA, 1.0, Duration.ofHours(24)));
-    assertEquals(6_048L, HumanThinkTime.millis(0.0, 120, AREA, 1.0, null));
+    assertEquals(6_048L, HumanThinkTime.millis(0.0, 120, AREA, 1.0, (Duration) null));
     assertEquals(1_500L, HumanThinkTime.millis(0.0, 120, AREA, 1.0, Duration.ofSeconds(2)));
   }
 
@@ -53,7 +53,7 @@ class HumanThinkTimeTest {
   void noMoveWaitsLongerThanEightSeconds() {
     for (double top = 0.0; top <= 1.0; top += 0.05) {
       assertTrue(
-          HumanThinkTime.millis(top, 400, 9 * 9, 1.0, null) <= HumanThinkTime.MAX_MILLIS,
+          HumanThinkTime.millis(top, 400, 9 * 9, 1.0, (Duration) null) <= HumanThinkTime.MAX_MILLIS,
           "top " + top);
     }
   }
@@ -64,6 +64,20 @@ class HumanThinkTimeTest {
 
     assertTrue(unknown > HumanThinkTime.millis(0.9, 120, AREA, 0.5, TEN_SECONDS));
     assertTrue(unknown < HumanThinkTime.millis(0.05, 120, AREA, 0.5, TEN_SECONDS));
+  }
+
+  @Test
+  void thePaceOnlyScalesTheWaitWithinItsBounds() {
+    long natural = HumanThinkTime.millis(0.5, 120, AREA, 0.5, HumanThinkTime.Pace.NATURAL);
+    long fast = HumanThinkTime.millis(0.5, 120, AREA, 0.5, HumanThinkTime.Pace.FAST);
+    long slow = HumanThinkTime.millis(0.5, 120, AREA, 0.5, HumanThinkTime.Pace.SLOW);
+
+    assertEquals(HumanThinkTime.millis(0.5, 120, AREA, 0.5, (Duration) null), natural);
+    assertTrue(fast < natural && natural < slow, fast + " " + natural + " " + slow);
+    assertTrue(fast <= 1_800L, "fast is about a second, was " + fast);
+    assertTrue(
+        HumanThinkTime.millis(0.0, 120, AREA, 1.0, HumanThinkTime.Pace.SLOW) > 10_000L,
+        "slow is not capped by a move time limit");
   }
 
   @Test

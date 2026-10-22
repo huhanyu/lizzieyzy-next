@@ -917,19 +917,22 @@ public final class HumanSlGameController {
     return Optional.of(resign ? new HumanMoveChoice(RESIGN, choice.topHumanProbability()) : choice);
   }
 
-  /** How long the AI looks like it thinks: by how obvious the move is for players of its rank. */
+  /**
+   * How long the AI looks like it thinks: by how obvious the move is for players of its rank, at
+   * the pace the player chose.
+   */
   static long thinkTimeMillis(
       Optional<HumanMoveChoice> choice,
       int moveNumber,
       int boardArea,
       double randomValue,
-      Duration moveTimeout) {
+      HumanThinkTime.Pace pace) {
     return HumanThinkTime.millis(
         choice.map(HumanMoveChoice::topHumanProbability).orElse(Double.NaN),
         moveNumber,
         boardArea,
         randomValue,
-        moveTimeout);
+        pace);
   }
 
   private void waitMinimumThinkTime(
@@ -952,7 +955,7 @@ public final class HumanSlGameController {
                 positionNode.getData().moveNumber,
                 Board.boardWidth * Board.boardHeight,
                 ThreadLocalRandom.current().nextDouble(),
-                moveTimeout);
+                config.pace);
     long deadline = startedAt + target;
     try {
       // A take-back or exit drops this reply, so stop waiting as soon as it happens.

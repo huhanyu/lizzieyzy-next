@@ -485,18 +485,6 @@ class WorkbenchStyleTest {
   }
 
   @Test
-  void trainingFieldsExposeTheirVisibleLabelsToScreenReaders() throws Exception {
-    SwingUtilities.invokeAndWait(
-        () -> {
-          JComboBox<String> mode = new JComboBox<>(new String[] {"Review after game"});
-          javax.swing.JComponent row = NewHumanSlGameDialog.field("Training mode", mode);
-          javax.swing.JLabel label = (javax.swing.JLabel) row.getComponent(0);
-          assertSame(mode, label.getLabelFor());
-          assertEquals("Training mode", mode.getAccessibleContext().getAccessibleName());
-        });
-  }
-
-  @Test
   void paintedPreviewRetainsItsExplicitHeightInResponsiveRows() throws Exception {
     SwingUtilities.invokeAndWait(
         () -> {

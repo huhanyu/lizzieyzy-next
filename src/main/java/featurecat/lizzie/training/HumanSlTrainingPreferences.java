@@ -29,12 +29,22 @@ public final class HumanSlTrainingPreferences {
     TrainingMode mode = enumValue(saved, "mode", TrainingMode.class, defaults.mode).choice();
     OpponentPreset opponent =
         enumValue(saved, "opponent-preset", OpponentPreset.class, defaults.opponentPreset);
+    boolean danRank = saved.optBoolean("dan-rank", defaults.danRank);
+    int rank = saved.optInt("rank", defaults.rank);
+    if (opponent != OpponentPreset.RANK) {
+      // The 职业棋风 and 网络 9 段 presets are gone; the strongest rank comes closest to both.
+      opponent = OpponentPreset.RANK;
+      rank = 9;
+      danRank = true;
+    }
     HumanSlTrainingConfig.PlayerColor color =
         enumValue(
             saved, "player-color", HumanSlTrainingConfig.PlayerColor.class, defaults.playerColor);
-    boolean danRank = saved.optBoolean("dan-rank", defaults.danRank);
-    int rank = saved.optInt("rank", defaults.rank);
-    int moveTime = normalizeMoveTime(saved.optInt("move-time-seconds", defaults.moveTimeSeconds));
+    int savedMoveTime = saved.optInt("move-time-seconds", defaults.moveTimeSeconds);
+    HumanThinkTime.Pace pace =
+        saved.has("pace")
+            ? enumValue(saved, "pace", HumanThinkTime.Pace.class, defaults.pace)
+            : paceForOldMoveTime(savedMoveTime);
     int handicap = saved.optInt("handicap", defaults.handicap);
     double komi = saved.optDouble("komi", defaults.komi);
     if (!Double.isFinite(komi)) {
@@ -47,7 +57,7 @@ public final class HumanSlTrainingPreferences {
             .opponentPreset(opponent)
             .rank(rank, danRank)
             .playerColor(color)
-            .moveTimeSeconds(moveTime)
+            .pace(pace)
             .handicap(handicap)
             .komi(komi)
             // Starting from the current board is an action for one game, not a durable default.
@@ -66,17 +76,21 @@ public final class HumanSlTrainingPreferences {
     saved.put("rank", config.rank);
     saved.put("dan-rank", config.danRank);
     saved.put("player-color", config.playerColor.name());
-    saved.put("move-time-seconds", config.moveTimeSeconds);
+    saved.put("pace", config.pace.name());
     saved.put("handicap", config.handicap);
     saved.put("komi", config.komi);
     saved.put("advanced-visible", advancedVisible);
     uiConfig.put(UI_CONFIG_KEY, saved);
   }
 
-  private static int normalizeMoveTime(int seconds) {
-    return seconds == 10 || seconds == 30 || seconds == 60 || seconds == UNLIMITED_MOVE_TIME_SECONDS
-        ? seconds
-        : 10;
+  /**
+   * The old 用时 setting chose the AI's time per move. Its successor, AI 思考时间, only paces the reply:
+   * a minute or no limit becomes 慢, anything shorter 自然.
+   */
+  static HumanThinkTime.Pace paceForOldMoveTime(int seconds) {
+    return seconds == 60 || seconds == UNLIMITED_MOVE_TIME_SECONDS
+        ? HumanThinkTime.Pace.SLOW
+        : HumanThinkTime.Pace.NATURAL;
   }
 
   private static <E extends Enum<E>> E enumValue(

@@ -8,6 +8,29 @@ import java.time.Duration;
  * opening. It only paces the reply; the move itself is chosen before this is applied.
  */
 public final class HumanThinkTime {
+  /**
+   * The AI 思考时间 setting. It only paces the reply: the move is chosen the same way, with the same
+   * search, whatever the pace.
+   */
+  public enum Pace {
+    /** Quick for obvious replies, longer where the choice is open: about 1 to 3 seconds. */
+    NATURAL(1.0, 400L, 8_000L),
+    /** About a second a move. */
+    FAST(0.4, 250L, 1_800L),
+    /** A few seconds more, like a serious game. */
+    SLOW(2.0, 800L, 14_000L);
+
+    final double factor;
+    final long minMillis;
+    final long maxMillis;
+
+    Pace(double factor, long minMillis, long maxMillis) {
+      this.factor = factor;
+      this.minMillis = minMillis;
+      this.maxMillis = maxMillis;
+    }
+  }
+
   static final long MIN_MILLIS = 400L;
   static final long MAX_MILLIS = 8_000L;
   private static final long OPENING_BASE_MILLIS = 1_000L;
@@ -43,5 +66,16 @@ public final class HumanThinkTime {
           Math.min(ceiling, Math.max(MIN_MILLIS, moveLimit.toMillis() - DELIVERY_RESERVE_MILLIS));
     }
     return Math.max(MIN_MILLIS, Math.min(ceiling, target));
+  }
+
+  /**
+   * The think time at the chosen pace. Unlike {@link #millis(double, int, int, double, Duration)}
+   * nothing ties it to a move time limit: the pace is not a clock.
+   */
+  public static long millis(
+      double topHumanProbability, int moveNumber, int boardArea, double randomValue, Pace pace) {
+    long natural = millis(topHumanProbability, moveNumber, boardArea, randomValue, (Duration) null);
+    long paced = Math.round(natural * pace.factor);
+    return Math.max(pace.minMillis, Math.min(pace.maxMillis, paced));
   }
 }

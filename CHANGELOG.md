@@ -4,6 +4,20 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- The AI 陪练 setup is a new sheet.
+  - **对手棋力** is one scale from 20 级 to 9 段. Pick it with a slider, − and +, or the arrow keys. It reads "3段 · 按3段棋手的习惯落子".
+  - **The three training modes are cards**, each with a description; 边下边提醒 is marked 默认.
+  - **执棋** is 执黑 / 执白 / 随机.
+  - **AI 思考时间** (自然 / 快 / 慢) replaces 用时.
+    - It only paces the AI's replies: 快 is about a second a move, 慢 a few seconds more.
+    - The AI's move is chosen the same way, with the same 10-second search budget, whatever the pace.
+    - A saved 1 minute or 不限时 becomes 慢, anything shorter 自然.
+  - **职业棋风 and 网络 9 段 are gone.** A saved choice of either becomes 9 段.
+  - **更多设置**: 让子, 贴目 and 从当前局面开始.
+    - With a handicap you always take Black and receive the stones. Before, the stones went to whichever colour came up.
+    - Komi is then 0.5.
+  - The sheet follows the light or dark theme, opens with the focus on 开始对局, and scrolls instead of growing past a small screen.
+
 - 边下边提醒 now stops on a 恶手.
   - The AI holds its reply, and the coach panel shows what the move cost, with three choices:
     - 重下这手 takes the move back;
