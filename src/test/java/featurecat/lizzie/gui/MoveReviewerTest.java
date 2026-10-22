@@ -146,6 +146,7 @@ class MoveReviewerTest {
     List<MoveFeedback> worst = reviewer.worstMistakes(3);
 
     assertEquals(List.of(11, 15), worst.stream().map(MoveFeedback::moveNumber).toList());
+    assertEquals(1, reviewer.keyMistakes(), "the 恶手 only, not the 问题手");
     assertEquals(MoveVerdict.BLUNDER, worst.get(0).verdict());
     assertEquals(
         List.of(11), reviewer.worstMistakes(1).stream().map(MoveFeedback::moveNumber).toList());

@@ -5,7 +5,7 @@ All notable maintenance updates to this fork are documented here.
 ## Unreleased
 
 - AI 陪练's end of game is a short summary in the coach panel.
-  - It shows 你赢了 or 你输了 with the result, the number of moves, and in 边下边提醒 the key mistakes and hints, plus the take-backs.
+  - It shows 你赢了 or 你输了 with the result, the number of moves, and in 边下边提醒 the key mistakes (恶手) and hints, plus the take-backs.
   - 开始复盘 opens the usual analysis. 再来一盘 opens the setup again with the same choices.
   - In 边下边提醒 the panel lists the game's biggest mistakes. Clicking one opens the review at the position before it.
   - The game's own buttons step aside once it is over.

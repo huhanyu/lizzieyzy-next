@@ -93,7 +93,7 @@ back), 看 AI 推荐 (circle KataGo's choice) or 不重下，继续对局.
 The move card becomes a short summary (`CoachPanelState.Summary`). It shows:
 
 - 你赢了, 你输了 or 和棋, with the result;
-- one line of numbers: moves, key mistakes (问题手 and 恶手) and hints in 边下边提醒, and take-backs;
+- one line of numbers: moves, key mistakes (恶手) and hints in 边下边提醒, and take-backs;
 - two buttons. 开始复盘 leaves AI 陪练 and the game is analysed in the usual view. 再来一盘
   ends the session and opens the setup sheet again with the same choices.
 

@@ -195,6 +195,14 @@ final class MoveReviewer {
   }
 
   /**
+   * The moves that swung the game, its 恶手. 问题手 are counted in the history but are not key: kyu
+   * players make five to fifteen a game.
+   */
+  int keyMistakes() {
+    return count(MoveVerdict.BLUNDER);
+  }
+
+  /**
    * The game's {@code count} biggest mistakes, worst rating and largest drop first when choosing,
    * listed in the order they were played.
    */

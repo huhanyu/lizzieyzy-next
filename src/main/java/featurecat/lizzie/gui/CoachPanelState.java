@@ -435,8 +435,7 @@ record CoachPanelState(
     if (reviewer != null) {
       stats.add(
           MessageFormat.format(
-              text.apply("CoachPanel.stat.mistakes", "{0} key mistakes"),
-              reviewer.count(MoveVerdict.PROBLEM) + reviewer.count(MoveVerdict.BLUNDER)));
+              text.apply("CoachPanel.stat.mistakes", "{0} key mistakes"), reviewer.keyMistakes()));
       stats.add(
           MessageFormat.format(
               text.apply("CoachPanel.stat.hints", "{0} hints"), game.assist().hintsUsed()));
