@@ -7021,21 +7021,15 @@ public final class KataGoRuntimeHelper {
     packages.add(
         readPackageSpec(
             cudaManifest, cudaManifestUrl, "libnvjitlink", "windows-x86_64", "CUDA nvJitLink"));
-    RuntimePackageSpec nvrtcPackage =
+    packages.add(
         readPackageSpec(
-            cudaManifest, cudaManifestUrl, "cuda_nvrtc", "windows-x86_64", "CUDA NVRTC");
-    if (!CUDA_12_8_NVRTC_VERSION.equals(nvrtcPackage.version)
-        || !CUDA_12_8_NVRTC_SHA256.equalsIgnoreCase(nvrtcPackage.sha256)) {
-      throw new IOException(
-          "Unexpected CUDA 12.8 NVRTC metadata; expected version "
-              + CUDA_12_8_NVRTC_VERSION
-              + " and SHA-256 "
-              + CUDA_12_8_NVRTC_SHA256);
-    }
-    packages.add(nvrtcPackage);
+            cudaManifest, cudaManifestUrl, "cuda_nvrtc", "windows-x86_64", "CUDA NVRTC"));
     packages.add(
         readNestedPackageSpec(
             cudnnManifest, cudnnManifestUrl, "cudnn", "windows-x86_64", "cuda12", "NVIDIA cuDNN"));
+    for (RuntimePackageSpec spec : packages) {
+      NvidiaRuntimePins.require(spec.key, spec.version, spec.sha256);
+    }
     packages.add(
         new RuntimePackageSpec(
             "NVIDIA TensorRT",

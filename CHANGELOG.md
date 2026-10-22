@@ -4,6 +4,13 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- KataGo Auto Setup (一键设置) downloads are safer.
+  - A weight listed on the KataGo networks page without a size or digest is no longer installed from a stopped download. It counts as whole only when the gzip file reads to the end.
+  - Links on that page are followed only over HTTPS to katagotraining.org, and only to plain weight file names. A name with a folder in it can no longer write outside the weights folder.
+  - Reopening the dialog during a download no longer hides its progress and leaves the dialog stuck as busy.
+  - The official weight list shows the latest answer, and says it is loading instead of 暂时无法获取 while it loads.
+  - The CUDA and cuDNN packages that TensorRT acceleration downloads are pinned by version and SHA-256, like NVRTC and TensorRT already were.
+
 - KataGo Auto Setup (一键设置) fixes for NVIDIA and the experimental backends.
   - 切回 CUDA really switches back. After TensorRT was enabled, it used to rewrite KataGo Auto Setup to run TensorRT and keep it as the default.
   - Upgrading the engine of the TensorRT full package keeps the NVIDIA runtime beside it. The upgrade used to delete it, and a 3.66 GB download followed.

@@ -15,7 +15,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
@@ -161,6 +164,158 @@ class KataGoAutoSetupCatalogRegressionTest {
                       throw new AssertionError("missing weight must not persist");
                     }));
     assertEquals(KataGoAutoSetupDialog.WeightSelectionCheck.MISSING, missing.check);
+  }
+
+  @Test
+  void reopeningDuringADownloadLeavesTheDownloadAlone() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    set(dialog, "selectedBenchmarkEntryId", "");
+    set(dialog, "activeDownloadSession", new KataGoAutoSetupHelper.DownloadSession());
+    set(dialog, "stateRefreshRequestId", 7L);
+
+    // The toolbar and 更新官方权重 call refreshState on a dialog that is already open.
+    SwingUtilities.invokeAndWait(dialog::refreshState);
+
+    assertEquals(7L, get(dialog, "stateRefreshRequestId"), "no refresh replaced the download");
+    assertEquals(null, get(dialog, "stateRefreshWorker"));
+  }
+
+  @Test
+  void anEarlierWeightListThatAnswersLateIsDropped() throws Exception {
+    ListRecordingDialog dialog = unconstructed(ListRecordingDialog.class);
+    set(dialog, "remoteWeightInfos", List.of(listed("cached")));
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicInteger calls = new AtomicInteger();
+    List<KataGoAutoSetupHelper.RemoteWeightInfo> latest = List.of(listed("latest"));
+    List<KataGoAutoSetupHelper.RemoteWeightInfo> earlier = List.of(listed("earlier"));
+    set(
+        dialog,
+        "remoteWeightSource",
+        (KataGoAutoSetupDialog.RemoteWeightSource)
+            () -> {
+              if (calls.incrementAndGet() == 1) {
+                try {
+                  release.await();
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                }
+                return earlier;
+              }
+              return latest;
+            });
+
+    SwingUtilities.invokeAndWait(dialog::loadRemoteWeightInfo);
+    SwingUtilities.invokeAndWait(dialog::loadRemoteWeightInfo);
+    joinWeightListThreads(() -> calls.get() == 2 && dialog.shown != null);
+    release.countDown();
+    joinWeightListThreads(() -> true);
+    SwingUtilities.invokeAndWait(() -> {});
+
+    assertEquals(List.of(latest), dialog.shown, "the earlier answer arrived last and was dropped");
+  }
+
+  @Test
+  void theListSaysItIsLoadingUntilTheAnswerArrivesNotThatItFailed() throws Exception {
+    ListRecordingDialog dialog = unconstructed(ListRecordingDialog.class);
+    set(dialog, "remoteWeightInfos", List.of(listed("cached")));
+    CountDownLatch release = new CountDownLatch(1);
+    List<KataGoAutoSetupHelper.RemoteWeightInfo> answer = List.of(listed("answer"));
+    set(
+        dialog,
+        "remoteWeightSource",
+        (KataGoAutoSetupDialog.RemoteWeightSource)
+            () -> {
+              try {
+                release.await();
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+              return answer;
+            });
+
+    SwingUtilities.invokeAndWait(dialog::loadRemoteWeightInfo);
+    // The empty list and the detail bar read "正在加载…" and nothing, not "暂时无法获取…".
+    assertEquals(true, get(dialog, "remoteWeightsLoading"));
+    release.countDown();
+    joinWeightListThreads(() -> dialog.shown != null);
+
+    assertEquals(false, get(dialog, "remoteWeightsLoading"));
+    assertEquals(List.of(answer), dialog.shown);
+  }
+
+  private static KataGoAutoSetupHelper.RemoteWeightInfo listed(String name) throws Exception {
+    var constructor =
+        KataGoAutoSetupHelper.RemoteWeightInfo.class.getDeclaredConstructor(
+            String.class,
+            String.class,
+            String.class,
+            String.class,
+            String.class,
+            boolean.class,
+            boolean.class);
+    constructor.setAccessible(true);
+    return constructor.newInstance(
+        "Transformer",
+        name,
+        "https://media.katagotraining.org/uploaded/" + name + ".bin.gz",
+        "2026-07-29",
+        "",
+        false,
+        false);
+  }
+
+  /** Waits for the weight-list threads to finish, or for {@code done}, flushing the event queue. */
+  private static void joinWeightListThreads(java.util.function.BooleanSupplier done)
+      throws Exception {
+    for (int round = 0; round < 200 && !done.getAsBoolean(); round++) {
+      SwingUtilities.invokeAndWait(() -> {});
+      for (Thread thread : Thread.getAllStackTraces().keySet()) {
+        if ("katago-remote-weight-info".equals(thread.getName())) {
+          thread.join(25);
+        }
+      }
+    }
+    for (Thread thread : Thread.getAllStackTraces().keySet()) {
+      if ("katago-remote-weight-info".equals(thread.getName())) {
+        thread.join(5000);
+      }
+    }
+    SwingUtilities.invokeAndWait(() -> {});
+  }
+
+  private static <T extends KataGoAutoSetupDialog> T unconstructed(Class<T> type) throws Exception {
+    Field field = Unsafe.class.getDeclaredField("theUnsafe");
+    field.setAccessible(true);
+    T dialog = type.cast(((Unsafe) field.get(null)).allocateInstance(type));
+    for (Field button : KataGoAutoSetupDialog.class.getDeclaredFields()) {
+      if (button.getType() == JFontButton.class) {
+        button.setAccessible(true);
+        button.set(dialog, new JFontButton());
+      }
+    }
+    return dialog;
+  }
+
+  private static final class ListRecordingDialog extends KataGoAutoSetupDialog {
+    private List<List<KataGoAutoSetupHelper.RemoteWeightInfo>> shown;
+
+    private ListRecordingDialog() {
+      super(null);
+    }
+
+    @Override
+    void showRemoteWeightInfo(List<KataGoAutoSetupHelper.RemoteWeightInfo> infos) {
+      if (shown == null) {
+        shown = new java.util.ArrayList<>();
+      }
+      shown.add(infos);
+    }
+  }
+
+  private static Object get(Object target, String name) throws Exception {
+    Field field = KataGoAutoSetupDialog.class.getDeclaredField(name);
+    field.setAccessible(true);
+    return field.get(target);
   }
 
   private SetupSnapshot snapshot(Path weight) {

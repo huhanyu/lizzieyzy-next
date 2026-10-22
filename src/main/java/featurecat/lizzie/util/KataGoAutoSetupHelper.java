@@ -1507,7 +1507,7 @@ public final class KataGoAutoSetupHelper {
     DownloadSession activeSession = session != null ? session : new DownloadSession();
     activeSession.throwIfCancelled();
 
-    Path target = weightsDir.resolve(info.fileName());
+    Path target = KataGoWeightFile.inFolder(weightsDir, info.fileName());
     long existingStarted = System.nanoTime();
     if (isDownloadedWeightValid(target, info)) {
       recordWeightDownload(
@@ -1723,11 +1723,11 @@ public final class KataGoAutoSetupHelper {
       throw new WeightIntegrityException(
           resource("AutoSetup.weightDownloadIncomplete", "Weight download is incomplete."), false);
     }
-    if (expectedSize <= 0L && Files.size(path) <= 1024L * 1024L) {
+    String expectedSha = info == null ? "" : info.sha256;
+    if (expectedSize <= 0L && expectedSha.isEmpty() && !KataGoWeightFile.isWhole(path, info)) {
       throw new WeightIntegrityException(
           resource("AutoSetup.weightDownloadIncomplete", "Weight download is incomplete."), false);
     }
-    String expectedSha = info == null ? "" : info.sha256;
     if (!expectedSha.isEmpty() && !expectedSha.equalsIgnoreCase(sha256(path))) {
       throw new WeightIntegrityException(
           resource(
@@ -2348,7 +2348,7 @@ public final class KataGoAutoSetupHelper {
         String uploadedAt = cleanHtmlText(cells.get(1));
         String eloRating = cleanHtmlText(cells.get(2));
         String downloadUrl = resolveUrl(extractHref(cells.get(3)));
-        if (modelName.isEmpty() || downloadUrl.isEmpty()) {
+        if (modelName.isEmpty() || !KataGoWeightFile.isTrustedListing(downloadUrl)) {
           continue;
         }
         String dedupKey = modelName.toLowerCase(Locale.ROOT);
