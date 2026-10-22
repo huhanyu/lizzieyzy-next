@@ -26,10 +26,7 @@ public final class HumanSlTrainingPreferences {
       return new SavedSettings(defaults, false);
     }
 
-    TrainingMode mode = enumValue(saved, "mode", TrainingMode.class, defaults.mode);
-    if (mode.isLiveAnalysis()) {
-      mode = TrainingMode.LIVE_ANALYSIS;
-    }
+    TrainingMode mode = enumValue(saved, "mode", TrainingMode.class, defaults.mode).choice();
     OpponentPreset opponent =
         enumValue(saved, "opponent-preset", OpponentPreset.class, defaults.opponentPreset);
     HumanSlTrainingConfig.PlayerColor color =

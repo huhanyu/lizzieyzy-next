@@ -25,7 +25,7 @@
     "src/main/java/featurecat/lizzie/logging/DiagnosticBundleExporter.java": 2668,
     "src/main/java/featurecat/lizzie/analysis/PlayerStrengthEstimator.java": 2171,
     "src/main/java/featurecat/lizzie/search/FunctionCatalog.java": 2154,
-    "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 2009
+    "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 2002
   },
   "max_static_references": {
     "Lizzie.config": 6907,

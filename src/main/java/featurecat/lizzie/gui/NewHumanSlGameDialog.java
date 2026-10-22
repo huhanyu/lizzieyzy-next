@@ -283,8 +283,8 @@ public final class NewHumanSlGameDialog extends JDialog {
   }
 
   private void populateControls() {
-    trainingModeBox.addItem(text("HumanSlTraining.mode.review", "Post-game review"));
-    trainingModeBox.addItem(text("HumanSlTraining.mode.live", "Live analysis"));
+    TrainingMode.CHOICES.forEach(
+        mode -> trainingModeBox.addItem(text(mode.label()[0], mode.label()[1])));
 
     rankPresetButton.setText(text("HumanSlTraining.opponent.rank", "By rank"));
     proPresetButton.setText(text("HumanSlTraining.opponent.pro", "Pro style"));
@@ -598,15 +598,11 @@ public final class NewHumanSlGameDialog extends JDialog {
     statusLabel.setForeground(HumanSlTrainingStyle.MUTED());
     setStatusText(
         MessageFormat.format(
-            text(
-                trainingModeBox.getSelectedIndex() == 1
-                    ? "HumanSlTraining.summary.live"
-                    : "HumanSlTraining.summary.review",
-                trainingModeBox.getSelectedIndex() == 1
-                    ? "Play {0} at {1} with live candidate suggestions on the board."
-                    : "Play {0} at {1}, then review the game on the main board."),
-            opponent,
-            time));
+            text(selectedMode().summary()[0], selectedMode().summary()[1]), opponent, time));
+  }
+
+  private TrainingMode selectedMode() {
+    return TrainingMode.CHOICES.get(Math.max(0, trainingModeBox.getSelectedIndex()));
   }
 
   private void updateKomiForHandicap() {
@@ -619,7 +615,7 @@ public final class NewHumanSlGameDialog extends JDialog {
         HumanSlTrainingPreferences.load(Lizzie.config == null ? null : Lizzie.config.uiConfig);
     HumanSlTrainingConfig config = saved.config();
 
-    trainingModeBox.setSelectedIndex(config.mode.isLiveAnalysis() ? 1 : 0);
+    trainingModeBox.setSelectedIndex(TrainingMode.CHOICES.indexOf(config.mode.choice()));
     boolean rankPreset = config.opponentPreset == OpponentPreset.RANK;
     rankPresetButton.setSelected(rankPreset);
     proPresetButton.setSelected(!rankPreset);
@@ -1822,10 +1818,7 @@ public final class NewHumanSlGameDialog extends JDialog {
     int handicap = selectedHandicap();
     double komi = Utils.parseTextToDouble(komiField, handicap >= 2 ? 0.0 : 7.5);
     return HumanSlTrainingConfig.builder()
-        .mode(
-            trainingModeBox.getSelectedIndex() == 1
-                ? TrainingMode.LIVE_ANALYSIS
-                : TrainingMode.POST_GAME_REVIEW)
+        .mode(selectedMode())
         .opponentPreset(preset)
         .rank(((Number) rankSpinner.getValue()).intValue(), danButton.isSelected())
         .playerColor(color)

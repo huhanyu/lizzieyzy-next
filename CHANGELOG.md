@@ -4,6 +4,22 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练 has a new mode, 边下边提醒, and it is now the default for new users; a saved choice of another mode is kept.
+  - Analysis stays hidden during the game. Each of your moves is rated as soon as you play it: 妙手, 好棋, 缓手, 问题手 or 恶手.
+  - Moves are judged by your win chance at the opponent's level, not by KataGo's own winrate and not by points.
+    - The chance comes from KataGo's score lead, measured against how much games at that rank still swing from the position (the HumanSL model's score spread).
+    - KataGo's own winrate sits near 0% or 100% once someone leads by a few points, so it missed big mistakes made after that. It also called a small endgame slip a disaster at every level.
+    - A drop of 5% is a 缓手, 10% a 问题手 and 20% a 恶手.
+    - Once the game is decided (below 5% or above 95%), the points given away decide instead: 4, 8 and 15 points. A 10-point mistake in a lost game is therefore not called a good move.
+    - 妙手 is KataGo's choice where fewer than 10% of players at that level find it and their usual move loses ground.
+  - The coach engine reviews each position while you think, so most moves are rated at once. The search is capped at 400 visits and 1.5 seconds, so a slow computer rates with less search instead of slowing the AI down.
+  - The coach panel shows:
+    - your win chance at that level, with a curve that grows with the game;
+    - your last move's rating, its change in win chance, the points lost on a mistake, and how often players at that level play it;
+    - a count of each rating and your latest rated moves.
+  - Taking back a move removes its rating.
+- During an AI 陪练 game that hides analysis, H no longer shows the policy heatmap, which gave away the answer. It says that analysis is hidden, as Space does.
+
 - An AI 陪练 game now runs in a focused layout: the board plus a coach panel at the right, which replaces the bar under the board.
   - The panel shows:
     - the opponent and what it is doing: your turn, thinking, counting or game over;

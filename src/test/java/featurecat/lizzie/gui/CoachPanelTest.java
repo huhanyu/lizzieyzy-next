@@ -44,6 +44,97 @@ class CoachPanelTest {
   }
 
   @Test
+  void sentencesJoinWithASpaceOnlyOutsideChineseAndJapanese() {
+    assertEquals(
+        "Same move as the AI. 41% play it.",
+        CoachPanelState.join("Same move as the AI.", "41% play it."));
+    assertEquals(
+        "和 AI 推荐一致。同水平棋手 41% 会这样下。", CoachPanelState.join("和 AI 推荐一致。", "同水平棋手 41% 会这样下。"));
+    assertEquals("和 AI 推荐一致。", CoachPanelState.join("和 AI 推荐一致。", ""));
+  }
+
+  @Test
+  void aMistakeIsExplainedByTheWinChanceOrOnceDecidedByPoints() {
+    java.util.function.BinaryOperator<String> text = (key, fallback) -> fallback;
+    featurecat.lizzie.training.MoveFeedback open =
+        new featurecat.lizzie.training.MoveFeedback(
+            5,
+            "A1",
+            featurecat.lizzie.training.MoveVerdict.BLUNDER,
+            0.47,
+            0.23,
+            13.7,
+            0.001,
+            false);
+    featurecat.lizzie.training.MoveFeedback decided =
+        new featurecat.lizzie.training.MoveFeedback(
+            201,
+            "T1",
+            featurecat.lizzie.training.MoveVerdict.PROBLEM,
+            0.02,
+            0.01,
+            9.6,
+            Double.NaN,
+            false);
+
+    assertEquals(
+        "At 3 dan level your win chance fell from 47% to 23%. <1% of players at this level play it.",
+        CoachPanelState.explanation(open, "3 dan", text));
+    assertEquals(
+        "The game is all but decided, so points decide: about 10 points lost.",
+        CoachPanelState.explanation(decided, "3 dan", text));
+    assertEquals(
+        "Win chance \u221224% · about 14 points lost", CoachPanelState.change(open, text, true));
+    assertEquals("\u221224%", CoachPanelState.change(open, text, false));
+  }
+
+  @Test
+  void greenMeansTheWinChanceHeldOrRose() {
+    featurecat.lizzie.training.MoveVerdict good = featurecat.lizzie.training.MoveVerdict.GOOD;
+    featurecat.lizzie.training.MoveVerdict slow = featurecat.lizzie.training.MoveVerdict.SLOW;
+
+    assertEquals(CoachPaint.verdictColor(good), CoachPaint.changeColor(good, "+1%"));
+    assertEquals(CoachPanel.MUTED, CoachPaint.changeColor(good, "\u22123%"));
+    assertEquals(CoachPaint.verdictColor(slow), CoachPaint.changeColor(slow, "\u22126%"));
+  }
+
+  @Test
+  void theHistoryShowsAsManyRecentMovesAsFitAboveTheButtons() {
+    int threeRows =
+        CoachHistoryView.TALLY_HEIGHT
+            + 12
+            + CoachHistoryView.HEADING_HEIGHT
+            + 3 * CoachHistoryView.ROW_HEIGHT;
+
+    assertEquals(0, CoachHistoryView.rowsThatFit(CoachHistoryView.TALLY_HEIGHT, 8));
+    assertEquals(3, CoachHistoryView.rowsThatFit(threeRows, 8));
+    assertEquals(2, CoachHistoryView.rowsThatFit(threeRows, 2));
+  }
+
+  @Test
+  void theButtonsSitAtTheBottomAndTheHistoryFillsTheSpaceAboveThem() {
+    CoachPanel panel = new CoachPanel(null, () -> null);
+    panel.setSize(CoachPanel.WIDTH, 900);
+    panel.doLayout();
+    java.awt.Component summary = componentOf(panel, CoachSummaryView.class);
+    java.awt.Component history = componentOf(panel, CoachHistoryView.class);
+    java.awt.Component actions = panel.getComponent(panel.getComponentCount() - 1);
+
+    assertEquals(900 - 18, actions.getY() + actions.getHeight());
+    assertTrue(history.getY() >= summary.getY() + summary.getHeight());
+    assertEquals(actions.getY() - 12, history.getY() + history.getHeight());
+  }
+
+  private static java.awt.Component componentOf(CoachPanel panel, Class<?> type) {
+    for (java.awt.Component component : panel.getComponents()) {
+      if (type.isInstance(component)) {
+        return component;
+      }
+    }
+    throw new AssertionError(type.getSimpleName());
+  }
+
+  @Test
   void focusLayoutHidesTheSidePanelsAndRestoresThemExactly() throws Exception {
     Config config = allocate(Config.class);
     config.showSubBoard = true;

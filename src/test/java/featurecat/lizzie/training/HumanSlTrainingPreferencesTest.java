@@ -45,7 +45,7 @@ class HumanSlTrainingPreferencesTest {
     HumanSlTrainingPreferences.SavedSettings restored =
         HumanSlTrainingPreferences.load(new JSONObject());
 
-    assertEquals(TrainingMode.POST_GAME_REVIEW, restored.config().mode);
+    assertEquals(TrainingMode.LIVE_FEEDBACK, restored.config().mode);
     assertEquals(OpponentPreset.RANK, restored.config().opponentPreset);
     assertEquals(3, restored.config().rank);
     assertTrue(restored.config().danRank);
@@ -54,6 +54,23 @@ class HumanSlTrainingPreferencesTest {
     assertEquals(0, restored.config().handicap);
     assertEquals(7.5, restored.config().komi);
     assertFalse(restored.advancedVisible());
+  }
+
+  @Test
+  void aSavedChoiceOfAnOlderModeIsKept() {
+    JSONObject saved = new JSONObject().put("mode", "POST_GAME_REVIEW");
+    JSONObject ui = new JSONObject().put(HumanSlTrainingPreferences.UI_CONFIG_KEY, saved);
+
+    assertEquals(TrainingMode.POST_GAME_REVIEW, HumanSlTrainingPreferences.load(ui).config().mode);
+  }
+
+  @Test
+  void liveFeedbackRoundTrips() {
+    JSONObject ui = new JSONObject();
+    HumanSlTrainingPreferences.store(
+        ui, HumanSlTrainingConfig.builder().mode(TrainingMode.LIVE_FEEDBACK).build(), false);
+
+    assertEquals(TrainingMode.LIVE_FEEDBACK, HumanSlTrainingPreferences.load(ui).config().mode);
   }
 
   @Test
@@ -89,7 +106,7 @@ class HumanSlTrainingPreferencesTest {
 
     HumanSlTrainingPreferences.SavedSettings restored = HumanSlTrainingPreferences.load(ui);
 
-    assertEquals(TrainingMode.POST_GAME_REVIEW, restored.config().mode);
+    assertEquals(TrainingMode.LIVE_FEEDBACK, restored.config().mode);
     assertEquals(OpponentPreset.RANK, restored.config().opponentPreset);
     assertEquals(20, restored.config().rank);
     assertFalse(restored.config().danRank);

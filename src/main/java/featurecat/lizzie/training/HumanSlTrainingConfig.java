@@ -63,7 +63,7 @@ public final class HumanSlTrainingConfig {
   }
 
   public static final class Builder {
-    private TrainingMode mode = TrainingMode.POST_GAME_REVIEW;
+    private TrainingMode mode = TrainingMode.LIVE_FEEDBACK;
     private OpponentPreset opponentPreset = OpponentPreset.RANK;
     private int rank = 3;
     private boolean danRank = true;

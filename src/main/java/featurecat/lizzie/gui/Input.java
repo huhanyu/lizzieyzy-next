@@ -499,14 +499,12 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         break;
 
       case VK_H:
-        // Lizzie.config.toggleHandicapInsteadOfWinrate();
-        //        if (e.isAltDown()) {
-        //          Lizzie.config.showHeat = !Lizzie.config.showHeat;
-        //          Lizzie.frame.subBoardRenderer.showHeat = Lizzie.config.showHeat;
-        //          Lizzie.frame.subBoardRenderer.clearBranch();
-        //          Lizzie.frame.subBoardRenderer.removeHeat();
-        //        } else
-        Lizzie.leelaz.toggleHeatmap(false);
+        // The policy heatmap would show the answer in a coaching mode that hides analysis.
+        if (activeCoachGame() != null && !activeCoachGame().isLiveAnalysisMode()) {
+          activeCoachGame().showAnalysisHiddenHint();
+        } else {
+          Lizzie.leelaz.toggleHeatmap(false);
+        }
         break;
 
       case VK_PAGE_UP:

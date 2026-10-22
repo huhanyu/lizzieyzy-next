@@ -7,6 +7,7 @@ import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.training.HumanMoveDecision;
+import featurecat.lizzie.training.PositionReview;
 import featurecat.lizzie.util.CommandLaunchHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
@@ -500,6 +501,71 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
           withStartupDiagnostics(usefulMessage(e, "HumanSL review request failed.")));
       return Optional.empty();
     }
+  }
+
+  /**
+   * Reviews a position for 边下边提醒: KataGo's values for the moves it searched, and how often players
+   * of the profile's rank play each move. The search stops at {@code maxTime}, so a slow engine
+   * judges with fewer visits instead of holding up the AI's moves. Unlike a move request, a review
+   * that times out is dropped without restarting the engine.
+   */
+  public Optional<PositionReview> reviewPosition(
+      BoardHistoryNode positionNode,
+      String profile,
+      int maxVisits,
+      Duration maxTime,
+      Duration timeout) {
+    if (positionNode == null || profile == null || !ensureStarted()) {
+      return Optional.empty();
+    }
+    int generation = activeProcessGeneration;
+    String requestId = "humansl-review-" + nextRequestId.getAndIncrement();
+    JSONObject request = buildHumanSlRequest(requestId, positionNode, profile, maxVisits, 1);
+    request.getJSONObject("overrideSettings").put("maxTime", maxTime.toMillis() / 1000.0);
+    try {
+      JSONObject response = request(request, timeout);
+      return Optional.of(
+          parseReview(
+              response, positionNode.getData().stones, Board.boardWidth, Board.boardHeight));
+    } catch (TimeoutException e) {
+      terminateRequestBestEffort(generation, requestId);
+      return Optional.empty();
+    } catch (IOException e) {
+      return Optional.empty();
+    }
+  }
+
+  static PositionReview parseReview(
+      JSONObject response, Stone[] stones, int boardWidth, int boardHeight) {
+    JSONObject rootInfo = response.optJSONObject("rootInfo");
+    double rootLead = rootInfo == null ? Double.NaN : rootInfo.optDouble("scoreLead", Double.NaN);
+    double stdev =
+        rootInfo == null ? Double.NaN : rootInfo.optDouble("humanScoreStdev", Double.NaN);
+    List<JSONObject> infos = new ArrayList<JSONObject>();
+    JSONArray moveInfos = response.optJSONArray("moveInfos");
+    for (int i = 0; moveInfos != null && i < moveInfos.length(); i++) {
+      JSONObject info = moveInfos.optJSONObject(i);
+      if (info != null && !info.optString("move", "").trim().isEmpty()) {
+        infos.add(info.put("order", info.optInt("order", i)));
+      }
+    }
+    infos.sort(java.util.Comparator.comparingInt(info -> info.getInt("order")));
+    List<PositionReview.Candidate> candidates = new ArrayList<PositionReview.Candidate>();
+    for (JSONObject info : infos) {
+      double lead = info.optDouble("scoreLead", info.optDouble("scoreMean", Double.NaN));
+      if (Double.isFinite(lead)) {
+        candidates.add(
+            new PositionReview.Candidate(
+                info.getString("move").trim(), info.optInt("visits", 0), lead));
+      }
+    }
+    Map<String, Double> shares = new java.util.HashMap<String, Double>();
+    Object policy = extractHumanPolicy(response);
+    for (HumanLikeMoveSelector.Candidate move :
+        policyMoves(policy, boardWidth, boardHeight, stones, true)) {
+      shares.merge(normalizeMove(move.move), move.probability, Double::sum);
+    }
+    return new PositionReview(rootLead, stdev, candidates, shares);
   }
 
   static String samplePolicyMove(

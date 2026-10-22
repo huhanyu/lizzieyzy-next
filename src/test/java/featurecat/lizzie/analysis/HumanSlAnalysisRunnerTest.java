@@ -982,6 +982,101 @@ class HumanSlAnalysisRunnerTest {
   }
 
   @Test
+  void reviewPosition_readsLeadsSpreadAndHumanSharesFromOneSearch() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      JSONArray policy = new JSONArray();
+      for (int i = 0; i < BOARD_AREA + 1; i++) {
+        policy.put(0.0);
+      }
+      policy.put(4, 0.6);
+      policy.put(0, 0.3);
+      policy.put(BOARD_AREA, 0.1);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  new JSONObject()
+                      .put("id", request.getString("id"))
+                      .put(
+                          "rootInfo",
+                          new JSONObject().put("scoreLead", 1.5).put("humanScoreStdev", 6.0))
+                      .put("humanPolicy", policy)
+                      .put(
+                          "moveInfos",
+                          new JSONArray()
+                              .put(
+                                  new JSONObject()
+                                      .put("move", "A3")
+                                      .put("order", 1)
+                                      .put("visits", 40)
+                                      .put("scoreLead", -2.0))
+                              .put(
+                                  new JSONObject()
+                                      .put("move", "B2")
+                                      .put("order", 0)
+                                      .put("visits", 300)
+                                      .put("scoreLead", 1.6))));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      featurecat.lizzie.training.PositionReview review =
+          runner
+              .reviewPosition(
+                  history.getCurrentHistoryNode(),
+                  "rank_3d",
+                  400,
+                  Duration.ofMillis(1500),
+                  Duration.ofSeconds(2))
+              .orElseThrow();
+
+      assertEquals(1.5, review.rootLead());
+      assertEquals(6.0, review.scoreStdev());
+      assertEquals("B2", review.best().orElseThrow().move());
+      assertEquals(-2.0, review.leadAfter("A3"));
+      assertEquals(0.6, review.humanShare("B2"), 1e-9);
+      assertEquals(0.3, review.humanShare("A3"), 1e-9);
+      assertEquals(0.1, review.humanShare("pass"), 1e-9);
+      assertEquals("B2", review.commonMove());
+      JSONObject sent = process.sentRequests.get(0);
+      assertEquals(400, sent.getInt("maxVisits"));
+      assertEquals(1.5, sent.getJSONObject("overrideSettings").getDouble("maxTime"), 1e-9);
+      assertEquals("rank_3d", sent.getJSONObject("overrideSettings").getString("humanSLProfile"));
+      assertTrue(sent.getBoolean("includePolicy"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void reviewPosition_dropsATimedOutReviewWithoutRestartingTheEngine() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      boardWithHistory(history);
+      FakeProcess process = new FakeProcess(request -> null);
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      assertTrue(
+          runner
+              .reviewPosition(
+                  history.getCurrentHistoryNode(),
+                  "rank_3d",
+                  400,
+                  Duration.ofMillis(1500),
+                  Duration.ofMillis(60))
+              .isEmpty());
+
+      assertTrue(runner.isStarted(), "a slow review must not cost the AI its engine");
+      assertEquals(2, process.sentRequests.size());
+      assertEquals("terminate", process.sentRequests.get(1).getString("action"));
+      assertEquals(
+          process.sentRequests.get(0).getString("id"),
+          process.sentRequests.get(1).getString("terminateId"));
+      runner.close();
+    }
+  }
+
+  @Test
   void verifyReady_rejectsAProcessThatNeverAnswers() throws Exception {
     try (TestEnvironment env = TestEnvironment.open()) {
       BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));

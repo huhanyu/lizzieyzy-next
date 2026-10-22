@@ -26,6 +26,8 @@ import featurecat.lizzie.training.AiResignation;
 import featurecat.lizzie.training.GameResult;
 import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
+import featurecat.lizzie.training.MoveVerdict;
+import featurecat.lizzie.training.PositionReview;
 import featurecat.lizzie.training.TrainingMode;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
@@ -35,6 +37,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -267,6 +270,24 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
+  void hDoesNotRevealThePolicyHeatmapWhileTheModeHidesAnalysis() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      TrackingLeelaz engine = new TrackingLeelaz();
+      Lizzie.leelaz = engine;
+      HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+      Input input = new Input();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(new JPanel(), KeyEvent.VK_H)));
+
+      assertEquals(0, engine.heatmapToggles.get());
+      assertEquals(
+          List.of(Lizzie.resourceBundle.getString("HumanSlGame.analysisHidden")), messages);
+    }
+  }
+
+  @Test
   void twoPassesEndTheGameWithKatagosCount() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
@@ -358,7 +379,7 @@ class HumanSlGameControllerIntegrationTest {
           java.text.MessageFormat.format(text("CoachPanel.opponent"), controller.opponentLabel()),
           playing.title());
       assertFalse(playing.aiPlaysBlack());
-      assertEquals(0, playing.winrates().length, "analysis stays hidden in this mode");
+      assertEquals(0, playing.winChance().values().length, "nothing rated yet");
       assertNull(playing.result());
 
       SwingUtilities.invokeAndWait(controller::resign);
@@ -369,6 +390,96 @@ class HumanSlGameControllerIntegrationTest {
       assertEquals(controller.resultText(), over.result());
       assertEquals(text("CoachPanel.reviewHint"), over.resultHint());
     }
+  }
+
+  @Test
+  void liveFeedbackRatesThePlayersMoveAndForgetsItOnTakeBack() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(
+          new PositionReview(
+              0.0,
+              12.0,
+              List.of(
+                  new PositionReview.Candidate("A1", 200, 0.5),
+                  new PositionReview.Candidate("C3", 60, -3.5)),
+              Map.of("A1", 0.3, "C3", 0.2)));
+      runner.replyWith(HumanMoveChoice.of("B2"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertEquals(TrainingMode.LIVE_FEEDBACK, controller.mode());
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(() -> controller.moveReviewer().latest().isPresent()),
+              Duration.ofSeconds(5)));
+
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertEquals(MoveVerdict.PROBLEM, state[0].moveCard().verdict());
+      assertEquals(text("CoachPanel.verdict.problem"), state[0].moveCard().verdictLabel());
+      assertEquals(
+          java.text.MessageFormat.format(
+              text("CoachPanel.winChanceRank"), controller.opponentLabel()),
+          state[0].winChance().caption());
+      assertEquals(2, state[0].winChance().values().length);
+      assertEquals("C3", state[0].history().recent().get(0).move());
+      assertEquals(1, state[0].history().tallies().get(MoveVerdict.PROBLEM.ordinal()).count());
+
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(controller::takeBack);
+
+      assertTrue(onEventThread(() -> controller.moveReviewer().feedback().isEmpty()));
+    }
+  }
+
+  @Test
+  void postGameReviewDoesNotRateMoves() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller =
+          new HumanSlGameController(
+              runner,
+              HumanSlTrainingConfig.builder()
+                  .mode(TrainingMode.POST_GAME_REVIEW)
+                  .playerColor(HumanSlTrainingConfig.PlayerColor.BLACK)
+                  .fromCurrentPosition(true)
+                  .moveTimeSeconds(2)
+                  .build(),
+              new HumanSlTrainingSession());
+      controller.setExitLifecycleForTesting(Runnable::run, Runnable::run, () -> true, null);
+      controller.start();
+      env.allowStonePlacement();
+
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+
+      assertNull(controller.moveReviewer());
+      assertEquals(0, runner.reviewCount.get());
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertNull(state[0].winChance());
+      assertNull(state[0].history());
+      assertNull(state[0].moveCard().verdict());
+    }
+  }
+
+  private static boolean onEventThread(BooleanSupplier check) {
+    boolean[] result = new boolean[1];
+    try {
+      SwingUtilities.invokeAndWait(() -> result[0] = check.getAsBoolean());
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return result[0];
   }
 
   @Test
@@ -1875,6 +1986,8 @@ class HumanSlGameControllerIntegrationTest {
     private final CountDownLatch closed = new CountDownLatch(1);
     private final List<String> lifecycleEvents;
     private volatile HumanMoveChoice reply = HumanMoveChoice.of("pass");
+    private final AtomicInteger reviewCount = new AtomicInteger();
+    private volatile PositionReview review;
     private volatile OptionalDouble finalBlackLead = OptionalDouble.of(3.4);
 
     private BlockingHumanSlRunner() {
@@ -1909,6 +2022,21 @@ class HumanSlGameControllerIntegrationTest {
     @Override
     public OptionalDouble finalBlackScoreLead(BoardHistoryNode positionNode, Duration timeout) {
       return finalBlackLead;
+    }
+
+    @Override
+    public Optional<PositionReview> reviewPosition(
+        BoardHistoryNode positionNode,
+        String profile,
+        int maxVisits,
+        Duration maxTime,
+        Duration timeout) {
+      reviewCount.incrementAndGet();
+      return Optional.ofNullable(review);
+    }
+
+    private void reviewWith(PositionReview value) {
+      review = value;
     }
 
     private void replyWith(HumanMoveChoice value) {
@@ -2184,6 +2312,7 @@ class HumanSlGameControllerIntegrationTest {
 
   private static final class TrackingLeelaz extends Leelaz {
     private final AtomicInteger resumeCount = new AtomicInteger();
+    private final AtomicInteger heatmapToggles = new AtomicInteger();
     private final AtomicInteger forwardedMoves = new AtomicInteger();
     private final List<String> lifecycleEvents;
     private boolean pondering;
@@ -2210,6 +2339,11 @@ class HumanSlGameControllerIntegrationTest {
     @Override
     public boolean isPondering() {
       return pondering;
+    }
+
+    @Override
+    public void toggleHeatmap(boolean bySpace) {
+      heatmapToggles.incrementAndGet();
     }
 
     @Override

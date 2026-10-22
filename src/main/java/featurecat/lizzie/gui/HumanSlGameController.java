@@ -21,6 +21,7 @@ import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.training.HumanThinkTime;
 import featurecat.lizzie.training.OpponentPreset;
+import featurecat.lizzie.training.TrainingMode;
 import featurecat.lizzie.util.Utils;
 import java.io.File;
 import java.nio.file.Path;
@@ -96,6 +97,10 @@ public final class HumanSlGameController {
   private volatile BoardHistoryNode liveNode;
 
   private int takeBacks;
+
+  /** Rates the player's moves in 边下边提醒; null in the other modes. */
+  private MoveReviewer reviewer;
+
   private AiResignation aiResignation;
   private GameInfo gameInfo;
   private double gameKomi;
@@ -387,9 +392,19 @@ public final class HumanSlGameController {
       Lizzie.frame.showHumanSlTrainingBar(this);
       Lizzie.frame.refresh();
       activateLiveAnalysisIfRequested();
+      if (config.mode == TrainingMode.LIVE_FEEDBACK) {
+        reviewer =
+            new MoveReviewer(
+                (position, visits, time, timeout) ->
+                    runner.reviewPosition(position, profile, visits, time, timeout),
+                node -> GameTreePosition.movesSince(node, liveNode) >= 0,
+                HumanSlGameController::updateTrainingBar);
+      }
 
       if (!isHumanTurn()) {
         scheduleAiMove();
+      } else {
+        reviewPlayerTurn();
       }
     } catch (RuntimeException | Error startupFailure) {
       rollbackFailedStart(
@@ -408,6 +423,7 @@ public final class HumanSlGameController {
     aiFailed = false;
     try {
       gameExecutor.shutdownNow();
+      closeReviewer();
     } catch (RuntimeException | Error cleanupFailure) {
       appendExitFailure(startupFailure, cleanupFailure);
     }
@@ -542,10 +558,12 @@ public final class HumanSlGameController {
     if (Lizzie.board.getHistory().getStones()[Board.getIndex(x, y)] != Stone.EMPTY) {
       return;
     }
+    BoardHistoryNode before = liveNode;
     if (!placeLocal(x, y, humanIsBlack ? Stone.BLACK : Stone.WHITE)) {
       return;
     }
     recordTurnElapsed(true);
+    judgePlayerMove(before, Board.convertCoordinatesToName(x, y));
     scheduleAiMove();
   }
 
@@ -553,10 +571,12 @@ public final class HumanSlGameController {
     if (finished || isGameOver() || counting || !atLiveGame() || !isHumanTurn()) {
       return;
     }
+    BoardHistoryNode before = liveNode;
     if (!passLocal(humanIsBlack ? Stone.BLACK : Stone.WHITE)) {
       return;
     }
     recordTurnElapsed(true);
+    judgePlayerMove(before, "pass");
     if (bothPlayersPassed()) {
       countAndEnd();
       return;
@@ -605,10 +625,14 @@ public final class HumanSlGameController {
   }
 
   /**
-   * The player's winrate in percent at each analysed position of this game, oldest first, from
-   * KataGo's live analysis. Empty unless the mode shows analysis during the game.
+   * The player's winrate in percent through this game, oldest first: in 边下边提醒 the rank-aware win
+   * chance around each of the player's moves, in 边下边分析 KataGo's live analysis of each position.
+   * Empty in the mode that hides analysis.
    */
   public double[] humanWinrates() {
+    if (reviewer != null) {
+      return reviewer.winChances();
+    }
     BoardHistoryNode live = liveNode;
     if (!config.mode.isLiveAnalysis() || live == null || gameStartNode == null) {
       return new double[0];
@@ -629,20 +653,31 @@ public final class HumanSlGameController {
 
   /** The player's last move in this game: its move number and point, or null before any. */
   public String lastHumanMoveText() {
+    BoardData data = lastHumanMove();
+    if (data == null) {
+      return null;
+    }
+    String point =
+        data.lastMove
+            .map(move -> Board.convertCoordinatesToName(move[0], move[1]))
+            .orElse(text("HumanSlGame.btn.pass", "Pass"));
+    return MessageFormat.format(text("CoachPanel.moveAt", "Move {0}: {1}"), data.moveNumber, point);
+  }
+
+  /** The number of the player's last move in this game, or 0 before any. */
+  int lastHumanMoveNumber() {
+    BoardData data = lastHumanMove();
+    return data == null ? 0 : data.moveNumber;
+  }
+
+  private BoardData lastHumanMove() {
     Stone human = humanIsBlack ? Stone.BLACK : Stone.WHITE;
     for (BoardHistoryNode node = liveNode;
         node != null && node != gameStartNode;
         node = node.previous().orElse(null)) {
-      BoardData data = node.getData();
-      if (data.lastMoveColor != human) {
-        continue;
+      if (node.getData().lastMoveColor == human) {
+        return node.getData();
       }
-      String point =
-          data.lastMove
-              .map(move -> Board.convertCoordinatesToName(move[0], move[1]))
-              .orElse(text("HumanSlGame.btn.pass", "Pass"));
-      return MessageFormat.format(
-          text("CoachPanel.moveAt", "Move {0}: {1}"), data.moveNumber, point);
     }
     return null;
   }
@@ -741,6 +776,10 @@ public final class HumanSlGameController {
     liveNode = board.getHistory().getCurrentHistoryNode();
     takeBacks++;
     turnStartedAt = System.currentTimeMillis();
+    if (reviewer != null) {
+      reviewer.takenBack(liveNode);
+    }
+    reviewPlayerTurn();
     updateTrainingBar();
   }
 
@@ -1041,6 +1080,7 @@ public final class HumanSlGameController {
       }
       Utils.showMsgNoModalForTime(text("HumanSlGame.aiPassed", "AI passed."), 3);
       turnStartedAt = System.currentTimeMillis();
+      reviewPlayerTurn();
       return;
     }
     int[] coords = Board.convertNameToCoordinates(move.get().trim());
@@ -1055,6 +1095,7 @@ public final class HumanSlGameController {
       passLocal(aiColor);
     }
     turnStartedAt = System.currentTimeMillis();
+    reviewPlayerTurn();
     updateTrainingBar();
   }
 
@@ -1119,6 +1160,7 @@ public final class HumanSlGameController {
     aiFailed = false;
     try {
       gameExecutor.shutdownNow();
+      closeReviewer();
     } catch (RuntimeException | Error failure) {
       logExitFailure("game executor shutdown", failure);
     }
@@ -1529,6 +1571,33 @@ public final class HumanSlGameController {
         && trainingStartNode == currentNode;
   }
 
+  /** The ratings of the player's moves in 边下边提醒, or null in the other modes. */
+  MoveReviewer moveReviewer() {
+    return reviewer;
+  }
+
+  TrainingMode mode() {
+    return config.mode;
+  }
+
+  private void judgePlayerMove(BoardHistoryNode before, String move) {
+    if (reviewer != null && before != null && liveNode != before) {
+      reviewer.judge(before, liveNode, move);
+    }
+  }
+
+  private void reviewPlayerTurn() {
+    if (reviewer != null && !finished && !isGameOver() && liveNode != null && isHumanTurn()) {
+      reviewer.playerToMove(liveNode);
+    }
+  }
+
+  private void closeReviewer() {
+    if (reviewer != null) {
+      reviewer.close();
+    }
+  }
+
   private void configureAnalysisVisuals() {
     Config settings = Lizzie.config;
     candidatesBlackBefore = settings.showBlackCandidates;
@@ -1745,6 +1814,7 @@ public final class HumanSlGameController {
     OpponentPreset preset =
         normalized.startsWith("proyear_") ? OpponentPreset.MODERN_PRO : OpponentPreset.RANK;
     return HumanSlTrainingConfig.builder()
+        .mode(TrainingMode.POST_GAME_REVIEW)
         .opponentPreset(preset)
         .rank(rank, dan)
         .playerColor(
