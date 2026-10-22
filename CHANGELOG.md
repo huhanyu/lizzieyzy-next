@@ -4,6 +4,11 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练's 边下边提醒 no longer calls playing safe a 缓手 once the game is decided.
+  - When the game is all but decided for players of the rank, a move is pointed out only when it gives away 10 points or more (问题手) or 20 or more (恶手). Before, 4 points already made a 缓手, so the side far ahead was told off for safe moves.
+  - Measured with HumanSL stand-ins from 10 级 to 9 段, this removes two to four 缓手 a game. 恶手 come up one to four times a game at every rank, so the win-chance thresholds stay the same for all ranks.
+  - `scripts/measure_coach_ratings.py` repeats the measurement; `docs/ai-coach.md` has the numbers.
+
 - AI 陪练's end of game is a short summary in the coach panel.
   - It shows 你赢了 or 你输了 with the result, the number of moves, and in 边下边提醒 the key mistakes (恶手) and hints, plus the take-backs.
   - 开始复盘 opens the usual analysis. 再来一盘 opens the setup again with the same choices.

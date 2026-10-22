@@ -73,11 +73,15 @@ swing: about 18 points in the opening and a few points in the late endgame at 3 
 
 `MoveVerdict` rates by the loss, rounded to the whole percentage the panel shows:
 
-| Rating | Win chance lost | Once decided (below 5% or above 95%) |
+| Rating | Win chance lost | Or, once decided (below 5% or above 95%) |
 |---|---|---|
-| 缓手 | 5% | 4 points |
-| 问题手 | 10% | 8 points |
-| 恶手 | 20% | 15 points |
+| 缓手 | 5% | — |
+| 问题手 | 10% | 10 points |
+| 恶手 | 20% | 20 points |
+
+Once the game is decided, the win chance hardly moves, so points lost count too, but only big
+losses. Far ahead, giving a few points to play safe is sound; far behind, a few points change
+nothing.
 
 **妙手** is KataGo's choice where fewer than 10% of players of the rank play it and their usual
 move loses at least 5%.
@@ -87,6 +91,44 @@ back), 看 AI 推荐 (circle KataGo's choice) or 不重下，继续对局.
 
 **Hints.** 提示 or H shades the area of KataGo's choice, then circles the point
 (`CoachAssist`, `CoachBoardMarks`).
+
+### How often each rating comes up
+
+`scripts/measure_coach_ratings.py` plays games between two stand-ins of a rank, each move drawn
+from the rank's HumanSL policy, and judges Black's moves as the app does. Re-run it after changing
+the rules, the review budgets or the default network.
+
+Ratings per game, three games of 220 moves per rank (110 judged moves each), with the rules above,
+mean and range:
+
+| Rank | 缓手 | 问题手 | 恶手 |
+|---|---|---|---|
+| 10 级 | 16 (11–24) | 14 (10–21) | 1 (1–1) |
+| 3 级 | 15 (14–16) | 10 (6–14) | 4 (2–7) |
+| 1 段 | 12 (9–15) | 5 (4–5) | 3 (0–4) |
+| 3 段 | 12 (9–16) | 6 (4–8) | 3 (1–5) |
+| 5 段 | 9 (4–12) | 6 (5–8) | 2 (1–3) |
+| 9 段 | 5 (2–7) | 4 (3–5) | 4 (3–5) |
+
+This is the app's budget on an M4 Pro with the bundled Metal KataGo and network: the turn's review
+reached about 45–55 root visits in 1.5 s, and 23 at 9 段, where human moves take more of the
+playouts. Another 18 games with 400 visits and no time limit gave about a third fewer 问题手 for
+kyu ranks (10 级 9, 3 级 5) and the same range of 恶手.
+
+What it shows:
+
+- **恶手**, the only rating that holds the game, comes up one to four times a game at every rank.
+  The rank-aware win chance puts the ranks on the same footing for big mistakes, so one set of
+  thresholds serves every rank.
+- **缓手 and 问题手** come up more often for weaker ranks and with shorter searches. A move the
+  turn's search hardly looked at is judged from the short review after it, and such moves are
+  flagged three to seven times as often as the rest. Longer reviews would make these two steadier.
+  So the summary's key mistakes count only the 恶手.
+- **Decided games.** Stand-ins never resign, so a fifth to a third of their moves come after the
+  game is decided. The earlier rule there (缓手 from 4 points, 问题手 from 8, 恶手 from 15) added
+  two to four 缓手 a game, mostly safe moves by the side far ahead.
+- **妙手** is rare: 3 in 36 games. Stand-ins play the rank's usual moves; a player who finds better
+  ones sees it more often.
 
 ## After the game
 

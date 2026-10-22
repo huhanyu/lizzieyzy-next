@@ -27,12 +27,18 @@ class MoveVerdictTest {
   }
 
   @Test
-  void onceTheGameIsDecidedThePointsLostDecide() {
+  void onceTheGameIsDecidedBigPointLossesAreStillMistakes() {
     // At 2% the win chance can hardly fall, but giving away 10 points is still a mistake.
     assertEquals(MoveVerdict.PROBLEM, MoveVerdict.of(0.02, 0.01, 10.0));
-    assertEquals(MoveVerdict.SLOW, MoveVerdict.of(0.99, 0.98, 5.0));
-    assertEquals(MoveVerdict.BLUNDER, MoveVerdict.of(0.99, 0.97, 16.0));
+    assertEquals(MoveVerdict.PROBLEM, MoveVerdict.of(0.99, 0.97, 16.0));
+    assertEquals(MoveVerdict.BLUNDER, MoveVerdict.of(0.99, 0.97, 20.0));
     assertEquals(MoveVerdict.GOOD, MoveVerdict.of(0.02, 0.02, 2.0));
+  }
+
+  @Test
+  void farAheadGivingAFewPointsToPlaySafeIsNoMistake() {
+    assertEquals(MoveVerdict.GOOD, MoveVerdict.of(0.99, 0.98, 5.0));
+    assertEquals(MoveVerdict.GOOD, MoveVerdict.of(0.99, 0.98, 9.0));
   }
 
   @Test

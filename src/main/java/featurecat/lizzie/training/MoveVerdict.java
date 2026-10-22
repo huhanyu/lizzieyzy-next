@@ -18,13 +18,14 @@ public enum MoveVerdict {
 
   /**
    * Below 5% or above 95% the game is decided for players of the rank, and the win chance hardly
-   * moves even for a big mistake. There the points a move gives away decide instead.
+   * moves even for a big mistake. There a move that gives away many points is still a mistake, but
+   * a few points are not: far ahead, giving a little to play safe is sound, and far behind they
+   * change nothing.
    */
   static final double DECIDED = 0.05;
 
-  static final double SLOW_POINTS = 4.0;
-  static final double PROBLEM_POINTS = 8.0;
-  static final double BLUNDER_POINTS = 15.0;
+  static final double PROBLEM_POINTS = 10.0;
+  static final double BLUNDER_POINTS = 20.0;
 
   /**
    * @param winBefore the player's rank-aware win chance with the best move, 0 to 1
@@ -40,9 +41,7 @@ public enum MoveVerdict {
             : loss >= PROBLEM_LOSS ? PROBLEM : loss >= SLOW_LOSS ? SLOW : GOOD;
     if (winBefore < DECIDED || winBefore > 1.0 - DECIDED) {
       MoveVerdict byPoints =
-          pointsLost >= BLUNDER_POINTS
-              ? BLUNDER
-              : pointsLost >= PROBLEM_POINTS ? PROBLEM : pointsLost >= SLOW_POINTS ? SLOW : GOOD;
+          pointsLost >= BLUNDER_POINTS ? BLUNDER : pointsLost >= PROBLEM_POINTS ? PROBLEM : GOOD;
       if (byPoints.compareTo(verdict) > 0) {
         verdict = byPoints;
       }
