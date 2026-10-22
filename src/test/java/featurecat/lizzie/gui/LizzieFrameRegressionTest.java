@@ -99,8 +99,7 @@ class LizzieFrameRegressionTest {
       for (var state :
           List.of(
               featurecat.lizzie.training.HumanSlTrainingSession.State.PREPARING,
-              featurecat.lizzie.training.HumanSlTrainingSession.State.PLAYING,
-              featurecat.lizzie.training.HumanSlTrainingSession.State.REVIEWING)) {
+              featurecat.lizzie.training.HumanSlTrainingSession.State.PLAYING)) {
         training.setState(state);
         assertFalse((Boolean) idle.invoke(null));
       }

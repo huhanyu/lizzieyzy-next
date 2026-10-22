@@ -1402,8 +1402,6 @@ class HumanSlGameControllerIntegrationTest {
           assertTrue(engine.pondering);
           assertFalse(controller.isExitRecoveryPending());
           assertEquals(HumanSlTrainingSession.State.FINISHED, session.state());
-          assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REVIEWING));
-          assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REPORT_READY));
         }
       }
     }
@@ -1436,8 +1434,9 @@ class HumanSlGameControllerIntegrationTest {
       assertEquals(HumanSlTrainingSession.State.FINISHED, session.state());
       assertTrue(controller.gameResult().isBlank());
       assertEquals(resultBefore, Lizzie.board.getHistory().getGameInfo().getResult());
-      assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REVIEWING));
-      assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REPORT_READY));
+      assertEquals(
+          List.of(HumanSlTrainingSession.State.PLAYING, HumanSlTrainingSession.State.FINISHED),
+          sessionStates);
     }
   }
 

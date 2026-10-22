@@ -4420,7 +4420,6 @@ public class LizzieFrame extends JFrame {
         || humanSlGame != null
         || trainingState == HumanSlTrainingSession.State.PREPARING
         || trainingState == HumanSlTrainingSession.State.PLAYING
-        || trainingState == HumanSlTrainingSession.State.REVIEWING
         || isPlayingAgainstLeelaz
         || isAnaPlayingAgainstLeelaz;
   }

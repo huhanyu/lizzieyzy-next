@@ -229,10 +229,6 @@ public final class HumanSlGameController {
     return aiFailed;
   }
 
-  public boolean isReviewing() {
-    return trainingSession.state() == HumanSlTrainingSession.State.REVIEWING;
-  }
-
   public boolean isLiveAnalysisMode() {
     return config.mode.isLiveAnalysis();
   }
@@ -522,7 +518,7 @@ public final class HumanSlGameController {
   }
 
   public boolean canResign() {
-    return !finished && !exitInProgress && !isGameOver() && !counting && !isReviewing();
+    return !finished && !exitInProgress && !isGameOver() && !counting;
   }
 
   public boolean isGameOver() {
@@ -689,7 +685,7 @@ public final class HumanSlGameController {
 
   /** Takes back the player's last move, and the AI's reply to it when there is one. */
   public void takeBack() {
-    if (finished || exitInProgress || isReviewing() || isGameOver() || counting || !atLiveGame()) {
+    if (finished || exitInProgress || isGameOver() || counting || !atLiveGame()) {
       return;
     }
     int moves = takeBackMoves();
@@ -717,12 +713,7 @@ public final class HumanSlGameController {
   }
 
   public boolean canTakeBack() {
-    return !finished
-        && !exitInProgress
-        && !isReviewing()
-        && !isGameOver()
-        && !counting
-        && takeBackMoves() > 0;
+    return !finished && !exitInProgress && !isGameOver() && !counting && takeBackMoves() > 0;
   }
 
   /** Take-backs used in this game. */
@@ -830,7 +821,7 @@ public final class HumanSlGameController {
   }
 
   private void scheduleAiMove(boolean cancelBeforeRequest) {
-    if (finished || isReviewing() || aiThinking || isGameOver() || counting) {
+    if (finished || aiThinking || isGameOver() || counting) {
       return;
     }
     aiFailed = false;
@@ -1049,7 +1040,7 @@ public final class HumanSlGameController {
   public void retryAiMove() {
     long generation = requestGeneration.get();
     try {
-      if (finished || isReviewing() || !aiFailed || isHumanTurn()) {
+      if (finished || !aiFailed || isHumanTurn()) {
         return;
       }
       scheduleAiMove(true);
@@ -1644,7 +1635,6 @@ public final class HumanSlGameController {
         && !isGameOver()
         && !counting
         && heldReply == null
-        && !isReviewing()
         && isHumanTurn();
   }
 

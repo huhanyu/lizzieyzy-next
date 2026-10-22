@@ -4,6 +4,10 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练 cleanup.
+  - Removed what was left of the training report and live correction that #338 retired: the report and move-assessment classes, the unused move evaluation in the HumanSL runner, the 复盘中 and 训练报告 states that nothing ever set, and their 29 strings in all 8 bundles.
+  - `docs/ai-coach.md` replaces the outdated design QA page. It describes how the coach works now: the opponent, the ratings and their thresholds, hints, the panel and the setup.
+
 - AI 陪练's first moves no longer stall on Apple Silicon.
   - The coach engine pads every GPU batch to four, so Metal compiles one GPU program, during 准备中, instead of up to eight during the game.
   - In a test game the AI's first two replies came after 1.5 and 1.8 s instead of 3.8 and 3.5 s.

@@ -6,7 +6,6 @@ import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
-import featurecat.lizzie.training.HumanMoveDecision;
 import featurecat.lizzie.training.PositionReview;
 import featurecat.lizzie.util.CommandLaunchHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
@@ -453,52 +452,6 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
           generation,
           false,
           withStartupDiagnostics(usefulMessage(e, "HumanSL move request failed.")));
-      return Optional.empty();
-    }
-  }
-
-  /** Evaluates the player's actual move against human preference and KataGo quality. */
-  public Optional<HumanMoveDecision> evaluateHumanMove(
-      BoardHistoryNode positionNode,
-      String profile,
-      String actualMove,
-      int maxVisits,
-      int rootSymmetries,
-      Duration timeout) {
-    if (positionNode == null || profile == null || actualMove == null || !ensureStarted()) {
-      return Optional.empty();
-    }
-    int generation = activeProcessGeneration;
-    String requestId = "humansl-review-" + nextRequestId.getAndIncrement();
-    JSONObject request =
-        buildHumanSlRequest(requestId, positionNode, profile, maxVisits, rootSymmetries);
-    try {
-      JSONObject response = request(request, timeout == null ? Duration.ofSeconds(30) : timeout);
-      Object policy = extractHumanPolicy(response);
-      JSONArray moveInfos = response.optJSONArray("moveInfos");
-      String commonMove = argmaxPolicyMove(policy, Board.boardWidth, Board.boardHeight);
-      JSONObject bestInfo = orderedMoveInfo(moveInfos, 0);
-      JSONObject actualInfo = findMoveInfo(moveInfos, actualMove);
-      String bestMove = bestInfo == null ? commonMove : bestInfo.optString("move", commonMove);
-      double scoreLoss = qualityLoss(bestInfo, actualInfo, "scoreLead", "scoreMean");
-      double winrateLoss = qualityLoss(bestInfo, actualInfo, "winrate", null);
-      double humanProbability =
-          policyProbability(policy, actualMove, Board.boardWidth, Board.boardHeight);
-      return Optional.of(
-          new HumanMoveDecision(
-              positionNode.getData().moveNumber + 1,
-              positionNode,
-              actualMove,
-              commonMove,
-              bestMove,
-              humanProbability,
-              scoreLoss,
-              winrateLoss));
-    } catch (TimeoutException | IOException e) {
-      stopActiveProcess(
-          generation,
-          false,
-          withStartupDiagnostics(usefulMessage(e, "HumanSL review request failed.")));
       return Optional.empty();
     }
   }

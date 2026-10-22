@@ -167,7 +167,7 @@ public final class CoachPanel extends JPanel {
         event ->
             withController(
                 active -> {
-                  if (active.isStopRequested() || active.isReviewing()) {
+                  if (active.isStopRequested()) {
                     active.abort();
                   } else {
                     active.finishAndReturnToBoard();
@@ -193,18 +193,14 @@ public final class CoachPanel extends JPanel {
     hintButton.setEnabled(!stopping && active.canHint());
     takeBackButton.setEnabled(!stopping && active.canTakeBack());
     passButton.setEnabled(
-        !stopping
-            && active.isHumanTurn()
-            && !active.isReviewing()
-            && !active.isGameOver()
-            && !active.isCounting());
+        !stopping && active.isHumanTurn() && !active.isGameOver() && !active.isCounting());
     resignButton.setEnabled(!stopping && active.canResign());
     List<CoachButton> shown = new java.util.ArrayList<>();
     if (active.moveReviewer() != null) {
       shown.add(hintButton);
     }
     shown.addAll(List.of(takeBackButton, passButton, resignButton));
-    if (!stopping && active.hasAiFailure() && !active.isReviewing()) {
+    if (!stopping && active.hasAiFailure()) {
       shown.add(retryButton);
     }
     showInGrid(shown);

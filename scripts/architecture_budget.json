@@ -3,9 +3,9 @@
   "max_unlisted_file_lines": 2000,
   "max_lines": {
     "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25606,
-    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18555,
+    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18554,
     "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15779,
-    "src/main/java/featurecat/lizzie/gui/Menu.java": 11076,
+    "src/main/java/featurecat/lizzie/gui/Menu.java": 11067,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
     "src/main/java/featurecat/lizzie/gui/KataGoAutoSetupDialog.java": 8305,
     "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 8043,
