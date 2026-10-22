@@ -28,6 +28,7 @@ public final class HumanSlTrainingBar extends JPanel {
   private final JProgressBar thinkingBar = new JProgressBar();
   private final JFontButton takeBackButton = new JFontButton();
   private final JFontButton passButton = new JFontButton();
+  private final JFontButton resignButton = new JFontButton();
   private final JFontButton retryButton = new JFontButton();
   private final JFontButton finishButton = new JFontButton();
   private final Timer refreshTimer;
@@ -130,14 +131,17 @@ public final class HumanSlTrainingBar extends JPanel {
     panel.setOpaque(false);
     takeBackButton.setText(text("HumanSlTraining.takeBack", "Take back"));
     passButton.setText(text("HumanSlGame.btn.pass", "Pass"));
+    resignButton.setText(text("HumanSlGame.btn.resign", "Resign"));
     retryButton.setText(text("HumanSlTraining.retryAi", "Retry AI"));
     finishButton.setText(text("HumanSlTraining.finishReview", "Finish and review on board"));
     HumanSlTrainingStyle.styleSecondary(takeBackButton);
     HumanSlTrainingStyle.styleSecondary(passButton);
+    HumanSlTrainingStyle.styleSecondary(resignButton);
     HumanSlTrainingStyle.stylePrimary(retryButton);
     HumanSlTrainingStyle.styleDanger(finishButton);
     takeBackButton.addActionListener(event -> withController(HumanSlGameController::takeBack));
     passButton.addActionListener(event -> withController(HumanSlGameController::humanPass));
+    resignButton.addActionListener(event -> withController(HumanSlGameController::resign));
     retryButton.addActionListener(event -> withController(HumanSlGameController::retryAiMove));
     finishButton.addActionListener(
         event ->
@@ -154,7 +158,7 @@ public final class HumanSlTrainingBar extends JPanel {
     // The keyboard stays with the board: Space must never press Finish, and the board keeps its
     // shortcuts while a game runs.
     for (JFontButton button :
-        new JFontButton[] {takeBackButton, passButton, retryButton, finishButton}) {
+        new JFontButton[] {takeBackButton, passButton, resignButton, retryButton, finishButton}) {
       button.setFocusable(false);
       panel.add(button);
     }
@@ -176,6 +180,12 @@ public final class HumanSlTrainingBar extends JPanel {
               "Cleanup needs attention. Retry before starting another mode.");
     } else if (active.isStopRequested()) {
       status = text("HumanSlTraining.bar.stopping", "Stopping AI Coach safely...");
+    } else if (active.isGameOver()) {
+      status =
+          java.text.MessageFormat.format(
+              text("HumanSlTraining.bar.gameOver", "Game over: {0}"), active.resultText());
+    } else if (active.isCounting()) {
+      status = text("HumanSlTraining.bar.counting", "Counting...");
     } else if (active.isReviewing()) {
       status = text("HumanSlTraining.bar.reviewing", "Preparing the training report...");
     } else if (active.hasAiFailure()) {
@@ -202,7 +212,12 @@ public final class HumanSlTrainingBar extends JPanel {
         !active.isStopRequested() && active.hasAiFailure() && !active.isReviewing());
     takeBackButton.setEnabled(!active.isStopRequested() && active.canTakeBack());
     passButton.setEnabled(
-        !active.isStopRequested() && active.isHumanTurn() && !active.isReviewing());
+        !active.isStopRequested()
+            && active.isHumanTurn()
+            && !active.isReviewing()
+            && !active.isGameOver()
+            && !active.isCounting());
+    resignButton.setEnabled(!active.isStopRequested() && active.canResign());
     String finishKey;
     String finishFallback;
     if (active.isExitRecoveryPending()) {

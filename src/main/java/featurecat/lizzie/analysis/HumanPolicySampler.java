@@ -117,6 +117,23 @@ final class HumanPolicySampler {
     return last;
   }
 
+  /** Share of the policy on passing, 0 when the moves do not include a pass. */
+  static double passShare(List<HumanLikeMoveSelector.Candidate> moves) {
+    double pass = 0.0;
+    double sum = 0.0;
+    if (moves != null) {
+      for (HumanLikeMoveSelector.Candidate move : moves) {
+        if (move.probability > 0.0 && Double.isFinite(move.probability)) {
+          sum += move.probability;
+          if ("pass".equalsIgnoreCase(move.move)) {
+            pass += move.probability;
+          }
+        }
+      }
+    }
+    return sum > 0.0 ? pass / sum : 0.0;
+  }
+
   /** Share of the policy on the most popular move, NaN when the policy is empty. */
   static double topShare(List<HumanLikeMoveSelector.Candidate> moves) {
     double max = 0.0;

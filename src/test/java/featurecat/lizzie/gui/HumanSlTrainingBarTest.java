@@ -13,14 +13,15 @@ import org.junit.jupiter.api.Test;
 
 class HumanSlTrainingBarTest {
   @Test
-  void actionsKeepFinishButDoNotExposeDuplicateResign() {
+  void actionsOfferResignBesideFinish() {
+    // Resign records a lost game and keeps it on the board; Finish leaves AI Coach.
     HumanSlTrainingBar bar = new HumanSlTrainingBar();
     List<String> buttonTexts = new ArrayList<>();
     collectButtonTexts(bar, buttonTexts);
 
     assertTrue(
         buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlTraining.finishReview")));
-    assertFalse(buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlGame.btn.resign")));
+    assertTrue(buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlGame.btn.resign")));
   }
 
   @Test

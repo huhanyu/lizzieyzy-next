@@ -11,6 +11,7 @@ import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
+import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
 import featurecat.lizzie.util.katago.tuning.KataGoCommandSpec;
@@ -680,6 +681,174 @@ class HumanSlAnalysisRunnerTest {
       JSONObject passCheck = process.sentRequests.get(1);
       assertEquals(HumanSlAnalysisRunner.PASS_CHECK_VISITS, passCheck.getInt("maxVisits"));
       assertFalse(passCheck.getJSONObject("overrideSettings").has("humanSLProfile"));
+      runner.close();
+    }
+  }
+
+  @Test
+  void mayPass_onlyAfterTheOpponentPassedOrOnceFortyPercentOfTheBoardIsPlayed() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Stone[] empty = new Stone[BOARD_AREA];
+      java.util.Arrays.fill(empty, Stone.EMPTY);
+      BoardHistoryNode opening =
+          new BoardHistoryNode(moveNode(empty, new int[] {0, 0}, Stone.BLACK, false, 3));
+      BoardHistoryNode late =
+          new BoardHistoryNode(moveNode(empty, new int[] {0, 0}, Stone.BLACK, false, 4));
+      BoardHistoryNode pass =
+          new BoardHistoryNode(
+              BoardData.pass(
+                  empty, Stone.BLACK, false, zobrist(empty), 1, new int[BOARD_AREA], 0, 0, 50, 0));
+
+      // 40% of a 3x3 board is 3.6 points.
+      assertFalse(HumanSlAnalysisRunner.mayPass(opening));
+      assertTrue(HumanSlAnalysisRunner.mayPass(late));
+      assertTrue(HumanSlAnalysisRunner.mayPass(pass));
+      assertFalse(HumanSlAnalysisRunner.mayPass(null));
+    }
+  }
+
+  @Test
+  void chooseHumanMove_upToFiveDanReportsTheAisOwnViewFromThePassCheck() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = endgameHistory();
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  request.getJSONObject("overrideSettings").has("humanSLProfile")
+                      ? new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put("humanPolicy", new JSONObject().put("C3", 0.9))
+                      : new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put(
+                              "rootInfo",
+                              new JSONObject().put("winrate", 0.12).put("scoreLead", -7.5))
+                          .put(
+                              "moveInfos",
+                              new JSONArray()
+                                  .put(new JSONObject().put("move", "C3").put("order", 0))));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      HumanMoveChoice choice =
+          runner
+              .chooseHumanMove(
+                  history.getCurrentHistoryNode(), "rank_3k", 64, 1, Duration.ofSeconds(1))
+              .orElseThrow();
+
+      assertEquals("C3", choice.move());
+      assertEquals(0.12, choice.aiWinrate(), 1e-12);
+      assertEquals(-7.5, choice.aiScoreLead(), 1e-12);
+      runner.close();
+    }
+  }
+
+  @Test
+  void chooseHumanMove_whenPlayersOfTheRankWouldPassItPlaysKatagosPointInsteadOfNoise()
+      throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = endgameHistory();
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  request.getJSONObject("overrideSettings").has("humanSLProfile")
+                      ? new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put(
+                              "humanPolicy",
+                              new JSONObject().put("pass", 0.9).put("C3", 0.05).put("A1", 0.05))
+                      : new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put(
+                              "moveInfos",
+                              new JSONArray()
+                                  .put(new JSONObject().put("move", "B1").put("order", 0))));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      assertEquals(
+          java.util.Optional.of("B1"),
+          runner.bestHumanMove(history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1)));
+      runner.close();
+    }
+  }
+
+  @Test
+  void chooseHumanMove_answersAPassWhenPassingTooCostsAtMostAPoint() throws Exception {
+    assertEquals("pass", replyAfterTheOpponentPassed(-6.3));
+    // Passing would give up 3.6 points, so the game goes on with a human move.
+    assertEquals("C3", replyAfterTheOpponentPassed(-9.0));
+  }
+
+  /** The AI's reply after a pass when KataGo's top move B1 leads by -5.4 and a pass by passLead. */
+  private static String replyAfterTheOpponentPassed(double passLead) throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      Stone[] position = stones(placement(0, 0, Stone.BLACK));
+      BoardHistoryList history = new BoardHistoryList(BoardData.empty(BOARD_SIZE, BOARD_SIZE));
+      history.add(
+          BoardData.pass(
+              position, Stone.WHITE, true, zobrist(position), 1, new int[BOARD_AREA], 0, 0, 50, 0));
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  request.getJSONObject("overrideSettings").has("humanSLProfile")
+                      ? new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put("humanPolicy", new JSONObject().put("C3", 0.9))
+                      : new JSONObject()
+                          .put("id", request.getString("id"))
+                          .put(
+                              "moveInfos",
+                              new JSONArray()
+                                  .put(
+                                      new JSONObject()
+                                          .put("move", "B1")
+                                          .put("order", 0)
+                                          .put("scoreLead", -5.4))
+                                  .put(
+                                      new JSONObject()
+                                          .put("move", "pass")
+                                          .put("order", 9)
+                                          .put("scoreLead", passLead))));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+      try {
+        return runner
+            .bestHumanMove(history.getCurrentHistoryNode(), "rank_3k", Duration.ofSeconds(1))
+            .orElseThrow();
+      } finally {
+        runner.close();
+      }
+    }
+  }
+
+  @Test
+  void finalBlackScoreLead_turnsKatagosSideToMoveLeadIntoBlacks() throws Exception {
+    try (TestEnvironment env = TestEnvironment.open()) {
+      BoardHistoryList history = endgameHistory();
+      boardWithHistory(history);
+      FakeProcess process =
+          new FakeProcess(
+              request ->
+                  new JSONObject()
+                      .put("id", request.getString("id"))
+                      .put("rootInfo", new JSONObject().put("scoreLead", 5.0)));
+      HumanSlAnalysisRunner runner =
+          new HumanSlAnalysisRunner(List.of("katago", "analysis"), ignored -> process);
+
+      // White is to play in the endgame position, so White's lead of 5 is Black's -5.
+      assertEquals(
+          -5.0,
+          runner
+              .finalBlackScoreLead(history.getCurrentHistoryNode(), Duration.ofSeconds(1))
+              .getAsDouble(),
+          1e-12);
+      assertEquals(
+          HumanSlAnalysisRunner.FINAL_SCORE_VISITS,
+          process.sentRequests.get(0).getInt("maxVisits"));
       runner.close();
     }
   }

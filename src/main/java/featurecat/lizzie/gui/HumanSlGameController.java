@@ -2,6 +2,7 @@ package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
+import featurecat.lizzie.analysis.GameInfo;
 import featurecat.lizzie.analysis.HumanMoveChoice;
 import featurecat.lizzie.analysis.HumanSlAnalysisRunner;
 import featurecat.lizzie.analysis.Leelaz;
@@ -11,6 +12,8 @@ import featurecat.lizzie.rules.Board;
 import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.training.AiResignation;
+import featurecat.lizzie.training.GameResult;
 import featurecat.lizzie.training.GameTreePosition;
 import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
@@ -22,6 +25,7 @@ import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
@@ -39,6 +43,8 @@ public final class HumanSlGameController {
   private static final Logger LOG = LoggerFactory.getLogger(LogCategories.APP);
   private static final int AI_MOVE_RETRIES = 2;
   private static final long THINK_TIME_POLL_MILLIS = 50L;
+  private static final Duration COUNT_TIMEOUT = Duration.ofSeconds(20);
+  private static final String RESIGN = "resign";
   private static final int FOREGROUND_RESTORE_ATTEMPTS = 2;
   private static final int PRIMARY_RESYNC_STABILITY_ATTEMPTS = 3;
   private final HumanSlAnalysisRunner runner;
@@ -88,6 +94,11 @@ public final class HumanSlGameController {
   private volatile BoardHistoryNode liveNode;
 
   private int takeBacks;
+  private AiResignation aiResignation;
+  private GameInfo gameInfo;
+  private double gameKomi;
+  private volatile boolean counting;
+  private volatile GameResult gameResult;
   private long thinkTimeOverrideMillis = -1L;
   private BiConsumer<String, Integer> notifier = Utils::showMsgNoModalForTime;
   private Runnable successfulExitCompletion;
@@ -196,6 +207,7 @@ public final class HumanSlGameController {
     humanIsBlack = config.resolveHumanIsBlack();
     profile = config.humanSlProfile();
     moveTimeout = Duration.ofSeconds(Math.max(2, config.moveTimeSeconds));
+    aiResignation = AiResignation.forProfile(profile);
   }
 
   /** Compatibility constructor for existing integrations and tests. */
@@ -234,6 +246,10 @@ public final class HumanSlGameController {
 
   void setNotifierForTesting(BiConsumer<String, Integer> value) {
     notifier = value;
+  }
+
+  void setAiResignationForTesting(AiResignation value) {
+    aiResignation = value;
   }
 
   void setExitLifecycleForTesting(
@@ -360,6 +376,8 @@ public final class HumanSlGameController {
       BoardHistoryList history = Lizzie.board.getHistory();
       gameRoot = history.getStart();
       gameStartNode = history.getCurrentHistoryNode();
+      gameInfo = history.getGameInfo();
+      gameKomi = gameInfo.getKomi();
       liveNode = gameStartNode;
       Lizzie.frame.humanSlGame = this;
       trainingSession.setState(HumanSlTrainingSession.State.PLAYING);
@@ -513,7 +531,10 @@ public final class HumanSlGameController {
 
   /** Called from LizzieFrame when a coaching game is active. */
   public void onBoardClicked(int x, int y) {
-    if (finished || !atLiveGame() || !isHumanTurn() || !Board.isValid(x, y)) {
+    if (finished || isGameOver() || counting || !atLiveGame() || !isHumanTurn()) {
+      return;
+    }
+    if (!Board.isValid(x, y)) {
       return;
     }
     if (Lizzie.board.getHistory().getStones()[Board.getIndex(x, y)] != Stone.EMPTY) {
@@ -527,19 +548,120 @@ public final class HumanSlGameController {
   }
 
   public void humanPass() {
-    if (finished || !atLiveGame() || !isHumanTurn()) {
+    if (finished || isGameOver() || counting || !atLiveGame() || !isHumanTurn()) {
       return;
     }
     if (!passLocal(humanIsBlack ? Stone.BLACK : Stone.WHITE)) {
       return;
     }
     recordTurnElapsed(true);
+    if (bothPlayersPassed()) {
+      countAndEnd();
+      return;
+    }
     scheduleAiMove();
+  }
+
+  /** The player resigns: the AI wins, and the game stays on the board for review. */
+  public void resign() {
+    if (finished || exitInProgress || isGameOver() || counting || !atLiveGame()) {
+      return;
+    }
+    endGame(GameResult.resignation(!humanIsBlack));
+  }
+
+  public boolean canResign() {
+    return !finished && !exitInProgress && !isGameOver() && !counting && !isReviewing();
+  }
+
+  public boolean isGameOver() {
+    return gameResult != null;
+  }
+
+  /** True while KataGo counts the game after both players passed. */
+  public boolean isCounting() {
+    return counting;
+  }
+
+  /** How the game ended, or null while it is still on. */
+  public GameResult result() {
+    return gameResult;
+  }
+
+  /** The result in words, such as 黑胜 3.5 目, or empty while the game is still on. */
+  public String resultText() {
+    GameResult result = gameResult;
+    if (result == null) {
+      return "";
+    }
+    if (result.isDraw()) {
+      return text("HumanSlGame.draw", "Draw");
+    }
+    if (!result.isCounted()) {
+      return text("HumanSlGame.result.uncounted", "Not counted");
+    }
+    if (result.byResignation()) {
+      return result.blackWins()
+          ? text("HumanSlGame.result.blackByResignation", "Black wins by resignation")
+          : text("HumanSlGame.result.whiteByResignation", "White wins by resignation");
+    }
+    String pattern =
+        result.blackWins()
+            ? text("HumanSlGame.result.blackByPoints", "Black wins by {0} points")
+            : text("HumanSlGame.result.whiteByPoints", "White wins by {0} points");
+    return MessageFormat.format(pattern, result.marginText());
+  }
+
+  private boolean bothPlayersPassed() {
+    BoardHistoryNode live = liveNode;
+    return live != null
+        && live.getData().isPassNode()
+        && live.previous().map(previous -> previous.getData().isPassNode()).orElse(false)
+        && GameTreePosition.movesSince(gameStartNode, live) >= 2;
+  }
+
+  /** Both players passed: KataGo counts the game, and then it is over. */
+  private void countAndEnd() {
+    counting = true;
+    aiThinking = false;
+    long generation = requestGeneration.incrementAndGet();
+    BoardHistoryNode finalNode = liveNode;
+    notifier.accept(text("HumanSlGame.bothPassed", "Both players passed. Counting the game..."), 3);
+    updateTrainingBar();
+    gameExecutor.execute(
+        () -> {
+          OptionalDouble blackLead = runner.finalBlackScoreLead(finalNode, COUNT_TIMEOUT);
+          SwingUtilities.invokeLater(
+              () -> {
+                if (finished || generation != requestGeneration.get()) {
+                  return;
+                }
+                counting = false;
+                endGame(
+                    blackLead.isPresent()
+                        ? GameResult.byScore(blackLead.getAsDouble(), gameKomi)
+                        : GameResult.uncounted());
+              });
+        });
+  }
+
+  private void endGame(GameResult result) {
+    gameResult = result;
+    aiThinking = false;
+    aiFailed = false;
+    requestGeneration.incrementAndGet();
+    if (result.isCounted() && gameInfo != null) {
+      gameInfo.setResult(result.sgf());
+    }
+    notifier.accept(
+        MessageFormat.format(text("HumanSlTraining.bar.gameOver", "Game over: {0}"), resultText()),
+        4);
+    updateTrainingBar();
   }
 
   /** Takes back the player's last move, and the AI's reply to it when there is one. */
   public void takeBack() {
-    if (finished || exitInProgress || isReviewing() || !atLiveGame()) {
+    if (finished || exitInProgress || isReviewing() || isGameOver() || counting || !atLiveGame()) {
       return;
     }
     int moves = takeBackMoves();
@@ -557,11 +679,16 @@ public final class HumanSlGameController {
     liveNode = board.getHistory().getCurrentHistoryNode();
     takeBacks++;
     turnStartedAt = System.currentTimeMillis();
-    Lizzie.frame.updateHumanSlTrainingBar();
+    updateTrainingBar();
   }
 
   public boolean canTakeBack() {
-    return !finished && !exitInProgress && !isReviewing() && takeBackMoves() > 0;
+    return !finished
+        && !exitInProgress
+        && !isReviewing()
+        && !isGameOver()
+        && !counting
+        && takeBackMoves() > 0;
   }
 
   /** Take-backs used in this game. */
@@ -669,14 +796,14 @@ public final class HumanSlGameController {
   }
 
   private void scheduleAiMove(boolean cancelBeforeRequest) {
-    if (finished || isReviewing() || aiThinking) {
+    if (finished || isReviewing() || aiThinking || isGameOver() || counting) {
       return;
     }
     aiFailed = false;
     aiThinking = true;
     long generation = requestGeneration.get();
     try {
-      Lizzie.frame.updateHumanSlTrainingBar();
+      updateTrainingBar();
       Board requestBoard = Lizzie.board;
       BoardHistoryNode positionNode = requestBoard.getHistory().getCurrentHistoryNode();
       long positionContextRevision = requestBoard.getContextRevision();
@@ -702,6 +829,7 @@ public final class HumanSlGameController {
                         config.rootSymmetries(),
                         moveTimeout);
                 if (choice.isPresent()) {
+                  choice = resignIfHopeless(choice.get(), positionNode);
                   break;
                 }
                 if (attempt + 1 < AI_MOVE_RETRIES && generation == requestGeneration.get()) {
@@ -730,6 +858,18 @@ public final class HumanSlGameController {
     } catch (RuntimeException | Error failure) {
       dispatchGameWorkerFailure(generation, "AI move dispatch", failure);
     }
+  }
+
+  /** The AI resigns instead of moving once KataGo has seen it lost for long enough. */
+  private Optional<HumanMoveChoice> resignIfHopeless(
+      HumanMoveChoice choice, BoardHistoryNode positionNode) {
+    boolean resign =
+        aiResignation.shouldResign(
+            choice.aiWinrate(),
+            choice.aiScoreLead(),
+            positionNode.getData().moveNumber,
+            Board.boardWidth * Board.boardHeight);
+    return Optional.of(resign ? new HumanMoveChoice(RESIGN, choice.topHumanProbability()) : choice);
   }
 
   /** How long the AI looks like it thinks: by how obvious the move is for players of its rank. */
@@ -822,12 +962,21 @@ public final class HumanSlGameController {
       aiFailed = true;
       Utils.showMsgNoModalForTime(text("HumanSlGame.aiMoveFailed", "The AI did not respond."), 4);
       turnStartedAt = System.currentTimeMillis();
-      Lizzie.frame.updateHumanSlTrainingBar();
+      updateTrainingBar();
       return;
     }
     aiFailed = false;
+    if (RESIGN.equals(move.get())) {
+      notifier.accept(text("HumanSlGame.aiResigned", "The AI resigned."), 3);
+      endGame(GameResult.resignation(humanIsBlack));
+      return;
+    }
     if ("pass".equalsIgnoreCase(move.get().trim())) {
       passLocal(aiColor);
+      if (bothPlayersPassed()) {
+        countAndEnd();
+        return;
+      }
       Utils.showMsgNoModalForTime(text("HumanSlGame.aiPassed", "AI passed."), 3);
       turnStartedAt = System.currentTimeMillis();
       return;
@@ -844,7 +993,7 @@ public final class HumanSlGameController {
       passLocal(aiColor);
     }
     turnStartedAt = System.currentTimeMillis();
-    Lizzie.frame.updateHumanSlTrainingBar();
+    updateTrainingBar();
   }
 
   public void retryAiMove() {
@@ -872,7 +1021,7 @@ public final class HumanSlGameController {
             return;
           }
           try {
-            Lizzie.frame.updateHumanSlTrainingBar();
+            updateTrainingBar();
             Utils.showMsgNoModalForTime(
                 text("HumanSlGame.aiMoveFailed", "The AI did not respond."), 4);
           } catch (RuntimeException | Error uiFailure) {
@@ -1188,6 +1337,10 @@ public final class HumanSlGameController {
     } catch (RuntimeException | Error failure) {
       logExitFailure("exit continuation dispatch", failure);
     }
+  }
+
+  private static void updateTrainingBar() {
+    Lizzie.frame.updateHumanSlTrainingBar();
   }
 
   private void refreshTrainingBarBestEffort() {

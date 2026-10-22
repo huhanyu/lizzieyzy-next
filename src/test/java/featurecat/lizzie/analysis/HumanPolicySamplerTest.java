@@ -88,6 +88,14 @@ class HumanPolicySamplerTest {
   }
 
   @Test
+  void passShareIsThePassesShareOfThePolicy() {
+    assertEquals(
+        0.8, HumanPolicySampler.passShare(List.of(move("pass", 0.4), move("D4", 0.1))), 1e-12);
+    assertEquals(0.0, HumanPolicySampler.passShare(List.of(move("D4", 0.1))), 1e-12);
+    assertEquals(0.0, HumanPolicySampler.passShare(List.of()), 1e-12);
+  }
+
+  @Test
   void topShareIsTheMostPopularMovesShareOfTheLegalPolicy() {
     assertEquals(
         0.75, HumanPolicySampler.topShare(List.of(move("D4", 0.3), move("Q16", 0.1))), 1e-12);

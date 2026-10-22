@@ -22,6 +22,8 @@ import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.training.AiResignation;
+import featurecat.lizzie.training.GameResult;
 import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.training.TrainingMode;
@@ -34,6 +36,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -96,6 +99,8 @@ class HumanSlGameControllerIntegrationTest {
   void aiReplyAfterBrowsingIsPlayedOnTheGamesPosition() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
       HumanSlGameController controller = env.startCoach(runner);
       controller.setThinkTimeForTesting(0L);
       BoardHistoryNode root = Lizzie.board.getHistory().getStart();
@@ -123,6 +128,8 @@ class HumanSlGameControllerIntegrationTest {
   void clickingWhileBrowsingReturnsToTheGameWithoutPlaying() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
       HumanSlGameController controller = env.startCoach(runner);
       controller.setThinkTimeForTesting(0L);
       controller.humanPass();
@@ -152,6 +159,8 @@ class HumanSlGameControllerIntegrationTest {
   void takeBackAfterTheAiRepliedRemovesBothMoves() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
       HumanSlGameController controller = env.startCoach(runner);
       controller.setThinkTimeForTesting(0L);
       BoardHistoryNode start = Lizzie.board.getHistory().getCurrentHistoryNode();
@@ -181,6 +190,8 @@ class HumanSlGameControllerIntegrationTest {
   void takeBackWhileTheAiThinksDropsItsLateReply() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
       HumanSlGameController controller = env.startCoach(runner);
       controller.setThinkTimeForTesting(0L);
       BoardHistoryNode start = Lizzie.board.getHistory().getCurrentHistoryNode();
@@ -252,6 +263,83 @@ class HumanSlGameControllerIntegrationTest {
       assertFalse(engine.isPondering());
       assertSame(controller, Lizzie.frame.humanSlGame);
       assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void twoPassesEndTheGameWithKatagosCount() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+
+      assertTrue(awaitCondition(controller::isGameOver, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      double komi = Lizzie.board.getHistory().getGameInfo().getKomi();
+      assertEquals(GameResult.byScore(3.4, komi), controller.result());
+      assertEquals(
+          GameResult.byScore(3.4, komi).sgf(), Lizzie.board.getHistory().getGameInfo().getResult());
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber());
+      assertTrue(messages.contains(Lizzie.resourceBundle.getString("HumanSlGame.bothPassed")));
+      assertFalse(controller.canTakeBack());
+      assertFalse(controller.canResign());
+
+      SwingUtilities.invokeAndWait(controller::humanPass);
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(1, 1));
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber());
+      assertEquals(1, runner.requestCount(), "nobody plays on after the count");
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void resigningEndsTheGameAndRecordsTheAiWin() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertTrue(controller.canResign());
+
+      SwingUtilities.invokeAndWait(controller::resign);
+
+      assertTrue(controller.isGameOver());
+      assertEquals(GameResult.resignation(false), controller.result());
+      assertEquals("W+R", Lizzie.board.getHistory().getGameInfo().getResult());
+      assertEquals(
+          Lizzie.resourceBundle.getString("HumanSlGame.result.whiteByResignation"),
+          controller.resultText());
+      assertFalse(controller.canResign());
+      assertEquals(0, runner.requestCount());
+    }
+  }
+
+  @Test
+  void theAiResignsInsteadOfPlayingWhenKatagoSaysItIsLost() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(new HumanMoveChoice("A1", 0.5, 0.001, -60.0));
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setAiResignationForTesting(AiResignation.of(0.01, 20.0, 1, 0.0));
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+
+      assertTrue(awaitCondition(controller::isGameOver, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      assertEquals(GameResult.resignation(true), controller.result());
+      assertEquals("B+R", Lizzie.board.getHistory().getGameInfo().getResult());
+      assertEquals(1, Lizzie.board.getHistory().getMoveNumber(), "the AI resigns instead of A1");
+      assertTrue(messages.contains(Lizzie.resourceBundle.getString("HumanSlGame.aiResigned")));
     }
   }
 
@@ -1728,6 +1816,8 @@ class HumanSlGameControllerIntegrationTest {
     private final AtomicInteger requestCount = new AtomicInteger();
     private final CountDownLatch closed = new CountDownLatch(1);
     private final List<String> lifecycleEvents;
+    private volatile HumanMoveChoice reply = HumanMoveChoice.of("pass");
+    private volatile OptionalDouble finalBlackLead = OptionalDouble.of(3.4);
 
     private BlockingHumanSlRunner() {
       this(null);
@@ -1755,7 +1845,16 @@ class HumanSlGameControllerIntegrationTest {
         Thread.currentThread().interrupt();
         return Optional.empty();
       }
-      return Optional.of(HumanMoveChoice.of("pass"));
+      return Optional.of(reply);
+    }
+
+    @Override
+    public OptionalDouble finalBlackScoreLead(BoardHistoryNode positionNode, Duration timeout) {
+      return finalBlackLead;
+    }
+
+    private void replyWith(HumanMoveChoice value) {
+      reply = value;
     }
 
     @Override
@@ -2008,6 +2107,16 @@ class HumanSlGameControllerIntegrationTest {
       stopCalls.incrementAndGet();
       LizzieFrame.urlSgf = false;
     }
+  }
+
+  private static final class SilentBoardRenderer extends BoardRenderer {
+    // Never runs: the fixture allocates renderers without calling a constructor.
+    private SilentBoardRenderer() {
+      super(false);
+    }
+
+    @Override
+    public void removedrawmovestone() {}
   }
 
   private static final class CoachBoard extends Board {
@@ -2335,6 +2444,11 @@ class HumanSlGameControllerIntegrationTest {
       Lizzie.board = board;
       EngineManager.isEmpty = false;
       return environment;
+    }
+
+    /** Stones need a board renderer; the coach tests otherwise run without one. */
+    private void allowStonePlacement() throws Exception {
+      LizzieFrame.boardRenderer = allocate(SilentBoardRenderer.class);
     }
 
     private HumanSlGameController startCoach(BlockingHumanSlRunner runner) {

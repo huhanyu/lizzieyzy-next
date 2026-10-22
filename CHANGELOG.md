@@ -4,6 +4,12 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练 games now end the way real games do:
+  - The AI passes when the game is over. KataGo's own search decides, as in KataGo's human-imitation configs. It is asked once 40% of the board has been played, or right after you pass. Before, the AI never passed before move 200, on any board size, so small boards could not end.
+  - After you pass, the AI passes too when playing on would gain at most a point. Under area scoring it still fills the dame first. Without this a losing AI kept playing inside its own area, because every move scored the same. When players of its rank would pass but KataGo still sees a point worth taking, it plays KataGo's move rather than a near-random human one.
+  - Two passes in a row end the game. KataGo counts it; the result, such as 黑胜 3.5 目, goes into the game record and the training bar.
+  - The AI resigns once KataGo has seen it lost for long enough, later for weaker ranks. Kyu ranks and 1 dan wait for 20 turns in a row below 0.5% and 40 points behind; 9 dan for 10 turns below 1% and 20 points behind. Neither resigns before 40% of the board has been played.
+  - The new 认输 button resigns for you. The game stays on the board with its result, and 结束并复盘 leaves AI 陪练 as before.
 - An AI 陪练 game can no longer be ended or broken by accident:
   - Space no longer ends the game. Keyboard focus used to start on 结束并复盘, so Space pressed it; the training bar's buttons now never take focus. In 实战后复盘 mode, Space no longer turns on the analysis the mode hides; a note says analysis appears after the game.
   - Browsing earlier moves (arrow keys, the mouse wheel, the move list) no longer ends the game or leaves the board refusing clicks. The AI's reply, or your next click or pass, brings the board back to the game's position, with a short note; that click only brings you back and does not play. If moves of the game were deleted, AI 陪练 ends and says why instead of stopping silently.
