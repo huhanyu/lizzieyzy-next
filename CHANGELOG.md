@@ -4,6 +4,11 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- The players' names under the board are drawn the way LizzieYzy always drew them again, straight on the wood.
+  - Black's name is in black, White's is in white with a dark edge, and the two stones sit between them as before.
+  - The light plate added in #658 is gone. Users found it glaring, and it filled the bottom of the board under the first-line stones.
+  - Names too long for the space now end with an ellipsis instead of being cut mid-word.
+
 - AI 陪练's 边下边提醒 no longer calls playing safe a 缓手 once the game is decided.
   - When the game is all but decided for players of the rank, a move is pointed out only when it gives away 10 points or more (问题手) or 20 or more (恶手). Before, 4 points already made a 缓手, so the side far ahead was told off for safe moves.
   - Measured with HumanSL stand-ins from 10 级 to 9 段, this removes two to four 缓手 a game. 恶手 come up one to four times a game at every rank, so the win-chance thresholds stay the same for all ranks.
