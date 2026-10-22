@@ -147,6 +147,14 @@ class CoachSetupFormTest {
     }
   }
 
+  @Test
+  void theDefaultTagStandsOutOnASelectedCardInBothThemes() {
+    for (CoachSetupWidgets.Palette palette :
+        List.of(CoachSetupWidgets.Palette.LIGHT, CoachSetupWidgets.Palette.DARK)) {
+      assertFalse(palette.tagFill().equals(palette.selectedFill()), palette.toString());
+    }
+  }
+
   private static void press(Component target, int key) {
     for (java.awt.event.KeyListener listener : target.getKeyListeners()) {
       listener.keyPressed(
