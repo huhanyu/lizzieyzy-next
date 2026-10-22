@@ -1738,7 +1738,7 @@ public final class KataGoRuntimeHelper {
     appendAnalysisPvLenOverride(launchCommand);
     if (purpose == LaunchPurpose.HUMAN_SL) {
       HumanSlLaunchProfile.apply(
-          launchCommand, isAppleSiliconHost(), Board.boardWidth == 19 && Board.boardHeight == 19);
+          launchCommand, enginePath, Board.boardWidth == 19 && Board.boardHeight == 19);
     }
     return launchCommand;
   }

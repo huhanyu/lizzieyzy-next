@@ -8,7 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class HumanSlLaunchProfileTest {
-  private static String overrides(boolean appleSilicon, boolean nineteen) {
+  private static String overrides(boolean metal, boolean nineteen) {
     List<String> command =
         new ArrayList<>(
             List.of(
@@ -18,12 +18,12 @@ class HumanSlLaunchProfileTest {
                 "analysis.cfg",
                 "-override-config",
                 "nnMaxBatchSize=64,numAnalysisThreads=2"));
-    HumanSlLaunchProfile.apply(command, appleSilicon, nineteen);
+    HumanSlLaunchProfile.apply(command, metal, nineteen);
     return command.get(command.indexOf("-override-config") + 1);
   }
 
   @Test
-  void appleSiliconPadsEveryBatchToFourSoMetalCompilesOnce() {
+  void theMetalBuildPadsEveryBatchToFourSoItCompilesOnce() {
     String overrides = overrides(true, true);
 
     assertTrue(overrides.contains("nnMaxBatchSize=4"), overrides);
@@ -45,5 +45,16 @@ class HumanSlLaunchProfileTest {
   @Test
   void smallerBoardsGetNoNineteenBuffer() {
     assertFalse(overrides(false, false).contains("maxBoardXSizeForNNBuffer"));
+  }
+
+  @Test
+  void onlyTheBundledAppleSiliconEngineCountsAsTheMetalBuild() {
+    assertTrue(
+        HumanSlLaunchProfile.isMetalBuild(
+            java.nio.file.Path.of("app", "engines", "katago", "macos-arm64", "katago")));
+    assertFalse(
+        HumanSlLaunchProfile.isMetalBuild(
+            java.nio.file.Path.of("app", "engines", "katago", "linux-x64-eigen", "katago")));
+    assertFalse(HumanSlLaunchProfile.isMetalBuild(null));
   }
 }
