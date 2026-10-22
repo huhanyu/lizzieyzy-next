@@ -26,6 +26,7 @@ public final class HumanSlTrainingBar extends JPanel {
   private final JLabel humanClockLabel = new JFontLabel();
   private final JLabel aiClockLabel = new JFontLabel();
   private final JProgressBar thinkingBar = new JProgressBar();
+  private final JFontButton takeBackButton = new JFontButton();
   private final JFontButton passButton = new JFontButton();
   private final JFontButton retryButton = new JFontButton();
   private final JFontButton finishButton = new JFontButton();
@@ -64,10 +65,6 @@ public final class HumanSlTrainingBar extends JPanel {
     controller = null;
     refreshTimer.stop();
     setVisible(false);
-  }
-
-  public void requestPrimaryFocus() {
-    finishButton.requestFocusInWindow();
   }
 
   private JPanel buildIdentity() {
@@ -131,12 +128,15 @@ public final class HumanSlTrainingBar extends JPanel {
   private JPanel buildActions() {
     JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
     panel.setOpaque(false);
+    takeBackButton.setText(text("HumanSlTraining.takeBack", "Take back"));
     passButton.setText(text("HumanSlGame.btn.pass", "Pass"));
     retryButton.setText(text("HumanSlTraining.retryAi", "Retry AI"));
     finishButton.setText(text("HumanSlTraining.finishReview", "Finish and review on board"));
+    HumanSlTrainingStyle.styleSecondary(takeBackButton);
     HumanSlTrainingStyle.styleSecondary(passButton);
     HumanSlTrainingStyle.stylePrimary(retryButton);
     HumanSlTrainingStyle.styleDanger(finishButton);
+    takeBackButton.addActionListener(event -> withController(HumanSlGameController::takeBack));
     passButton.addActionListener(event -> withController(HumanSlGameController::humanPass));
     retryButton.addActionListener(event -> withController(HumanSlGameController::retryAiMove));
     finishButton.addActionListener(
@@ -151,9 +151,13 @@ public final class HumanSlTrainingBar extends JPanel {
                     active.finishAndReturnToBoard();
                   }
                 }));
-    panel.add(passButton);
-    panel.add(retryButton);
-    panel.add(finishButton);
+    // The keyboard stays with the board: Space must never press Finish, and the board keeps its
+    // shortcuts while a game runs.
+    for (JFontButton button :
+        new JFontButton[] {takeBackButton, passButton, retryButton, finishButton}) {
+      button.setFocusable(false);
+      panel.add(button);
+    }
     return panel;
   }
 
@@ -196,6 +200,7 @@ public final class HumanSlTrainingBar extends JPanel {
         active.isAiThinking() || active.isReviewing() || active.isExitInProgress());
     retryButton.setVisible(
         !active.isStopRequested() && active.hasAiFailure() && !active.isReviewing());
+    takeBackButton.setEnabled(!active.isStopRequested() && active.canTakeBack());
     passButton.setEnabled(
         !active.isStopRequested() && active.isHumanTurn() && !active.isReviewing());
     String finishKey;

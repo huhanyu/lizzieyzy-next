@@ -23,6 +23,38 @@ class HumanSlTrainingBarTest {
     assertFalse(buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlGame.btn.resign")));
   }
 
+  @Test
+  void buttonsNeverTakeKeyboardFocusSoSpaceCannotPressFinish() {
+    HumanSlTrainingBar bar = new HumanSlTrainingBar();
+    List<AbstractButton> buttons = new ArrayList<>();
+    collectButtons(bar, buttons);
+
+    assertFalse(buttons.isEmpty());
+    for (AbstractButton button : buttons) {
+      assertFalse(button.isFocusable(), button.getText());
+    }
+  }
+
+  @Test
+  void actionsOfferTakeBack() {
+    HumanSlTrainingBar bar = new HumanSlTrainingBar();
+    List<String> buttonTexts = new ArrayList<>();
+    collectButtonTexts(bar, buttonTexts);
+
+    assertTrue(buttonTexts.contains(Lizzie.resourceBundle.getString("HumanSlTraining.takeBack")));
+  }
+
+  private static void collectButtons(Container container, List<AbstractButton> buttons) {
+    for (Component component : container.getComponents()) {
+      if (component instanceof AbstractButton) {
+        buttons.add((AbstractButton) component);
+      }
+      if (component instanceof Container) {
+        collectButtons((Container) component, buttons);
+      }
+    }
+  }
+
   private static void collectButtonTexts(Container container, List<String> buttonTexts) {
     for (Component component : container.getComponents()) {
       if (component instanceof AbstractButton) {

@@ -8,8 +8,10 @@ import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.ReadBoard;
 import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.rules.Board;
+import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
+import featurecat.lizzie.training.GameTreePosition;
 import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
 import featurecat.lizzie.training.HumanThinkTime;
@@ -24,6 +26,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -35,6 +38,7 @@ import org.slf4j.LoggerFactory;
 public final class HumanSlGameController {
   private static final Logger LOG = LoggerFactory.getLogger(LogCategories.APP);
   private static final int AI_MOVE_RETRIES = 2;
+  private static final long THINK_TIME_POLL_MILLIS = 50L;
   private static final int FOREGROUND_RESTORE_ATTEMPTS = 2;
   private static final int PRIMARY_RESYNC_STABILITY_ATTEMPTS = 3;
   private final HumanSlAnalysisRunner runner;
@@ -74,6 +78,18 @@ public final class HumanSlGameController {
   private volatile long aiElapsedMillis;
   private volatile long turnStartedAt;
   private BoardHistoryNode trainingStartNode;
+
+  /** Root of the history this game lives in, and the game's first node; take-backs stop there. */
+  private BoardHistoryNode gameRoot;
+
+  private BoardHistoryNode gameStartNode;
+
+  /** The game's current position. The board may show another one while the player browses. */
+  private volatile BoardHistoryNode liveNode;
+
+  private int takeBacks;
+  private long thinkTimeOverrideMillis = -1L;
+  private BiConsumer<String, Integer> notifier = Utils::showMsgNoModalForTime;
   private Runnable successfulExitCompletion;
   private Runnable successfulExitContinuation;
   private Consumer<Runnable> exitBackgroundDispatcher = HumanSlGameController::dispatchExitWorker;
@@ -212,6 +228,14 @@ public final class HumanSlGameController {
     return exitRecoveryPending;
   }
 
+  void setThinkTimeForTesting(long millis) {
+    thinkTimeOverrideMillis = millis;
+  }
+
+  void setNotifierForTesting(BiConsumer<String, Integer> value) {
+    notifier = value;
+  }
+
   void setExitLifecycleForTesting(
       Consumer<Runnable> backgroundDispatcher,
       Consumer<Runnable> completionDispatcher,
@@ -333,6 +357,10 @@ public final class HumanSlGameController {
         configurePlayerNames();
       }
       configureAnalysisVisuals();
+      BoardHistoryList history = Lizzie.board.getHistory();
+      gameRoot = history.getStart();
+      gameStartNode = history.getCurrentHistoryNode();
+      liveNode = gameStartNode;
       Lizzie.frame.humanSlGame = this;
       trainingSession.setState(HumanSlTrainingSession.State.PLAYING);
       turnStartedAt = System.currentTimeMillis();
@@ -485,7 +513,7 @@ public final class HumanSlGameController {
 
   /** Called from LizzieFrame when a coaching game is active. */
   public void onBoardClicked(int x, int y) {
-    if (finished || !isHumanTurn() || !Board.isValid(x, y)) {
+    if (finished || !atLiveGame() || !isHumanTurn() || !Board.isValid(x, y)) {
       return;
     }
     if (Lizzie.board.getHistory().getStones()[Board.getIndex(x, y)] != Stone.EMPTY) {
@@ -499,7 +527,7 @@ public final class HumanSlGameController {
   }
 
   public void humanPass() {
-    if (finished || !isHumanTurn()) {
+    if (finished || !atLiveGame() || !isHumanTurn()) {
       return;
     }
     if (!passLocal(humanIsBlack ? Stone.BLACK : Stone.WHITE)) {
@@ -507,6 +535,108 @@ public final class HumanSlGameController {
     }
     recordTurnElapsed(true);
     scheduleAiMove();
+  }
+
+  /** Takes back the player's last move, and the AI's reply to it when there is one. */
+  public void takeBack() {
+    if (finished || exitInProgress || isReviewing() || !atLiveGame()) {
+      return;
+    }
+    int moves = takeBackMoves();
+    if (moves == 0) {
+      return;
+    }
+    // A reply still on its way belongs to the position being taken back.
+    requestGeneration.incrementAndGet();
+    aiThinking = false;
+    aiFailed = false;
+    Board board = Lizzie.board;
+    for (int i = 0; i < moves; i++) {
+      board.deleteMoveNoHint();
+    }
+    liveNode = board.getHistory().getCurrentHistoryNode();
+    takeBacks++;
+    turnStartedAt = System.currentTimeMillis();
+    Lizzie.frame.updateHumanSlTrainingBar();
+  }
+
+  public boolean canTakeBack() {
+    return !finished && !exitInProgress && !isReviewing() && takeBackMoves() > 0;
+  }
+
+  /** Take-backs used in this game. */
+  public int takeBackCount() {
+    return takeBacks;
+  }
+
+  private int takeBackMoves() {
+    BoardHistoryNode live = liveNode;
+    if (live == null || gameStartNode == null) {
+      return 0;
+    }
+    boolean humanToPlay = live.getData().blackToPlay == humanIsBlack;
+    return GameTreePosition.takeBackMoves(
+        humanToPlay, GameTreePosition.movesSince(gameStartNode, live));
+  }
+
+  /** Space in a mode that hides analysis during the game: say why nothing appears. */
+  public void showAnalysisHiddenHint() {
+    notifier.accept(
+        text(
+            "HumanSlGame.analysisHidden",
+            "This training mode keeps analysis hidden until the game ends."),
+        3);
+  }
+
+  public void showDeleteBlockedHint() {
+    notifier.accept(
+        text(
+            "HumanSlGame.deleteBlocked",
+            "Moves cannot be deleted during the game. Use Take back instead."),
+        3);
+  }
+
+  /**
+   * True when the board shows the game's current position. If the player was browsing other moves,
+   * this brings the board back and says so, and the action that asked is not carried out.
+   */
+  private boolean atLiveGame() {
+    Board board = Lizzie.board;
+    BoardHistoryNode live = liveNode;
+    if (live == null || board.getHistory().getCurrentHistoryNode() == live) {
+      return true;
+    }
+    if (returnToGamePosition(board, live)) {
+      notifier.accept(
+          text(
+              "HumanSlGame.backToLiveGame",
+              "The game is still on, so the board went back to the current position."),
+          3);
+    }
+    return false;
+  }
+
+  /**
+   * Moves the board back to {@code position} of this game after the player browsed. Ends the
+   * session when the game's history was replaced, or its moves deleted, and returns false.
+   */
+  private boolean returnToGamePosition(Board board, BoardHistoryNode position) {
+    BoardHistoryNode root = board.getHistory().getStart();
+    if (root != gameRoot) {
+      abort();
+      return false;
+    }
+    if (!GameTreePosition.isAttached(position, root)) {
+      notifier.accept(
+          text(
+              "HumanSlGame.gameMovesDeleted",
+              "Moves of the game were deleted, so AI Coach has ended."),
+          4);
+      abort();
+      return false;
+    }
+    board.moveToAnyPosition(position);
+    return board.getHistory().getCurrentHistoryNode() == position;
   }
 
   /** Compatibility alias; ending by resignation now follows the same path as Finish. */
@@ -630,18 +760,24 @@ public final class HumanSlGameController {
       return;
     }
     long target =
-        thinkTimeMillis(
-            choice,
-            positionNode.getData().moveNumber,
-            Board.boardWidth * Board.boardHeight,
-            ThreadLocalRandom.current().nextDouble(),
-            moveTimeout);
-    long remaining = target - (System.currentTimeMillis() - startedAt);
-    if (remaining <= 0L) {
-      return;
-    }
+        thinkTimeOverrideMillis >= 0L
+            ? thinkTimeOverrideMillis
+            : thinkTimeMillis(
+                choice,
+                positionNode.getData().moveNumber,
+                Board.boardWidth * Board.boardHeight,
+                ThreadLocalRandom.current().nextDouble(),
+                moveTimeout);
+    long deadline = startedAt + target;
     try {
-      Thread.sleep(remaining);
+      // A take-back or exit drops this reply, so stop waiting as soon as it happens.
+      while (!finished && generation == requestGeneration.get()) {
+        long remaining = deadline - System.currentTimeMillis();
+        if (remaining <= 0L) {
+          return;
+        }
+        Thread.sleep(Math.min(remaining, THINK_TIME_POLL_MILLIS));
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
@@ -652,14 +788,20 @@ public final class HumanSlGameController {
       Board requestBoard,
       BoardHistoryNode positionNode,
       long positionContextRevision) {
-    if (!isCurrentAiRequestPosition(requestBoard, positionNode, positionContextRevision)) {
-      // A coaching game owns one live board position. If another action navigated or replaced that
-      // position while HumanSL was thinking, ending the session is safer than applying a response
-      // to an unrelated node or leaving a half-active controller behind.
-      abort();
+    if (isCurrentAiRequestPosition(requestBoard, positionNode, positionContextRevision)) {
+      applyAiMove(move);
       return;
     }
-    applyAiMove(move);
+    // The player browsed other moves while HumanSL was thinking: play the reply on the game's
+    // position. If that position was replaced or deleted, ending the session is safer than
+    // applying a response to an unrelated node or leaving a half-active controller behind.
+    if (Lizzie.board != requestBoard || positionNode != liveNode) {
+      abort();
+    } else if (returnToGamePosition(requestBoard, positionNode)) {
+      applyAiMove(move);
+    } else if (!finished) {
+      abort();
+    }
   }
 
   private boolean isCurrentAiRequestPosition(
@@ -1123,35 +1265,47 @@ public final class HumanSlGameController {
   }
 
   private boolean placeLocal(int x, int y, Stone color) {
+    Board board = Lizzie.board;
     boolean previous = Lizzie.leelaz != null && Lizzie.leelaz.isInputCommand;
-    BoardHistoryNode before = Lizzie.board.getHistory().getCurrentHistoryNode();
+    BoardHistoryNode before = board.getHistory().getCurrentHistoryNode();
     if (Lizzie.leelaz != null) {
       Lizzie.leelaz.isInputCommand = !config.mode.isLiveAnalysis();
     }
     try {
-      Lizzie.board.place(x, y, color, shouldForceTrainingBranch(before));
+      board.place(x, y, color, shouldForceTrainingBranch(before));
     } finally {
       if (Lizzie.leelaz != null) {
         Lizzie.leelaz.isInputCommand = previous;
       }
     }
-    return Lizzie.board.getHistory().getCurrentHistoryNode() != before;
+    return recordGameMove(board, before);
   }
 
   private boolean passLocal(Stone color) {
+    Board board = Lizzie.board;
     boolean previous = Lizzie.leelaz != null && Lizzie.leelaz.isInputCommand;
-    BoardHistoryNode before = Lizzie.board.getHistory().getCurrentHistoryNode();
+    BoardHistoryNode before = board.getHistory().getCurrentHistoryNode();
     if (Lizzie.leelaz != null) {
       Lizzie.leelaz.isInputCommand = !config.mode.isLiveAnalysis();
     }
     try {
-      Lizzie.board.pass(color, shouldForceTrainingBranch(before), false, true);
+      board.pass(color, shouldForceTrainingBranch(before), false, true);
     } finally {
       if (Lizzie.leelaz != null) {
         Lizzie.leelaz.isInputCommand = previous;
       }
     }
-    return Lizzie.board.getHistory().getCurrentHistoryNode() != before;
+    return recordGameMove(board, before);
+  }
+
+  /** True when the board advanced past {@code before}; the new node becomes the game's position. */
+  private boolean recordGameMove(Board board, BoardHistoryNode before) {
+    BoardHistoryNode after = board.getHistory().getCurrentHistoryNode();
+    if (after == before) {
+      return false;
+    }
+    liveNode = after;
+    return true;
   }
 
   private boolean shouldForceTrainingBranch(BoardHistoryNode currentNode) {

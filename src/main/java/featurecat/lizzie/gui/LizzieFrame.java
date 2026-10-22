@@ -13173,7 +13173,7 @@ public class LizzieFrame extends JFrame {
   public void showHumanSlTrainingBar(HumanSlGameController controller) {
     humanSlTrainingBar.attach(controller);
     reSetLoc();
-    humanSlTrainingBar.requestPrimaryFocus();
+    setMainPanelFocus();
   }
 
   public void hideHumanSlTrainingBar(HumanSlGameController controller) {

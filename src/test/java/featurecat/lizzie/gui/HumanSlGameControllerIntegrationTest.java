@@ -93,28 +93,165 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
-  void staleAiResponseEndsCoachWithoutChangingTheNavigatedPosition() throws Exception {
+  void aiReplyAfterBrowsingIsPlayedOnTheGamesPosition() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
       HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
       BoardHistoryNode root = Lizzie.board.getHistory().getStart();
 
       controller.humanPass();
       assertTrue(runner.awaitRequest());
-      assertEquals(1, root.numberOfChildren());
-
+      BoardHistoryNode humanPass = Lizzie.board.getHistory().getCurrentHistoryNode();
       assertTrue(Lizzie.board.getHistory().previous().isPresent());
       assertSame(root, Lizzie.board.getHistory().getCurrentHistoryNode());
       runner.releaseResponse();
 
-      assertTrue(awaitCondition(controller::isFinished, Duration.ofSeconds(2)));
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
       SwingUtilities.invokeAndWait(() -> {});
-      assertNull(Lizzie.frame.humanSlGame);
-      assertSame(root, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertFalse(controller.isFinished());
+      assertSame(controller, Lizzie.frame.humanSlGame);
+      assertSame(humanPass, Lizzie.board.getHistory().getCurrentHistoryNode().previous().get());
+      assertEquals(1, root.numberOfChildren(), "the reply must not start a variation at the root");
+      assertTrue(controller.isHumanTurn());
+    }
+  }
+
+  @Test
+  void clickingWhileBrowsingReturnsToTheGameWithoutPlaying() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      BoardHistoryNode live = Lizzie.board.getHistory().getCurrentHistoryNode();
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+
+      assertTrue(Lizzie.board.getHistory().previous().isPresent());
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(0, 0));
+
       assertEquals(
-          1,
-          root.numberOfChildren(),
-          "the stale HumanSL pass must not become a variation on the navigated node");
+          List.of(Lizzie.resourceBundle.getString("HumanSlGame.backToLiveGame")), messages);
+      assertSame(live, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertEquals(Stone.EMPTY, Lizzie.board.getHistory().getStones()[Board.getIndex(0, 0)]);
+      assertEquals(0, live.numberOfChildren());
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void takeBackAfterTheAiRepliedRemovesBothMoves() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      BoardHistoryNode start = Lizzie.board.getHistory().getCurrentHistoryNode();
+      assertFalse(controller.canTakeBack());
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      assertTrue(controller.canTakeBack());
+
+      SwingUtilities.invokeAndWait(controller::takeBack);
+
+      assertSame(start, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertEquals(0, start.numberOfChildren());
+      assertEquals(1, controller.takeBackCount());
+      assertTrue(controller.isHumanTurn());
+      assertFalse(controller.canTakeBack());
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void takeBackWhileTheAiThinksDropsItsLateReply() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      BoardHistoryNode start = Lizzie.board.getHistory().getCurrentHistoryNode();
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      SwingUtilities.invokeAndWait(controller::takeBack);
+
+      assertSame(start, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertFalse(controller.isAiThinking());
+      assertTrue(controller.isHumanTurn());
+
+      // The dropped reply arrives late; the next move must still get a reply of its own.
+      runner.releaseResponse();
+      SwingUtilities.invokeAndWait(controller::humanPass);
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      assertEquals(1, start.numberOfChildren());
+      BoardHistoryNode humanPass = start.getVariation(0).get();
+      assertEquals(1, humanPass.numberOfChildren());
+      assertSame(
+          humanPass.getVariation(0).get(), Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void deleteKeysCannotRemoveMovesDuringTheGame() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+      Input input = new Input();
+      JPanel source = new JPanel();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(source, KeyEvent.VK_DELETE)));
+      SwingUtilities.invokeAndWait(
+          () -> input.keyPressed(keyPressed(source, KeyEvent.VK_BACK_SPACE)));
+
+      assertEquals(1, Lizzie.board.getHistory().getMoveNumber());
+      assertEquals(2, messages.size());
+      assertEquals(Lizzie.resourceBundle.getString("HumanSlGame.deleteBlocked"), messages.get(0));
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void spaceDoesNotStartAnalysisWhileTheModeHidesIt() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      TrackingLeelaz engine = new TrackingLeelaz();
+      Lizzie.leelaz = engine;
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      assertFalse(controller.isLiveAnalysisMode());
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+      Input input = new Input();
+      JPanel source = new JPanel();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(source, KeyEvent.VK_SPACE)));
+
+      assertEquals(
+          List.of(Lizzie.resourceBundle.getString("HumanSlGame.analysisHidden")), messages);
+      assertFalse(engine.isPondering());
+      assertSame(controller, Lizzie.frame.humanSlGame);
+      assertFalse(controller.isFinished());
     }
   }
 
