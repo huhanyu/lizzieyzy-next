@@ -2221,6 +2221,57 @@ public class KataGoRuntimeHelperTest {
   }
 
   @Test
+  void switchingBackToCudaFromTheTensorRtSetupRunsTheBundledCudaEngine() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("katago-helper-tensorrt-back-from-trt");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createUnifiedNvidiaSnapshot(tempRoot);
+
+          withConfig(
+              runtimeWorkDirectory,
+              () -> {
+                Path targetDir =
+                    runtimeWorkDirectory
+                        .resolve("engines")
+                        .resolve("katago")
+                        .resolve("windows-x64-nvidia-tensorrt");
+                Path runtimeDir = runtimeWorkDirectory.resolve("nvidia-runtime");
+                touch(targetDir.resolve("katago.exe"));
+                touch(targetDir.resolve("libz.dll"));
+                touchRequiredCuda12_8Dlls(runtimeDir);
+                touch(runtimeDir.resolve("nvinfer_10.dll"));
+                touch(runtimeDir.resolve("nvonnxparser_10.dll"));
+                touch(runtimeDir.resolve("nvinfer_plugin_10.dll"));
+                Files.writeString(
+                    targetDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia-tensorrt\n");
+                writeCurrentTensorRtEngineManifest(targetDir);
+                KataGoRuntimeHelper.applyInstalledTensorRt(snapshot);
+                // The dialog keeps the setup it just applied: same install, the TensorRT build.
+                SetupSnapshot afterTensorRt =
+                    snapshot.withEnginePath(targetDir.resolve("katago.exe"));
+                assertTrue(KataGoRuntimeHelper.canSwitchBackToCuda(afterTensorRt));
+
+                SetupResult cudaResult = KataGoRuntimeHelper.applyBundledCudaProfile(afterTensorRt);
+
+                assertEquals(
+                    normalize(snapshot.enginePath), normalize(cudaResult.snapshot.enginePath));
+                assertFalse(KataGoRuntimeHelper.inspectTensorRtInstall(cudaResult.snapshot).active);
+                assertTrue(
+                    Utils.getEngineData().stream()
+                        .anyMatch(
+                            engine ->
+                                "KataGo Auto Setup".equals(engine.name)
+                                    && engine.isDefault
+                                    && engine.commands.contains(snapshot.enginePath.toString())
+                                    && !engine.commands.contains(targetDir.toString())),
+                    "the default profile runs the CUDA build again");
+              });
+        });
+  }
+
+  @Test
   void cancelledTensorRtInstallLeavesEngineProfileUnchanged() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,

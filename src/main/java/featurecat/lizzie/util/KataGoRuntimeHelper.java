@@ -892,92 +892,6 @@ public final class KataGoRuntimeHelper {
     }
   }
 
-  private static final class BootstrapDialog extends JDialog {
-    private final JLabel statusLabel = new JLabel();
-    private final JProgressBar progressBar = new JProgressBar();
-    private final javax.swing.JButton cancelButton = new javax.swing.JButton();
-    private long firstMeasuredAtMillis = 0L;
-
-    private BootstrapDialog(Window owner, DownloadSession session) {
-      super(owner);
-      setModal(true);
-      setTitle(resource("AutoSetup.nvidiaBootstrapTitle", "Preparing NVIDIA acceleration"));
-      setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-      setResizable(false);
-
-      JPanel content = new JPanel(new BorderLayout(0, 10));
-      content.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
-      setContentPane(content);
-
-      JLabel description =
-          new JLabel(
-              "<html>"
-                  + resource(
-                          "AutoSetup.nvidiaBootstrapDescription",
-                          "LizzieYzy Next is checking the bundled NVIDIA files in your package."
-                              + " If files are missing, reinstall the NVIDIA package.")
-                      .replace("\n", "<br>")
-                  + "</html>");
-      content.add(description, BorderLayout.NORTH);
-
-      statusLabel.setText(
-          resource("AutoSetup.installingNvidiaRuntime", "Preparing NVIDIA runtime..."));
-      content.add(statusLabel, BorderLayout.CENTER);
-
-      JPanel southPanel = new JPanel(new BorderLayout(0, 10));
-      progressBar.setStringPainted(true);
-      progressBar.setIndeterminate(true);
-      southPanel.add(progressBar, BorderLayout.CENTER);
-
-      JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-      cancelButton.setText(resource("AutoSetup.stopDownload", "Stop download"));
-      cancelButton.addActionListener(e -> session.cancel());
-      buttonPanel.add(cancelButton);
-      southPanel.add(buttonPanel, BorderLayout.SOUTH);
-      content.add(southPanel, BorderLayout.SOUTH);
-
-      setMinimumSize(new Dimension(560, 170));
-      pack();
-      setLocationRelativeTo(owner);
-    }
-
-    private void updateProgress(String statusText, long downloadedBytes, long totalBytes) {
-      statusLabel.setText(statusText);
-      if (totalBytes > 0) {
-        long now = System.currentTimeMillis();
-        if (downloadedBytes > 0 && firstMeasuredAtMillis <= 0L) {
-          firstMeasuredAtMillis = now;
-        }
-        progressBar.setIndeterminate(false);
-        progressBar.setMaximum(1000);
-        progressBar.setValue((int) Math.min(1000, (downloadedBytes * 1000L) / totalBytes));
-        String etaText = "";
-        if (firstMeasuredAtMillis > 0L && downloadedBytes > 0 && downloadedBytes < totalBytes) {
-          long elapsedMillis = Math.max(1000L, now - firstMeasuredAtMillis);
-          long bytesPerSecond = Math.max(1L, (downloadedBytes * 1000L) / elapsedMillis);
-          long remainingMillis =
-              Math.max(0L, ((totalBytes - downloadedBytes) * 1000L) / bytesPerSecond);
-          etaText = "  ETA " + formatDuration(remainingMillis);
-        }
-        progressBar.setString(
-            statusText
-                + "  "
-                + Math.min(100, (downloadedBytes * 100L) / totalBytes)
-                + "%  "
-                + formatBytes(downloadedBytes)
-                + " / "
-                + formatBytes(totalBytes)
-                + etaText);
-      } else if (downloadedBytes > 0) {
-        progressBar.setIndeterminate(true);
-        progressBar.setString(statusText + "  " + formatBytes(downloadedBytes));
-      } else {
-        progressBar.setIndeterminate(true);
-        progressBar.setString(statusText);
-      }
-    }
-  }
-
   public static Path resolveCommandExecutable(List<String> commands) {
     if (commands == null || commands.isEmpty()) {
       return null;
@@ -2197,27 +2111,6 @@ public final class KataGoRuntimeHelper {
         false);
   }
 
-  public static void downloadAndInstallNvidiaRuntime(
-      Path enginePath, ProgressListener listener, DownloadSession session) throws IOException {
-    NvidiaRuntimeStatus status = inspectNvidiaRuntime(enginePath);
-    if (!status.applicable) {
-      return;
-    }
-    if (status.ready) {
-      if (listener != null) {
-        listener.onProgress(resource("AutoSetup.nvidiaRuntimeReady", "Ready"), 0L, 0L);
-      }
-      return;
-    }
-    if (listener != null) {
-      listener.onProgress(
-          resource("AutoSetup.installingNvidiaRuntime", "Checking bundled NVIDIA files..."),
-          0L,
-          0L);
-    }
-    throw new IOException(buildMissingRuntimeMessage(status));
-  }
-
   public static TensorRtInstallStatus inspectTensorRtInstall(SetupSnapshot snapshot) {
     return inspectTensorRtInstall(snapshot, null);
   }
@@ -2602,6 +2495,7 @@ public final class KataGoRuntimeHelper {
     if (snapshot == null) {
       snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
     }
+    snapshot = withBundledCudaEngine(snapshot);
     if (!snapshot.hasEngine()) {
       throw new IOException(
           resource("AutoSetup.missingEngine", "No local KataGo binary was found."));
@@ -2619,6 +2513,31 @@ public final class KataGoRuntimeHelper {
     }
     return KataGoAutoSetupHelper.applyAutoSetup(
         snapshot.withActiveWeight(snapshot.activeWeightPath), true);
+  }
+
+  /**
+   * The setup with the bundled CUDA build in place of a TensorRT one. Once TensorRT is enabled, the
+   * setup the dialog holds runs the TensorRT build, and switching back must not keep it.
+   */
+  static SetupSnapshot withBundledCudaEngine(SetupSnapshot snapshot) throws IOException {
+    if (!isTensorRtBackend(resolveNvidiaBackend(snapshot.enginePath))) {
+      return snapshot;
+    }
+    for (Path root : new Path[] {snapshot.appRoot, snapshot.workingDir}) {
+      for (Path base : root == null ? new Path[0] : new Path[] {root, root.resolve("app")}) {
+        Path engines = base.resolve("engines").resolve("katago");
+        for (String dir :
+            new String[] {"windows-x64", NVIDIA_ENGINE_DIR, NVIDIA50_CUDA_ENGINE_DIR}) {
+          Path candidate = engines.resolve(dir).resolve("katago.exe");
+          String backend = resolveNvidiaBackend(candidate);
+          if (Files.isRegularFile(candidate)
+              && (NVIDIA_BACKEND.equals(backend) || NVIDIA50_CUDA_BACKEND.equals(backend))) {
+            return snapshot.withEnginePath(candidate);
+          }
+        }
+      }
+    }
+    throw new IOException(resource("AutoSetup.missingEngine", "No local KataGo binary was found."));
   }
 
   private static TensorRtInstallStatus repairTensorRtComponentsLocked(
@@ -5091,64 +5010,6 @@ public final class KataGoRuntimeHelper {
     // override removes the GTP alias for this launch without rewriting user files.
     appendOverrideConfig(command, "numSearchThreads=");
     appendOverrideConfig(command, "numSearchThreadsPerAnalysisThread=" + threads);
-  }
-
-  private static void installNvidiaRuntimeWithDialog(
-      Window owner, Path enginePath, NvidiaRuntimeStatus status) throws IOException {
-    final DownloadSession session = new DownloadSession();
-    final IOException[] errorHolder = new IOException[1];
-    final DownloadCancelledException[] cancelHolder = new DownloadCancelledException[1];
-    final BootstrapDialog[] dialogHolder = new BootstrapDialog[1];
-
-    try {
-      if (SwingUtilities.isEventDispatchThread()) {
-        dialogHolder[0] = new BootstrapDialog(owner, session);
-      } else {
-        SwingUtilities.invokeAndWait(() -> dialogHolder[0] = new BootstrapDialog(owner, session));
-      }
-    } catch (Exception e) {
-      throw new IOException("Unable to create NVIDIA bootstrap dialog", e);
-    }
-
-    Thread worker =
-        new Thread(
-            () -> {
-              try {
-                downloadAndInstallNvidiaRuntime(
-                    enginePath,
-                    (statusText, downloadedBytes, totalBytes) ->
-                        SwingUtilities.invokeLater(
-                            () ->
-                                dialogHolder[0].updateProgress(
-                                    statusText, downloadedBytes, totalBytes)),
-                    session);
-              } catch (DownloadCancelledException e) {
-                cancelHolder[0] = e;
-              } catch (IOException e) {
-                errorHolder[0] = e;
-              } finally {
-                SwingUtilities.invokeLater(() -> dialogHolder[0].dispose());
-              }
-            },
-            "katago-nvidia-runtime-bootstrap");
-    worker.start();
-
-    if (SwingUtilities.isEventDispatchThread()) {
-      dialogHolder[0].setVisible(true);
-    } else {
-      try {
-        SwingUtilities.invokeAndWait(() -> dialogHolder[0].setVisible(true));
-      } catch (Exception e) {
-        throw new IOException("Unable to show NVIDIA bootstrap dialog", e);
-      }
-    }
-
-    if (cancelHolder[0] != null) {
-      throw cancelHolder[0];
-    }
-    if (errorHolder[0] != null) {
-      throw errorHolder[0];
-    }
   }
 
   private static BenchmarkResult parseBenchmarkOutput(String output) {
