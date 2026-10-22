@@ -4,6 +4,11 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- KataGo Auto Setup keeps its existing interface while handling background work more reliably.
+  - Runtime inspection and cache sizing run off the UI thread. Progress and cancellation remain available, and late results from a closed window are discarded.
+  - Saving engine settings preserves concurrent profile changes and the selected default engine.
+  - Automatic background optimization no longer opens progress or error popups; results remain available in the performance page.
+
 - KataGo Auto Setup (一键设置) downloads are safer.
   - A weight listed on the KataGo networks page without a size or digest is no longer installed from a stopped download. It counts as whole only when the gzip file reads to the end.
   - Links on that page are followed only over HTTPS to katagotraining.org, and only to plain weight file names. A name with a folder in it can no longer write outside the weights folder.
