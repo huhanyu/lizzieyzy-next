@@ -298,6 +298,66 @@ public class TensorRtComponentRepairTest {
   }
 
   @Test
+  void upgradingAnEngineThatHoldsTheRuntimeKeepsTheRuntime() throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("tensorrt-repair-runtime-beside-engine");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createDirectMlSnapshot(tempRoot);
+          RepairFixtures fixtures = createRepairFixtures(tempRoot);
+          // As in the full package: an older TensorRT engine with the NVIDIA runtime beside it.
+          Path engineDir = Files.createDirectories(tensorRtEngineDir(runtimeWorkDirectory));
+          Files.writeString(engineDir.resolve("katago.exe"), "older-katago");
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia-tensorrt\n");
+          for (String dll : RUNTIME_DLLS) {
+            Files.writeString(engineDir.resolve(dll), "runtime");
+          }
+          Path runtimeManifest = engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+          Files.writeString(
+              runtimeManifest,
+              "Profile: cuda12.8-cudnn9-tensorrt\n- CUDA NVRTC: "
+                  + KataGoRuntimeHelper.CUDA_12_8_NVRTC_VERSION
+                  + " | fixture | sha256="
+                  + KataGoRuntimeHelper.CUDA_12_8_NVRTC_SHA256
+                  + "\n");
+          Path license =
+              engineDir.resolve("licenses").resolve("nvidia-runtime").resolve("TensorRT.txt");
+          Files.createDirectories(license.getParent());
+          Files.writeString(license, "license");
+
+          withRepairFixtures(
+              fixtures,
+              false,
+              () ->
+                  withConfig(
+                      runtimeWorkDirectory,
+                      () -> {
+                        seedDirectMlProfiles(snapshot);
+                        TensorRtInstallStatus before =
+                            KataGoRuntimeHelper.inspectTensorRtInstall(snapshot, rtx3060Allowed());
+                        assertFalse(before.engineCurrent);
+                        assertTrue(before.runtimeReady, "the runtime beside the engine counts");
+
+                        TensorRtInstallStatus repaired =
+                            KataGoRuntimeHelper.repairTensorRtComponents(
+                                snapshot, null, new DownloadSession());
+
+                        assertTrue(repaired.engineCurrent);
+                        assertTrue(repaired.runtimeReady, "no runtime download was needed");
+                        for (String dll : RUNTIME_DLLS) {
+                          assertTrue(Files.isRegularFile(engineDir.resolve(dll)), dll + " kept");
+                        }
+                        assertTrue(Files.isRegularFile(runtimeManifest), "runtime manifest kept");
+                        assertTrue(Files.isRegularFile(license), "licenses kept");
+                        assertEquals(
+                            "fake-katago", Files.readString(engineDir.resolve("katago.exe")));
+                      }));
+        });
+  }
+
+  @Test
   void partialRuntimeStaysIncompleteUntilALaterRepairAndCompletedFilesAreReused() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,
@@ -965,23 +1025,24 @@ public class TensorRtComponentRepairTest {
         Files.size(runtimeZip));
   }
 
+  private static final String[] RUNTIME_DLLS = {
+    "cudart64_12.dll",
+    "cublas64_12.dll",
+    "cublasLt64_12.dll",
+    "cudnn64_9.dll",
+    "nvJitLink64_12.dll",
+    "nvrtc64_120_0.dll",
+    "nvrtc-builtins64_128.dll",
+    "nvinfer_10.dll",
+    "nvonnxparser_10.dll",
+    "nvinfer_plugin_10.dll",
+    "z.dll"
+  };
+
   private static Path writeRuntimeFixtureZip(Path zipPath) throws IOException {
-    String[] dlls = {
-      "cudart64_12.dll",
-      "cublas64_12.dll",
-      "cublasLt64_12.dll",
-      "cudnn64_9.dll",
-      "nvJitLink64_12.dll",
-      "nvrtc64_120_0.dll",
-      "nvrtc-builtins64_128.dll",
-      "nvinfer_10.dll",
-      "nvonnxparser_10.dll",
-      "nvinfer_plugin_10.dll",
-      "z.dll"
-    };
     Files.createDirectories(zipPath.getParent());
     try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(zipPath))) {
-      for (String dll : dlls) {
+      for (String dll : RUNTIME_DLLS) {
         output.putNextEntry(new ZipEntry(dll));
         output.closeEntry();
       }

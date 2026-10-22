@@ -116,6 +116,8 @@ public final class KataGoRuntimeHelper {
   private static final String OPENCL_BACKEND = "opencl";
   private static final String ENGINE_BACKEND_MARKER_NAME = "lizzieyzy-next-engine-backend.txt";
   private static final String NVIDIA_RUNTIME_ROOT = "nvidia-runtime";
+  private static final String NVIDIA_RUNTIME_MANIFEST_NAME =
+      "lizzieyzy-next-nvidia-runtime-manifest.txt";
   private static final String NVIDIA_RUNTIME_DOWNLOAD_CACHE_DIR = "downloads";
   private static final String NVIDIA_RUNTIME_CACHE_DIR = "cache";
   private static final String NVIDIA_CUDA_CACHE_DIR = "cuda";
@@ -134,10 +136,6 @@ public final class KataGoRuntimeHelper {
   private static final String OPENCL_NVIDIA_DRIVER_VERSION_PROPERTY =
       "lizzie.opencl.nvidiaDriverVersion";
   private static final int WINDOWS_FAST_FAIL_EXIT_CODE = (int) 0xC0000409L;
-  private static final String CUDA_MANIFEST_URL =
-      "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.1.1.json";
-  private static final String CUDNN_MANIFEST_URL =
-      "https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.8.0.json";
   private static final String CUDA_12_8_MANIFEST_URL =
       "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.0.json";
   private static final String CUDNN_9_MANIFEST_URL =
@@ -5972,7 +5970,7 @@ public final class KataGoRuntimeHelper {
         || enginePath.getParent() == null) {
       return false;
     }
-    Path manifest = enginePath.getParent().resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+    Path manifest = enginePath.getParent().resolve(NVIDIA_RUNTIME_MANIFEST_NAME);
     if (!Files.isRegularFile(manifest)) {
       return false;
     }
@@ -5990,7 +5988,7 @@ public final class KataGoRuntimeHelper {
       return false;
     }
     Path engineDir = enginePath.getParent();
-    Path manifest = engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+    Path manifest = engineDir.resolve(NVIDIA_RUNTIME_MANIFEST_NAME);
     if (Files.isRegularFile(manifest)) {
       try {
         String text = Files.readString(manifest, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
@@ -6012,8 +6010,7 @@ public final class KataGoRuntimeHelper {
       if (directory == null) {
         continue;
       }
-      for (String manifestName :
-          Arrays.asList("lizzieyzy-next-nvidia-runtime-manifest.txt", "manifest.txt")) {
+      for (String manifestName : Arrays.asList(NVIDIA_RUNTIME_MANIFEST_NAME, "manifest.txt")) {
         Path manifest = directory.resolve(manifestName);
         if (!Files.isRegularFile(manifest)) {
           continue;
@@ -6451,6 +6448,7 @@ public final class KataGoRuntimeHelper {
           }
           throw e;
         }
+        keepPackagedRuntime(backupDir, targetEngineDir);
         deleteRecursively(backupDir);
         recordTensorRt(
             MaintenanceObservation.STAGE_INSTALL,
@@ -6467,6 +6465,30 @@ public final class KataGoRuntimeHelper {
     } catch (IOException e) {
       deleteRecursively(stagingDir);
       throw e;
+    }
+  }
+
+  /**
+   * The TensorRT full package keeps the NVIDIA runtime in the engine's folder: its DLLs, its
+   * manifest and its licenses. A new engine package carries none of them, so they move over from
+   * the replaced folder instead of being deleted with it, which used to cost a 3.66 GB download.
+   */
+  static void keepPackagedRuntime(Path replacedDir, Path engineDir) throws IOException {
+    if (!Files.isDirectory(replacedDir)) {
+      return;
+    }
+    try (java.nio.file.DirectoryStream<Path> entries = Files.newDirectoryStream(replacedDir)) {
+      for (Path entry : entries) {
+        String name = entry.getFileName().toString();
+        boolean runtime =
+            name.toLowerCase(Locale.ROOT).endsWith(".dll")
+                || name.equals(NVIDIA_RUNTIME_MANIFEST_NAME)
+                || name.equals("licenses");
+        Path target = engineDir.resolve(name);
+        if (runtime && !Files.exists(target)) {
+          Files.move(entry, target);
+        }
+      }
     }
   }
 
@@ -6628,7 +6650,7 @@ public final class KataGoRuntimeHelper {
   private static void writePinnedCuda12_8NvrtcRuntimeManifest(Path runtimeDir) throws IOException {
     Files.createDirectories(runtimeDir);
     Files.writeString(
-        runtimeDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+        runtimeDir.resolve(NVIDIA_RUNTIME_MANIFEST_NAME),
         "CUDA NVRTC: "
             + CUDA_12_8_NVRTC_VERSION
             + "\nfixture\nSHA-256: "
@@ -6881,30 +6903,6 @@ public final class KataGoRuntimeHelper {
         Files.deleteIfExists(candidate);
       }
     }
-  }
-
-  private static List<RuntimePackageSpec> resolveRequiredRuntimePackages() throws IOException {
-    List<RuntimePackageSpec> packages = new ArrayList<RuntimePackageSpec>();
-    JSONObject cudaManifest = new JSONObject(httpGet(CUDA_MANIFEST_URL));
-    JSONObject cudnnManifest = new JSONObject(httpGet(CUDNN_MANIFEST_URL));
-    packages.add(
-        readPackageSpec(
-            cudaManifest, CUDA_MANIFEST_URL, "cuda_cudart", "windows-x86_64", "CUDA Runtime"));
-    packages.add(
-        readPackageSpec(
-            cudaManifest, CUDA_MANIFEST_URL, "libcublas", "windows-x86_64", "CUDA cuBLAS"));
-    packages.add(
-        readPackageSpec(
-            cudaManifest, CUDA_MANIFEST_URL, "libnvjitlink", "windows-x86_64", "CUDA nvJitLink"));
-    packages.add(
-        readNestedPackageSpec(
-            cudnnManifest,
-            CUDNN_MANIFEST_URL,
-            "cudnn",
-            "windows-x86_64",
-            "cuda12",
-            "NVIDIA cuDNN"));
-    return packages;
   }
 
   private static String chooseTensorRtNvidiaDownloadHost(
