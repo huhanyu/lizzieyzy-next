@@ -1060,6 +1060,35 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @Test
+  void networksPageLinksOutsideTheTrainingSiteOrWithFoldersAreDropped() throws Exception {
+    String good = officialModel("b28", 3);
+    String html =
+        new StringBuilder()
+            .append("<table class=\"table mt-3\">")
+            .append(officialRow(good, "2026-06-28", "14180 Elo"))
+            .append(row("kata1-b28-plain-http", "http://media.katagotraining.org/m/a.bin.gz"))
+            .append(row("kata1-b28-elsewhere", "https://example.com/kata1-b28-elsewhere.bin.gz"))
+            .append(row("kata1-b28-folder", "https://media.katagotraining.org/m/..%5Cevil.bin.gz"))
+            .append("</table>")
+            .toString();
+
+    List<KataGoAutoSetupHelper.RemoteWeightInfo> choices =
+        KataGoAutoSetupHelper.parseOfficialWeights(html);
+
+    assertEquals(List.of(good), choices.stream().map(info -> info.modelName).toList());
+  }
+
+  private static String row(String model, String url) {
+    return "<tr><td>"
+        + model
+        + "</td><td>2026-06-20</td><td>14000 Elo</td><td><a href=\""
+        + url
+        + "\">"
+        + model
+        + "</a></td></tr>";
+  }
+
+  @Test
   void officialWeightChoicesNoLongerReserveTheLegacyDefaultZhizi() throws Exception {
     String latestModel = officialModel("b28", 3);
     String olderModel = officialModel("b28", 2);
@@ -2783,7 +2812,7 @@ public class KataGoAutoSetupHelperTest {
   }
 
   private static String officialLink(String model) {
-    return "<a href=\"https://example.com/" + model + ".bin.gz\">" + model + "</a>";
+    return "<a href=\"" + officialModelUrl(model) + "\">" + model + "</a>";
   }
 
   private static String officialRow(String model, String releaseDate, String elo) {

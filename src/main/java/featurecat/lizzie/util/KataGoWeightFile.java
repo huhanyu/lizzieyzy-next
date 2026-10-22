@@ -3,15 +3,54 @@ package featurecat.lizzie.util;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipException;
 
-/** Whether a downloaded KataGo weight file is whole when nothing else vouches for it. */
+/**
+ * Rules for KataGo weight downloads that nothing else vouches for: where from, named how, whole.
+ */
 final class KataGoWeightFile {
+  /** A plain weight file name: no folders, so it stays in the folder it is resolved against. */
+  private static final Pattern PLAIN_NAME =
+      Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*\\.(?:bin|txt)\\.gz");
+
   private KataGoWeightFile() {}
+
+  /**
+   * Whether a download link read from the networks page may be followed: HTTPS to the KataGo
+   * training site, ending in a plain weight file name. The page is not ours, so a link elsewhere,
+   * or a name with a folder in it (on Windows a backslash is one), is dropped.
+   */
+  static boolean isTrustedListing(String url) {
+    try {
+      URI uri = new URI(url);
+      String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+      String path = uri.getPath() == null ? "" : uri.getPath();
+      return "https".equalsIgnoreCase(uri.getScheme())
+          && (host.equals("katagotraining.org") || host.endsWith(".katagotraining.org"))
+          && isPlainName(path.substring(path.lastIndexOf('/') + 1));
+    } catch (URISyntaxException e) {
+      return false;
+    }
+  }
+
+  /** {@code folder.resolve(name)}, refusing a name that is not a plain weight file name. */
+  static Path inFolder(Path folder, String name) throws IOException {
+    if (!isPlainName(name)) {
+      throw new IOException("Unsafe weight file name: " + name);
+    }
+    return folder.resolve(name);
+  }
+
+  static boolean isPlainName(String name) {
+    return name != null && PLAIN_NAME.matcher(name).matches();
+  }
 
   /**
    * For a weight listed without size or digest (the rows read from the networks page) only its own

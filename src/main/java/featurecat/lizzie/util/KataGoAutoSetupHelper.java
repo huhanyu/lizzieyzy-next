@@ -1507,7 +1507,7 @@ public final class KataGoAutoSetupHelper {
     DownloadSession activeSession = session != null ? session : new DownloadSession();
     activeSession.throwIfCancelled();
 
-    Path target = weightsDir.resolve(info.fileName());
+    Path target = KataGoWeightFile.inFolder(weightsDir, info.fileName());
     long existingStarted = System.nanoTime();
     if (isDownloadedWeightValid(target, info)) {
       recordWeightDownload(
@@ -2348,7 +2348,7 @@ public final class KataGoAutoSetupHelper {
         String uploadedAt = cleanHtmlText(cells.get(1));
         String eloRating = cleanHtmlText(cells.get(2));
         String downloadUrl = resolveUrl(extractHref(cells.get(3)));
-        if (modelName.isEmpty() || downloadUrl.isEmpty()) {
+        if (modelName.isEmpty() || !KataGoWeightFile.isTrustedListing(downloadUrl)) {
           continue;
         }
         String dedupKey = modelName.toLowerCase(Locale.ROOT);
