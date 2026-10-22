@@ -10968,12 +10968,6 @@ public class Menu extends JMenuBar {
       case PLAYING:
         key = "Menu.aiCoach.playing";
         break;
-      case REVIEWING:
-        key = "Menu.aiCoach.reviewing";
-        break;
-      case REPORT_READY:
-        key = "Menu.aiCoach.report";
-        break;
       case FINISHED:
       case IDLE:
       default:
@@ -10990,10 +10984,7 @@ public class Menu extends JMenuBar {
     } else {
       refreshAiFeatureLabels();
     }
-    aiCoachButton.setSelected(
-        state == HumanSlTrainingSession.State.PLAYING
-            || state == HumanSlTrainingSession.State.REVIEWING
-            || state == HumanSlTrainingSession.State.REPORT_READY);
+    aiCoachButton.setSelected(state == HumanSlTrainingSession.State.PLAYING);
     configureAiFeatureButton(aiCoachButton);
     revalidate();
     repaint();

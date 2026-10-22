@@ -55,7 +55,7 @@ public final class KataGoAutoSetupHelper {
   private static final String AUTO_SETUP_ENGINE_NAME = "KataGo Auto Setup";
   private static final String WEIGHT_ENGINE_NAME_PREFIX = "KataGo · ";
   private static final String TENSORRT_ENGINE_NAME = "KataGo TensorRT";
-  private static final String USER_AGENT =
+  static final String USER_AGENT =
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
           + "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
   private static final String NETWORKS_URL = "https://katagotraining.org/networks/";
@@ -1482,128 +1482,7 @@ public final class KataGoAutoSetupHelper {
 
   static Path downloadHumanSlModel(
       ProgressListener listener, DownloadSession session, List<String> sources) throws IOException {
-    SetupSnapshot snapshot = inspectLocalSetup();
-    Path modelsDir = humanSlModelsDir(snapshot.workingDir);
-    Files.createDirectories(modelsDir);
-    DownloadSession activeSession = session != null ? session : new DownloadSession();
-    activeSession.throwIfCancelled();
-
-    Path target = modelsDir.resolve(HUMAN_SL_MODEL_FILE_NAME);
-    if (isValidHumanSlModelFile(target)) {
-      rememberHumanSlModel(target);
-      if (listener != null) {
-        listener.onProgress(HUMAN_SL_MODEL_FILE_NAME, Files.size(target), Files.size(target));
-      }
-      return target;
-    }
-    Files.deleteIfExists(target);
-
-    Path temp = modelsDir.resolve(HUMAN_SL_MODEL_FILE_NAME + ".part");
-    IOException failure = null;
-    for (String source : sources) {
-      activeSession.throwIfCancelled();
-      try {
-        downloadHumanSlModelFromSource(source, temp, listener, activeSession);
-      } catch (DownloadCancelledException e) {
-        throw e;
-      } catch (IOException e) {
-        if (failure != null) {
-          e.addSuppressed(failure);
-        }
-        failure = e;
-        continue;
-      }
-      try {
-        activeSession.throwIfCancelled();
-        try {
-          Files.move(
-              temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-          Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-        rememberHumanSlModel(target);
-        return target;
-      } finally {
-        Files.deleteIfExists(temp);
-      }
-    }
-    throw failure != null ? failure : new IOException("No HumanSL download source configured");
-  }
-
-  private static void downloadHumanSlModelFromSource(
-      String source, Path temp, ProgressListener listener, DownloadSession activeSession)
-      throws IOException {
-    HttpURLConnection conn = null;
-    try {
-      conn = (HttpURLConnection) NetworkProxy.openConnection(URI.create(source).toURL());
-      activeSession.attach(conn);
-      activeSession.throwIfCancelled();
-      conn.setInstanceFollowRedirects(true);
-      conn.setRequestMethod("GET");
-      conn.setConnectTimeout(15000);
-      conn.setReadTimeout(30000);
-      conn.setRequestProperty("User-Agent", USER_AGENT);
-      conn.setRequestProperty("Accept", "application/octet-stream,*/*");
-      int code = conn.getResponseCode();
-      if (code != HttpURLConnection.HTTP_OK) {
-        throw new IOException("HTTP " + code + " from " + source);
-      }
-      long totalBytes = conn.getContentLengthLong();
-      long expectedBytes = humanSlModelSizeBytes();
-      if (expectedBytes > 0L && totalBytes > 0L && totalBytes != expectedBytes) {
-        throw new IOException(
-            resource("AutoSetup.humanSlModelIncomplete", "HumanSL model download is incomplete."));
-      }
-      if (totalBytes <= 0L && expectedBytes > 0L) {
-        totalBytes = expectedBytes;
-      }
-      long downloaded = 0L;
-      try (InputStream raw = conn.getInputStream();
-          BufferedInputStream input = new BufferedInputStream(raw);
-          OutputStream output = Files.newOutputStream(temp)) {
-        byte[] buffer = new byte[8192];
-        int read;
-        long lastReportTime = 0L;
-        while (true) {
-          activeSession.throwIfCancelled();
-          read = input.read(buffer);
-          if (read < 0) {
-            break;
-          }
-          output.write(buffer, 0, read);
-          downloaded += read;
-          if (expectedBytes > 0L && downloaded > expectedBytes) {
-            throw new IOException(
-                resource(
-                    "AutoSetup.humanSlModelIncomplete", "HumanSL model download is incomplete."));
-          }
-          activeSession.throwIfCancelled();
-          long now = System.currentTimeMillis();
-          if (listener != null && (now - lastReportTime > 120 || totalBytes == downloaded)) {
-            listener.onProgress(HUMAN_SL_MODEL_FILE_NAME, downloaded, totalBytes);
-            lastReportTime = now;
-          }
-        }
-      }
-      activeSession.throwIfCancelled();
-      if (totalBytes > 0L && downloaded != totalBytes) {
-        throw new IOException(
-            resource("AutoSetup.humanSlModelIncomplete", "HumanSL model download is incomplete."));
-      }
-      verifyOfficialHumanSlModel(temp);
-    } catch (IOException e) {
-      Files.deleteIfExists(temp);
-      if (activeSession.isCancelled() && !(e instanceof DownloadCancelledException)) {
-        throw new DownloadCancelledException(
-            resource("AutoSetup.downloadCancelled", "Download cancelled."));
-      }
-      throw e;
-    } finally {
-      if (conn != null) {
-        conn.disconnect();
-      }
-      activeSession.clear();
-    }
+    return HumanSlModelDownload.download(listener, session, sources);
   }
 
   public static Path downloadQuickAnalysisModel(ProgressListener listener, DownloadSession session)
@@ -2340,7 +2219,7 @@ public final class KataGoAutoSetupHelper {
     return AUTO_SETUP_ENGINE_NAME;
   }
 
-  private static Path humanSlModelsDir(Path workingDir) {
+  static Path humanSlModelsDir(Path workingDir) {
     return workingDir.resolve(HUMAN_SL_MODEL_DIR_NAME).toAbsolutePath().normalize();
   }
 
@@ -2552,7 +2431,7 @@ public final class KataGoAutoSetupHelper {
     }
   }
 
-  private static String resource(String key, String fallback) {
+  static String resource(String key, String fallback) {
     try {
       if (Lizzie.resourceBundle != null && Lizzie.resourceBundle.containsKey(key)) {
         return Lizzie.resourceBundle.getString(key);
@@ -3737,7 +3616,7 @@ public final class KataGoAutoSetupHelper {
     return fileName.endsWith(".bin.gz") || fileName.endsWith(".txt.gz");
   }
 
-  private static boolean isValidHumanSlModelFile(Path path) {
+  static boolean isValidHumanSlModelFile(Path path) {
     if (path == null || !Files.isRegularFile(path) || !isSupportedHumanSlModelFile(path)) {
       return false;
     }
@@ -3758,7 +3637,7 @@ public final class KataGoAutoSetupHelper {
         && HUMAN_SL_MODEL_FILE_NAME.equalsIgnoreCase(path.getFileName().toString());
   }
 
-  private static void verifyOfficialHumanSlModel(Path path) throws IOException {
+  static void verifyOfficialHumanSlModel(Path path) throws IOException {
     long expectedSize = humanSlModelSizeBytes();
     if (expectedSize > 0L && Files.size(path) != expectedSize) {
       throw new IOException(
@@ -3785,7 +3664,7 @@ public final class KataGoAutoSetupHelper {
     return value.isEmpty() ? HUMAN_SL_MODEL_SHA256 : value;
   }
 
-  private static long humanSlModelSizeBytes() {
+  static long humanSlModelSizeBytes() {
     String value = System.getProperty(HUMAN_SL_MODEL_SIZE_PROPERTY, "").trim();
     if (!value.isEmpty()) {
       try {

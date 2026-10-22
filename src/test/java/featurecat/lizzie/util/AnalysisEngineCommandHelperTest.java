@@ -370,6 +370,48 @@ class AnalysisEngineCommandHelperTest {
   }
 
   @Test
+  void humanSlNamesTheMissingPieceInsteadOfSayingNoEngineIsSelected() throws Exception {
+    Path engine =
+        Files.createDirectories(tempDir.resolve("current/engines/katago")).resolve("katago");
+    Files.writeString(engine, "");
+    Path weight = Files.writeString(tempDir.resolve("current/default.bin.gz"), "");
+
+    assertEquals(
+        "AnalysisEngineCommandHelper.noAnalysisConfig",
+        AnalysisEngineCommandHelper.missingPart(
+            engine, tempDir.resolve("current/analysis.cfg"), weight));
+    assertEquals(
+        "AnalysisEngineCommandHelper.noWeight",
+        AnalysisEngineCommandHelper.missingPart(
+            engine, Files.writeString(tempDir.resolve("current/analysis.cfg"), ""), null));
+    assertEquals(
+        "AnalysisEngineCommandHelper.noEngineSelected",
+        AnalysisEngineCommandHelper.missingPart(null, null, null));
+  }
+
+  @Test
+  void anEngineSetUpForPlayOnlyGetsAnAnalysisConfigNextToItsGtpConfig() throws Exception {
+    Path configs = Files.createDirectories(tempDir.resolve("external/configs"));
+    Path gtp = Files.writeString(configs.resolve("gtp.cfg"), "numSearchThreads = 4\n");
+    Path engine = Files.writeString(tempDir.resolve("external/katago"), "");
+
+    Path config =
+        AnalysisEngineCommandHelper.analysisConfigOrGenerated(
+            configs.resolve("analysis.cfg"), gtp, engine);
+
+    assertTrue(Files.isRegularFile(config), String.valueOf(config));
+    assertEquals(configs, config.getParent());
+    assertEquals(
+        config,
+        AnalysisEngineCommandHelper.analysisConfigOrGenerated(config, gtp, engine),
+        "an existing config is kept");
+    assertEquals(
+        null,
+        AnalysisEngineCommandHelper.analysisConfigOrGenerated(null, null, engine),
+        "nothing to make it from");
+  }
+
+  @Test
   void humanSlFailedResolveLogsSourceFlavorAndMissingComponentsWithoutFullPaths() throws Exception {
     Path root = tempDir.resolve("secret-katago-home-368");
     Path engine = writeIncompleteOpenClBundleMissingAnalysisConfig(root);

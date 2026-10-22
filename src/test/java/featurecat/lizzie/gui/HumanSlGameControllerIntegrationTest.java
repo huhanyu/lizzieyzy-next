@@ -13,6 +13,7 @@ import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.ExactSnapshotRestoreProtocolFixture;
+import featurecat.lizzie.analysis.HumanMoveChoice;
 import featurecat.lizzie.analysis.HumanSlAnalysisRunner;
 import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.rules.Board;
@@ -21,8 +22,12 @@ import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
 import featurecat.lizzie.rules.Zobrist;
+import featurecat.lizzie.training.AiResignation;
+import featurecat.lizzie.training.GameResult;
 import featurecat.lizzie.training.HumanSlTrainingConfig;
 import featurecat.lizzie.training.HumanSlTrainingSession;
+import featurecat.lizzie.training.MoveVerdict;
+import featurecat.lizzie.training.PositionReview;
 import featurecat.lizzie.training.TrainingMode;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
@@ -32,7 +37,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -92,29 +99,623 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
-  void staleAiResponseEndsCoachWithoutChangingTheNavigatedPosition() throws Exception {
+  void aiReplyAfterBrowsingIsPlayedOnTheGamesPosition() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
       HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
       BoardHistoryNode root = Lizzie.board.getHistory().getStart();
 
       controller.humanPass();
       assertTrue(runner.awaitRequest());
-      assertEquals(1, root.numberOfChildren());
-
+      BoardHistoryNode humanPass = Lizzie.board.getHistory().getCurrentHistoryNode();
       assertTrue(Lizzie.board.getHistory().previous().isPresent());
       assertSame(root, Lizzie.board.getHistory().getCurrentHistoryNode());
       runner.releaseResponse();
 
-      assertTrue(awaitCondition(controller::isFinished, Duration.ofSeconds(2)));
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
       SwingUtilities.invokeAndWait(() -> {});
-      assertNull(Lizzie.frame.humanSlGame);
-      assertSame(root, Lizzie.board.getHistory().getCurrentHistoryNode());
-      assertEquals(
-          1,
-          root.numberOfChildren(),
-          "the stale HumanSL pass must not become a variation on the navigated node");
+      assertFalse(controller.isFinished());
+      assertSame(controller, Lizzie.frame.humanSlGame);
+      assertSame(humanPass, Lizzie.board.getHistory().getCurrentHistoryNode().previous().get());
+      assertEquals(1, root.numberOfChildren(), "the reply must not start a variation at the root");
+      assertTrue(controller.isHumanTurn());
     }
+  }
+
+  @Test
+  void clickingWhileBrowsingReturnsToTheGameWithoutPlaying() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      BoardHistoryNode live = Lizzie.board.getHistory().getCurrentHistoryNode();
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+
+      assertTrue(Lizzie.board.getHistory().previous().isPresent());
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(0, 0));
+
+      assertEquals(
+          List.of(Lizzie.resourceBundle.getString("HumanSlGame.backToLiveGame")), messages);
+      assertSame(live, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertEquals(Stone.EMPTY, Lizzie.board.getHistory().getStones()[Board.getIndex(0, 0)]);
+      assertEquals(0, live.numberOfChildren());
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void takeBackAfterTheAiRepliedRemovesBothMoves() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      BoardHistoryNode start = Lizzie.board.getHistory().getCurrentHistoryNode();
+      assertFalse(controller.canTakeBack());
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      assertTrue(controller.canTakeBack());
+
+      SwingUtilities.invokeAndWait(controller::takeBack);
+
+      assertSame(start, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertEquals(0, start.numberOfChildren());
+      assertEquals(1, controller.takeBackCount());
+      assertTrue(controller.isHumanTurn());
+      assertFalse(controller.canTakeBack());
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void takeBackWhileTheAiThinksDropsItsLateReply() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      BoardHistoryNode start = Lizzie.board.getHistory().getCurrentHistoryNode();
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      SwingUtilities.invokeAndWait(controller::takeBack);
+
+      assertSame(start, Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertFalse(controller.isAiThinking());
+      assertTrue(controller.isHumanTurn());
+
+      // The dropped reply arrives late; the next move must still get a reply of its own.
+      runner.releaseResponse();
+      SwingUtilities.invokeAndWait(controller::humanPass);
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      assertEquals(1, start.numberOfChildren());
+      BoardHistoryNode humanPass = start.getVariation(0).get();
+      assertEquals(1, humanPass.numberOfChildren());
+      assertSame(
+          humanPass.getVariation(0).get(), Lizzie.board.getHistory().getCurrentHistoryNode());
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void deleteKeysCannotRemoveMovesDuringTheGame() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+      Input input = new Input();
+      JPanel source = new JPanel();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(source, KeyEvent.VK_DELETE)));
+      SwingUtilities.invokeAndWait(
+          () -> input.keyPressed(keyPressed(source, KeyEvent.VK_BACK_SPACE)));
+
+      assertEquals(1, Lizzie.board.getHistory().getMoveNumber());
+      assertEquals(2, messages.size());
+      assertEquals(Lizzie.resourceBundle.getString("HumanSlGame.deleteBlocked"), messages.get(0));
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void spaceDoesNotStartAnalysisWhileTheModeHidesIt() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      TrackingLeelaz engine = new TrackingLeelaz();
+      Lizzie.leelaz = engine;
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      assertFalse(controller.isLiveAnalysisMode());
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+      Input input = new Input();
+      JPanel source = new JPanel();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(source, KeyEvent.VK_SPACE)));
+
+      assertEquals(
+          List.of(Lizzie.resourceBundle.getString("HumanSlGame.analysisHidden")), messages);
+      assertFalse(engine.isPondering());
+      assertSame(controller, Lizzie.frame.humanSlGame);
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void hDoesNotRevealThePolicyHeatmapWhileTheModeHidesAnalysis() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      TrackingLeelaz engine = new TrackingLeelaz();
+      Lizzie.leelaz = engine;
+      HumanSlGameController controller =
+          env.startCoach(new BlockingHumanSlRunner(), TrainingMode.POST_GAME_REVIEW);
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+      Input input = new Input();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(new JPanel(), KeyEvent.VK_H)));
+
+      assertEquals(0, engine.heatmapToggles.get());
+      assertEquals(
+          List.of(Lizzie.resourceBundle.getString("HumanSlGame.analysisHidden")), messages);
+    }
+  }
+
+  @Test
+  void twoPassesEndTheGameWithKatagosCount() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+
+      assertTrue(awaitCondition(controller::isGameOver, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      double komi = Lizzie.board.getHistory().getGameInfo().getKomi();
+      assertEquals(GameResult.byScore(3.4, komi), controller.result());
+      assertEquals(
+          GameResult.byScore(3.4, komi).sgf(), Lizzie.board.getHistory().getGameInfo().getResult());
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber());
+      assertTrue(messages.contains(Lizzie.resourceBundle.getString("HumanSlGame.bothPassed")));
+      assertFalse(controller.canTakeBack());
+      assertFalse(controller.canResign());
+
+      SwingUtilities.invokeAndWait(controller::humanPass);
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(1, 1));
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber());
+      assertEquals(1, runner.requestCount(), "nobody plays on after the count");
+      assertFalse(controller.isFinished());
+    }
+  }
+
+  @Test
+  void resigningEndsTheGameAndRecordsTheAiWin() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertTrue(controller.canResign());
+
+      SwingUtilities.invokeAndWait(controller::resign);
+
+      assertTrue(controller.isGameOver());
+      assertEquals(GameResult.resignation(false), controller.result());
+      assertEquals("W+R", Lizzie.board.getHistory().getGameInfo().getResult());
+      assertEquals(
+          Lizzie.resourceBundle.getString("HumanSlGame.result.whiteByResignation"),
+          controller.resultText());
+      assertFalse(controller.canResign());
+      assertEquals(0, runner.requestCount());
+    }
+  }
+
+  @Test
+  void theAiResignsInsteadOfPlayingWhenKatagoSaysItIsLost() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(new HumanMoveChoice("A1", 0.5, 0.001, -60.0));
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setAiResignationForTesting(AiResignation.of(0.01, 20.0, 1, 0.0));
+      List<String> messages = new ArrayList<>();
+      controller.setNotifierForTesting((message, seconds) -> messages.add(message));
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+
+      assertTrue(awaitCondition(controller::isGameOver, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+      assertEquals(GameResult.resignation(true), controller.result());
+      assertEquals("B+R", Lizzie.board.getHistory().getGameInfo().getResult());
+      assertEquals(1, Lizzie.board.getHistory().getMoveNumber(), "the AI resigns instead of A1");
+      assertTrue(messages.contains(Lizzie.resourceBundle.getString("HumanSlGame.aiResigned")));
+    }
+  }
+
+  @Test
+  void coachPanelStateFollowsTheGameFromYourTurnToTheResult() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setNotifierForTesting((message, seconds) -> {});
+
+      CoachPanelState playing = CoachPanelState.of(controller, (key, fallback) -> text(key));
+
+      assertEquals(text("CoachPanel.status.yourTurn"), playing.status());
+      assertEquals(CoachPanelState.Tone.ACTIVE, playing.tone());
+      assertEquals(
+          java.text.MessageFormat.format(text("CoachPanel.opponent"), controller.opponentLabel()),
+          playing.title());
+      assertFalse(playing.aiPlaysBlack());
+      assertEquals(0, playing.winChance().values().length, "nothing rated yet");
+      assertNull(playing.summary());
+
+      SwingUtilities.invokeAndWait(controller::resign);
+      CoachPanelState over = CoachPanelState.of(controller, (key, fallback) -> text(key));
+
+      assertEquals(text("CoachPanel.status.gameOver"), over.status());
+      assertEquals(CoachPanelState.Tone.DONE, over.tone());
+      assertEquals(text("CoachPanel.youLost"), over.summary().headline(), "the player resigned");
+      assertFalse(over.summary().won());
+      assertEquals(controller.resultText(), over.summary().result());
+      assertTrue(
+          over.summary()
+              .stats()
+              .contains(java.text.MessageFormat.format(text("CoachPanel.stat.takeBacks"), 0)));
+      assertEquals(text("CoachPanel.reviewHint"), over.summary().hint());
+      assertEquals(
+          List.of(CoachPanelState.Action.REVIEW, CoachPanelState.Action.PLAY_AGAIN),
+          over.summary().choices().stream().map(CoachPanelState.Choice::action).toList());
+    }
+  }
+
+  @Test
+  void liveFeedbackRatesThePlayersMoveAndForgetsItOnTakeBack() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(
+          new PositionReview(
+              0.0,
+              12.0,
+              List.of(
+                  new PositionReview.Candidate("A1", 200, 0.5),
+                  new PositionReview.Candidate("C3", 60, -3.5)),
+              Map.of("A1", 0.3, "C3", 0.2)));
+      runner.replyWith(HumanMoveChoice.of("B2"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertEquals(TrainingMode.LIVE_FEEDBACK, controller.mode());
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(() -> controller.moveReviewer().latest().isPresent()),
+              Duration.ofSeconds(5)));
+
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertEquals(MoveVerdict.PROBLEM, state[0].moveCard().verdict());
+      assertEquals(text("CoachPanel.verdict.problem"), state[0].moveCard().verdictLabel());
+      assertEquals(
+          java.text.MessageFormat.format(
+              text("CoachPanel.winChanceRank"), controller.opponentLabel()),
+          state[0].winChance().caption());
+      assertEquals(2, state[0].winChance().values().length);
+      assertEquals("C3", state[0].history().recent().get(0).move());
+      assertEquals(1, state[0].history().tallies().get(MoveVerdict.PROBLEM.ordinal()).count());
+
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(controller::takeBack);
+
+      assertTrue(onEventThread(() -> controller.moveReviewer().feedback().isEmpty()));
+    }
+  }
+
+  @Test
+  void postGameReviewDoesNotRateMoves() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller =
+          new HumanSlGameController(
+              runner,
+              HumanSlTrainingConfig.builder()
+                  .mode(TrainingMode.POST_GAME_REVIEW)
+                  .playerColor(HumanSlTrainingConfig.PlayerColor.BLACK)
+                  .fromCurrentPosition(true)
+                  .moveTimeSeconds(2)
+                  .build(),
+              new HumanSlTrainingSession());
+      controller.setExitLifecycleForTesting(Runnable::run, Runnable::run, () -> true, null);
+      controller.start();
+      env.allowStonePlacement();
+
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+
+      assertNull(controller.moveReviewer());
+      assertEquals(0, runner.reviewCount.get());
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertNull(state[0].winChance());
+      assertNull(state[0].history());
+      assertNull(state[0].moveCard().verdict());
+    }
+  }
+
+  /** A 3×3 review where A1 is best and C3 gives away 12.5 points: a 恶手 at any level. */
+  private static PositionReview blunderReview() {
+    return new PositionReview(
+        0.0,
+        12.0,
+        List.of(
+            new PositionReview.Candidate("A1", 200, 0.5),
+            new PositionReview.Candidate("C3", 60, -12.0)),
+        Map.of("A1", 0.3, "C3", 0.02));
+  }
+
+  @Test
+  void aBlunderHoldsTheAiReplyUntilThePlayerPlaysOn() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(blunderReview());
+      runner.replyWith(HumanMoveChoice.of("B2"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(controller::isAwaitingDecision), Duration.ofSeconds(5)));
+
+      assertEquals(1, Lizzie.board.getHistory().getMoveNumber(), "the AI waits");
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertEquals(text("CoachPanel.status.decide"), state[0].status());
+      assertEquals(MoveVerdict.BLUNDER, state[0].prompt().verdict());
+      assertEquals(
+          List.of(
+              CoachPanelState.Action.RETRY,
+              CoachPanelState.Action.SHOW_BEST,
+              CoachPanelState.Action.CONTINUE),
+          state[0].prompt().choices().stream().map(CoachPanelState.Choice::action).toList());
+      assertTrue(state[0].winChance().marked() > 50.0, "the chance before the 恶手 in red");
+
+      SwingUtilities.invokeAndWait(controller::showBestMove);
+      assertTrue(
+          onEventThread(
+              () -> java.util.Arrays.equals(new int[] {0, 2}, controller.assist().marks().point())),
+          "A1 is marked");
+
+      SwingUtilities.invokeAndWait(controller::continueAfterBlunder);
+
+      assertEquals(2, Lizzie.board.getHistory().getMoveNumber(), "the AI played its reply");
+      assertFalse(onEventThread(controller::isAwaitingDecision));
+      assertTrue(onEventThread(() -> controller.assist().marks().isEmpty()));
+    }
+  }
+
+  @Test
+  void playingABlunderAgainTakesItBackAndDropsTheHeldReply() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(blunderReview());
+      runner.replyWith(HumanMoveChoice.of("B2"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(controller::isAwaitingDecision), Duration.ofSeconds(5)));
+
+      SwingUtilities.invokeAndWait(controller::retryBlunder);
+
+      assertEquals(0, Lizzie.board.getHistory().getMoveNumber());
+      assertFalse(onEventThread(controller::isAwaitingDecision));
+      assertTrue(onEventThread(controller::isHumanTurn));
+      assertTrue(onEventThread(() -> controller.moveReviewer().feedback().isEmpty()));
+    }
+  }
+
+  @Test
+  void hintAndHShowTheAreaThenThePointInLiveFeedback() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      TrackingLeelaz engine = new TrackingLeelaz();
+      Lizzie.leelaz = engine;
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(blunderReview());
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+      Input input = new Input();
+
+      SwingUtilities.invokeAndWait(() -> input.keyPressed(keyPressed(new JPanel(), KeyEvent.VK_H)));
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(() -> controller.assist().hintStep() == CoachAssist.Hint.AREA),
+              Duration.ofSeconds(5)));
+
+      assertEquals(0, engine.heatmapToggles.get());
+      assertTrue(
+          onEventThread(
+              () ->
+                  java.util.Arrays.equals(
+                      CoachBoardMarks.areaBounds(6, BOARD_SIZE, BOARD_SIZE),
+                      controller.assist().marks().area())),
+          "A1 lies in the bottom left area");
+
+      SwingUtilities.invokeAndWait(controller::hint);
+
+      assertTrue(
+          onEventThread(
+              () ->
+                  java.util.Arrays.equals(new int[] {0, 2}, controller.assist().marks().point())));
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertEquals(
+          java.text.MessageFormat.format(text("CoachPanel.hint.point"), "A1"),
+          state[0].prompt().title());
+
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(0, 2));
+
+      assertTrue(onEventThread(() -> controller.assist().marks().isEmpty()));
+    }
+  }
+
+  @Test
+  void playAgainEndsTheGameThenOpensTheSetupAgain() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
+      controller.setNotifierForTesting((message, seconds) -> {});
+      SwingUtilities.invokeAndWait(controller::resign);
+      SetupReopeningFrame frame = allocate(SetupReopeningFrame.class);
+      frame.game = controller;
+      CoachPanel[] panel = new CoachPanel[1];
+      SwingUtilities.invokeAndWait(
+          () -> {
+            panel[0] = new CoachPanel(frame, () -> null);
+            panel[0].attach(controller);
+            panel[0].setSize(CoachPanel.WIDTH, 900);
+            panel[0].doLayout();
+          });
+
+      SwingUtilities.invokeAndWait(
+          () ->
+              panel[0].buttons().stream()
+                  .filter(button -> button.isVisible())
+                  .filter(button -> text("CoachPanel.playAgain").equals(button.getText()))
+                  .findFirst()
+                  .orElseThrow()
+                  .doClick());
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(1, frame.setupRequests);
+      assertTrue(frame.gameClosedFirst, "the setup opens once the game is closed");
+      SwingUtilities.invokeAndWait(() -> panel[0].detach(controller));
+    }
+  }
+
+  @Test
+  void aKeyMistakeOpensTheReviewAtThePositionBeforeIt() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(blunderReview());
+      runner.replyWith(HumanMoveChoice.of("B2"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+      BoardHistoryNode beforeMistake = Lizzie.board.getHistory().getCurrentHistoryNode();
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(controller::isAwaitingDecision), Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(controller::resign);
+
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertTrue(state[0].history().clickable());
+      CoachPanelState.Row row = state[0].history().recent().get(0);
+      assertEquals(MoveVerdict.BLUNDER, row.verdict());
+
+      SwingUtilities.invokeAndWait(() -> controller.reviewFrom(row.moveNumber()));
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertTrue(controller.isFinished());
+      assertSame(beforeMistake, Lizzie.board.getHistory().getCurrentHistoryNode());
+    }
+  }
+
+  private static boolean onEventThread(BooleanSupplier check) {
+    boolean[] result = new boolean[1];
+    try {
+      SwingUtilities.invokeAndWait(() -> result[0] = check.getAsBoolean());
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return result[0];
+  }
+
+  @Test
+  void theLastMoveNamesThePlayersMoveNumberAndPoint() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      assertNull(controller.lastHumanMoveText());
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(
+          java.text.MessageFormat.format(
+              text("CoachPanel.moveAt"), 1, text("HumanSlGame.btn.pass")),
+          controller.lastHumanMoveText());
+      assertEquals(2, controller.captures().length);
+    }
+  }
+
+  private static String text(String key) {
+    return Lizzie.resourceBundle.getString(key);
   }
 
   @Test
@@ -877,8 +1478,6 @@ class HumanSlGameControllerIntegrationTest {
           assertTrue(engine.pondering);
           assertFalse(controller.isExitRecoveryPending());
           assertEquals(HumanSlTrainingSession.State.FINISHED, session.state());
-          assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REVIEWING));
-          assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REPORT_READY));
         }
       }
     }
@@ -911,8 +1510,9 @@ class HumanSlGameControllerIntegrationTest {
       assertEquals(HumanSlTrainingSession.State.FINISHED, session.state());
       assertTrue(controller.gameResult().isBlank());
       assertEquals(resultBefore, Lizzie.board.getHistory().getGameInfo().getResult());
-      assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REVIEWING));
-      assertFalse(sessionStates.contains(HumanSlTrainingSession.State.REPORT_READY));
+      assertEquals(
+          List.of(HumanSlTrainingSession.State.PLAYING, HumanSlTrainingSession.State.FINISHED),
+          sessionStates);
     }
   }
 
@@ -1590,6 +2190,10 @@ class HumanSlGameControllerIntegrationTest {
     private final AtomicInteger requestCount = new AtomicInteger();
     private final CountDownLatch closed = new CountDownLatch(1);
     private final List<String> lifecycleEvents;
+    private volatile HumanMoveChoice reply = HumanMoveChoice.of("pass");
+    private final AtomicInteger reviewCount = new AtomicInteger();
+    private volatile PositionReview review;
+    private volatile OptionalDouble finalBlackLead = OptionalDouble.of(3.4);
 
     private BlockingHumanSlRunner() {
       this(null);
@@ -1601,7 +2205,7 @@ class HumanSlGameControllerIntegrationTest {
     }
 
     @Override
-    public Optional<String> bestHumanMove(
+    public Optional<HumanMoveChoice> chooseHumanMove(
         BoardHistoryNode positionNode,
         String profile,
         int maxVisits,
@@ -1617,7 +2221,31 @@ class HumanSlGameControllerIntegrationTest {
         Thread.currentThread().interrupt();
         return Optional.empty();
       }
-      return Optional.of("pass");
+      return Optional.of(reply);
+    }
+
+    @Override
+    public OptionalDouble finalBlackScoreLead(BoardHistoryNode positionNode, Duration timeout) {
+      return finalBlackLead;
+    }
+
+    @Override
+    public Optional<PositionReview> reviewPosition(
+        BoardHistoryNode positionNode,
+        String profile,
+        int maxVisits,
+        Duration maxTime,
+        Duration timeout) {
+      reviewCount.incrementAndGet();
+      return Optional.ofNullable(review);
+    }
+
+    private void reviewWith(PositionReview value) {
+      review = value;
+    }
+
+    private void replyWith(HumanMoveChoice value) {
+      reply = value;
     }
 
     @Override
@@ -1796,6 +2424,19 @@ class HumanSlGameControllerIntegrationTest {
     }
   }
 
+  /** Records 再来一盘 asking for the setup sheet again. */
+  private static final class SetupReopeningFrame extends CoachFrame {
+    private HumanSlGameController game;
+    private int setupRequests;
+    private boolean gameClosedFirst;
+
+    @Override
+    public void handleAiCoachToolbarAction() {
+      setupRequests++;
+      gameClosedFirst = game.isFinished();
+    }
+  }
+
   private static final class ThrowingStartCoachFrame extends CoachFrame {
     @Override
     public void showHumanSlTrainingBar(HumanSlGameController controller) {
@@ -1872,6 +2513,16 @@ class HumanSlGameControllerIntegrationTest {
     }
   }
 
+  private static final class SilentBoardRenderer extends BoardRenderer {
+    // Never runs: the fixture allocates renderers without calling a constructor.
+    private SilentBoardRenderer() {
+      super(false);
+    }
+
+    @Override
+    public void removedrawmovestone() {}
+  }
+
   private static final class CoachBoard extends Board {
     @Override
     public void clearAfterMove() {}
@@ -1879,6 +2530,7 @@ class HumanSlGameControllerIntegrationTest {
 
   private static final class TrackingLeelaz extends Leelaz {
     private final AtomicInteger resumeCount = new AtomicInteger();
+    private final AtomicInteger heatmapToggles = new AtomicInteger();
     private final AtomicInteger forwardedMoves = new AtomicInteger();
     private final List<String> lifecycleEvents;
     private boolean pondering;
@@ -1905,6 +2557,11 @@ class HumanSlGameControllerIntegrationTest {
     @Override
     public boolean isPondering() {
       return pondering;
+    }
+
+    @Override
+    public void toggleHeatmap(boolean bySpace) {
+      heatmapToggles.incrementAndGet();
     }
 
     @Override
@@ -2199,8 +2856,30 @@ class HumanSlGameControllerIntegrationTest {
       return environment;
     }
 
+    /** Stones need a board renderer; the coach tests otherwise run without one. */
+    private void allowStonePlacement() throws Exception {
+      LizzieFrame.boardRenderer = allocate(SilentBoardRenderer.class);
+    }
+
     private HumanSlGameController startCoach(BlockingHumanSlRunner runner) {
       return startCoach(runner, HumanSlTrainingConfig.PlayerColor.BLACK);
+    }
+
+    private HumanSlGameController startCoach(BlockingHumanSlRunner runner, TrainingMode mode) {
+      HumanSlGameController controller =
+          new HumanSlGameController(
+              runner,
+              HumanSlTrainingConfig.builder()
+                  .mode(mode)
+                  .playerColor(HumanSlTrainingConfig.PlayerColor.BLACK)
+                  .fromCurrentPosition(true)
+                  .moveTimeSeconds(2)
+                  .build(),
+              new HumanSlTrainingSession());
+      controller.setExitLifecycleForTesting(Runnable::run, Runnable::run, () -> true, null);
+      controller.start();
+      assertFalse(controller.isFinished());
+      return controller;
     }
 
     private HumanSlGameController startCoach(

@@ -311,6 +311,12 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
     Lizzie.board.deleteBranch();
   }
 
+  /** The AI Coach game in progress, or null. */
+  private static HumanSlGameController activeCoachGame() {
+    HumanSlGameController game = Lizzie.frame.humanSlGame;
+    return game == null || game.isFinished() ? null : game;
+  }
+
   private boolean controlIsPressed(KeyEvent e) {
     boolean mac = System.getProperty("os.name", "").toUpperCase().startsWith("MAC");
     return e.isControlDown() || (mac && e.isMetaDown());
@@ -435,7 +441,11 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         }
         break;
       case VK_SPACE:
-        Lizzie.frame.togglePonderMannul();
+        if (activeCoachGame() != null && !activeCoachGame().isLiveAnalysisMode()) {
+          activeCoachGame().showAnalysisHiddenHint();
+        } else {
+          Lizzie.frame.togglePonderMannul();
+        }
         break;
 
       case VK_L:
@@ -447,8 +457,8 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         break;
 
       case VK_P:
-        if (Lizzie.frame.humanSlGame != null && !Lizzie.frame.humanSlGame.isFinished()) {
-          Lizzie.frame.humanSlGame.humanPass();
+        if (activeCoachGame() != null) {
+          activeCoachGame().humanPass();
         } else {
           Lizzie.board.pass();
         }
@@ -489,14 +499,13 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         break;
 
       case VK_H:
-        // Lizzie.config.toggleHandicapInsteadOfWinrate();
-        //        if (e.isAltDown()) {
-        //          Lizzie.config.showHeat = !Lizzie.config.showHeat;
-        //          Lizzie.frame.subBoardRenderer.showHeat = Lizzie.config.showHeat;
-        //          Lizzie.frame.subBoardRenderer.clearBranch();
-        //          Lizzie.frame.subBoardRenderer.removeHeat();
-        //        } else
-        Lizzie.leelaz.toggleHeatmap(false);
+        // In a coaching mode that hides analysis the heatmap would show the answer: 边下边提醒
+        // gives a hint instead, the other mode says analysis is hidden.
+        if (activeCoachGame() != null && !activeCoachGame().isLiveAnalysisMode()) {
+          activeCoachGame().hint();
+        } else {
+          Lizzie.leelaz.toggleHeatmap(false);
+        }
         break;
 
       case VK_PAGE_UP:
@@ -695,7 +704,9 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         // if (isinsertmode) {
         // return;
         // }
-        if (e.isAltDown()) {
+        if (activeCoachGame() != null) {
+          activeCoachGame().showDeleteBlockedHint();
+        } else if (e.isAltDown()) {
           Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
         } else if (e.isShiftDown()) {
           deleteBranch();

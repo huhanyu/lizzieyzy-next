@@ -4,6 +4,98 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练's 边下边提醒 no longer calls playing safe a 缓手 once the game is decided.
+  - When the game is all but decided for players of the rank, a move is pointed out only when it gives away 10 points or more (问题手) or 20 or more (恶手). Before, 4 points already made a 缓手, so the side far ahead was told off for safe moves.
+  - Measured with HumanSL stand-ins from 10 级 to 9 段, this removes two to four 缓手 a game. 恶手 come up one to four times a game at every rank, so the win-chance thresholds stay the same for all ranks.
+  - `scripts/measure_coach_ratings.py` repeats the measurement; `docs/ai-coach.md` has the numbers.
+
+- AI 陪练's end of game is a short summary in the coach panel.
+  - It shows 你赢了 or 你输了 with the result, the number of moves, and in 边下边提醒 the key mistakes (恶手) and hints, plus the take-backs.
+  - 开始复盘 opens the usual analysis. 再来一盘 opens the setup again with the same choices.
+  - In 边下边提醒 the panel lists the game's biggest mistakes. Clicking one opens the review at the position before it.
+  - The game's own buttons step aside once it is over.
+
+- AI 陪练 now starts with a KataGo of your own that was set up for play only.
+  - When its GTP config has no analysis.cfg beside it, one is made from the bundled template, as the flash analysis command already does.
+  - When something is really missing, the error now says what, the analysis config or the weights, with a pointer to KataGo Auto Setup. Before, every missing piece showed 未选择引擎。.
+
+- AI 陪练 cleanup.
+  - Removed what was left of the training report and live correction that #338 retired: the report and move-assessment classes, the unused move evaluation in the HumanSL runner, the 复盘中 and 训练报告 states that nothing ever set, and their 29 strings in all 8 bundles.
+  - `docs/ai-coach.md` replaces the outdated design QA page. It describes how the coach works now: the opponent, the ratings and their thresholds, hints, the panel and the setup.
+
+- AI 陪练's first moves no longer stall on Apple Silicon.
+  - The coach engine pads every GPU batch to four, so Metal compiles one GPU program, during 准备中, instead of up to eight during the game.
+  - In a test game the AI's first two replies came after 1.5 and 1.8 s instead of 3.8 and 3.5 s.
+  - Padding costs about 12% of the search speed, which the time limits of the move ratings absorb.
+- The AI 陪练 setup dialog opens without freezing.
+  - It checks the 99 MB human-style model in the background, showing 正在检查人类棋风模型…, instead of hashing it on the UI thread twice each time it opened.
+- Pausing or cancelling the human-style model download now keeps what was downloaded, and the next download resumes from there. Before, 暂停 said progress was kept but deleted it. A file that fails its checksum is still discarded.
+
+- The AI 陪练 setup is a new sheet.
+  - **对手棋力** is one scale from 20 级 to 9 段. Pick it with a slider, − and +, or the arrow keys. It reads "3段 · 按3段棋手的习惯落子".
+  - **The three training modes are cards**, each with a description; 边下边提醒 is marked 默认.
+  - **执棋** is 执黑 / 执白 / 随机.
+  - **AI 思考时间** (自然 / 快 / 慢) replaces 用时.
+    - It only paces the AI's replies: 快 is about a second a move, 慢 a few seconds more.
+    - The AI's move is chosen the same way, with the same 10-second search budget, whatever the pace.
+    - A saved 1 minute or 不限时 becomes 慢, anything shorter 自然.
+  - **职业棋风 and 网络 9 段 are gone.** A saved choice of either becomes 9 段.
+  - **更多设置**: 让子, 贴目 and 从当前局面开始.
+    - With a handicap you always take Black and receive the stones. Before, the stones went to whichever colour came up.
+    - Komi is then 0.5.
+  - The sheet follows the light or dark theme, opens with the focus on 开始对局, and scrolls instead of growing past a small screen.
+
+- 边下边提醒 now stops on a 恶手.
+  - The AI holds its reply, and the coach panel shows what the move cost, with three choices:
+    - 重下这手 takes the move back;
+    - 看 AI 推荐 circles the AI's choice on the board and says how often players at that level find it;
+    - 不重下，继续对局 lets the AI play its reply.
+  - The win chance bar marks the chance before the 恶手 in red.
+- 边下边提醒 has a two-step hint: the 提示 button or H.
+  - The first press shades the area of the board where the AI's choice lies, such as 左上角.
+  - The second press circles the point and says how often players at that level play it.
+  - The marks stay until you move.
+- The coach panel's buttons keep to two rows; a hidden button no longer leaves a gap.
+
+- AI 陪练 has a new mode, 边下边提醒, and it is now the default for new users; a saved choice of another mode is kept.
+  - Analysis stays hidden during the game. Each of your moves is rated as soon as you play it: 妙手, 好棋, 缓手, 问题手 or 恶手.
+  - Moves are judged by your win chance at the opponent's level, not by KataGo's own winrate and not by points.
+    - The chance comes from KataGo's score lead, measured against how much games at that rank still swing from the position (the HumanSL model's score spread).
+    - KataGo's own winrate sits near 0% or 100% once someone leads by a few points, so it missed big mistakes made after that. It also called a small endgame slip a disaster at every level.
+    - A drop of 5% is a 缓手, 10% a 问题手 and 20% a 恶手.
+    - Once the game is decided (below 5% or above 95%), the points given away decide instead: 4, 8 and 15 points. A 10-point mistake in a lost game is therefore not called a good move.
+    - 妙手 is KataGo's choice where fewer than 10% of players at that level find it and their usual move loses ground.
+  - The coach engine reviews each position while you think, so most moves are rated at once. The search is capped at 400 visits and 1.5 seconds, so a slow computer rates with less search instead of slowing the AI down.
+  - The coach panel shows:
+    - your win chance at that level, with a curve that grows with the game;
+    - your last move's rating, its change in win chance, the points lost on a mistake, and how often players at that level play it;
+    - a count of each rating and your latest rated moves.
+  - Taking back a move removes its rating.
+- During an AI 陪练 game that hides analysis, H no longer shows the policy heatmap, which gave away the answer. It says that analysis is hidden, as Space does.
+
+- An AI 陪练 game now runs in a focused layout: the board plus a coach panel at the right, which replaces the bar under the board.
+  - The panel shows:
+    - the opponent and what it is doing: your turn, thinking, counting or game over;
+    - each side's captures and time, and the komi;
+    - your last move.
+  - Its actions are 悔棋, 停一手, 认输 and 结束对局. Its buttons never take keyboard focus.
+  - In 边下边分析 it shows your win chance from KataGo's live analysis as a number, a bar and a curve that grows with the game.
+  - When the game ends, it shows the result in place of a pop-up over the board, and 开始复盘 returns to the usual analysis.
+  - While the game runs, the comment, variation tree, candidate list, sub-board, captures and status step aside so the board stands alone. They come back exactly as they were, and the saved layout is never touched.
+  - The board area's layout moved out of `LizzieFrame` into `MainContentLayout`.
+
+- AI 陪练 games now end the way real games do:
+  - The AI passes when the game is over. KataGo's own search decides, as in KataGo's human-imitation configs. It is asked once 40% of the board has been played, or right after you pass. Before, the AI never passed before move 200, on any board size, so small boards could not end.
+  - After you pass, the AI passes too when playing on would gain at most a point. Under area scoring it still fills the dame first. Without this a losing AI kept playing inside its own area, because every move scored the same. When players of its rank would pass but KataGo still sees a point worth taking, it plays KataGo's move rather than a near-random human one.
+  - Two passes in a row end the game. KataGo counts it; the result, such as 黑胜 3.5 目, goes into the game record and the training bar.
+  - The AI resigns once KataGo has seen it lost for long enough, later for weaker ranks. Kyu ranks and 1 dan wait for 20 turns in a row below 0.5% and 40 points behind; 9 dan for 10 turns below 1% and 20 points behind. Neither resigns before 40% of the board has been played.
+  - The new 认输 button resigns for you. The game stays on the board with its result, and 结束并复盘 leaves AI 陪练 as before.
+- An AI 陪练 game can no longer be ended or broken by accident:
+  - Space no longer ends the game. Keyboard focus used to start on 结束并复盘, so Space pressed it; the training bar's buttons now never take focus. In 实战后复盘 mode, Space no longer turns on the analysis the mode hides; a note says analysis appears after the game.
+  - Browsing earlier moves (arrow keys, the mouse wheel, the move list) no longer ends the game or leaves the board refusing clicks. The AI's reply, or your next click or pass, brings the board back to the game's position, with a short note; that click only brings you back and does not play. If moves of the game were deleted, AI 陪练 ends and says why instead of stopping silently.
+  - Delete and Backspace no longer delete moves during the game. A note points to the new 悔棋 button, which takes back your last move and the AI's reply, or only your move while the AI is still thinking. A reply that was already on its way is dropped.
+- AI 陪练 opponents up to 5 dan now play like real players of their rank. Each move is drawn straight from KataGo's human-imitation model at full temperature, as KataGo's own `gtp_human5k_example.cfg` does, and only moves rarer than 1% are damped. Before, every move went through a KataGo search that discounted or dropped the weaker human moves. Measured on 84 positions from 3-dan games, the "3 dan" opponent lost 1.42 points per move, less than the model's 9 dan (1.51), and made blunders of 10 points or more on 0.7% of moves against 3.1% for the 3-dan model. Its most common move still matched human play (about 55% of the time), so games varied as before, but it rarely made a 3-dan player's mistakes. These opponents now need one model evaluation per move instead of up to 4,096 search visits. 6 to 9 dan, which the model cannot reach without search, keep the search until they are calibrated. Near the end of a game, KataGo's own 40-visit search still decides when to pass.
+- The AI's pace now follows the position: under a second for an obvious reply, a little quicker in the opening, and several seconds when players of its rank would disagree about the move. It used to wait a random 0.8–4 s whatever the position. The time setting still caps the wait.
 - Polish the top menus (文件, 显示, 棋局, …) without moving anything. Every item keeps its place, name and order, and its own text for tooltips and accessibility:
   - Shortcuts written into labels, such as 保存(Ctrl+S) or 打开棋谱(O), and real accelerators show as one right-aligned column in a quieter colour, so labels line up and read cleanly. Only an exact key, optionally with modifiers, moves. Explanations such as 浮动主棋盘(保留原棋盘), mouse gestures, misspelled shortcuts, and engine or recent-file names stay as written.
   - Check marks are thin line ticks, shown only when an option is on, instead of a box beside every option. Submenus show a thin chevron. A menu reserves the column for marks and icons only when one of its items needs it, so 编辑 no longer indents its labels twice.

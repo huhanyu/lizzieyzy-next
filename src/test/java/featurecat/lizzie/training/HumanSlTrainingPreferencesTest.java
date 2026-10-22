@@ -15,10 +15,9 @@ class HumanSlTrainingPreferencesTest {
     HumanSlTrainingConfig selected =
         HumanSlTrainingConfig.builder()
             .mode(TrainingMode.LIVE_ANALYSIS)
-            .opponentPreset(OpponentPreset.ONLINE_9D)
             .rank(12, false)
             .playerColor(PlayerColor.WHITE)
-            .moveTimeSeconds(60)
+            .pace(HumanThinkTime.Pace.SLOW)
             .handicap(2)
             .komi(0.5)
             .fromCurrentPosition(true)
@@ -29,11 +28,12 @@ class HumanSlTrainingPreferencesTest {
 
     assertEquals(42, ui.getInt("unrelated-setting"));
     assertEquals(TrainingMode.LIVE_ANALYSIS, restored.config().mode);
-    assertEquals(OpponentPreset.ONLINE_9D, restored.config().opponentPreset);
+    assertEquals(OpponentPreset.RANK, restored.config().opponentPreset);
     assertEquals(12, restored.config().rank);
     assertFalse(restored.config().danRank);
     assertEquals(PlayerColor.WHITE, restored.config().playerColor);
-    assertEquals(60, restored.config().moveTimeSeconds);
+    assertEquals(HumanThinkTime.Pace.SLOW, restored.config().pace);
+    assertEquals(10, restored.config().moveTimeSeconds, "the search budget is not a setting");
     assertEquals(2, restored.config().handicap);
     assertEquals(0.5, restored.config().komi);
     assertFalse(restored.config().fromCurrentPosition);
@@ -45,7 +45,7 @@ class HumanSlTrainingPreferencesTest {
     HumanSlTrainingPreferences.SavedSettings restored =
         HumanSlTrainingPreferences.load(new JSONObject());
 
-    assertEquals(TrainingMode.POST_GAME_REVIEW, restored.config().mode);
+    assertEquals(TrainingMode.LIVE_FEEDBACK, restored.config().mode);
     assertEquals(OpponentPreset.RANK, restored.config().opponentPreset);
     assertEquals(3, restored.config().rank);
     assertTrue(restored.config().danRank);
@@ -54,6 +54,60 @@ class HumanSlTrainingPreferencesTest {
     assertEquals(0, restored.config().handicap);
     assertEquals(7.5, restored.config().komi);
     assertFalse(restored.advancedVisible());
+  }
+
+  @Test
+  void aSavedChoiceOfAnOlderModeIsKept() {
+    JSONObject saved = new JSONObject().put("mode", "POST_GAME_REVIEW");
+    JSONObject ui = new JSONObject().put(HumanSlTrainingPreferences.UI_CONFIG_KEY, saved);
+
+    assertEquals(TrainingMode.POST_GAME_REVIEW, HumanSlTrainingPreferences.load(ui).config().mode);
+  }
+
+  @Test
+  void liveFeedbackRoundTrips() {
+    JSONObject ui = new JSONObject();
+    HumanSlTrainingPreferences.store(
+        ui, HumanSlTrainingConfig.builder().mode(TrainingMode.LIVE_FEEDBACK).build(), false);
+
+    assertEquals(TrainingMode.LIVE_FEEDBACK, HumanSlTrainingPreferences.load(ui).config().mode);
+  }
+
+  @Test
+  void thePaceRoundTrips() {
+    JSONObject ui = new JSONObject();
+    HumanSlTrainingPreferences.store(
+        ui, HumanSlTrainingConfig.builder().pace(HumanThinkTime.Pace.FAST).build(), false);
+
+    assertEquals(HumanThinkTime.Pace.FAST, HumanSlTrainingPreferences.load(ui).config().pace);
+  }
+
+  @Test
+  void theOldTimeSettingBecomesAPace() {
+    assertEquals(HumanThinkTime.Pace.NATURAL, paceAfterSaving(10));
+    assertEquals(HumanThinkTime.Pace.NATURAL, paceAfterSaving(30));
+    assertEquals(HumanThinkTime.Pace.SLOW, paceAfterSaving(60));
+    assertEquals(HumanThinkTime.Pace.SLOW, paceAfterSaving(24 * 60 * 60));
+  }
+
+  private static HumanThinkTime.Pace paceAfterSaving(int moveTimeSeconds) {
+    JSONObject saved = new JSONObject().put("move-time-seconds", moveTimeSeconds);
+    JSONObject ui = new JSONObject().put(HumanSlTrainingPreferences.UI_CONFIG_KEY, saved);
+    return HumanSlTrainingPreferences.load(ui).config().pace;
+  }
+
+  @Test
+  void theRetiredProPresetsBecomeNineDan() {
+    for (String preset : new String[] {"MODERN_PRO", "ONLINE_9D"}) {
+      JSONObject saved =
+          new JSONObject().put("opponent-preset", preset).put("rank", 2).put("dan-rank", false);
+      JSONObject ui = new JSONObject().put(HumanSlTrainingPreferences.UI_CONFIG_KEY, saved);
+
+      HumanSlTrainingConfig config = HumanSlTrainingPreferences.load(ui).config();
+
+      assertEquals(OpponentPreset.RANK, config.opponentPreset, preset);
+      assertEquals("rank_9d", config.humanSlProfile(), preset);
+    }
   }
 
   @Test
@@ -68,7 +122,7 @@ class HumanSlTrainingPreferencesTest {
     HumanSlTrainingPreferences.SavedSettings restored = HumanSlTrainingPreferences.load(ui);
 
     assertEquals(TrainingMode.LIVE_ANALYSIS, restored.config().mode);
-    assertEquals(OpponentPreset.MODERN_PRO, restored.config().opponentPreset);
+    assertEquals(OpponentPreset.RANK, restored.config().opponentPreset);
     assertEquals(PlayerColor.BLACK, restored.config().playerColor);
   }
 
@@ -89,7 +143,7 @@ class HumanSlTrainingPreferencesTest {
 
     HumanSlTrainingPreferences.SavedSettings restored = HumanSlTrainingPreferences.load(ui);
 
-    assertEquals(TrainingMode.POST_GAME_REVIEW, restored.config().mode);
+    assertEquals(TrainingMode.LIVE_FEEDBACK, restored.config().mode);
     assertEquals(OpponentPreset.RANK, restored.config().opponentPreset);
     assertEquals(20, restored.config().rank);
     assertFalse(restored.config().danRank);

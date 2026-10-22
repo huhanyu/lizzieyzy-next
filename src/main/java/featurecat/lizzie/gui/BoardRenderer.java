@@ -57,10 +57,7 @@ public class BoardRenderer {
     DARK_WITH_LIGHT_HALO
   }
 
-  // Percentage of the boardLength to offset before drawing black lines
-  // private static final double MARGIN = 0.03;
   private final ResourceBundle resourceBundle = Lizzie.resourceBundle;
-  // private static final double MARGIN_WITH_COORDINATES = 0.06;
   private static final double STARPOINT_DIAMETER = 0.015;
   private static final BufferedImage emptyImage = new BufferedImage(1, 1, TYPE_INT_ARGB);
 
@@ -72,7 +69,6 @@ public class BoardRenderer {
   private boolean cachedShowCoords = false;
   private String cachedBoardStyle = "";
 
-  // private JSONObject uiConfig, uiPersist;
   private int scaledMarginWidth, availableWidth, squareWidth, stoneRadius;
   private int scaledMarginHeight, availableHeight, squareHeight;
   public Optional<Branch> branchOpt = Optional.empty();
@@ -108,8 +104,6 @@ public class BoardRenderer {
   private BufferedImage unImportantSuggBufferA;
   private BufferedImage unImportantSuggBufferB;
   private boolean unImportantCleared = false;
-  // private BufferedImage importantSugg = emptyImage;
-  // private ArrayList<BufferedImage> cachedSelectImage = new ArrayList<BufferedImage>();
   private boolean hasBlockimage = false;
   private BufferedImage kataEstimateImage = emptyImage;
 
@@ -155,8 +149,6 @@ public class BoardRenderer {
     return pair;
   }
 
-  // private boolean lastInScoreMode = false;
-
   private final VariationPreviewState preview = new VariationPreviewState();
   private boolean previewCancelled;
   private VariationPreviewState.Selection middleSelection;
@@ -171,13 +163,14 @@ public class BoardRenderer {
   private boolean isFancyBoard = true;
   private Color noFancyColor;
   private boolean isIndependBoard = false;
-  //  public boolean reverseBestmoves = false;
   private int maxAlpha = 240;
-  // int number = 1;
   TexturePaint paint;
   private int drawUnimportantSuggCount = 100;
-  // private boolean drawBadMoveHint = false;
   public int boardIndex = 0;
+
+  /** The AI Coach's hint and recommendation marks; null outside a coaching game. */
+  private CoachBoardMarks coachMarks;
+
   private boolean shouldIgnoreBestMove = false;
   private int ignoreBestMoveX = -1;
   private int ignoreBestMoveY = -1;
@@ -416,6 +409,9 @@ public class BoardRenderer {
         if (Lizzie.config.isShowingMarkupTools) drawStoneMarkup(g);
         if (!isShowingBranch && Lizzie.frame.clickbadmove != LizzieFrame.outOfBoundCoordinate)
           drawFocusStone(Lizzie.frame.clickbadmove[0], Lizzie.frame.clickbadmove[1], g);
+        if (coachMarks != null && boardIndex == 0)
+          coachMarks.paint(
+              g, x + scaledMarginWidth, y + scaledMarginHeight, squareWidth, squareHeight);
         g.drawImage(cachedStonesShadowImagedraged, x, y, null);
         g.drawImage(cachedStonesImagedraged, x, y, null);
       }
@@ -4371,6 +4367,10 @@ public class BoardRenderer {
 
   public Point getLocation() {
     return new Point(x, y);
+  }
+
+  void setCoachMarks(CoachBoardMarks marks) {
+    coachMarks = marks;
   }
 
   /**

@@ -1810,7 +1810,7 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @Test
-  void cancellingHumanSlDownloadDoesNotStartFallbackOrInstallPartialFile() throws Exception {
+  void cancellingHumanSlDownloadKeepsThePartialFileButNeverInstallsIt() throws Exception {
     byte[] bytes = repeatedBytes(32768, (byte) 7);
     Path root = Files.createTempDirectory("humansl-mirror-cancel");
     try (FixtureServer mirror = FixtureServer.start(bytes)) {
@@ -1832,15 +1832,55 @@ public class KataGoAutoSetupHelperTest {
                                 session,
                                 java.util.Arrays.asList(
                                     mirror.url(), "invalid fallback must not be accessed")));
+                    Path models = root.resolve("human-sl-models");
                     assertFalse(
                         Files.exists(
-                            root.resolve("human-sl-models")
-                                .resolve(KataGoAutoSetupHelper.HUMAN_SL_MODEL_FILE_NAME)));
-                    assertFalse(
+                            models.resolve(KataGoAutoSetupHelper.HUMAN_SL_MODEL_FILE_NAME)));
+                    assertTrue(
                         Files.exists(
-                            root.resolve("human-sl-models")
-                                .resolve(
-                                    KataGoAutoSetupHelper.HUMAN_SL_MODEL_FILE_NAME + ".part")));
+                            models.resolve(
+                                KataGoAutoSetupHelper.HUMAN_SL_MODEL_FILE_NAME + ".part")),
+                        "kept for the next attempt to resume");
+                    assertFalse(KataGoAutoSetupHelper.inspectHumanSlModel().isInstalled());
+                  }));
+    }
+  }
+
+  @Test
+  void aPausedHumanSlDownloadResumesWhereItStopped() throws Exception {
+    byte[] bytes = repeatedBytes(200_000, (byte) 5);
+    Path root = Files.createTempDirectory("humansl-resume");
+    try (RangeFixtureServer server = RangeFixtureServer.start(bytes)) {
+      withUserDirAndConfig(
+          root,
+          () ->
+              withHumanSlDownloadProperties(
+                  server.url(),
+                  sha256(bytes),
+                  bytes.length,
+                  () -> {
+                    KataGoAutoSetupHelper.DownloadSession paused =
+                        new KataGoAutoSetupHelper.DownloadSession();
+                    assertThrows(
+                        KataGoAutoSetupHelper.DownloadCancelledException.class,
+                        () ->
+                            KataGoAutoSetupHelper.downloadHumanSlModel(
+                                (name, downloaded, total) -> paused.cancel(),
+                                paused,
+                                java.util.List.of(server.url())));
+                    Path part =
+                        root.resolve("human-sl-models")
+                            .resolve(KataGoAutoSetupHelper.HUMAN_SL_MODEL_FILE_NAME + ".part");
+                    long kept = Files.size(part);
+                    assertTrue(kept > 0 && kept < bytes.length, "kept " + kept);
+
+                    Path downloaded =
+                        KataGoAutoSetupHelper.downloadHumanSlModel(
+                            null, null, java.util.List.of(server.url()));
+
+                    assertEquals("bytes=" + kept + "-", server.lastRangeHeader());
+                    assertEquals(sha256(bytes), sha256(Files.readAllBytes(downloaded)));
+                    assertFalse(Files.exists(part));
                   }));
     }
   }

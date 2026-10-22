@@ -3,9 +3,10 @@ package featurecat.lizzie.analysis;
 import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.rules.Board;
+import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
-import featurecat.lizzie.training.HumanMoveDecision;
+import featurecat.lizzie.training.PositionReview;
 import featurecat.lizzie.util.CommandLaunchHelper;
 import featurecat.lizzie.util.KataGoRuntimeHelper;
 import featurecat.lizzie.util.Utils;
@@ -26,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,6 +45,16 @@ import org.json.JSONObject;
 public class HumanSlAnalysisRunner implements AutoCloseable {
   private static final String GTP_COLUMNS = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
   private static final int POLICY_PROBE_VISITS = 1;
+  // KataGo's gtp_human5k_example.cfg keeps 40 visits only to judge passing and resigning.
+  static final int PASS_CHECK_VISITS = 40;
+  static final int FINAL_SCORE_VISITS = 200;
+  // KataGo's human configs only resign once 40% of the board was played; passing earlier than
+  // that is not considered either, unless the opponent just passed.
+  static final double PASS_BOARD_SHARE = 0.4;
+  // When the human policy is mostly pass, the game is over for players of that rank.
+  static final double HUMAN_PASS_SHARE = 0.5;
+  // After the opponent passed, passing too ends the game if it gives up at most this many points.
+  static final double PASS_TOLERANCE_POINTS = 1.0;
   private static final int HUMAN_LIKE_PLAY_VISITS = 64;
   private static final int MAX_ADAPTIVE_VERIFICATION_VISITS = 4_096;
   private static final int MAX_ADAPTIVE_VERIFICATION_ROUNDS = 4;
@@ -275,6 +287,21 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
       int maxVisits,
       int rootSymmetries,
       Duration timeout) {
+    return chooseHumanMove(positionNode, profile, maxVisits, rootSymmetries, timeout)
+        .map(HumanMoveChoice::move);
+  }
+
+  /**
+   * Chooses the AI's move. Up to 5 dan it is sampled straight from the HumanSL policy, as KataGo
+   * recommends for imitating a rank; stronger profiles verify human candidates with search, and
+   * only they use the search budget.
+   */
+  public Optional<HumanMoveChoice> chooseHumanMove(
+      BoardHistoryNode positionNode,
+      String profile,
+      int maxVisits,
+      int rootSymmetries,
+      Duration timeout) {
     if (positionNode == null || profile == null) {
       return Optional.empty();
     }
@@ -282,7 +309,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
       return Optional.empty();
     }
     int generation = activeProcessGeneration;
-    boolean allowPass = shouldAllowPass(positionNode);
+    boolean allowPass = mayPass(positionNode);
     Duration effectiveTimeout = timeout == null ? Duration.ofSeconds(30) : timeout;
     long deadlineNanos = System.nanoTime() + Math.max(1L, effectiveTimeout.toNanos());
     try {
@@ -304,6 +331,28 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
               Board.boardHeight,
               positionNode.getData().stones,
               allowPass);
+      double topShare = HumanPolicySampler.topShare(selectableMoves);
+      if (HumanPolicySampler.playsRawPolicy(profile)) {
+        SearchView view = allowPass ? passCheck(positionNode, deadlineNanos) : SearchView.NONE;
+        if (view.passEnds(positionNode)) {
+          return Optional.of(view.choice("pass", topShare));
+        }
+        if (allowPass
+            && view.topMove() != null
+            && HumanPolicySampler.passShare(policyMovesIncludingPass) >= HUMAN_PASS_SHARE) {
+          // Players of this rank would pass, but KataGo still sees a point that matters, such as a
+          // dame or a needed connection. What is left of the human policy here is noise.
+          return Optional.of(view.choice(view.topMove(), topShare));
+        }
+        String sampled =
+            HumanPolicySampler.sample(
+                selectableMoves,
+                positionNode.getData().moveNumber,
+                Board.boardWidth,
+                Board.boardHeight,
+                ThreadLocalRandom.current().nextDouble());
+        return Optional.ofNullable(sampled).map(move -> view.choice(move, topShare));
+      }
       LinkedHashSet<String> verificationMoves = new LinkedHashSet<String>();
       addVerificationMoves(
           verificationMoves,
@@ -335,7 +384,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
           requestHumanMove(verificationRequest, remainingRequestTime(deadlineNanos));
       long verificationElapsedNanos = Math.max(1L, System.nanoTime() - verificationStartedNanos);
       if (allowPass && isSearchTopMovePass(verifiedResponse)) {
-        return Optional.of("pass");
+        return Optional.of(SearchView.of(verifiedResponse).choice("pass", topShare));
       }
 
       JSONObject finalResponse = verifiedResponse;
@@ -383,8 +432,9 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
           break;
         }
       }
-      if (allowPass && isSearchTopMovePass(finalResponse)) {
-        return Optional.of("pass");
+      SearchView view = SearchView.of(finalResponse);
+      if (allowPass && view.passEnds(positionNode)) {
+        return Optional.of(view.choice("pass", topShare));
       }
       String selected =
           HumanLikeMoveSelector.select(
@@ -396,7 +446,7 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
       if (!allowPass && "pass".equalsIgnoreCase(selected)) {
         return Optional.empty();
       }
-      return Optional.ofNullable(selected);
+      return Optional.ofNullable(selected).map(move -> view.choice(move, topShare));
     } catch (TimeoutException | IOException e) {
       stopActiveProcess(
           generation,
@@ -406,50 +456,69 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     }
   }
 
-  /** Evaluates the player's actual move against human preference and KataGo quality. */
-  public Optional<HumanMoveDecision> evaluateHumanMove(
+  /**
+   * Reviews a position for 边下边提醒: KataGo's values for the moves it searched, and how often players
+   * of the profile's rank play each move. The search stops at {@code maxTime}, so a slow engine
+   * judges with fewer visits instead of holding up the AI's moves. Unlike a move request, a review
+   * that times out is dropped without restarting the engine.
+   */
+  public Optional<PositionReview> reviewPosition(
       BoardHistoryNode positionNode,
       String profile,
-      String actualMove,
       int maxVisits,
-      int rootSymmetries,
+      Duration maxTime,
       Duration timeout) {
-    if (positionNode == null || profile == null || actualMove == null || !ensureStarted()) {
+    if (positionNode == null || profile == null || !ensureStarted()) {
       return Optional.empty();
     }
     int generation = activeProcessGeneration;
     String requestId = "humansl-review-" + nextRequestId.getAndIncrement();
-    JSONObject request =
-        buildHumanSlRequest(requestId, positionNode, profile, maxVisits, rootSymmetries);
+    JSONObject request = buildHumanSlRequest(requestId, positionNode, profile, maxVisits, 1);
+    request.getJSONObject("overrideSettings").put("maxTime", maxTime.toMillis() / 1000.0);
     try {
-      JSONObject response = request(request, timeout == null ? Duration.ofSeconds(30) : timeout);
-      Object policy = extractHumanPolicy(response);
-      JSONArray moveInfos = response.optJSONArray("moveInfos");
-      String commonMove = argmaxPolicyMove(policy, Board.boardWidth, Board.boardHeight);
-      JSONObject bestInfo = orderedMoveInfo(moveInfos, 0);
-      JSONObject actualInfo = findMoveInfo(moveInfos, actualMove);
-      String bestMove = bestInfo == null ? commonMove : bestInfo.optString("move", commonMove);
-      double scoreLoss = qualityLoss(bestInfo, actualInfo, "scoreLead", "scoreMean");
-      double winrateLoss = qualityLoss(bestInfo, actualInfo, "winrate", null);
-      double humanProbability =
-          policyProbability(policy, actualMove, Board.boardWidth, Board.boardHeight);
+      JSONObject response = request(request, timeout);
       return Optional.of(
-          new HumanMoveDecision(
-              positionNode.getData().moveNumber + 1,
-              positionNode,
-              actualMove,
-              commonMove,
-              bestMove,
-              humanProbability,
-              scoreLoss,
-              winrateLoss));
-    } catch (TimeoutException | IOException e) {
-      stopActiveProcess(
-          generation,
-          false,
-          withStartupDiagnostics(usefulMessage(e, "HumanSL review request failed.")));
+          parseReview(
+              response, positionNode.getData().stones, Board.boardWidth, Board.boardHeight));
+    } catch (TimeoutException e) {
+      terminateRequestBestEffort(generation, requestId);
+      return Optional.empty();
+    } catch (IOException e) {
       return Optional.empty();
     }
+  }
+
+  static PositionReview parseReview(
+      JSONObject response, Stone[] stones, int boardWidth, int boardHeight) {
+    JSONObject rootInfo = response.optJSONObject("rootInfo");
+    double rootLead = rootInfo == null ? Double.NaN : rootInfo.optDouble("scoreLead", Double.NaN);
+    double stdev =
+        rootInfo == null ? Double.NaN : rootInfo.optDouble("humanScoreStdev", Double.NaN);
+    List<JSONObject> infos = new ArrayList<JSONObject>();
+    JSONArray moveInfos = response.optJSONArray("moveInfos");
+    for (int i = 0; moveInfos != null && i < moveInfos.length(); i++) {
+      JSONObject info = moveInfos.optJSONObject(i);
+      if (info != null && !info.optString("move", "").trim().isEmpty()) {
+        infos.add(info.put("order", info.optInt("order", i)));
+      }
+    }
+    infos.sort(java.util.Comparator.comparingInt(info -> info.getInt("order")));
+    List<PositionReview.Candidate> candidates = new ArrayList<PositionReview.Candidate>();
+    for (JSONObject info : infos) {
+      double lead = info.optDouble("scoreLead", info.optDouble("scoreMean", Double.NaN));
+      if (Double.isFinite(lead)) {
+        candidates.add(
+            new PositionReview.Candidate(
+                info.getString("move").trim(), info.optInt("visits", 0), lead));
+      }
+    }
+    Map<String, Double> shares = new java.util.HashMap<String, Double>();
+    Object policy = extractHumanPolicy(response);
+    for (HumanLikeMoveSelector.Candidate move :
+        policyMoves(policy, boardWidth, boardHeight, stones, true)) {
+      shares.merge(normalizeMove(move.move), move.probability, Double::sum);
+    }
+    return new PositionReview(rootLead, stdev, candidates, shares);
   }
 
   static String samplePolicyMove(
@@ -884,6 +953,112 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
                 MAX_ADAPTIVE_VERIFICATION_VISITS,
                 Math.max(minimumTarget, Math.floor(estimatedVisits)));
     return targetVisits > safeCompletedVisits ? targetVisits : safeCompletedVisits;
+  }
+
+  /**
+   * Asks KataGo's own search, without the human model, whether passing is best here, and how the AI
+   * stands, which decides when it resigns.
+   */
+  private SearchView passCheck(BoardHistoryNode positionNode, long deadlineNanos)
+      throws IOException, TimeoutException {
+    String id = "humansl-pass-" + nextRequestId.getAndIncrement();
+    JSONObject request =
+        AnalysisRequestBuilder.buildRequest(
+            id, positionNode, PASS_CHECK_VISITS, false, false, false);
+    request.put("maxVisits", PASS_CHECK_VISITS);
+    return SearchView.of(requestHumanMove(request, remainingRequestTime(deadlineNanos)));
+  }
+
+  /**
+   * KataGo's final score lead for Black once both players passed, from its own search, or empty
+   * when the engine does not answer in time.
+   */
+  public OptionalDouble finalBlackScoreLead(BoardHistoryNode positionNode, Duration timeout) {
+    if (positionNode == null || positionNode.getData() == null || !ensureStarted()) {
+      return OptionalDouble.empty();
+    }
+    int generation = activeProcessGeneration;
+    String id = "humansl-count-" + nextRequestId.getAndIncrement();
+    JSONObject request =
+        AnalysisRequestBuilder.buildRequest(
+            id, positionNode, FINAL_SCORE_VISITS, false, false, false);
+    request.put("maxVisits", FINAL_SCORE_VISITS);
+    try {
+      JSONObject rootInfo =
+          requestHumanMove(request, timeout == null ? Duration.ofSeconds(20) : timeout)
+              .optJSONObject("rootInfo");
+      double lead = rootInfo == null ? Double.NaN : rootInfo.optDouble("scoreLead", Double.NaN);
+      if (!Double.isFinite(lead)) {
+        return OptionalDouble.empty();
+      }
+      return OptionalDouble.of(positionNode.getData().blackToPlay ? lead : -lead);
+    } catch (TimeoutException | IOException e) {
+      stopActiveProcess(
+          generation,
+          false,
+          withStartupDiagnostics(usefulMessage(e, "HumanSL final count failed.")));
+      return OptionalDouble.empty();
+    }
+  }
+
+  /**
+   * What one KataGo search says about the side to move: its top move, whether that is a pass, its
+   * winrate and score lead, and what passing would cost in points.
+   */
+  private record SearchView(
+      String topMove, boolean prefersPass, double winrate, double scoreLead, double passCost) {
+    static final SearchView NONE = new SearchView(null, false, Double.NaN, Double.NaN, Double.NaN);
+
+    static SearchView of(JSONObject response) {
+      JSONObject rootInfo = response == null ? null : response.optJSONObject("rootInfo");
+      String top = response == null ? null : searchTopMove(response);
+      boolean pass = isSearchTopMovePass(response);
+      return new SearchView(
+          pass || top == null || top.isEmpty() ? null : top,
+          pass,
+          rootInfo == null ? Double.NaN : rootInfo.optDouble("winrate", Double.NaN),
+          rootInfo == null ? Double.NaN : rootInfo.optDouble("scoreLead", Double.NaN),
+          passCost(response == null ? null : response.optJSONArray("moveInfos")));
+    }
+
+    /** Points the top move gains over passing, NaN when the search did not look at passing. */
+    private static double passCost(JSONArray moveInfos) {
+      double best = Double.NaN;
+      double pass = Double.NaN;
+      if (moveInfos != null) {
+        for (int i = 0; i < moveInfos.length(); i++) {
+          JSONObject info = moveInfos.optJSONObject(i);
+          if (info == null) {
+            continue;
+          }
+          double lead = info.optDouble("scoreLead", Double.NaN);
+          if (info.optInt("order", i) == 0) {
+            best = lead;
+          }
+          if ("pass".equalsIgnoreCase(info.optString("move", "").trim())) {
+            pass = lead;
+          }
+        }
+      }
+      return best - pass;
+    }
+
+    /**
+     * Whether the AI should pass now: KataGo's top move is a pass, or the opponent just passed and
+     * passing too gives up at most a point, which ends the game. Between equal moves, such as
+     * filling one's own territory under area scoring, KataGo would otherwise play on forever.
+     */
+    boolean passEnds(BoardHistoryNode positionNode) {
+      boolean opponentPassed =
+          positionNode != null
+              && positionNode.getData() != null
+              && positionNode.getData().isPassNode();
+      return prefersPass || (opponentPassed && passCost <= PASS_TOLERANCE_POINTS);
+    }
+
+    HumanMoveChoice choice(String move, double topShare) {
+      return new HumanMoveChoice(move, topShare, winrate, scoreLead);
+    }
   }
 
   private JSONObject requestHumanMove(JSONObject request, Duration timeout)
@@ -1420,10 +1595,14 @@ public class HumanSlAnalysisRunner implements AutoCloseable {
     return index >= 0 && index < stones.length && stones[index] == Stone.EMPTY;
   }
 
-  private static boolean shouldAllowPass(BoardHistoryNode positionNode) {
-    return positionNode != null
-        && positionNode.getData() != null
-        && positionNode.getData().moveNumber >= 200;
+  /** KataGo may pass once 40% of the board was played, or right after the opponent passed. */
+  static boolean mayPass(BoardHistoryNode positionNode) {
+    if (positionNode == null || positionNode.getData() == null) {
+      return false;
+    }
+    BoardData data = positionNode.getData();
+    return data.isPassNode()
+        || data.moveNumber >= PASS_BOARD_SHARE * Board.boardWidth * Board.boardHeight;
   }
 
   interface ProcessStarter {

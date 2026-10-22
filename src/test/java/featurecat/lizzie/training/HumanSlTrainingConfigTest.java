@@ -42,4 +42,25 @@ class HumanSlTrainingConfigTest {
     assertEquals("rank_9d", config.humanSlProfile());
     assertEquals(64, config.analysisVisits());
   }
+
+  @Test
+  void withAHandicapThePlayerTakesBlackWhateverTheChosenColor() {
+    HumanSlTrainingConfig handicap =
+        HumanSlTrainingConfig.builder()
+            .handicap(3)
+            .playerColor(HumanSlTrainingConfig.PlayerColor.WHITE)
+            .build();
+    HumanSlTrainingConfig even =
+        HumanSlTrainingConfig.builder()
+            .playerColor(HumanSlTrainingConfig.PlayerColor.WHITE)
+            .build();
+
+    assertEquals(true, handicap.resolveHumanIsBlack());
+    assertEquals(false, even.resolveHumanIsBlack());
+  }
+
+  @Test
+  void theNaturalPaceIsTheDefault() {
+    assertEquals(HumanThinkTime.Pace.NATURAL, HumanSlTrainingConfig.builder().build().pace);
+  }
 }

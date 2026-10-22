@@ -59,7 +59,7 @@ class LizzieFrameBottomToolbarLayoutTest {
 
   @Test
   void shownToolbarFitsInsideMaximizedLinuxContentPane() {
-    LizzieFrame.MainContentLayout layout =
+    MainContentLayout layout =
         layoutFor(MAXIMIZED_WIDTH, maximizedContentHeight(), Menu.BOTTOM_TOOLBAR_SHOWN_HEIGHT);
 
     assertToolbarFullyInside(layout, maximizedContentHeight());
@@ -73,9 +73,9 @@ class LizzieFrameBottomToolbarLayoutTest {
   @Test
   void hidingToolbarGivesTheBoardTheReservedBand() {
     int contentHeight = maximizedContentHeight();
-    LizzieFrame.MainContentLayout shown =
+    MainContentLayout shown =
         layoutFor(MAXIMIZED_WIDTH, contentHeight, Menu.BOTTOM_TOOLBAR_SHOWN_HEIGHT);
-    LizzieFrame.MainContentLayout hidden =
+    MainContentLayout hidden =
         layoutFor(MAXIMIZED_WIDTH, contentHeight, Menu.BOTTOM_TOOLBAR_HIDDEN_HEIGHT);
 
     assertEquals(Menu.BOTTOM_TOOLBAR_HIDDEN_HEIGHT, hidden.toolbar.height);
@@ -91,9 +91,9 @@ class LizzieFrameBottomToolbarLayoutTest {
     int contentHeight =
         LizzieFrame.resolvedContentLength(
             0, RESTORED_FRAME_HEIGHT, INSET_TOP, 4, NATIVE_MENU_HEIGHT);
-    LizzieFrame.MainContentLayout shown =
+    MainContentLayout shown =
         layoutFor(RESTORED_WIDTH, contentHeight, Menu.BOTTOM_TOOLBAR_SHOWN_HEIGHT);
-    LizzieFrame.MainContentLayout hidden =
+    MainContentLayout hidden =
         layoutFor(RESTORED_WIDTH, contentHeight, Menu.BOTTOM_TOOLBAR_HIDDEN_HEIGHT);
 
     assertEquals(640, contentHeight);
@@ -109,7 +109,7 @@ class LizzieFrameBottomToolbarLayoutTest {
   void customStripFallbackDoesNotReserveANativeMenuBar() {
     int contentHeight =
         LizzieFrame.resolvedContentLength(0, MAXIMIZED_FRAME_HEIGHT, INSET_TOP, INSET_BOTTOM, 0);
-    LizzieFrame.MainContentLayout shown =
+    MainContentLayout shown =
         layoutFor(MAXIMIZED_WIDTH, contentHeight, Menu.BOTTOM_TOOLBAR_SHOWN_HEIGHT);
 
     assertEquals(1024, contentHeight);
@@ -122,9 +122,8 @@ class LizzieFrameBottomToolbarLayoutTest {
   void oldFrameMinusInsetsMathPutsTheShownBarPastTheContentPane() {
     int oldContentHeight = MAXIMIZED_FRAME_HEIGHT - INSET_TOP - INSET_BOTTOM;
     int contentHeight = maximizedContentHeight();
-    LizzieFrame.MainContentLayout oldLayout =
-        LizzieFrame.layoutMainContent(
-            MAXIMIZED_WIDTH, oldContentHeight, 0, TOP_PANEL_HEIGHT, true, 26, 0);
+    MainContentLayout oldLayout =
+        MainContentLayout.of(MAXIMIZED_WIDTH, oldContentHeight, 0, TOP_PANEL_HEIGHT, true, 26, 0);
 
     assertTrue(
         oldLayout.toolbar.y + oldLayout.toolbar.height > contentHeight,
@@ -136,18 +135,15 @@ class LizzieFrameBottomToolbarLayoutTest {
         0, MAXIMIZED_FRAME_HEIGHT, INSET_TOP, INSET_BOTTOM, NATIVE_MENU_HEIGHT);
   }
 
-  private static LizzieFrame.MainContentLayout layoutFor(
-      int width, int contentHeight, int toolbarHeight) {
-    return LizzieFrame.layoutMainContent(
-        width, contentHeight, 0, TOP_PANEL_HEIGHT, true, toolbarHeight, 0);
+  private static MainContentLayout layoutFor(int width, int contentHeight, int toolbarHeight) {
+    return MainContentLayout.of(width, contentHeight, 0, TOP_PANEL_HEIGHT, true, toolbarHeight, 0);
   }
 
   private static int remainingBoardHeight(int contentHeight, int toolbarHeight) {
     return contentHeight - TOP_PANEL_HEIGHT - toolbarHeight;
   }
 
-  private static void assertToolbarFullyInside(
-      LizzieFrame.MainContentLayout layout, int contentHeight) {
+  private static void assertToolbarFullyInside(MainContentLayout layout, int contentHeight) {
     Rectangle bar = layout.toolbar;
     assertTrue(bar.y >= 0, "toolbar y is above the content pane");
     assertTrue(bar.y + bar.height <= contentHeight, "toolbar extends past the content pane");

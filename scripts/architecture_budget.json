@@ -3,12 +3,12 @@
   "max_unlisted_file_lines": 2000,
   "max_lines": {
     "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25606,
-    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18588,
+    "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18554,
     "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15779,
-    "src/main/java/featurecat/lizzie/gui/Menu.java": 11076,
+    "src/main/java/featurecat/lizzie/gui/Menu.java": 11067,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
     "src/main/java/featurecat/lizzie/gui/KataGoAutoSetupDialog.java": 8305,
-    "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 8056,
+    "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 8043,
     "src/main/java/featurecat/lizzie/rules/Board.java": 7393,
     "src/main/java/featurecat/lizzie/analysis/ReadBoard.java": 6957,
     "src/main/java/featurecat/lizzie/gui/ConfigDialog2.java": 6898,
@@ -16,7 +16,7 @@
     "src/main/java/featurecat/lizzie/rules/SGFParser.java": 5113,
     "src/main/java/featurecat/lizzie/gui/BoardRenderer.java": 4808,
     "src/main/java/featurecat/lizzie/gui/OnlineDialog.java": 4565,
-    "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4314,
+    "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4193,
     "src/main/java/featurecat/lizzie/Config.java": 4031,
     "src/main/java/featurecat/lizzie/analysis/AnalysisEngine.java": 3273,
     "src/main/java/featurecat/lizzie/gui/WinrateGraph.java": 3189,
@@ -25,12 +25,12 @@
     "src/main/java/featurecat/lizzie/logging/DiagnosticBundleExporter.java": 2668,
     "src/main/java/featurecat/lizzie/analysis/PlayerStrengthEstimator.java": 2171,
     "src/main/java/featurecat/lizzie/search/FunctionCatalog.java": 2154,
-    "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 2009
+    "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 1654
   },
   "max_static_references": {
-    "Lizzie.config": 6921,
-    "Lizzie.frame": 3231,
-    "Lizzie.board": 1952,
+    "Lizzie.config": 6907,
+    "Lizzie.frame": 3226,
+    "Lizzie.board": 1951,
     "Lizzie.leelaz": 1089,
     "Lizzie.leelaz2": 115,
     "Lizzie.engineManager": 156
