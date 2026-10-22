@@ -4,6 +4,10 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练 now starts with a KataGo of your own that was set up for play only.
+  - When its GTP config has no analysis.cfg beside it, one is made from the bundled template, as the flash analysis command already does.
+  - When something is really missing, the error now says what, the analysis config or the weights, with a pointer to KataGo Auto Setup. Before, every missing piece showed 未选择引擎。.
+
 - AI 陪练 cleanup.
   - Removed what was left of the training report and live correction that #338 retired: the report and move-assessment classes, the unused move evaluation in the HumanSL runner, the 复盘中 and 训练报告 states that nothing ever set, and their 29 strings in all 8 bundles.
   - `docs/ai-coach.md` replaces the outdated design QA page. It describes how the coach works now: the opponent, the ratings and their thresholds, hints, the panel and the setup.

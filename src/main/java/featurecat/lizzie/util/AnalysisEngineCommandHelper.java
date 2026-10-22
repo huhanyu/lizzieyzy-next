@@ -109,7 +109,12 @@ public final class AnalysisEngineCommandHelper {
         resolveHumanSlCommand(
             configuredCommand,
             snapshot == null ? null : snapshot.enginePath,
-            snapshot == null ? null : snapshot.analysisConfigPath,
+            snapshot == null
+                    || !needsBundledRecovery(configuredCommand)
+                    || Config.isBundledKataGoExecutable(snapshot.enginePath)
+                ? (snapshot == null ? null : snapshot.analysisConfigPath)
+                : analysisConfigOrGenerated(
+                    snapshot.analysisConfigPath, snapshot.gtpConfigPath, snapshot.enginePath),
             snapshot == null ? null : snapshot.activeWeightPath);
     if (!result.isSuccess()) {
       logHumanSlResolutionFailure(configuredCommand, snapshot);
@@ -128,7 +133,7 @@ public final class AnalysisEngineCommandHelper {
     if (!isRegularFile(enginePath)
         || !isRegularFile(analysisConfigPath)
         || !isRegularFile(weightPath)) {
-      return Result.failure(message("AnalysisEngineCommandHelper.noEngineSelected"));
+      return Result.failure(message(missingPart(enginePath, analysisConfigPath, weightPath)));
     }
 
     List<String> parts = Utils.splitCommand(command);
@@ -150,6 +155,34 @@ public final class AnalysisEngineCommandHelper {
       parts.add("-quit-without-waiting");
     }
     return Result.success(buildCommandLine(parts), "", false, analysisConfigPath);
+  }
+
+  /** The message key that names the first missing piece, so the error says what to fix. */
+  static String missingPart(Path enginePath, Path analysisConfigPath, Path weightPath) {
+    if (!isRegularFile(enginePath)) {
+      return "AnalysisEngineCommandHelper.noEngineSelected";
+    }
+    return isRegularFile(analysisConfigPath)
+        ? "AnalysisEngineCommandHelper.noWeight"
+        : "AnalysisEngineCommandHelper.noAnalysisConfig";
+  }
+
+  /**
+   * The engine's analysis config. A KataGo of the user's own, set up for play only, may have none:
+   * then one is made from the bundled template next to its GTP config, as the flash analysis
+   * command does, so that AI 陪练 can still start. A bundled engine without one is a damaged install
+   * that KataGo Auto Setup repairs, so it is reported instead.
+   */
+  static Path analysisConfigOrGenerated(Path analysisConfig, Path gtpConfig, Path enginePath) {
+    if (isRegularFile(analysisConfig) || !isRegularFile(gtpConfig) || !isRegularFile(enginePath)) {
+      return analysisConfig;
+    }
+    try {
+      return ensureAnalysisConfig(gtpConfig);
+    } catch (IOException e) {
+      LOG.warn("Could not make an analysis config next to {}", gtpConfig.getFileName(), e);
+      return analysisConfig;
+    }
   }
 
   static void logHumanSlResolutionFailure(
@@ -455,6 +488,10 @@ public final class AnalysisEngineCommandHelper {
     switch (key) {
       case "AnalysisEngineCommandHelper.noEngineSelected":
         return "未选择引擎。";
+      case "AnalysisEngineCommandHelper.noAnalysisConfig":
+        return "找不到 KataGo 的分析配置文件（analysis.cfg）。可以在 KataGo 一键设置中修复。";
+      case "AnalysisEngineCommandHelper.noWeight":
+        return "找不到 KataGo 权重文件。可以在 KataGo 一键设置中下载。";
       case "AnalysisEngineCommandHelper.remoteUnsupported":
         return "暂不支持从远程引擎生成闪电分析命令。";
       case "AnalysisEngineCommandHelper.emptyCommand":
