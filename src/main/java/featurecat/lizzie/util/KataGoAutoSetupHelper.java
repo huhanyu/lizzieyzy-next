@@ -1723,11 +1723,11 @@ public final class KataGoAutoSetupHelper {
       throw new WeightIntegrityException(
           resource("AutoSetup.weightDownloadIncomplete", "Weight download is incomplete."), false);
     }
-    if (expectedSize <= 0L && Files.size(path) <= 1024L * 1024L) {
+    String expectedSha = info == null ? "" : info.sha256;
+    if (expectedSize <= 0L && expectedSha.isEmpty() && !KataGoWeightFile.isWhole(path, info)) {
       throw new WeightIntegrityException(
           resource("AutoSetup.weightDownloadIncomplete", "Weight download is incomplete."), false);
     }
-    String expectedSha = info == null ? "" : info.sha256;
     if (!expectedSha.isEmpty() && !expectedSha.equalsIgnoreCase(sha256(path))) {
       throw new WeightIntegrityException(
           resource(

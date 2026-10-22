@@ -1154,6 +1154,48 @@ public class KataGoAutoSetupHelperTest {
   }
 
   @Test
+  void aWeightListedWithoutSizeOrDigestIsNotInstalledFromACutOffPartial() throws Exception {
+    Path tempRoot = Files.createTempDirectory("katago-scraped-truncated");
+    byte[] raw = new byte[3 * 1024 * 1024];
+    new java.util.Random(11).nextBytes(raw);
+    java.io.ByteArrayOutputStream gzip = new java.io.ByteArrayOutputStream();
+    try (java.util.zip.GZIPOutputStream output = new java.util.zip.GZIPOutputStream(gzip)) {
+      output.write(raw);
+    }
+    byte[] modelBytes = gzip.toByteArray();
+    int partialSize = 2 * 1024 * 1024;
+    try (RangeFixtureServer server = RangeFixtureServer.start(modelBytes)) {
+      withUserDirAndConfig(
+          tempRoot,
+          () -> {
+            Path weightsDir = Files.createDirectories(tempRoot.resolve("weights"));
+            Files.write(
+                weightsDir.resolve("model.bin.gz.part"),
+                java.util.Arrays.copyOf(modelBytes, partialSize));
+            // Rows read from the networks page carry neither a size nor a digest.
+            KataGoAutoSetupHelper.RemoteWeightInfo info =
+                new KataGoAutoSetupHelper.RemoteWeightInfo(
+                    "Transformer",
+                    "fixture-listed",
+                    server.url(),
+                    "2026-07-29",
+                    "",
+                    false,
+                    false,
+                    "",
+                    0L,
+                    "1.17.0",
+                    KataGoAutoSetupHelper.TransformerTier.BALANCED);
+
+            Path downloaded = KataGoAutoSetupHelper.downloadWeight(info, null);
+
+            assertEquals("bytes=" + partialSize + "-", server.lastRangeHeader());
+            assertArrayEquals(modelBytes, Files.readAllBytes(downloaded));
+          });
+    }
+  }
+
+  @Test
   void transformerWeightChecksumFailureDeletesDamagedPartialFile() throws Exception {
     Path tempRoot = Files.createTempDirectory("katago-transformer-bad-sha");
     byte[] modelBytes = repeatedBytes(16 * 1024, (byte) 31);
