@@ -163,6 +163,26 @@ class KataGoAutoSetupCatalogRegressionTest {
     assertEquals(KataGoAutoSetupDialog.WeightSelectionCheck.MISSING, missing.check);
   }
 
+  @Test
+  void reopeningDuringADownloadLeavesTheDownloadAlone() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    set(dialog, "selectedBenchmarkEntryId", "");
+    set(dialog, "activeDownloadSession", new KataGoAutoSetupHelper.DownloadSession());
+    set(dialog, "stateRefreshRequestId", 7L);
+
+    // The toolbar and 更新官方权重 call refreshState on a dialog that is already open.
+    SwingUtilities.invokeAndWait(dialog::refreshState);
+
+    assertEquals(7L, get(dialog, "stateRefreshRequestId"), "no refresh replaced the download");
+    assertEquals(null, get(dialog, "stateRefreshWorker"));
+  }
+
+  private static Object get(Object target, String name) throws Exception {
+    Field field = KataGoAutoSetupDialog.class.getDeclaredField(name);
+    field.setAccessible(true);
+    return field.get(target);
+  }
+
   private SetupSnapshot snapshot(Path weight) {
     EngineData entry = new EngineData();
     entry.commands = "katago gtp -model \"" + weight + "\"";

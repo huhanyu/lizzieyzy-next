@@ -164,10 +164,6 @@ public class KataGoAutoSetupDialog extends JDialog {
     return AppleStyleSupport.workspaceAccent();
   }
 
-  private static Color ACCENT_TEAL_HOVER() {
-    return AppleStyleSupport.workspaceAccent();
-  }
-
   private static Color ACCENT_GOLD() {
     return AppleStyleSupport.workspaceAccent();
   }
@@ -603,6 +599,12 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
     if (measuredTuningBusy) {
       showBackgroundTaskAlreadyRunningNotice();
+      return;
+    }
+    // Reopened while a download, install or weight switch runs: keep its progress and Stop button.
+    if (activeDownloadSession != null
+        || activeWorkerThread != null
+        || pendingWeightSwitchTimer != null) {
       return;
     }
     if (!selectedBenchmarkEntryId.isBlank()) {
@@ -1364,32 +1366,6 @@ public class KataGoAutoSetupDialog extends JDialog {
     contentWrap.add(content, BorderLayout.NORTH);
     page.add(contentWrap, BorderLayout.CENTER);
     return page;
-  }
-
-  private JPanel createWeightRecommendations() {
-    JPanel section = new JPanel(new BorderLayout(0, 6));
-    section.setOpaque(false);
-    JFontLabel title = new JFontLabel(text("AutoSetup.recommendationTitle"));
-    title.setForeground(TEXT_PRIMARY());
-    title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2f));
-    section.add(title, BorderLayout.NORTH);
-
-    JPanel cards = new JPanel(new GridBagLayout());
-    cards.setOpaque(false);
-    GridBagConstraints gbc = new GridBagConstraints();
-    gbc.gridy = 0;
-    gbc.weightx = 1;
-    gbc.fill = GridBagConstraints.BOTH;
-    gbc.insets = new Insets(0, 0, 0, 7);
-    cards.add(strongestRecommendation, gbc);
-    gbc.gridx = 1;
-    gbc.insets = new Insets(0, 7, 0, 7);
-    cards.add(balancedRecommendation, gbc);
-    gbc.gridx = 2;
-    gbc.insets = new Insets(0, 7, 0, 0);
-    cards.add(lightweightRecommendation, gbc);
-    section.add(cards, BorderLayout.CENTER);
-    return section;
   }
 
   private JPanel createPageHeading(String title, String subtitle) {
@@ -6125,10 +6101,6 @@ public class KataGoAutoSetupDialog extends JDialog {
 
   private boolean isDownloadedRemoteWeight(RemoteWeightInfo info) {
     return findDownloadedRemoteWeightPath(info) != null;
-  }
-
-  private String normalizeWeightName(String value) {
-    return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
   }
 
   private String formatRemoteModelName(RemoteWeightInfo info) {
