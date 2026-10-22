@@ -262,7 +262,7 @@ public class LizzieFrame extends JFrame {
   public boolean isAnaPlayingAgainstLeelaz = false;
   public HumanSlGameController humanSlGame = null;
   private HumanSlTrainingSession humanSlTrainingSession = new HumanSlTrainingSession();
-  private HumanSlTrainingBar humanSlTrainingBar;
+  private CoachPanel coachPanel;
   private NewHumanSlGameDialog humanSlSetupDialog;
   private boolean startHumanSlAtCurrentRequested;
   public boolean playerIsBlack = true;
@@ -662,7 +662,7 @@ public class LizzieFrame extends JFrame {
     toolbar = new BottomToolbar();
     topPanel = new TopHeaderPanel();
     menu = new Menu();
-    humanSlTrainingBar = new HumanSlTrainingBar();
+    coachPanel = new CoachPanel(this);
     menuPresentationMode = MenuPresentationMode.detectCurrent();
     windowMenuStrip = new WindowMenuStrip(menu);
     RightClickMenu = new RightClickMenu();
@@ -1684,7 +1684,7 @@ public class LizzieFrame extends JFrame {
           }
         });
     basePanel.add(engineStartupStatusButton, Integer.valueOf(12));
-    basePanel.add(humanSlTrainingBar, Integer.valueOf(13));
+    basePanel.add(coachPanel, Integer.valueOf(13));
     leftoverDragHandles = new InFrameLeftoverDragHandles(this);
     leftoverDragHandles.install(basePanel);
     basePanel.add(commentBlunderControlPane, Integer.valueOf(10));
@@ -1726,7 +1726,7 @@ public class LizzieFrame extends JFrame {
         mainPanel,
         sidebarPanel,
         toolbar,
-        humanSlTrainingBar,
+        coachPanel,
         engineStartupStatusButton);
     functionSearch = new FunctionSearchController(this);
     Lizzie.engineStartupStatus.addListener(this::updateEngineStartupStatus);
@@ -13171,19 +13171,19 @@ public class LizzieFrame extends JFrame {
   }
 
   public void showHumanSlTrainingBar(HumanSlGameController controller) {
-    humanSlTrainingBar.attach(controller);
+    coachPanel.attach(controller);
     reSetLoc();
     setMainPanelFocus();
   }
 
   public void hideHumanSlTrainingBar(HumanSlGameController controller) {
-    humanSlTrainingBar.detach(controller);
+    coachPanel.detach(controller);
     reSetLoc();
   }
 
   public void updateHumanSlTrainingBar() {
-    if (humanSlTrainingBar != null) {
-      humanSlTrainingBar.repaint();
+    if (coachPanel != null) {
+      coachPanel.refresh();
     }
   }
 
@@ -14205,39 +14205,6 @@ public class LizzieFrame extends JFrame {
     return Math.max(0, secondary);
   }
 
-  static final class MainContentLayout {
-    final Rectangle mainPanel;
-    final Rectangle toolbar;
-    final Rectangle trainingBar;
-
-    MainContentLayout(Rectangle mainPanel, Rectangle toolbar, Rectangle trainingBar) {
-      this.mainPanel = mainPanel;
-      this.toolbar = toolbar;
-      this.trainingBar = trainingBar;
-    }
-  }
-
-  static MainContentLayout layoutMainContent(
-      int contentWidth,
-      int contentHeight,
-      int windowMenuHeight,
-      int topPanelHeight,
-      boolean includeTopPanelInBoard,
-      int toolbarHeight,
-      int trainingBarHeight) {
-    int width = Math.max(0, contentWidth);
-    int height = Math.max(0, contentHeight);
-    int top =
-        Math.max(0, windowMenuHeight) + (includeTopPanelInBoard ? Math.max(0, topPanelHeight) : 0);
-    int toolbarH = Math.max(0, toolbarHeight);
-    int trainingH = Math.max(0, trainingBarHeight);
-    int boardHeight = Math.max(0, height - top - toolbarH - trainingH);
-    return new MainContentLayout(
-        new Rectangle(0, top, width, boardHeight),
-        new Rectangle(0, height - toolbarH, width, toolbarH),
-        new Rectangle(0, height - toolbarH - trainingH, width, trainingH));
-  }
-
   private int currentNativeMenuBarReserve() {
     JRootPane rootPane = getRootPane();
     JMenuBar bar = rootPane == null ? null : rootPane.getJMenuBar();
@@ -14305,7 +14272,7 @@ public class LizzieFrame extends JFrame {
       topPanelHeight = 0;
       topPanel.setVisible(false);
     }
-    int trainingBarHeight = humanSlTrainingBar.isVisible() ? 58 : 0;
+    int coachPanelWidth = coachPanel.isVisible() ? CoachPanel.WIDTH : 0;
     int contentHeight =
         resolvedContentLength(
             preferLaidOutLength(basePanel.getHeight(), getContentPane().getHeight()),
@@ -14314,20 +14281,20 @@ public class LizzieFrame extends JFrame {
             insets.bottom,
             currentNativeMenuBarReserve());
     MainContentLayout layout =
-        layoutMainContent(
+        MainContentLayout.of(
             width,
             contentHeight,
             windowMenuHeight,
             topPanelHeight,
             Lizzie.config.showDoubleMenu,
             toolbarHeight,
-            trainingBarHeight);
+            coachPanelWidth);
     mainPanel.setBounds(
         layout.mainPanel.x,
         layout.mainPanel.y,
         Utils.zoomOut(layout.mainPanel.width),
         Utils.zoomOut(layout.mainPanel.height));
-    humanSlTrainingBar.setBounds(layout.trainingBar);
+    coachPanel.setBounds(layout.coachPanel);
     toolbar.setBounds(layout.toolbar);
     layoutEngineStartupStatus(width);
     if (toolbar.showDetail) toolbar.setDetailIcon();

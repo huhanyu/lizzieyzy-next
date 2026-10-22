@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.GameInfo;
@@ -9,6 +10,7 @@ import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.analysis.ReadBoard;
 import featurecat.lizzie.logging.LogCategories;
 import featurecat.lizzie.rules.Board;
+import featurecat.lizzie.rules.BoardData;
 import featurecat.lizzie.rules.BoardHistoryList;
 import featurecat.lizzie.rules.BoardHistoryNode;
 import featurecat.lizzie.rules.Stone;
@@ -583,6 +585,68 @@ public final class HumanSlGameController {
     return counting;
   }
 
+  public boolean humanPlaysBlack() {
+    return humanIsBlack;
+  }
+
+  public double gameKomi() {
+    return gameKomi;
+  }
+
+  /** Stones the player and the AI have captured so far, in that order. */
+  public int[] captures() {
+    BoardHistoryNode live = liveNode;
+    if (live == null) {
+      return new int[] {0, 0};
+    }
+    int black = live.getData().blackCaptures;
+    int white = live.getData().whiteCaptures;
+    return humanIsBlack ? new int[] {black, white} : new int[] {white, black};
+  }
+
+  /**
+   * The player's winrate in percent at each analysed position of this game, oldest first, from
+   * KataGo's live analysis. Empty unless the mode shows analysis during the game.
+   */
+  public double[] humanWinrates() {
+    BoardHistoryNode live = liveNode;
+    if (!config.mode.isLiveAnalysis() || live == null || gameStartNode == null) {
+      return new double[0];
+    }
+    java.util.ArrayDeque<Double> values = new java.util.ArrayDeque<>();
+    for (BoardHistoryNode node = live; node != null; node = node.previous().orElse(null)) {
+      BoardData data = node.getData();
+      if (data.getPlayouts() > 0) {
+        double black = data.blackToPlay ? data.winrate : 100.0 - data.winrate;
+        values.addFirst(humanIsBlack ? black : 100.0 - black);
+      }
+      if (node == gameStartNode) {
+        break;
+      }
+    }
+    return values.stream().mapToDouble(Double::doubleValue).toArray();
+  }
+
+  /** The player's last move in this game: its move number and point, or null before any. */
+  public String lastHumanMoveText() {
+    Stone human = humanIsBlack ? Stone.BLACK : Stone.WHITE;
+    for (BoardHistoryNode node = liveNode;
+        node != null && node != gameStartNode;
+        node = node.previous().orElse(null)) {
+      BoardData data = node.getData();
+      if (data.lastMoveColor != human) {
+        continue;
+      }
+      String point =
+          data.lastMove
+              .map(move -> Board.convertCoordinatesToName(move[0], move[1]))
+              .orElse(text("HumanSlGame.btn.pass", "Pass"));
+      return MessageFormat.format(
+          text("CoachPanel.moveAt", "Move {0}: {1}"), data.moveNumber, point);
+    }
+    return null;
+  }
+
   /** How the game ended, or null while it is still on. */
   public GameResult result() {
     return gameResult;
@@ -653,9 +717,7 @@ public final class HumanSlGameController {
     if (result.isCounted() && gameInfo != null) {
       gameInfo.setResult(result.sgf());
     }
-    notifier.accept(
-        MessageFormat.format(text("HumanSlTraining.bar.gameOver", "Game over: {0}"), resultText()),
-        4);
+    // The coach panel shows the result; a pop-up over the board would only repeat it.
     updateTrainingBar();
   }
 
@@ -1468,28 +1530,31 @@ public final class HumanSlGameController {
   }
 
   private void configureAnalysisVisuals() {
-    candidatesBlackBefore = Lizzie.config.showBlackCandidates;
-    candidatesWhiteBefore = Lizzie.config.showWhiteCandidates;
-    analyzeBlackBefore = Lizzie.config.analyzeBlack;
-    analyzeWhiteBefore = Lizzie.config.analyzeWhite;
-    showWinrateGraphBefore = Lizzie.config.showWinrateGraph;
-    showWinrateInSuggestionBefore = Lizzie.config.showWinrateInSuggestion;
-    showKataGoEstimateBefore = Lizzie.config.showKataGoEstimate;
+    Config settings = Lizzie.config;
+    candidatesBlackBefore = settings.showBlackCandidates;
+    candidatesWhiteBefore = settings.showWhiteCandidates;
+    analyzeBlackBefore = settings.analyzeBlack;
+    analyzeWhiteBefore = settings.analyzeWhite;
+    showWinrateGraphBefore = settings.showWinrateGraph;
+    showWinrateInSuggestionBefore = settings.showWinrateInSuggestion;
+    showKataGoEstimateBefore = settings.showKataGoEstimate;
     showingPolicyBefore = Lizzie.frame != null && Lizzie.frame.isShowingPolicy;
     showingHeatmapBefore = Lizzie.frame != null && Lizzie.frame.isShowingHeatmap;
     analysisVisualsCaptured = true;
+    // The coach panel shows the winrate curve while analysis is on, and nothing before the end
+    // of the game otherwise, so the graph's column can go either way.
+    settings.showWinrateGraph = false;
     if (config.mode.isLiveAnalysis()) {
-      Lizzie.config.showBlackCandidates = true;
-      Lizzie.config.showWhiteCandidates = true;
-      Lizzie.config.analyzeBlack = true;
-      Lizzie.config.analyzeWhite = true;
+      settings.showBlackCandidates = true;
+      settings.showWhiteCandidates = true;
+      settings.analyzeBlack = true;
+      settings.analyzeWhite = true;
       return;
     }
-    Lizzie.config.showBlackCandidates = false;
-    Lizzie.config.showWhiteCandidates = false;
-    Lizzie.config.showWinrateGraph = false;
-    Lizzie.config.showWinrateInSuggestion = false;
-    Lizzie.config.showKataGoEstimate = false;
+    settings.showBlackCandidates = false;
+    settings.showWhiteCandidates = false;
+    settings.showWinrateInSuggestion = false;
+    settings.showKataGoEstimate = false;
     if (Lizzie.frame != null) {
       Lizzie.frame.isShowingPolicy = false;
       Lizzie.frame.isShowingHeatmap = false;

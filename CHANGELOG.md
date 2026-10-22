@@ -4,6 +4,17 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- An AI 陪练 game now runs in a focused layout: the board plus a coach panel at the right, which replaces the bar under the board.
+  - The panel shows:
+    - the opponent and what it is doing: your turn, thinking, counting or game over;
+    - each side's captures and time, and the komi;
+    - your last move.
+  - Its actions are 悔棋, 停一手, 认输 and 结束对局. Its buttons never take keyboard focus.
+  - In 边下边分析 it shows your win chance from KataGo's live analysis as a number, a bar and a curve that grows with the game.
+  - When the game ends, it shows the result in place of a pop-up over the board, and 开始复盘 returns to the usual analysis.
+  - While the game runs, the comment, variation tree, candidate list, sub-board, captures and status step aside so the board stands alone. They come back exactly as they were, and the saved layout is never touched.
+  - The board area's layout moved out of `LizzieFrame` into `MainContentLayout`.
+
 - AI 陪练 games now end the way real games do:
   - The AI passes when the game is over. KataGo's own search decides, as in KataGo's human-imitation configs. It is asked once 40% of the board has been played, or right after you pass. Before, the AI never passed before move 200, on any board size, so small boards could not end.
   - After you pass, the AI passes too when playing on would gain at most a point. Under area scoring it still fills the dame first. Without this a losing AI kept playing inside its own area, because every move scored the same. When players of its rank would pass but KataGo still sees a point worth taking, it plays KataGo's move rather than a near-random human one.

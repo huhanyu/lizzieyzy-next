@@ -344,6 +344,64 @@ class HumanSlGameControllerIntegrationTest {
   }
 
   @Test
+  void coachPanelStateFollowsTheGameFromYourTurnToTheResult() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setNotifierForTesting((message, seconds) -> {});
+
+      CoachPanelState playing = CoachPanelState.of(controller, (key, fallback) -> text(key));
+
+      assertEquals(text("CoachPanel.status.yourTurn"), playing.status());
+      assertEquals(CoachPanelState.Tone.ACTIVE, playing.tone());
+      assertEquals(
+          java.text.MessageFormat.format(text("CoachPanel.opponent"), controller.opponentLabel()),
+          playing.title());
+      assertFalse(playing.aiPlaysBlack());
+      assertEquals(0, playing.winrates().length, "analysis stays hidden in this mode");
+      assertNull(playing.result());
+
+      SwingUtilities.invokeAndWait(controller::resign);
+      CoachPanelState over = CoachPanelState.of(controller, (key, fallback) -> text(key));
+
+      assertEquals(text("CoachPanel.status.gameOver"), over.status());
+      assertEquals(CoachPanelState.Tone.DONE, over.tone());
+      assertEquals(controller.resultText(), over.result());
+      assertEquals(text("CoachPanel.reviewHint"), over.resultHint());
+    }
+  }
+
+  @Test
+  void theLastMoveNamesThePlayersMoveNumberAndPoint() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.replyWith(HumanMoveChoice.of("A1"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      assertNull(controller.lastHumanMoveText());
+
+      controller.humanPass();
+      assertTrue(runner.awaitRequest());
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> Lizzie.board.getHistory().getMoveNumber() == 2, Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(
+          java.text.MessageFormat.format(
+              text("CoachPanel.moveAt"), 1, text("HumanSlGame.btn.pass")),
+          controller.lastHumanMoveText());
+      assertEquals(2, controller.captures().length);
+    }
+  }
+
+  private static String text(String key) {
+    return Lizzie.resourceBundle.getString(key);
+  }
+
+  @Test
   void unifiedAiModeStopEndsCoachAndReportsThatItStoppedAnActiveMode() throws Exception {
     try (CoachEnvironment env = CoachEnvironment.open()) {
       HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
