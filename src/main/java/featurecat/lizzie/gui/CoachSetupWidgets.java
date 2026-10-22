@@ -71,7 +71,8 @@ final class CoachSetupWidgets {
             new Color(0x5b, 0xc7, 0xb0),
             new Color(0x0b, 0x26, 0x22),
             new Color(0x25, 0x4c, 0x45),
-            new Color(0x25, 0x4c, 0x45),
+            // The 默认 tag sits on a selected card; it needs a fill of its own to show.
+            new Color(0x2f, 0x6e, 0x63),
             new Color(0x8e, 0xe6, 0xd6),
             new Color(255, 255, 255, 20),
             new Color(0x3a, 0x40, 0x46),
