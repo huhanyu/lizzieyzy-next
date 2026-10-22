@@ -52,7 +52,7 @@ final class CoachPaint {
    * rated good stays neutral, so green always means the chance held or rose.
    */
   static Color changeColor(MoveVerdict verdict, String change) {
-    boolean drop = change != null && change.startsWith("\u2212");
+    boolean drop = change != null && change.contains("−");
     return drop && !verdict.isMistake() ? CoachPanel.MUTED : verdictColor(verdict);
   }
 

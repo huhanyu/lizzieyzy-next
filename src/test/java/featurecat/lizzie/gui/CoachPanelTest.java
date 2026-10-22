@@ -95,6 +95,8 @@ class CoachPanelTest {
 
     assertEquals(CoachPaint.verdictColor(good), CoachPaint.changeColor(good, "+1%"));
     assertEquals(CoachPanel.MUTED, CoachPaint.changeColor(good, "\u22123%"));
+    assertEquals(
+        CoachPanel.MUTED, CoachPaint.changeColor(good, "Win chance \u22123%"), "on the card");
     assertEquals(CoachPaint.verdictColor(slow), CoachPaint.changeColor(slow, "\u22126%"));
   }
 
