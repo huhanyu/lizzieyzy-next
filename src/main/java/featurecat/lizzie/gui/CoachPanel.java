@@ -42,9 +42,11 @@ public final class CoachPanel extends JPanel {
   private final Supplier<Config> config;
   private final CoachFocusLayout focusLayout = new CoachFocusLayout();
   private final CoachSummaryView summary = new CoachSummaryView(this::state);
-  private final CoachMoveCard moveCard = new CoachMoveCard(this::state);
+  private final CoachMoveCard moveCard = new CoachMoveCard(this::state, this::onPromptAction);
   private final CoachHistoryView history = new CoachHistoryView(this::state);
   private final JPanel actions;
+  private final JPanel grid = new JPanel(new GridLayout(0, 2, 8, 8));
+  private final CoachButton hintButton = CoachButton.accent();
   private final CoachButton takeBackButton = CoachButton.secondary();
   private final CoachButton passButton = CoachButton.secondary();
   private final CoachButton resignButton = CoachButton.secondary();
@@ -53,6 +55,7 @@ public final class CoachPanel extends JPanel {
   private final Timer refreshTimer = new Timer(500, event -> refreshFromController());
   private HumanSlGameController controller;
   private CoachPanelState state = CoachPanelState.EMPTY;
+  private int marksVersion;
 
   CoachPanel(LizzieFrame frame) {
     this(frame, () -> Lizzie.config);
@@ -82,6 +85,9 @@ public final class CoachPanel extends JPanel {
       return;
     }
     focusLayout.enter(frame, config.get());
+    if (LizzieFrame.boardRenderer != null) {
+      LizzieFrame.boardRenderer.setCoachMarks(value.assist().marks());
+    }
     setVisible(true);
     refreshTimer.start();
     refreshFromController();
@@ -93,6 +99,9 @@ public final class CoachPanel extends JPanel {
     }
     controller = null;
     refreshTimer.stop();
+    if (LizzieFrame.boardRenderer != null) {
+      LizzieFrame.boardRenderer.setCoachMarks(null);
+    }
     setVisible(false);
     focusLayout.exit(frame, config.get());
   }
@@ -107,7 +116,12 @@ public final class CoachPanel extends JPanel {
   }
 
   List<CoachButton> buttons() {
-    return List.of(takeBackButton, passButton, resignButton, retryButton, finishButton);
+    List<CoachButton> all =
+        new java.util.ArrayList<>(
+            List.of(
+                hintButton, takeBackButton, passButton, resignButton, retryButton, finishButton));
+    all.addAll(moveCard.buttons());
+    return all;
   }
 
   /** Top to bottom: the summary, the move card, then the buttons at the bottom edge. */
@@ -136,13 +150,15 @@ public final class CoachPanel extends JPanel {
   private JPanel buildActions() {
     JPanel panel = new JPanel(new BorderLayout(0, 8));
     panel.setOpaque(false);
-    JPanel grid = new JPanel(new GridLayout(0, 2, 8, 8));
     grid.setOpaque(false);
+    hintButton.setText(text("CoachPanel.hint", "Hint"));
+    hintButton.setShortcut("H");
     takeBackButton.setText(text("HumanSlTraining.takeBack", "Take back"));
     passButton.setText(text("HumanSlGame.btn.pass", "Pass"));
     resignButton.setText(text("HumanSlGame.btn.resign", "Resign"));
     retryButton.setText(text("HumanSlTraining.retryAi", "Retry AI"));
     finishButton.setText(text("CoachPanel.finish", "End game"));
+    hintButton.addActionListener(event -> withController(HumanSlGameController::hint));
     takeBackButton.addActionListener(event -> withController(HumanSlGameController::takeBack));
     passButton.addActionListener(event -> withController(HumanSlGameController::humanPass));
     resignButton.addActionListener(event -> withController(HumanSlGameController::resign));
@@ -157,10 +173,7 @@ public final class CoachPanel extends JPanel {
                     active.finishAndReturnToBoard();
                   }
                 }));
-    grid.add(takeBackButton);
-    grid.add(passButton);
-    grid.add(resignButton);
-    grid.add(retryButton);
+    showInGrid(List.of(takeBackButton, passButton, resignButton));
     panel.add(grid, BorderLayout.CENTER);
     panel.add(finishButton, BorderLayout.SOUTH);
     return panel;
@@ -177,6 +190,7 @@ public final class CoachPanel extends JPanel {
     }
     state = CoachPanelState.of(active, CoachPanel::text);
     boolean stopping = active.isStopRequested();
+    hintButton.setEnabled(!stopping && active.canHint());
     takeBackButton.setEnabled(!stopping && active.canTakeBack());
     passButton.setEnabled(
         !stopping
@@ -185,7 +199,15 @@ public final class CoachPanel extends JPanel {
             && !active.isGameOver()
             && !active.isCounting());
     resignButton.setEnabled(!stopping && active.canResign());
-    retryButton.setVisible(!stopping && active.hasAiFailure() && !active.isReviewing());
+    List<CoachButton> shown = new java.util.ArrayList<>();
+    if (active.moveReviewer() != null) {
+      shown.add(hintButton);
+    }
+    shown.addAll(List.of(takeBackButton, passButton, resignButton));
+    if (!stopping && active.hasAiFailure() && !active.isReviewing()) {
+      shown.add(retryButton);
+    }
+    showInGrid(shown);
     if (active.isExitRecoveryPending()) {
       finishButton.setText(text("HumanSlTraining.retryCleanup", "Retry cleanup"));
       finishButton.setKind(CoachButton.Kind.PRIMARY);
@@ -200,8 +222,49 @@ public final class CoachPanel extends JPanel {
       finishButton.setKind(CoachButton.Kind.QUIET);
     }
     finishButton.setEnabled(!active.isExitInProgress());
+    int version = active.assist().marks().version();
+    if (version != marksVersion) {
+      marksVersion = version;
+      if (frame != null) {
+        frame.refresh();
+      }
+    }
     revalidate();
     repaint();
+  }
+
+  /**
+   * The grid keeps only the buttons that apply, so a hidden one never leaves an empty row: a grid
+   * lays out its invisible children too.
+   */
+  private void showInGrid(List<CoachButton> shown) {
+    if (java.util.Arrays.asList(grid.getComponents()).equals(shown)) {
+      return;
+    }
+    grid.removeAll();
+    shown.forEach(grid::add);
+    grid.revalidate();
+  }
+
+  private void onPromptAction(CoachPanelState.Action action) {
+    switch (action) {
+      case RETRY:
+        withController(HumanSlGameController::retryBlunder);
+        break;
+      case SHOW_BEST:
+        withController(HumanSlGameController::showBestMove);
+        break;
+      case CONTINUE:
+        withController(HumanSlGameController::continueAfterBlunder);
+        break;
+      case MORE_HINT:
+        withController(HumanSlGameController::hint);
+        break;
+      case CLOSE_HINT:
+      default:
+        withController(HumanSlGameController::closeHint);
+        break;
+    }
   }
 
   private void withController(Consumer<HumanSlGameController> action) {

@@ -23,6 +23,7 @@ record CoachPanelState(
     String timeLine,
     WinChance winChance,
     MoveCard moveCard,
+    Prompt prompt,
     String result,
     String resultHint,
     History history) {
@@ -40,8 +41,37 @@ record CoachPanelState(
    * The player's win chance card.
    *
    * @param values percentages, oldest first; empty until the first one is known
+   * @param marked a percentage to mark in red, the chance before a 恶手, or NaN
    */
-  record WinChance(String caption, double[] values) {}
+  record WinChance(String caption, double[] values, double marked) {}
+
+  /** What a button on a {@link Prompt} does. */
+  enum Action {
+    RETRY,
+    SHOW_BEST,
+    CONTINUE,
+    MORE_HINT,
+    CLOSE_HINT
+  }
+
+  record Choice(Action action, String label, CoachButton.Kind kind) {}
+
+  /**
+   * A card that asks the player something: the decision after a 恶手, or a hint.
+   *
+   * @param warm the warm style of the 恶手 card
+   * @param headline the large line, such as "胜率 −23%", or null
+   * @param detail beside the headline, such as "约亏 8 目", or null
+   */
+  record Prompt(
+      boolean warm,
+      String tag,
+      MoveVerdict verdict,
+      String title,
+      String headline,
+      String detail,
+      String body,
+      List<Choice> choices) {}
 
   /**
    * The player's last move, and in 边下边提醒 how it was rated.
@@ -69,7 +99,7 @@ record CoachPanelState(
 
   static final CoachPanelState EMPTY =
       new CoachPanelState(
-          "", "", "", Tone.WAITING, false, "", "", "", "", "", null, null, null, null, null);
+          "", "", "", Tone.WAITING, false, "", "", "", "", "", null, null, null, null, null, null);
 
   /** Rows the history keeps; the panel shows as many as fit. */
   static final int RECENT_ROWS = 8;
@@ -101,6 +131,9 @@ record CoachPanelState(
     } else if (game.hasAiFailure()) {
       status = text.apply("CoachPanel.status.aiFailed", "AI did not move");
       tone = Tone.ALERT;
+    } else if (game.isAwaitingDecision()) {
+      status = text.apply("CoachPanel.status.decide", "Your call");
+      tone = Tone.WARNING;
     } else if (game.isAiThinking() || !game.isHumanTurn()) {
       status = text.apply("CoachPanel.status.aiThinking", "AI thinking");
       tone = Tone.WAITING;
@@ -116,8 +149,10 @@ record CoachPanelState(
                 ? text.apply("CoachPanel.aiWhite", "Plays White")
                 : text.apply("CoachPanel.aiBlack", "Plays Black"))
             + " · "
-            + MessageFormat.format(
-                text.apply("CoachPanel.imitates", "Plays like a {0} player"), opponent),
+            + (game.isAwaitingDecision()
+                ? text.apply("CoachPanel.waitsForYou", "Waits for your decision")
+                : MessageFormat.format(
+                    text.apply("CoachPanel.imitates", "Plays like a {0} player"), opponent)),
         status,
         tone,
         !humanBlack,
@@ -132,6 +167,7 @@ record CoachPanelState(
             komi(game.gameKomi())),
         winChance(game, reviewer, opponent, text),
         moveCard(game, reviewer, opponent, text),
+        reviewer == null ? null : prompt(game, opponent, text),
         over ? game.resultText() : null,
         over
             ? text.apply(
@@ -148,16 +184,22 @@ record CoachPanelState(
       String opponent,
       BinaryOperator<String> text) {
     if (reviewer != null) {
+      double marked =
+          game.isAwaitingDecision()
+              ? game.assist().decision().map(f -> f.winBefore() * 100.0).orElse(Double.NaN)
+              : Double.NaN;
       return new WinChance(
           MessageFormat.format(
               text.apply("CoachPanel.winChanceRank", "Estimated at {0} level"), opponent),
-          game.humanWinrates());
+          game.humanWinrates(),
+          marked);
     }
     if (game.mode().isLiveAnalysis()) {
       double[] values = game.humanWinrates();
       return values.length == 0
           ? null
-          : new WinChance(text.apply("CoachPanel.winChanceLive", "KataGo live analysis"), values);
+          : new WinChance(
+              text.apply("CoachPanel.winChanceLive", "KataGo live analysis"), values, Double.NaN);
     }
     return null;
   }
@@ -199,6 +241,153 @@ record CoachPanelState(
         verdictLabel(feedback.verdict(), text),
         explanation(feedback, opponent, text),
         false);
+  }
+
+  private static Prompt prompt(
+      HumanSlGameController game, String opponent, BinaryOperator<String> text) {
+    CoachAssist assist = game.assist();
+    Optional<MoveFeedback> blunder = assist.decision();
+    if (game.isAwaitingDecision() && blunder.isPresent()) {
+      MoveFeedback feedback = blunder.get();
+      String body = explanation(feedback, opponent, text);
+      if (assist.isBestShown()) {
+        body =
+            join(
+                body,
+                MessageFormat.format(
+                    text.apply(
+                        "CoachPanel.bestMove",
+                        "The AI would play {0}; {1} of players at this level find it."),
+                    moveName(feedback.bestMove(), text),
+                    percent(feedback.bestShare())));
+      }
+      List<Choice> choices = new ArrayList<>();
+      choices.add(
+          new Choice(
+              Action.RETRY,
+              text.apply("CoachPanel.retry", "Play it again"),
+              CoachButton.Kind.PRIMARY));
+      if (!assist.isBestShown()) {
+        choices.add(
+            new Choice(
+                Action.SHOW_BEST,
+                text.apply("CoachPanel.showBest", "See the AI move"),
+                CoachButton.Kind.WARM));
+      }
+      choices.add(
+          new Choice(
+              Action.CONTINUE,
+              text.apply("CoachPanel.continue", "Keep it and play on"),
+              CoachButton.Kind.WARM_QUIET));
+      long points = Math.round(feedback.pointsLost());
+      return new Prompt(
+          true,
+          verdictLabel(feedback.verdict(), text),
+          feedback.verdict(),
+          MessageFormat.format(
+              text.apply("CoachPanel.moveTitle", "Move {0} · {1}"),
+              feedback.moveNumber(),
+              moveName(feedback.move(), text)),
+          MessageFormat.format(
+              text.apply("CoachPanel.change", "Win chance {0}"),
+              signedPercent(feedback.winChange())),
+          points >= 1
+              ? MessageFormat.format(
+                  text.apply("CoachPanel.pointsLost", "about {0} points lost"), points)
+              : null,
+          body,
+          choices);
+    }
+    if (!assist.isHintOpen()) {
+      return null;
+    }
+    Choice self =
+        new Choice(
+            Action.CLOSE_HINT,
+            text.apply("CoachPanel.hint.self", "Let me think"),
+            CoachButton.Kind.SECONDARY);
+    switch (assist.hintStep()) {
+      case AREA:
+        return new Prompt(
+            false,
+            MessageFormat.format(text.apply("CoachPanel.hint.step", "Hint {0}/2"), 1),
+            null,
+            MessageFormat.format(
+                text.apply("CoachPanel.hint.area", "Look around the {0}"),
+                areaName(assist.hintArea(), text)),
+            null,
+            null,
+            text.apply(
+                "CoachPanel.hint.areaBody",
+                "Try to find it yourself first. If it does not come, ask for one more hint."),
+            List.of(
+                new Choice(
+                    Action.MORE_HINT,
+                    text.apply("CoachPanel.hint.more", "One more hint"),
+                    CoachButton.Kind.ACCENT),
+                self));
+      case POINT:
+        return new Prompt(
+            false,
+            MessageFormat.format(text.apply("CoachPanel.hint.step", "Hint {0}/2"), 2),
+            null,
+            MessageFormat.format(
+                text.apply("CoachPanel.hint.point", "The AI would play {0}"),
+                moveName(assist.hintMove(), text)),
+            null,
+            null,
+            Double.isNaN(assist.hintShare())
+                ? ""
+                : MessageFormat.format(
+                    text.apply("CoachPanel.why.share", "{0} of players at this level play it."),
+                    percent(assist.hintShare())),
+            List.of(
+                new Choice(
+                    Action.CLOSE_HINT,
+                    text.apply("CoachPanel.hint.gotIt", "Got it"),
+                    CoachButton.Kind.SECONDARY)));
+      default:
+        return new Prompt(
+            false,
+            text.apply("CoachPanel.hint", "Hint"),
+            null,
+            text.apply("CoachPanel.hint.waiting", "Reading the position…"),
+            null,
+            null,
+            "",
+            List.of(self));
+    }
+  }
+
+  private static String moveName(String move, BinaryOperator<String> text) {
+    return move == null || "pass".equalsIgnoreCase(move.trim())
+        ? text.apply("HumanSlGame.btn.pass", "Pass")
+        : move.trim();
+  }
+
+  /** The name of one of the nine areas of {@link CoachBoardMarks#areaOf}. */
+  static String areaName(int area, BinaryOperator<String> text) {
+    switch (area) {
+      case 0:
+        return text.apply("CoachPanel.area.topLeft", "top left corner");
+      case 1:
+        return text.apply("CoachPanel.area.top", "top side");
+      case 2:
+        return text.apply("CoachPanel.area.topRight", "top right corner");
+      case 3:
+        return text.apply("CoachPanel.area.left", "left side");
+      case 5:
+        return text.apply("CoachPanel.area.right", "right side");
+      case 6:
+        return text.apply("CoachPanel.area.bottomLeft", "bottom left corner");
+      case 7:
+        return text.apply("CoachPanel.area.bottom", "bottom side");
+      case 8:
+        return text.apply("CoachPanel.area.bottomRight", "bottom right corner");
+      case 4:
+      default:
+        return text.apply("CoachPanel.area.center", "center");
+    }
   }
 
   private static History history(MoveReviewer reviewer, BinaryOperator<String> text) {

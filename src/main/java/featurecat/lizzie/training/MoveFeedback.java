@@ -12,6 +12,8 @@ import java.util.Optional;
  * @param pointsLost points given away against the best move, never negative
  * @param humanShare how often players of the rank play this move, 0 to 1, NaN when unknown
  * @param playedBest whether the move is KataGo's choice
+ * @param bestMove KataGo's choice in the position before the move
+ * @param bestShare how often players of the rank play {@code bestMove}, NaN when unknown
  */
 public record MoveFeedback(
     int moveNumber,
@@ -21,7 +23,9 @@ public record MoveFeedback(
     double winAfter,
     double pointsLost,
     double humanShare,
-    boolean playedBest) {
+    boolean playedBest,
+    String bestMove,
+    double bestShare) {
 
   /** Below this share of players, finding the best move counts as rare. */
   static final double RARE_SHARE = 0.10;
@@ -82,7 +86,9 @@ public record MoveFeedback(
             winAfter,
             pointsLost,
             share,
-            playedBest));
+            playedBest,
+            best.get().move(),
+            before.humanShare(best.get().move())));
   }
 
   /**

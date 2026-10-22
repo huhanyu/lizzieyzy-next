@@ -499,9 +499,10 @@ public class Input implements MouseListener, KeyListener, MouseWheelListener, Mo
         break;
 
       case VK_H:
-        // The policy heatmap would show the answer in a coaching mode that hides analysis.
+        // In a coaching mode that hides analysis the heatmap would show the answer: 边下边提醒
+        // gives a hint instead, the other mode says analysis is hidden.
         if (activeCoachGame() != null && !activeCoachGame().isLiveAnalysisMode()) {
-          activeCoachGame().showAnalysisHiddenHint();
+          activeCoachGame().hint();
         } else {
           Lizzie.leelaz.toggleHeatmap(false);
         }

@@ -65,7 +65,9 @@ class CoachPanelTest {
             0.23,
             13.7,
             0.001,
-            false);
+            false,
+            "Q16",
+            0.2);
     featurecat.lizzie.training.MoveFeedback decided =
         new featurecat.lizzie.training.MoveFeedback(
             201,
@@ -75,7 +77,9 @@ class CoachPanelTest {
             0.01,
             9.6,
             Double.NaN,
-            false);
+            false,
+            "S2",
+            0.1);
 
     assertEquals(
         "At 3 dan level your win chance fell from 47% to 23%. <1% of players at this level play it.",
@@ -98,6 +102,19 @@ class CoachPanelTest {
     assertEquals(
         CoachPanel.MUTED, CoachPaint.changeColor(good, "Win chance \u22123%"), "on the card");
     assertEquals(CoachPaint.verdictColor(slow), CoachPaint.changeColor(slow, "\u22126%"));
+  }
+
+  @Test
+  void hiddenButtonsLeaveNoEmptyRowAboveEndGame() {
+    CoachPanel panel = new CoachPanel(null, () -> null);
+    java.awt.Container actions =
+        (java.awt.Container) panel.getComponent(panel.getComponentCount() - 1);
+    java.awt.Container grid = (java.awt.Container) actions.getComponent(0);
+
+    assertEquals(3, grid.getComponentCount(), "take back, pass and resign; no hint or retry yet");
+    for (java.awt.Component button : grid.getComponents()) {
+      assertTrue(button.isVisible());
+    }
   }
 
   @Test

@@ -189,6 +189,11 @@ final class MoveReviewer {
         : Optional.of(judged.get(judged.size() - 1).feedback());
   }
 
+  /** The review of {@code position} if the player is to move there and it is done, else null. */
+  PositionReview currentReview(BoardHistoryNode position) {
+    return turn == position ? turnReview : null;
+  }
+
   /** True from the player's move until its judgement arrives. */
   boolean isJudging() {
     return judging != null;

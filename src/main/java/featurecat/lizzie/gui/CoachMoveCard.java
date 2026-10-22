@@ -6,26 +6,60 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
-import javax.swing.JComponent;
+import javax.swing.JPanel;
 
 /**
- * The card under the win chance: the result once the game is over, otherwise the player's last
- * move, with its rating in 边下边提醒.
+ * The card under the win chance. In order: a question for the player (what to do after a 恶手, or a
+ * hint, with its buttons), the result once the game is over, or the player's last move with its
+ * rating in 边下边提醒.
  */
-final class CoachMoveCard extends JComponent {
+final class CoachMoveCard extends JPanel {
   private static final int PADDING = 14;
+  private static final int PROMPT_PADDING = 16;
   private static final int LINE = 19;
+  private static final int PROMPT_LINE = 21;
+  private static final int GAP = 12;
+  private static final int BUTTON = 44;
+  private static final int QUIET_BUTTON = 36;
+  private static final Color WARM_FILL = new Color(0x2a, 0x1d, 0x1b);
+  private static final Color WARM_EDGE = new Color(255, 122, 110, 107);
+  private static final Color WARM_TITLE = new Color(0xf1, 0xd7, 0xd3);
+  private static final Color WARM_DETAIL = new Color(0xd9, 0xbd, 0xb8);
+  private static final Color WARM_BODY = new Color(0xe5, 0xd3, 0xd0);
+  private static final Color HINT_EDGE = new Color(61, 190, 170, 90);
 
   private final Supplier<CoachPanelState> state;
+  private final List<CoachButton> buttons =
+      List.of(CoachButton.primary(), CoachButton.secondary(), CoachButton.quiet());
+  private final CoachPanelState.Action[] actions = new CoachPanelState.Action[3];
 
-  CoachMoveCard(Supplier<CoachPanelState> state) {
+  CoachMoveCard(Supplier<CoachPanelState> state, Consumer<CoachPanelState.Action> onAction) {
+    super(null);
     this.state = state;
     setOpaque(false);
+    for (int i = 0; i < buttons.size(); i++) {
+      int index = i;
+      CoachButton button = buttons.get(i);
+      button.setVisible(false);
+      button.addActionListener(
+          event -> {
+            if (actions[index] != null) {
+              onAction.accept(actions[index]);
+            }
+          });
+      add(button);
+    }
   }
 
-  /** 0 when there is nothing to show. */
+  List<CoachButton> buttons() {
+    return buttons;
+  }
+
+  /** 0 when there is nothing to show. Also places the prompt's buttons. */
   int heightFor() {
+    syncButtons(state.get().prompt());
     return layout(null, getWidth());
   }
 
@@ -40,8 +74,28 @@ final class CoachMoveCard extends JComponent {
     }
   }
 
+  private void syncButtons(CoachPanelState.Prompt prompt) {
+    List<CoachPanelState.Choice> choices = prompt == null ? List.of() : prompt.choices();
+    for (int i = 0; i < buttons.size(); i++) {
+      CoachButton button = buttons.get(i);
+      if (i < choices.size()) {
+        CoachPanelState.Choice choice = choices.get(i);
+        actions[i] = choice.action();
+        button.setText(choice.label());
+        button.setKind(choice.kind());
+        button.setVisible(true);
+      } else {
+        actions[i] = null;
+        button.setVisible(false);
+      }
+    }
+  }
+
   private int layout(Graphics2D g, int width) {
     CoachPanelState s = state.get();
+    if (s.prompt() != null) {
+      return prompt(g, s.prompt(), width);
+    }
     if (s.result() != null) {
       return result(g, s, width);
     }
@@ -52,6 +106,97 @@ final class CoachMoveCard extends JComponent {
     return card.verdict() == null && card.change() == null && card.explanation() == null
         ? plainMove(g, card, width)
         : ratedMove(g, card, width);
+  }
+
+  /** The 恶手 decision or a hint: tag and title, the headline, why, then the buttons. */
+  private int prompt(Graphics2D g, CoachPanelState.Prompt prompt, int width) {
+    int inner = width - 2 * PROMPT_PADDING;
+    Font bodyFont = CoachPaint.font(prompt.body(), Font.PLAIN, 13.5f);
+    List<String> body = CoachPaint.wrap(prompt.body(), getFontMetrics(bodyFont), inner);
+    int y = PROMPT_PADDING;
+    if (g != null) {
+      g.setColor(prompt.warm() ? WARM_FILL : CoachPanel.SURFACE);
+      g.fillRoundRect(0, 0, width, getHeight(), 28, 28);
+      g.setColor(prompt.warm() ? WARM_EDGE : HINT_EDGE);
+      g.drawRoundRect(0, 0, width - 1, getHeight() - 1, 28, 28);
+      g.setFont(CoachPaint.font(prompt.tag(), Font.BOLD, 13f));
+      int tagWidth =
+          CoachPaint.tag(
+              g,
+              PROMPT_PADDING,
+              y,
+              24,
+              prompt.tag(),
+              prompt.verdict() == null
+                  ? CoachPanel.ACCENT
+                  : CoachPaint.verdictSolid(prompt.verdict()),
+              prompt.verdict() == null
+                  ? new Color(0x0b, 0x26, 0x22)
+                  : CoachPaint.verdictSolidText(prompt.verdict()));
+      g.setFont(CoachPaint.font(prompt.title(), prompt.warm() ? Font.PLAIN : Font.BOLD, 15f));
+      FontMetrics title = g.getFontMetrics();
+      g.setColor(prompt.warm() ? WARM_TITLE : CoachPanel.TEXT);
+      g.drawString(
+          CoachPaint.fit(title, prompt.title(), inner - tagWidth - 10),
+          PROMPT_PADDING + tagWidth + 10,
+          y + (24 - title.getHeight()) / 2 + title.getAscent());
+    }
+    y += 24;
+    if (prompt.headline() != null) {
+      y += GAP;
+      if (g != null) {
+        g.setFont(CoachPaint.font(prompt.headline(), Font.BOLD, 28f));
+        FontMetrics headline = g.getFontMetrics();
+        g.setColor(CoachPaint.verdictColor(prompt.verdict()));
+        int baseline = y + headline.getAscent();
+        g.drawString(prompt.headline(), PROMPT_PADDING, baseline);
+        if (prompt.detail() != null) {
+          int detailX = PROMPT_PADDING + headline.stringWidth(prompt.headline()) + 12;
+          g.setFont(CoachPaint.font(prompt.detail(), Font.PLAIN, 14f));
+          g.setColor(WARM_DETAIL);
+          g.drawString(prompt.detail(), detailX, baseline);
+        }
+      }
+      y += 36;
+    }
+    if (!body.isEmpty()) {
+      y += GAP;
+      if (g != null) {
+        g.setFont(bodyFont);
+        FontMetrics metrics = g.getFontMetrics();
+        g.setColor(prompt.warm() ? WARM_BODY : CoachPanel.MUTED);
+        for (int i = 0; i < body.size(); i++) {
+          g.drawString(
+              body.get(i),
+              PROMPT_PADDING,
+              y + i * PROMPT_LINE + (PROMPT_LINE - metrics.getHeight()) / 2 + metrics.getAscent());
+        }
+      }
+      y += body.size() * PROMPT_LINE;
+    }
+    int choices = prompt.choices().size();
+    if (choices > 0) {
+      y = placeButtons(y + GAP, inner, choices);
+    }
+    return y + PROMPT_PADDING;
+  }
+
+  /**
+   * Two buttons side by side, a third one under them across the card; a single one takes the left
+   * half. Returns the bottom of the buttons.
+   */
+  private int placeButtons(int top, int inner, int count) {
+    int half = (inner - 8) / 2;
+    buttons.get(0).setBounds(PROMPT_PADDING, top, half, BUTTON);
+    if (count >= 2) {
+      buttons.get(1).setBounds(PROMPT_PADDING + half + 8, top, inner - half - 8, BUTTON);
+    }
+    int bottom = top + BUTTON;
+    if (count >= 3) {
+      buttons.get(2).setBounds(PROMPT_PADDING, bottom + 8, inner, QUIET_BUTTON);
+      bottom += 8 + QUIET_BUTTON;
+    }
+    return bottom;
   }
 
   /** The modes that do not rate moves: the label, then the move in bold. */

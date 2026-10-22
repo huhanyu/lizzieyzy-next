@@ -19,10 +19,17 @@ final class CoachButton extends JButton {
   enum Kind {
     PRIMARY,
     SECONDARY,
-    QUIET
+    QUIET,
+    /** A teal outline, such as 提示 and 再给一步. */
+    ACCENT,
+    /** A secondary button on the warm 恶手 card. */
+    WARM,
+    /** A text-only button on the warm 恶手 card. */
+    WARM_QUIET
   }
 
   private Kind kind;
+  private String shortcut;
 
   private CoachButton(Kind kind) {
     this.kind = kind;
@@ -45,6 +52,16 @@ final class CoachButton extends JButton {
 
   static CoachButton quiet() {
     return new CoachButton(Kind.QUIET);
+  }
+
+  static CoachButton accent() {
+    return new CoachButton(Kind.ACCENT);
+  }
+
+  /** A key drawn faintly after the label, such as "H". */
+  void setShortcut(String value) {
+    shortcut = value;
+    repaint();
   }
 
   Kind kind() {
@@ -92,6 +109,21 @@ final class CoachButton extends JButton {
           border = null;
           text = CoachPanel.MUTED;
           break;
+        case ACCENT:
+          fill = new Color(61, 190, 170, hover ? 48 : 31);
+          border = new Color(0x2f, 0x7f, 0x73);
+          text = CoachPanel.ACCENT_TEXT;
+          break;
+        case WARM:
+          fill = hover ? new Color(0x3d, 0x2a, 0x26) : new Color(0x33, 0x23, 0x1f);
+          border = new Color(0x5a, 0x44, 0x41);
+          text = new Color(0xf4, 0xe2, 0xdf);
+          break;
+        case WARM_QUIET:
+          fill = hover ? new Color(0x33, 0x23, 0x1f) : null;
+          border = null;
+          text = new Color(0xd9, 0xbd, 0xb8);
+          break;
         case SECONDARY:
         default:
           fill =
@@ -115,15 +147,22 @@ final class CoachButton extends JButton {
         g.drawRoundRect(0, 0, width - 1, height - 1, 20, 20);
       }
       String label = getText() == null ? "" : getText();
-      Font font =
-          HumanSlTrainingStyle.fontForText(
-              label, kind == Kind.PRIMARY ? Font.BOLD : Font.PLAIN, 14);
+      boolean bold = kind == Kind.PRIMARY || kind == Kind.ACCENT;
+      Font font = HumanSlTrainingStyle.fontForText(label, bold ? Font.BOLD : Font.PLAIN, 14);
       g.setFont(font);
       FontMetrics metrics = g.getFontMetrics();
-      g.setColor(text);
-      int x = (width - metrics.stringWidth(label)) / 2;
+      String key = shortcut == null ? "" : shortcut;
+      Font keyFont = HumanSlTrainingStyle.fontForText(key, Font.PLAIN, 12);
+      int keyWidth = key.isEmpty() ? 0 : 8 + g.getFontMetrics(keyFont).stringWidth(key);
+      int x = (width - metrics.stringWidth(label) - keyWidth) / 2;
       int y = (height - metrics.getHeight()) / 2 + metrics.getAscent();
+      g.setColor(text);
       g.drawString(label, x, y);
+      if (!key.isEmpty()) {
+        g.setFont(keyFont);
+        g.setColor(new Color(text.getRed(), text.getGreen(), text.getBlue(), 150));
+        g.drawString(key, x + metrics.stringWidth(label) + 8, y);
+      }
     } finally {
       g.dispose();
     }

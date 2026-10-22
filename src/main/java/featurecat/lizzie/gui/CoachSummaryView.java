@@ -142,6 +142,15 @@ final class CoachSummaryView extends JComponent {
     }
     g.setColor(new Color(236, 239, 238, 140));
     g.fillRect(trackX + trackWidth / 2 - 1, trackY - 3, 2, 14);
+    if (!Double.isNaN(chance.marked())) {
+      // The chance before the 恶手, in red, so the drop shows on the bar.
+      int markX =
+          trackX
+              + (int)
+                  Math.round(trackWidth * Math.max(0.0, Math.min(100.0, chance.marked())) / 100.0);
+      g.setColor(CoachPanel.DANGER);
+      g.fillRoundRect(markX - 1, trackY - 4, 3, 16, 2, 2);
+    }
     curve(g, values, trackX, y + 64, trackWidth, 46);
   }
 

@@ -4,6 +4,18 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- 边下边提醒 now stops on a 恶手.
+  - The AI holds its reply, and the coach panel shows what the move cost, with three choices:
+    - 重下这手 takes the move back;
+    - 看 AI 推荐 circles the AI's choice on the board and says how often players at that level find it;
+    - 不重下，继续对局 lets the AI play its reply.
+  - The win chance bar marks the chance before the 恶手 in red.
+- 边下边提醒 has a two-step hint: the 提示 button or H.
+  - The first press shades the area of the board where the AI's choice lies, such as 左上角.
+  - The second press circles the point and says how often players at that level play it.
+  - The marks stay until you move.
+- The coach panel's buttons keep to two rows; a hidden button no longer leaves a gap.
+
 - AI 陪练 has a new mode, 边下边提醒, and it is now the default for new users; a saved choice of another mode is kept.
   - Analysis stays hidden during the game. Each of your moves is rated as soon as you play it: 妙手, 好棋, 缓手, 问题手 or 恶手.
   - Moves are judged by your win chance at the opponent's level, not by KataGo's own winrate and not by points.

@@ -48,6 +48,9 @@ class MoveFeedbackTest {
   void aWorseMoveFromTheSameSearchLosesWinChance() {
     MoveFeedback feedback = MoveFeedback.judge(31, "K10", before(0.2), null).orElseThrow();
 
+    assertEquals("Q16", feedback.bestMove(), "what 看 AI 推荐 shows");
+    assertEquals(0.04, feedback.bestShare());
+
     assertEquals(MoveVerdict.PROBLEM, feedback.verdict());
     assertEquals(4.0, feedback.pointsLost(), 1e-9);
     assertEquals(
