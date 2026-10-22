@@ -4,6 +4,14 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- AI 陪练's first moves no longer stall on Apple Silicon.
+  - The coach engine pads every GPU batch to four, so Metal compiles one GPU program, during 准备中, instead of up to eight during the game.
+  - In a test game the AI's first two replies came after 1.5 and 1.8 s instead of 3.8 and 3.5 s.
+  - Padding costs about 12% of the search speed, which the time limits of the move ratings absorb.
+- The AI 陪练 setup dialog opens without freezing.
+  - It checks the 99 MB human-style model in the background, showing 正在检查人类棋风模型…, instead of hashing it on the UI thread twice each time it opened.
+- Pausing or cancelling the human-style model download now keeps what was downloaded, and the next download resumes from there. Before, 暂停 said progress was kept but deleted it. A file that fails its checksum is still discarded.
+
 - The AI 陪练 setup is a new sheet.
   - **对手棋力** is one scale from 20 级 to 9 段. Pick it with a slider, − and +, or the arrow keys. It reads "3段 · 按3段棋手的习惯落子".
   - **The three training modes are cards**, each with a description; 边下边提醒 is marked 默认.

@@ -1737,7 +1737,8 @@ public final class KataGoRuntimeHelper {
     }
     appendAnalysisPvLenOverride(launchCommand);
     if (purpose == LaunchPurpose.HUMAN_SL) {
-      applyHumanSlLaunchProfile(launchCommand);
+      HumanSlLaunchProfile.apply(
+          launchCommand, isAppleSiliconHost(), Board.boardWidth == 19 && Board.boardHeight == 19);
     }
     return launchCommand;
   }
@@ -1933,20 +1934,6 @@ public final class KataGoRuntimeHelper {
       return false;
     }
     return hasUsableTensorRtHumanSlCompanion(tensorRtEnginePath);
-  }
-
-  private static void applyHumanSlLaunchProfile(List<String> command) {
-    setOverrideConfig(command, "numAnalysisThreads=1");
-    // Remove the GTP alias from inherited configs without changing the user's file.
-    setOverrideConfig(command, "numSearchThreads=");
-    setOverrideConfig(command, "numSearchThreadsPerAnalysisThread=8");
-    setOverrideConfig(command, "nnMaxBatchSize=8");
-    setOverrideConfig(command, "nnCacheSizePowerOfTwo=20");
-    if (Board.boardWidth == 19 && Board.boardHeight == 19) {
-      setOverrideConfig(command, "maxBoardXSizeForNNBuffer=19");
-      setOverrideConfig(command, "maxBoardYSizeForNNBuffer=19");
-      setOverrideConfig(command, "requireMaxBoardSize=true");
-    }
   }
 
   static List<String> applyStoredAppleTuningProfile(
@@ -5691,7 +5678,7 @@ public final class KataGoRuntimeHelper {
     return "";
   }
 
-  private static void setOverrideConfig(List<String> command, String keyValue) {
+  static void setOverrideConfig(List<String> command, String keyValue) {
     if (command == null || keyValue == null || keyValue.trim().isEmpty()) {
       return;
     }

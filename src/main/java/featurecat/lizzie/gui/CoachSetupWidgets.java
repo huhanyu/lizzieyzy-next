@@ -120,6 +120,40 @@ final class CoachSetupWidgets {
         });
   }
 
+  /** A small coloured dot, such as the one before the model's state. */
+  static final class Dot implements javax.swing.Icon {
+    private final Color color;
+
+    Dot(Color color) {
+      this.color = color;
+    }
+
+    Color color() {
+      return color;
+    }
+
+    @Override
+    public void paintIcon(java.awt.Component component, Graphics graphics, int x, int y) {
+      Graphics2D g = smooth(graphics);
+      try {
+        g.setColor(color);
+        g.fillOval(x, y + 1, 8, 8);
+      } finally {
+        g.dispose();
+      }
+    }
+
+    @Override
+    public int getIconWidth() {
+      return 8;
+    }
+
+    @Override
+    public int getIconHeight() {
+      return 10;
+    }
+  }
+
   /** A hand-drawn control that screen readers can name, with the role it plays. */
   abstract static class Control extends JComponent {
     private final javax.accessibility.AccessibleRole role;

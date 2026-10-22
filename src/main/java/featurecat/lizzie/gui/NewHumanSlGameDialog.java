@@ -92,6 +92,8 @@ public final class NewHumanSlGameDialog extends JDialog {
   private volatile boolean runnerCleanupInFlight;
   private volatile boolean downloading;
   private volatile boolean closeRequested;
+  private Path verifiedModel;
+  private boolean modelChecked;
   private boolean downloadPaused;
   private boolean cancelled = true;
   private Timer startupElapsedTimer;
@@ -147,7 +149,18 @@ public final class NewHumanSlGameDialog extends JDialog {
     setContentPane(contentScroll);
     restoreLastStartedSettings();
     installBehavior();
-    refreshModelStatus();
+    setModelStatusText(text("HumanSlTraining.model.checking", "Checking the human-style model..."));
+    modelStatusLabel.setIcon(
+        new CoachSetupWidgets.Dot(CoachSetupWidgets.Palette.current().border()));
+    startButton.setEnabled(false);
+    HumanSlModelCheck.start(
+        HumanSlGameController::resolveDefaultHumanModel,
+        model -> {
+          verifiedModel = model;
+          modelChecked = true;
+          startButton.setEnabled(!downloading);
+          refreshModelStatus();
+        });
     packForContent();
   }
 
@@ -362,7 +375,10 @@ public final class NewHumanSlGameDialog extends JDialog {
     if (rejectActiveUrlSgfSync()) {
       return;
     }
-    Path modelPath = HumanSlGameController.resolveDefaultHumanModel();
+    if (!modelChecked) {
+      return;
+    }
+    Path modelPath = verifiedModel;
     if (modelPath == null) {
       startModelDownload();
       return;
@@ -401,6 +417,7 @@ public final class NewHumanSlGameDialog extends JDialog {
                       }
                       downloading = false;
                       downloadPanel.setVisible(false);
+                      verifiedModel = model;
                       refreshModelStatus();
                       startConfiguredGame(model);
                     });
@@ -1241,9 +1258,7 @@ public final class NewHumanSlGameDialog extends JDialog {
       Throwable restoreFailure) {
     HumanSlTensorRtRepairView view =
         HumanSlTensorRtRepairView.fromPreparation(
-            true,
-            HumanSlGameController.resolveDefaultHumanModel() != null,
-            runner == null ? null : runner.getTensorRtRepairContext());
+            true, verifiedModel != null, runner == null ? null : runner.getTensorRtRepairContext());
     if (restoreFailure == null && view.offerRepair) {
       pendingTensorRtRepairContext = view.context;
       startButton.setText(view.repairActionLabel(key -> text(key, "Open Auto Setup repair")));
@@ -1280,8 +1295,7 @@ public final class NewHumanSlGameDialog extends JDialog {
     TensorRtRepairContext context = pendingTensorRtRepairContext;
     pendingTensorRtRepairContext = null;
     restorePrimaryActionLabel();
-    HumanSlTensorRtRepairView.fromPreparation(
-            true, HumanSlGameController.resolveDefaultHumanModel() != null, context)
+    HumanSlTensorRtRepairView.fromPreparation(true, verifiedModel != null, context)
         .openDirectedRepair(this);
   }
 
@@ -1480,7 +1494,7 @@ public final class NewHumanSlGameDialog extends JDialog {
   }
 
   private void refreshModelStatus() {
-    Path model = HumanSlGameController.resolveDefaultHumanModel();
+    Path model = verifiedModel;
     boolean installed = model != null;
     String size = "";
     if (installed) {
@@ -1496,7 +1510,7 @@ public final class NewHumanSlGameDialog extends JDialog {
                 installed ? "Human-style model ready" : "The human-style model is not downloaded")
             + size);
     modelStatusLabel.setIcon(
-        new StatusDot(
+        new CoachSetupWidgets.Dot(
             installed
                 ? CoachSetupWidgets.Palette.current().ready()
                 : HumanSlTrainingStyle.WARNING));
@@ -1504,7 +1518,7 @@ public final class NewHumanSlGameDialog extends JDialog {
   }
 
   private void restorePrimaryActionLabel() {
-    boolean installed = HumanSlGameController.resolveDefaultHumanModel() != null;
+    boolean installed = verifiedModel != null;
     startButton.setText(
         text(
             installed ? "HumanSlTraining.start" : "HumanSlTraining.downloadAndStart",
@@ -1512,39 +1526,9 @@ public final class NewHumanSlGameDialog extends JDialog {
     startButton.revalidate();
   }
 
-  /** The coloured dot before the model's state. */
-  private static final class StatusDot implements javax.swing.Icon {
-    private final java.awt.Color color;
-
-    StatusDot(java.awt.Color color) {
-      this.color = color;
-    }
-
-    @Override
-    public void paintIcon(Component component, java.awt.Graphics graphics, int x, int y) {
-      java.awt.Graphics2D g = CoachSetupWidgets.smooth(graphics);
-      try {
-        g.setColor(color);
-        g.fillOval(x, y + 1, 8, 8);
-      } finally {
-        g.dispose();
-      }
-    }
-
-    @Override
-    public int getIconWidth() {
-      return 8;
-    }
-
-    @Override
-    public int getIconHeight() {
-      return 10;
-    }
-  }
-
   private void setFormEnabled(boolean enabled) {
     form.setEnabled(enabled);
-    startButton.setEnabled(enabled);
+    startButton.setEnabled(enabled && modelChecked);
   }
 
   private void showInlineError(String message) {
