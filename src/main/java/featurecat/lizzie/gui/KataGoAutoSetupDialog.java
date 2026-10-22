@@ -207,6 +207,16 @@ public class KataGoAutoSetupDialog extends JDialog {
 
   private SetupSnapshot snapshot;
   private List<RemoteWeightInfo> remoteWeightInfos = Collections.emptyList();
+  // Only the latest request's answer is shown; an earlier one that arrives late is dropped.
+  private long remoteWeightRequestId;
+  private boolean remoteWeightsLoading;
+  RemoteWeightSource remoteWeightSource = KataGoAutoSetupHelper::fetchOfficialWeights;
+
+  /** Where the list of official weights comes from; tests answer it themselves. */
+  interface RemoteWeightSource {
+    List<RemoteWeightInfo> fetch() throws IOException;
+  }
+
   private volatile DownloadSession activeDownloadSession;
   private volatile Thread activeWorkerThread;
   private javax.swing.Timer pendingWeightSwitchTimer;
@@ -3553,20 +3563,33 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
   }
 
-  private void loadRemoteWeightInfo() {
+  void loadRemoteWeightInfo() {
+    long requestId = ++remoteWeightRequestId;
+    remoteWeightsLoading = true;
     btnReloadRemoteWeights.setEnabled(false);
     if (remoteWeightInfos.isEmpty()) {
       lblWeightCatalogEmpty.setText(text("AutoSetup.loadingRemote"));
       showWeightCatalogEmptyState(true);
     }
+    RemoteWeightSource source = remoteWeightSource;
     new Thread(
             () -> {
               try {
-                List<RemoteWeightInfo> fetched = KataGoAutoSetupHelper.fetchOfficialWeights();
-                SwingUtilities.invokeLater(() -> showRemoteWeightInfo(fetched));
+                List<RemoteWeightInfo> fetched = source.fetch();
+                SwingUtilities.invokeLater(
+                    () -> {
+                      if (requestId == remoteWeightRequestId) {
+                        remoteWeightsLoading = false;
+                        showRemoteWeightInfo(fetched);
+                      }
+                    });
               } catch (IOException e) {
                 SwingUtilities.invokeLater(
                     () -> {
+                      if (requestId != remoteWeightRequestId) {
+                        return;
+                      }
+                      remoteWeightsLoading = false;
                       if (remoteWeightInfos.isEmpty()) {
                         rebuildWeightCatalog(null);
                         lblWeightCatalogEmpty.setText(text("AutoSetup.remoteUnavailable"));
@@ -3596,7 +3619,7 @@ public class KataGoAutoSetupDialog extends JDialog {
     loadRemoteWeightInfo();
   }
 
-  private void showRemoteWeightInfo(List<RemoteWeightInfo> infos) {
+  void showRemoteWeightInfo(List<RemoteWeightInfo> infos) {
     RemoteWeightInfo previousSelection = getSelectedRemoteWeight();
     String previousModel = previousSelection == null ? "" : previousSelection.modelName;
     remoteWeightInfos = infos == null ? Collections.<RemoteWeightInfo>emptyList() : infos;
@@ -5402,10 +5425,11 @@ public class KataGoAutoSetupDialog extends JDialog {
   private void updateSelectedWeightInfo() {
     WeightCatalogEntry entry = weightCatalogList.getSelectedValue();
     if (entry == null) {
+      // While the list loads, the list itself says so; nothing has failed yet.
       String emptyText =
-          weightCatalogMode == WeightCatalogMode.OFFICIAL
-              ? text("AutoSetup.remoteUnavailable")
-              : text("AutoSetup.noLocalWeights");
+          weightCatalogMode != WeightCatalogMode.OFFICIAL
+              ? text("AutoSetup.noLocalWeights")
+              : remoteWeightsLoading ? "" : text("AutoSetup.remoteUnavailable");
       lblSelectedWeightName.setText(emptyText);
       lblSelectedWeightName.setToolTipText(null);
       lblSelectedWeightMeta.setText("");
@@ -5592,9 +5616,10 @@ public class KataGoAutoSetupDialog extends JDialog {
     }
     boolean empty = weightCatalogModel.isEmpty();
     lblWeightCatalogEmpty.setText(
-        weightCatalogMode == WeightCatalogMode.OFFICIAL
-            ? text("AutoSetup.remoteUnavailable")
-            : text("AutoSetup.noCustomWeights"));
+        weightCatalogMode != WeightCatalogMode.OFFICIAL
+            ? text("AutoSetup.noCustomWeights")
+            : text(
+                remoteWeightsLoading ? "AutoSetup.loadingRemote" : "AutoSetup.remoteUnavailable"));
     lblWeightCatalogEmpty.setToolTipText(null);
     showWeightCatalogEmptyState(empty);
     updateWeightCatalogViewportHeight(weightCatalogModel.size());
