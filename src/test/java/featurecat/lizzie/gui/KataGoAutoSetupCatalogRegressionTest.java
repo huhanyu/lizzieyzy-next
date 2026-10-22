@@ -3,6 +3,7 @@ package featurecat.lizzie.gui;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import featurecat.lizzie.util.KataGoAutoSetupHelper;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.EngineValidationResult;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.EngineValidationStatus;
 import featurecat.lizzie.util.KataGoAutoSetupHelper.SetupSnapshot;
+import featurecat.lizzie.util.KataGoRuntimeHelper;
 import java.awt.Cursor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -20,8 +22,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.JTextArea;
+import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,6 +36,160 @@ import sun.misc.Unsafe;
 
 class KataGoAutoSetupCatalogRegressionTest {
   @TempDir Path root;
+
+  @Test
+  void cancellingKeepsStopDisabledEvenWhenMoreProgressArrives() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    var session = new KataGoAutoSetupHelper.DownloadSession();
+    set(dialog, "activeDownloadSession", session);
+    set(dialog, "controlsBusy", true);
+    set(dialog, "progressPanel", new JPanel());
+    set(dialog, "footerPanel", new JPanel());
+    set(dialog, "progressBar", new JProgressBar());
+    Method stop = KataGoAutoSetupDialog.class.getDeclaredMethod("stopActiveDownload");
+    Method progress =
+        KataGoAutoSetupDialog.class.getDeclaredMethod(
+            "setBusy", boolean.class, String.class, long.class, long.class);
+    stop.setAccessible(true);
+    progress.setAccessible(true);
+    JFontButton stopButton = (JFontButton) get(dialog, "btnStopDownload");
+    SwingUtilities.invokeAndWait(
+        () -> {
+          try {
+            progress.invoke(dialog, true, "Working", 0L, -1L);
+            assertTrue(stopButton.isEnabled());
+            stop.invoke(dialog);
+            assertTrue(session.isCancelled());
+            assertFalse(stopButton.isEnabled());
+            progress.invoke(dialog, true, "Late progress", 100L, 1000L);
+            assertFalse(stopButton.isEnabled(), "late progress must preserve the cancelling state");
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+          }
+        });
+  }
+
+  @Test
+  void olderValidationCannotOverwriteANewerCheckForTheSameExecutable() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    SetupSnapshot selected = snapshot(root.resolve("weight.bin.gz"));
+    EngineValidationResult current = validation("1.18.2");
+    set(dialog, "snapshot", selected);
+    set(dialog, "engineValidationRequestId", 2L);
+    set(dialog, "engineValidationResult", current);
+    Method complete =
+        KataGoAutoSetupDialog.class.getDeclaredMethod(
+            "completeEngineValidation", long.class, Path.class, EngineValidationResult.class);
+    complete.setAccessible(true);
+    complete.invoke(dialog, 1L, selected.enginePath, validation("1.17.0"));
+    assertSame(current, get(dialog, "engineValidationResult"));
+    set(dialog, "disposed", true);
+    complete.invoke(dialog, 2L, selected.enginePath, validation("1.17.0"));
+    assertSame(
+        current, get(dialog, "engineValidationResult"), "disposal invalidates late results too");
+  }
+
+  @Test
+  void lateTensorRtRepairDoesNotPublishSuccessAfterCancellationOrDisposal() throws Exception {
+    SetupSnapshot repairedSnapshot = snapshot(root.resolve("weight.bin.gz"));
+    Method complete =
+        KataGoAutoSetupDialog.class.getDeclaredMethod(
+            "completeTensorRtRepair",
+            KataGoAutoSetupHelper.DownloadSession.class,
+            KataGoRuntimeHelper.TensorRtInstallStatus.class,
+            SetupSnapshot.class);
+    complete.setAccessible(true);
+    HeadlessRefreshDialog cancelled = unconstructedDialog();
+    initializeRefreshControls(cancelled);
+    var session = new KataGoAutoSetupHelper.DownloadSession();
+    session.cancel();
+    set(cancelled, "activeDownloadSession", session);
+    set(cancelled, "controlsBusy", true);
+    HeadlessRefreshDialog disposed = unconstructedDialog();
+    set(disposed, "disposed", true);
+
+    SwingUtilities.invokeAndWait(
+        () -> {
+          try {
+            // The files may have finished installing, but late success cannot show a summary or
+            // replace the window's snapshot. Stopping while open still ends its busy state.
+            complete.invoke(cancelled, session, null, repairedSnapshot);
+            assertEquals(null, get(cancelled, "snapshot"));
+            assertEquals(false, get(cancelled, "controlsBusy"));
+            assertFalse(((JPanel) get(cancelled, "progressPanel")).isVisible());
+            complete.invoke(
+                disposed, new KataGoAutoSetupHelper.DownloadSession(), null, repairedSnapshot);
+            assertEquals(null, get(disposed, "snapshot"));
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+          }
+        });
+  }
+
+  @Test
+  void acceptedProfileKeepsControlsBusyUntilEngineSwitchHasCompleted() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    var pending = KataGoAutoSetupDialog.WeightSwitchDisplayState.active(null).begin(null);
+    set(dialog, "weightSwitchDisplayState", pending);
+    Method active = KataGoAutoSetupDialog.class.getDeclaredMethod("hasActiveBackgroundTask");
+    active.setAccessible(true);
+    assertTrue((boolean) active.invoke(dialog), "reload dispatch has no worker or timer yet");
+    set(dialog, "weightSwitchDisplayState", pending.succeed(pending.token(), null));
+    assertFalse((boolean) active.invoke(dialog));
+  }
+
+  @Test
+  void disposingSetupCancelsItsWorkerSessionAndPendingSwitch() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    var session = new KataGoAutoSetupHelper.DownloadSession();
+    CountDownLatch started = new CountDownLatch(1);
+    CountDownLatch interrupted = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    Thread worker =
+        new Thread(
+            () -> {
+              started.countDown();
+              try {
+                release.await();
+              } catch (InterruptedException expected) {
+                interrupted.countDown();
+              }
+            });
+    var timer = new javax.swing.Timer(60000, event -> {});
+    set(dialog, "activeDownloadSession", session);
+    set(dialog, "activeWorkerThread", worker);
+    set(dialog, "pendingWeightSwitchTimer", timer);
+    set(
+        dialog,
+        "weightSwitchDisplayState",
+        KataGoAutoSetupDialog.WeightSwitchDisplayState.active(null).begin(null));
+    Method cancel = KataGoAutoSetupDialog.class.getDeclaredMethod("cancelOwnedSetupTasks");
+    cancel.setAccessible(true);
+    worker.start();
+    assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+    try {
+      SwingUtilities.invokeAndWait(
+          () -> {
+            timer.start();
+            try {
+              cancel.invoke(dialog);
+            } catch (ReflectiveOperationException failure) {
+              throw new AssertionError(failure);
+            }
+            assertTrue(session.isCancelled());
+            assertFalse(timer.isRunning());
+            try {
+              assertEquals(1L, get(dialog, "engineValidationRequestId"));
+            } catch (ReflectiveOperationException failure) {
+              throw new AssertionError(failure);
+            }
+          });
+      assertTrue(interrupted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+    } finally {
+      release.countDown();
+      worker.join(5000);
+    }
+  }
 
   @Test
   void unavailableSavedEntryRefreshRestoresRetryWithoutUnlockingSidebar() throws Exception {
@@ -42,7 +203,8 @@ class KataGoAutoSetupCatalogRegressionTest {
     set(dialog, "snapshot", null);
     set(dialog, "progressBar", new JProgressBar());
     set(dialog, "progressPanel", new JPanel());
-    set(dialog, "footerPanel", new JPanel());
+    JPanel footer = new JPanel();
+    set(dialog, "footerPanel", footer);
     set(dialog, "btnRefresh", refresh);
     set(dialog, "btnClose", close);
     set(dialog, "btnRemoteCompute", new JButton());
@@ -62,6 +224,7 @@ class KataGoAutoSetupCatalogRegressionTest {
           }
           assertTrue(refresh.isEnabled(), "unavailable entries must remain refreshable");
           assertTrue(close.isEnabled());
+          assertTrue(footer.isVisible(), "idle status and Close remain visible after inspection");
           assertFalse(
               sidebar.isEnabled(), "saved-entry scope must never unlock other setup sections");
         });
@@ -171,6 +334,7 @@ class KataGoAutoSetupCatalogRegressionTest {
     HeadlessRefreshDialog dialog = unconstructedDialog();
     set(dialog, "selectedBenchmarkEntryId", "");
     set(dialog, "activeDownloadSession", new KataGoAutoSetupHelper.DownloadSession());
+    set(dialog, "controlsBusy", true);
     set(dialog, "stateRefreshRequestId", 7L);
 
     // The toolbar and 更新官方权重 call refreshState on a dialog that is already open.
@@ -178,6 +342,81 @@ class KataGoAutoSetupCatalogRegressionTest {
 
     assertEquals(7L, get(dialog, "stateRefreshRequestId"), "no refresh replaced the download");
     assertEquals(null, get(dialog, "stateRefreshWorker"));
+    assertEquals(true, get(dialog, "controlsBusy"), "a running download must remain busy");
+  }
+
+  @Test
+  void reopeningAfterCloseDroppedDownloadCompletionResetsBusyState() throws Exception {
+    HeadlessRefreshDialog dialog = unconstructedDialog();
+    initializeRefreshControls(dialog);
+    var session = new KataGoAutoSetupHelper.DownloadSession();
+    Thread worker = new Thread(() -> {});
+    set(dialog, "activeDownloadSession", session);
+    set(dialog, "activeWorkerThread", worker);
+    set(dialog, "controlsBusy", true);
+    set(dialog, "stateRefreshRequestId", 7L);
+    Method close = KataGoAutoSetupDialog.class.getDeclaredMethod("closeOrCancelActiveTask");
+    Method finished =
+        KataGoAutoSetupDialog.class.getDeclaredMethod(
+            "clearActiveDownload", KataGoAutoSetupHelper.DownloadSession.class, Thread.class);
+    Method dispose = KataGoAutoSetupDialog.class.getDeclaredMethod("cancelOwnedSetupTasks");
+    close.setAccessible(true);
+    finished.setAccessible(true);
+    dispose.setAccessible(true);
+
+    SwingUtilities.invokeAndWait(
+        () -> {
+          try {
+            close.invoke(dialog);
+            assertTrue(session.isCancelled());
+            assertEquals(8L, get(dialog, "stateRefreshRequestId"));
+            // The download already completed; its catalog scan answers after close. The success
+            // callback is dropped by requestId, so only the worker's finally cleanup is delivered.
+            finished.invoke(dialog, session, worker);
+            assertEquals(true, get(dialog, "controlsBusy"));
+            dialog.refreshState();
+            assertEquals(false, get(dialog, "controlsBusy"), "reopen owns a fresh refresh now");
+            assertTrue(((JPanel) get(dialog, "progressPanel")).isVisible());
+            assertFalse(((JFontButton) get(dialog, "btnRefresh")).isEnabled());
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+          } finally {
+            try {
+              dispose.invoke(dialog); // Cancel inspection before it can publish into this fixture.
+            } catch (ReflectiveOperationException failure) {
+              throw new AssertionError(failure);
+            }
+          }
+        });
+    SwingUtilities.invokeAndWait(() -> {});
+  }
+
+  private static void initializeRefreshControls(HeadlessRefreshDialog dialog) throws Exception {
+    set(dialog, "selectedBenchmarkEntryId", "");
+    set(dialog, "progressBar", new JProgressBar());
+    set(dialog, "progressPanel", new JPanel());
+    set(dialog, "footerPanel", new JPanel());
+    set(dialog, "btnRemoteCompute", new JButton());
+    set(dialog, "sectionNav", new KataGoAutoSetupDialog.ExactHitList<>());
+    set(dialog, "weightCatalogList", new KataGoAutoSetupDialog.ExactHitList<>());
+    set(dialog, "chkUseQuickAnalysisModel", new JCheckBox());
+    set(dialog, "btnOfficialWeightTab", new JToggleButton());
+    set(dialog, "btnCustomWeightTab", new JToggleButton());
+    set(dialog, "cmbExperimentalBackend", new JComboBox<>());
+    set(dialog, "measuredTuningDialog", new MeasuredTuningDialog());
+    set(dialog, "tensorRtRepairSession", new KataGoRuntimeHelper.TensorRtRepairSession());
+    set(dialog, "directedTensorRtBanner", new JPanel());
+    for (String name :
+        List.of("balancedRecommendation", "strongestRecommendation", "lightweightRecommendation")) {
+      Field field = KataGoAutoSetupDialog.class.getDeclaredField(name);
+      var constructor = field.getType().getDeclaredConstructors()[0];
+      constructor.setAccessible(true);
+      set(
+          dialog,
+          name,
+          constructor.newInstance(
+              dialog, constructor.getParameterTypes()[1].getEnumConstants()[0]));
+    }
   }
 
   @Test
@@ -291,6 +530,12 @@ class KataGoAutoSetupCatalogRegressionTest {
       if (button.getType() == JFontButton.class) {
         button.setAccessible(true);
         button.set(dialog, new JFontButton());
+      } else if (button.getType() == JLabel.class) {
+        button.setAccessible(true);
+        button.set(dialog, new JLabel());
+      } else if (button.getType() == JTextArea.class) {
+        button.setAccessible(true);
+        button.set(dialog, new JTextArea());
       }
     }
     return dialog;
@@ -312,7 +557,7 @@ class KataGoAutoSetupCatalogRegressionTest {
     }
   }
 
-  private static Object get(Object target, String name) throws Exception {
+  private static Object get(Object target, String name) throws ReflectiveOperationException {
     Field field = KataGoAutoSetupDialog.class.getDeclaredField(name);
     field.setAccessible(true);
     return field.get(target);
@@ -337,20 +582,7 @@ class KataGoAutoSetupCatalogRegressionTest {
   }
 
   private static HeadlessRefreshDialog unconstructedDialog() throws Exception {
-    Field field = Unsafe.class.getDeclaredField("theUnsafe");
-    field.setAccessible(true);
-    HeadlessRefreshDialog dialog =
-        (HeadlessRefreshDialog)
-            ((Unsafe) field.get(null)).allocateInstance(HeadlessRefreshDialog.class);
-    // Keep actual button instances when another independently tested feature adds completion UI.
-    // Only the top-level native window construction is bypassed by this headless fixture.
-    for (Field button : KataGoAutoSetupDialog.class.getDeclaredFields()) {
-      if (button.getType() == JFontButton.class) {
-        button.setAccessible(true);
-        button.set(dialog, new JFontButton());
-      }
-    }
-    return dialog;
+    return unconstructed(HeadlessRefreshDialog.class);
   }
 
   private static void set(Object target, String name, Object value) throws Exception {
@@ -372,5 +604,13 @@ class KataGoAutoSetupCatalogRegressionTest {
 
     @Override
     public void setCursor(Cursor cursor) {}
+
+    @Override
+    public void setVisible(boolean visible) {}
+
+    @Override
+    public java.awt.Container getContentPane() {
+      return new JPanel();
+    }
   }
 }
