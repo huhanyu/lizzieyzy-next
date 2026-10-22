@@ -1437,32 +1437,6 @@ public final class KataGoAutoSetupHelper {
         tier);
   }
 
-  public static RemoteWeightInfo fetchRecommendedWeight() throws IOException {
-    List<RemoteWeightInfo> weights = fetchOfficialWeights();
-    for (RemoteWeightInfo info : weights) {
-      if (isDefaultGeneralUseWeight(info)) {
-        return info;
-      }
-    }
-    for (RemoteWeightInfo info : weights) {
-      if (info.recommended) {
-        return info;
-      }
-    }
-    if (!weights.isEmpty()) {
-      return weights.get(0);
-    }
-    throw new IOException("Unable to parse KataGo official weights.");
-  }
-
-  public static Path downloadRecommendedWeight(ProgressListener listener) throws IOException {
-    RemoteWeightInfo info = fetchRecommendedWeight();
-    if (listener != null) {
-      listener.onProgress(info.modelName, 0, -1);
-    }
-    return downloadWeight(info, listener);
-  }
-
   public static boolean isDefaultGeneralUseWeight(RemoteWeightInfo info) {
     if (info == null) {
       return false;
@@ -1911,6 +1885,7 @@ public final class KataGoAutoSetupHelper {
             + quoteCommandPath(snapshot.workingDir, modelStatus.modelPath)
             + " -config "
             + quoteCommandPath(snapshot.workingDir, snapshot.analysisConfigPath)
+            + experimentalBackendOverrides(snapshot)
             + " -quit-without-waiting";
     return Optional.of(command);
   }
@@ -3781,91 +3756,6 @@ public final class KataGoAutoSetupHelper {
         .resolve(baseName + "-" + System.currentTimeMillis() + extension)
         .toAbsolutePath()
         .normalize();
-  }
-
-  private static Path chooseActiveWeight(Path workingDir, Path appRoot, List<Path> candidates) {
-    Path configured = configuredWeightFromEngineCommands(workingDir, appRoot);
-    if (configured != null) {
-      return configured;
-    }
-    Path workingDefault =
-        workingDir.resolve("weights").resolve("default.bin.gz").toAbsolutePath().normalize();
-    if (Files.isRegularFile(workingDefault)) {
-      return workingDefault;
-    }
-    if (!candidates.isEmpty()) {
-      return candidates.get(0);
-    }
-    Path bundledDefault =
-        appRoot.resolve("weights").resolve("default.bin.gz").toAbsolutePath().normalize();
-    if (Files.isRegularFile(bundledDefault)) {
-      return bundledDefault;
-    }
-    return null;
-  }
-
-  private static Path configuredWeightFromEngineCommands(Path workingDir, Path appRoot) {
-    if (Lizzie.config == null
-        || Lizzie.config.uiConfig == null
-        || Lizzie.config.leelazConfig == null) {
-      return null;
-    }
-
-    org.json.JSONArray engines = Lizzie.config.leelazConfig.optJSONArray("engine-settings-list");
-    if (engines != null) {
-      LinkedHashSet<Integer> candidateIndexes = new LinkedHashSet<>();
-      if (Lizzie.engineManager != null && !EngineManager.isEmpty) {
-        candidateIndexes.add(EngineManager.currentEngineNo);
-      }
-      candidateIndexes.add(Lizzie.config.uiConfig.optInt("default-engine", -1));
-      for (int i = 0; i < engines.length(); i++) {
-        org.json.JSONObject engine = engines.optJSONObject(i);
-        if (engine != null && engine.optBoolean("isDefault", false)) {
-          candidateIndexes.add(i);
-        }
-      }
-      for (Integer index : candidateIndexes) {
-        if (index == null || index < 0 || index >= engines.length()) {
-          continue;
-        }
-        org.json.JSONObject engine = engines.optJSONObject(index);
-        Path configured =
-            engine == null
-                ? null
-                : weightFromCommand(engine.optString("command", ""), workingDir, appRoot);
-        if (isUsableWeight(configured)) {
-          return configured;
-        }
-      }
-    }
-
-    Path analysisWeight =
-        weightFromCommand(
-            Lizzie.config.uiConfig.optString("analysis-engine-command", ""), workingDir, appRoot);
-    if (isUsableWeight(analysisWeight)) {
-      return analysisWeight;
-    }
-
-    Path autoSetupWeight =
-        configuredWeightPath("katago-auto-setup-weight-path", workingDir, appRoot);
-    if (isUsableWeight(autoSetupWeight)) {
-      return autoSetupWeight;
-    }
-    return preferredWeightFromConfig(workingDir);
-  }
-
-  private static Path weightFromCommand(String command, Path workingDir, Path appRoot) {
-    List<String> commandParts = Utils.splitCommand(command);
-    if (commandParts == null) {
-      return null;
-    }
-    for (int i = 0; i < commandParts.size() - 1; i++) {
-      if (!"-model".equals(commandParts.get(i))) {
-        continue;
-      }
-      return resolveConfiguredPath(commandParts.get(i + 1), workingDir, appRoot);
-    }
-    return null;
   }
 
   private static Path configuredWeightPath(String key, Path workingDir, Path appRoot) {

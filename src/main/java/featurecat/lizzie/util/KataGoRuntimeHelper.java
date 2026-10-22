@@ -116,6 +116,8 @@ public final class KataGoRuntimeHelper {
   private static final String OPENCL_BACKEND = "opencl";
   private static final String ENGINE_BACKEND_MARKER_NAME = "lizzieyzy-next-engine-backend.txt";
   private static final String NVIDIA_RUNTIME_ROOT = "nvidia-runtime";
+  private static final String NVIDIA_RUNTIME_MANIFEST_NAME =
+      "lizzieyzy-next-nvidia-runtime-manifest.txt";
   private static final String NVIDIA_RUNTIME_DOWNLOAD_CACHE_DIR = "downloads";
   private static final String NVIDIA_RUNTIME_CACHE_DIR = "cache";
   private static final String NVIDIA_CUDA_CACHE_DIR = "cuda";
@@ -134,10 +136,6 @@ public final class KataGoRuntimeHelper {
   private static final String OPENCL_NVIDIA_DRIVER_VERSION_PROPERTY =
       "lizzie.opencl.nvidiaDriverVersion";
   private static final int WINDOWS_FAST_FAIL_EXIT_CODE = (int) 0xC0000409L;
-  private static final String CUDA_MANIFEST_URL =
-      "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.1.1.json";
-  private static final String CUDNN_MANIFEST_URL =
-      "https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.8.0.json";
   private static final String CUDA_12_8_MANIFEST_URL =
       "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.0.json";
   private static final String CUDNN_9_MANIFEST_URL =
@@ -889,92 +887,6 @@ public final class KataGoRuntimeHelper {
   private static final class CorruptRuntimePackageDownloadException extends IOException {
     private CorruptRuntimePackageDownloadException(String message) {
       super(message);
-    }
-  }
-
-  private static final class BootstrapDialog extends JDialog {
-    private final JLabel statusLabel = new JLabel();
-    private final JProgressBar progressBar = new JProgressBar();
-    private final javax.swing.JButton cancelButton = new javax.swing.JButton();
-    private long firstMeasuredAtMillis = 0L;
-
-    private BootstrapDialog(Window owner, DownloadSession session) {
-      super(owner);
-      setModal(true);
-      setTitle(resource("AutoSetup.nvidiaBootstrapTitle", "Preparing NVIDIA acceleration"));
-      setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-      setResizable(false);
-
-      JPanel content = new JPanel(new BorderLayout(0, 10));
-      content.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
-      setContentPane(content);
-
-      JLabel description =
-          new JLabel(
-              "<html>"
-                  + resource(
-                          "AutoSetup.nvidiaBootstrapDescription",
-                          "LizzieYzy Next is checking the bundled NVIDIA files in your package."
-                              + " If files are missing, reinstall the NVIDIA package.")
-                      .replace("\n", "<br>")
-                  + "</html>");
-      content.add(description, BorderLayout.NORTH);
-
-      statusLabel.setText(
-          resource("AutoSetup.installingNvidiaRuntime", "Preparing NVIDIA runtime..."));
-      content.add(statusLabel, BorderLayout.CENTER);
-
-      JPanel southPanel = new JPanel(new BorderLayout(0, 10));
-      progressBar.setStringPainted(true);
-      progressBar.setIndeterminate(true);
-      southPanel.add(progressBar, BorderLayout.CENTER);
-
-      JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-      cancelButton.setText(resource("AutoSetup.stopDownload", "Stop download"));
-      cancelButton.addActionListener(e -> session.cancel());
-      buttonPanel.add(cancelButton);
-      southPanel.add(buttonPanel, BorderLayout.SOUTH);
-      content.add(southPanel, BorderLayout.SOUTH);
-
-      setMinimumSize(new Dimension(560, 170));
-      pack();
-      setLocationRelativeTo(owner);
-    }
-
-    private void updateProgress(String statusText, long downloadedBytes, long totalBytes) {
-      statusLabel.setText(statusText);
-      if (totalBytes > 0) {
-        long now = System.currentTimeMillis();
-        if (downloadedBytes > 0 && firstMeasuredAtMillis <= 0L) {
-          firstMeasuredAtMillis = now;
-        }
-        progressBar.setIndeterminate(false);
-        progressBar.setMaximum(1000);
-        progressBar.setValue((int) Math.min(1000, (downloadedBytes * 1000L) / totalBytes));
-        String etaText = "";
-        if (firstMeasuredAtMillis > 0L && downloadedBytes > 0 && downloadedBytes < totalBytes) {
-          long elapsedMillis = Math.max(1000L, now - firstMeasuredAtMillis);
-          long bytesPerSecond = Math.max(1L, (downloadedBytes * 1000L) / elapsedMillis);
-          long remainingMillis =
-              Math.max(0L, ((totalBytes - downloadedBytes) * 1000L) / bytesPerSecond);
-          etaText = "  ETA " + formatDuration(remainingMillis);
-        }
-        progressBar.setString(
-            statusText
-                + "  "
-                + Math.min(100, (downloadedBytes * 100L) / totalBytes)
-                + "%  "
-                + formatBytes(downloadedBytes)
-                + " / "
-                + formatBytes(totalBytes)
-                + etaText);
-      } else if (downloadedBytes > 0) {
-        progressBar.setIndeterminate(true);
-        progressBar.setString(statusText + "  " + formatBytes(downloadedBytes));
-      } else {
-        progressBar.setIndeterminate(true);
-        progressBar.setString(statusText);
-      }
     }
   }
 
@@ -2197,27 +2109,6 @@ public final class KataGoRuntimeHelper {
         false);
   }
 
-  public static void downloadAndInstallNvidiaRuntime(
-      Path enginePath, ProgressListener listener, DownloadSession session) throws IOException {
-    NvidiaRuntimeStatus status = inspectNvidiaRuntime(enginePath);
-    if (!status.applicable) {
-      return;
-    }
-    if (status.ready) {
-      if (listener != null) {
-        listener.onProgress(resource("AutoSetup.nvidiaRuntimeReady", "Ready"), 0L, 0L);
-      }
-      return;
-    }
-    if (listener != null) {
-      listener.onProgress(
-          resource("AutoSetup.installingNvidiaRuntime", "Checking bundled NVIDIA files..."),
-          0L,
-          0L);
-    }
-    throw new IOException(buildMissingRuntimeMessage(status));
-  }
-
   public static TensorRtInstallStatus inspectTensorRtInstall(SetupSnapshot snapshot) {
     return inspectTensorRtInstall(snapshot, null);
   }
@@ -2602,6 +2493,7 @@ public final class KataGoRuntimeHelper {
     if (snapshot == null) {
       snapshot = KataGoAutoSetupHelper.inspectLocalSetup();
     }
+    snapshot = withBundledCudaEngine(snapshot);
     if (!snapshot.hasEngine()) {
       throw new IOException(
           resource("AutoSetup.missingEngine", "No local KataGo binary was found."));
@@ -2619,6 +2511,31 @@ public final class KataGoRuntimeHelper {
     }
     return KataGoAutoSetupHelper.applyAutoSetup(
         snapshot.withActiveWeight(snapshot.activeWeightPath), true);
+  }
+
+  /** Replace the active TensorRT build with bundled CUDA, including full-package companions. */
+  static SetupSnapshot withBundledCudaEngine(SetupSnapshot snapshot) throws IOException {
+    if (!isTensorRtBackend(resolveNvidiaBackend(snapshot.enginePath))) {
+      return snapshot;
+    }
+    Path companion = packagedHumanSlCompanionPath(snapshot.enginePath);
+    if (isVerifiedPackagedHumanSlCompanion(companion)) {
+      return snapshot.withEnginePath(companion);
+    }
+    for (Path root : new Path[] {snapshot.appRoot, snapshot.workingDir}) {
+      for (Path base : root == null ? new Path[0] : new Path[] {root, root.resolve("app")}) {
+        Path engines = base.resolve("engines").resolve("katago");
+        for (String dir : List.of("windows-x64", NVIDIA_ENGINE_DIR, NVIDIA50_CUDA_ENGINE_DIR)) {
+          Path candidate = engines.resolve(dir).resolve("katago.exe");
+          String backend = resolveNvidiaBackend(candidate);
+          if (Files.isRegularFile(candidate)
+              && (NVIDIA_BACKEND.equals(backend) || NVIDIA50_CUDA_BACKEND.equals(backend))) {
+            return snapshot.withEnginePath(candidate);
+          }
+        }
+      }
+    }
+    throw new IOException(resource("AutoSetup.missingEngine", "No local KataGo binary was found."));
   }
 
   private static TensorRtInstallStatus repairTensorRtComponentsLocked(
@@ -5093,64 +5010,6 @@ public final class KataGoRuntimeHelper {
     appendOverrideConfig(command, "numSearchThreadsPerAnalysisThread=" + threads);
   }
 
-  private static void installNvidiaRuntimeWithDialog(
-      Window owner, Path enginePath, NvidiaRuntimeStatus status) throws IOException {
-    final DownloadSession session = new DownloadSession();
-    final IOException[] errorHolder = new IOException[1];
-    final DownloadCancelledException[] cancelHolder = new DownloadCancelledException[1];
-    final BootstrapDialog[] dialogHolder = new BootstrapDialog[1];
-
-    try {
-      if (SwingUtilities.isEventDispatchThread()) {
-        dialogHolder[0] = new BootstrapDialog(owner, session);
-      } else {
-        SwingUtilities.invokeAndWait(() -> dialogHolder[0] = new BootstrapDialog(owner, session));
-      }
-    } catch (Exception e) {
-      throw new IOException("Unable to create NVIDIA bootstrap dialog", e);
-    }
-
-    Thread worker =
-        new Thread(
-            () -> {
-              try {
-                downloadAndInstallNvidiaRuntime(
-                    enginePath,
-                    (statusText, downloadedBytes, totalBytes) ->
-                        SwingUtilities.invokeLater(
-                            () ->
-                                dialogHolder[0].updateProgress(
-                                    statusText, downloadedBytes, totalBytes)),
-                    session);
-              } catch (DownloadCancelledException e) {
-                cancelHolder[0] = e;
-              } catch (IOException e) {
-                errorHolder[0] = e;
-              } finally {
-                SwingUtilities.invokeLater(() -> dialogHolder[0].dispose());
-              }
-            },
-            "katago-nvidia-runtime-bootstrap");
-    worker.start();
-
-    if (SwingUtilities.isEventDispatchThread()) {
-      dialogHolder[0].setVisible(true);
-    } else {
-      try {
-        SwingUtilities.invokeAndWait(() -> dialogHolder[0].setVisible(true));
-      } catch (Exception e) {
-        throw new IOException("Unable to show NVIDIA bootstrap dialog", e);
-      }
-    }
-
-    if (cancelHolder[0] != null) {
-      throw cancelHolder[0];
-    }
-    if (errorHolder[0] != null) {
-      throw errorHolder[0];
-    }
-  }
-
   private static BenchmarkResult parseBenchmarkOutput(String output) {
     if (output == null || output.trim().isEmpty()) {
       return null;
@@ -6111,7 +5970,7 @@ public final class KataGoRuntimeHelper {
         || enginePath.getParent() == null) {
       return false;
     }
-    Path manifest = enginePath.getParent().resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+    Path manifest = enginePath.getParent().resolve(NVIDIA_RUNTIME_MANIFEST_NAME);
     if (!Files.isRegularFile(manifest)) {
       return false;
     }
@@ -6129,7 +5988,7 @@ public final class KataGoRuntimeHelper {
       return false;
     }
     Path engineDir = enginePath.getParent();
-    Path manifest = engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+    Path manifest = engineDir.resolve(NVIDIA_RUNTIME_MANIFEST_NAME);
     if (Files.isRegularFile(manifest)) {
       try {
         String text = Files.readString(manifest, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
@@ -6151,8 +6010,7 @@ public final class KataGoRuntimeHelper {
       if (directory == null) {
         continue;
       }
-      for (String manifestName :
-          Arrays.asList("lizzieyzy-next-nvidia-runtime-manifest.txt", "manifest.txt")) {
+      for (String manifestName : Arrays.asList(NVIDIA_RUNTIME_MANIFEST_NAME, "manifest.txt")) {
         Path manifest = directory.resolve(manifestName);
         if (!Files.isRegularFile(manifest)) {
           continue;
@@ -6349,6 +6207,9 @@ public final class KataGoRuntimeHelper {
         && isTensorRtBackend(resolveNvidiaBackend(snapshot.enginePath))) {
       candidates.add(snapshot.enginePath);
     }
+    if (snapshot != null && isVerifiedPackagedHumanSlCompanion(snapshot.enginePath)) {
+      candidates.add(snapshot.enginePath.resolveSibling("katago.exe"));
+    }
     addTensorRtEngineCandidates(candidates, runtimeRoot);
     if (snapshot != null) {
       addTensorRtEngineCandidates(candidates, snapshot.appRoot);
@@ -6371,11 +6232,7 @@ public final class KataGoRuntimeHelper {
   }
 
   private static Path tensorRtEngineDir(Path root, String engineDirName) {
-    return root.toAbsolutePath()
-        .normalize()
-        .resolve("engines")
-        .resolve("katago")
-        .resolve(engineDirName);
+    return root.toAbsolutePath().normalize().resolve("engines/katago").resolve(engineDirName);
   }
 
   private static boolean isTensorRtSourceProfileAllowed(SetupSnapshot snapshot) {
@@ -6571,6 +6428,8 @@ public final class KataGoRuntimeHelper {
         if (!Files.isRegularFile(stagingDir.resolve("katago.exe"))) {
           throw new IOException("KataGo TensorRT package did not contain katago.exe");
         }
+        keepPackagedRuntime(targetEngineDir, stagingDir);
+        session.throwIfCancelled();
         revalidateDirectedTensorRtTargetAtMutationBoundary(context);
         if (Files.exists(targetEngineDir)) {
           try {
@@ -6606,6 +6465,29 @@ public final class KataGoRuntimeHelper {
     } catch (IOException e) {
       deleteRecursively(stagingDir);
       throw e;
+    }
+  }
+
+  /**
+   * Stage the full package's runtime DLLs, manifest and licenses before swapping directories. A
+   * failed copy or promotion must leave the old engine and runtime together for recovery.
+   */
+  static void keepPackagedRuntime(Path replacedDir, Path engineDir) throws IOException {
+    if (!Files.isDirectory(replacedDir)) {
+      return;
+    }
+    try (java.nio.file.DirectoryStream<Path> entries = Files.newDirectoryStream(replacedDir)) {
+      for (Path entry : entries) {
+        String name = entry.getFileName().toString();
+        boolean runtime =
+            name.toLowerCase(Locale.ROOT).endsWith(".dll")
+                || name.equals(NVIDIA_RUNTIME_MANIFEST_NAME)
+                || name.equals("licenses");
+        Path target = engineDir.resolve(name);
+        if (runtime && !Files.exists(target)) {
+          copyTensorRtDirectory(entry, target);
+        }
+      }
     }
   }
 
@@ -6767,7 +6649,7 @@ public final class KataGoRuntimeHelper {
   private static void writePinnedCuda12_8NvrtcRuntimeManifest(Path runtimeDir) throws IOException {
     Files.createDirectories(runtimeDir);
     Files.writeString(
-        runtimeDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt"),
+        runtimeDir.resolve(NVIDIA_RUNTIME_MANIFEST_NAME),
         "CUDA NVRTC: "
             + CUDA_12_8_NVRTC_VERSION
             + "\nfixture\nSHA-256: "
@@ -6858,7 +6740,23 @@ public final class KataGoRuntimeHelper {
       return isVerifiedPackagedHumanSlCompanion(enginePath);
     }
     KataGoAssetCatalog.Asset asset = assetForNvidiaBackend(backend);
-    return isProjectStaticZlibAsset(asset) && hasVerifiedEngineProvenance(enginePath, asset);
+    return asset != null && isProjectStaticZlibBuild(enginePath, asset.backend());
+  }
+
+  /** See {@link KataGoEngineManifest#describesProjectStaticZlibBuild}. */
+  private static boolean isProjectStaticZlibBuild(Path enginePath, String backend) {
+    if (enginePath == null || enginePath.getParent() == null || !Files.isRegularFile(enginePath)) {
+      return false;
+    }
+    try {
+      return KataGoEngineManifest.describesProjectStaticZlibBuild(
+          KataGoEngineManifest.readStrict(
+              enginePath.getParent().resolve(TENSORRT_ENGINE_MANIFEST_NAME)),
+          backend,
+          sha256(enginePath));
+    } catch (IOException e) {
+      return false;
+    }
   }
 
   private static boolean isProjectStaticZlibAsset(KataGoAssetCatalog.Asset asset) {
@@ -6884,7 +6782,7 @@ public final class KataGoRuntimeHelper {
     }
     try {
       Map<String, String> manifest =
-          readStrictEngineManifest(engineDir.resolve(TENSORRT_ENGINE_MANIFEST_NAME));
+          KataGoEngineManifest.readStrict(engineDir.resolve(TENSORRT_ENGINE_MANIFEST_NAME));
       // TensorRT provenance validates the companion entry only when present; require it here.
       return manifest != null
           && HUMAN_SL_CUDA_COMPANION_NAME.equals(manifest.get("HumanSL companion"))
@@ -6914,7 +6812,7 @@ public final class KataGoRuntimeHelper {
       return false;
     }
     try {
-      Map<String, String> manifest = readStrictEngineManifest(manifestPath);
+      Map<String, String> manifest = KataGoEngineManifest.readStrict(manifestPath);
       String expectedExecutableSha256 = expectedKatagoExecutableSha256(asset);
       return manifest != null
           && "2".equals(manifest.get("Manifest schema"))
@@ -6939,52 +6837,6 @@ public final class KataGoRuntimeHelper {
     return companion == null
         || (HUMAN_SL_CUDA_COMPANION_NAME.equals(companion)
             && expectedHumanSlCompanionSha256().equals(manifest.get("HumanSL companion SHA-256")));
-  }
-
-  private static Map<String, String> readStrictEngineManifest(Path manifestPath)
-      throws IOException {
-    Map<String, String> values = new LinkedHashMap<>();
-    String[] lines =
-        Files.readString(manifestPath, StandardCharsets.UTF_8).replace("\r", "").split("\n", -1);
-    for (int index = 0; index < lines.length; index++) {
-      String line = lines[index];
-      if (line.isEmpty() && index == lines.length - 1) {
-        continue;
-      }
-      int separator = line.indexOf(": ");
-      if (separator <= 0 || separator == line.length() - 2) {
-        return null;
-      }
-      String key = line.substring(0, separator);
-      String value = line.substring(separator + 2);
-      if (!isAllowedEngineManifestKey(key) || values.putIfAbsent(key, value) != null) {
-        return null;
-      }
-    }
-    boolean hasCompanion = values.containsKey("HumanSL companion");
-    if (hasCompanion != values.containsKey("HumanSL companion SHA-256")) {
-      return null;
-    }
-    return values;
-  }
-
-  private static boolean isAllowedEngineManifestKey(String key) {
-    return switch (key) {
-      case "Manifest schema",
-          "KataGo release",
-          "Asset ID",
-          "Asset",
-          "Asset SHA-256",
-          "Executable SHA-256",
-          "Backend",
-          "Origin",
-          "Source commit",
-          "Zlib linkage",
-          "HumanSL companion",
-          "HumanSL companion SHA-256" ->
-          true;
-      default -> false;
-    };
   }
 
   static String tensorRtEngineManifestText() {
@@ -7020,30 +6872,6 @@ public final class KataGoRuntimeHelper {
         Files.deleteIfExists(candidate);
       }
     }
-  }
-
-  private static List<RuntimePackageSpec> resolveRequiredRuntimePackages() throws IOException {
-    List<RuntimePackageSpec> packages = new ArrayList<RuntimePackageSpec>();
-    JSONObject cudaManifest = new JSONObject(httpGet(CUDA_MANIFEST_URL));
-    JSONObject cudnnManifest = new JSONObject(httpGet(CUDNN_MANIFEST_URL));
-    packages.add(
-        readPackageSpec(
-            cudaManifest, CUDA_MANIFEST_URL, "cuda_cudart", "windows-x86_64", "CUDA Runtime"));
-    packages.add(
-        readPackageSpec(
-            cudaManifest, CUDA_MANIFEST_URL, "libcublas", "windows-x86_64", "CUDA cuBLAS"));
-    packages.add(
-        readPackageSpec(
-            cudaManifest, CUDA_MANIFEST_URL, "libnvjitlink", "windows-x86_64", "CUDA nvJitLink"));
-    packages.add(
-        readNestedPackageSpec(
-            cudnnManifest,
-            CUDNN_MANIFEST_URL,
-            "cudnn",
-            "windows-x86_64",
-            "cuda12",
-            "NVIDIA cuDNN"));
-    return packages;
   }
 
   private static String chooseTensorRtNvidiaDownloadHost(

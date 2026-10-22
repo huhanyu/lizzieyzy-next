@@ -1380,6 +1380,45 @@ public class KataGoAutoSetupHelperTest {
                 }));
   }
 
+  @Test
+  void quickAnalysisCommandKeepsTheExperimentalBackendFlags() throws Exception {
+    Path root = Files.createTempDirectory("katago-quick-model-directml");
+    byte[] modelBytes = repeatedBytes(16 * 1024, (byte) 44);
+    Path engine = touch(root.resolve("engine").resolve(testKataGoBinaryName()));
+    Files.writeString(engine.resolveSibling("lizzieyzy-next-engine-backend.txt"), "directml\n");
+    Path gtp = touch(root.resolve("engine").resolve("configs").resolve("gtp.cfg"));
+    touch(root.resolve("engine").resolve("configs").resolve("analysis.cfg"));
+    Path activeWeight = touch(root.resolve("weights").resolve("main.bin.gz"));
+    Path quickModel =
+        writeModel(
+            root.resolve("quick-analysis-models")
+                .resolve(KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME),
+            modelBytes);
+
+    withQuickAnalysisDownloadProperties(
+        "http://127.0.0.1/not-used/" + KataGoAutoSetupHelper.QUICK_ANALYSIS_MODEL_FILE_NAME,
+        sha256(modelBytes),
+        modelBytes.length,
+        () ->
+            withUserDirAndConfig(
+                root,
+                () -> {
+                  Utils.saveEngineSettings(
+                      new ArrayList<>(
+                          List.of(engineData("DirectML", engine, gtp, activeWeight, true))));
+                  Lizzie.config.uiConfig.put("default-engine", 0);
+                  Lizzie.config.uiConfig.put(
+                      "katago-quick-analysis-model-path", quickModel.toString());
+                  Lizzie.config.quickAnalysisLightweightModelEnabled = true;
+                  Lizzie.config.analysisReuseCurrentEngine = false;
+
+                  String command =
+                      KataGoAutoSetupHelper.resolveQuickAnalysisEngineCommand().orElseThrow();
+
+                  assertTrue(command.contains("onnxProvider=directml"), command);
+                }));
+  }
+
   private static KataGoAutoSetupHelper.RemoteWeightInfo transformerFixtureWeight(
       String url, byte[] modelBytes) throws Exception {
     return new KataGoAutoSetupHelper.RemoteWeightInfo(
