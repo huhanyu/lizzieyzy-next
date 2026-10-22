@@ -90,8 +90,17 @@ back), 看 AI 推荐 (circle KataGo's choice) or 不重下，继续对局.
 
 ## After the game
 
-The result card replaces the old pop-up. 开始复盘 leaves AI 陪练, and the game is analysed in the
-usual view. There is no separate report.
+The move card becomes a short summary (`CoachPanelState.Summary`). It shows:
+
+- 你赢了, 你输了 or 和棋, with the result;
+- one line of numbers: moves, key mistakes (问题手 and 恶手) and hints in 边下边提醒, and take-backs;
+- two buttons. 开始复盘 leaves AI 陪练 and the game is analysed in the usual view. 再来一盘
+  ends the session and opens the setup sheet again with the same choices.
+
+In 边下边提醒 the history then lists the game's three biggest mistakes
+(`MoveReviewer.worstMistakes`). Clicking one leaves AI 陪练 with the board on the position before
+it (`HumanSlGameController.reviewFrom`). The game's own buttons step aside. There is no separate
+report.
 
 ## Checking changes by hand
 
@@ -100,4 +109,5 @@ real app:
 
 - a deliberate 1-1 move must show the 恶手 card;
 - 提示 must mark an area, then a point;
-- two passes must end the game with a counted result.
+- two passes must end the game with a counted result;
+- after 认输, a key mistake in the summary must open the review at the position before it.
