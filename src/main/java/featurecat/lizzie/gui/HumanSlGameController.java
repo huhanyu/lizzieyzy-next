@@ -460,8 +460,9 @@ public final class HumanSlGameController {
   private void configurePlayerNames() {
     String me = text("HumanSlGame.humanPlayer", "You");
     String ai = text("HumanSlGame.aiPlayer", "HumanSL AI") + " (" + opponentLabel() + ")";
-    Lizzie.board.getHistory().getGameInfo().setPlayerBlack(humanIsBlack ? me : ai);
-    Lizzie.board.getHistory().getGameInfo().setPlayerWhite(humanIsBlack ? ai : me);
+    GameInfo info = Lizzie.board.getHistory().getGameInfo();
+    info.setPlayerBlack(humanIsBlack ? me : ai);
+    info.setPlayerWhite(humanIsBlack ? ai : me);
   }
 
   /** Brings the integrated controls back into view. */
@@ -1640,6 +1641,41 @@ public final class HumanSlGameController {
 
   CoachAssist assist() {
     return assist;
+  }
+
+  /** Moves played in this game, the AI's included. */
+  int movesPlayed() {
+    BoardHistoryNode live = liveNode;
+    return live == null || gameStartNode == null
+        ? 0
+        : Math.max(0, GameTreePosition.movesSince(gameStartNode, live));
+  }
+
+  /**
+   * After the game: leaves AI 陪练 and shows the position before move {@code moveNumber} in the usual
+   * analysis, so the player can see what was better there.
+   */
+  public void reviewFrom(int moveNumber) {
+    BoardHistoryNode target = null;
+    for (BoardHistoryNode node = liveNode; node != null; node = node.previous().orElse(null)) {
+      if (node.getData().moveNumber == moveNumber - 1) {
+        target = node;
+        break;
+      }
+      if (node == gameStartNode) {
+        break;
+      }
+    }
+    BoardHistoryNode position = target;
+    abortAndThen(
+        () -> {
+          Board board = Lizzie.board;
+          if (position != null
+              && board != null
+              && GameTreePosition.isAttached(position, gameRoot)) {
+            board.moveToAnyPosition(position);
+          }
+        });
   }
 
   private void reviewPlayerTurn() {

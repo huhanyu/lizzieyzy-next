@@ -118,6 +118,44 @@ class CoachPanelTest {
   }
 
   @Test
+  void onlyTheKeyMistakesAfterTheGameAreClickable() {
+    CoachPanelState.Row row =
+        new CoachPanelState.Row(
+            31, "#31", "A1", featurecat.lizzie.training.MoveVerdict.BLUNDER, "Blunder", "-25%");
+    int[] picked = {0};
+    for (boolean over : new boolean[] {false, true}) {
+      CoachPanelState state =
+          stateWithHistory(new CoachPanelState.History("h", List.of(), List.of(row), over));
+      CoachHistoryView view =
+          new CoachHistoryView(() -> state, moveNumber -> picked[0] = moveNumber);
+      view.setSize(CoachPanel.WIDTH, 400);
+      int firstRow = CoachHistoryView.TALLY_HEIGHT + 12 + CoachHistoryView.HEADING_HEIGHT + 5;
+
+      assertEquals(over ? row : null, view.rowAt(firstRow), "over: " + over);
+      assertEquals(null, view.rowAt(5), "the tallies are not a row");
+    }
+  }
+
+  private static CoachPanelState stateWithHistory(CoachPanelState.History history) {
+    return new CoachPanelState(
+        "",
+        "",
+        "",
+        CoachPanelState.Tone.DONE,
+        false,
+        "",
+        "",
+        "",
+        "",
+        "",
+        null,
+        null,
+        null,
+        null,
+        history);
+  }
+
+  @Test
   void theHistoryShowsAsManyRecentMovesAsFitAboveTheButtons() {
     int threeRows =
         CoachHistoryView.TALLY_HEIGHT

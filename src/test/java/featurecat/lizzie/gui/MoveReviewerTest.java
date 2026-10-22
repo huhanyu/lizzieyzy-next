@@ -123,6 +123,35 @@ class MoveReviewerTest {
   }
 
   @Test
+  void theWorstMistakesAreTheWorstRatingsFirstListedInPlayOrder() throws Exception {
+    PositionReview good = TURN;
+    PositionReview blunder =
+        new PositionReview(
+            0.4,
+            12.0,
+            List.of(
+                new PositionReview.Candidate("Q16", 300, 0.5),
+                new PositionReview.Candidate("A1", 60, -14.0)),
+            Map.of("Q16", 0.5));
+    BoardHistoryNode first = node(10);
+    BoardHistoryNode second = node(12);
+    BoardHistoryNode third = node(14);
+    engine.reviews.put(first, blunder);
+    engine.reviews.put(second, good);
+    engine.reviews.put(third, good);
+    reviewer.judge(first, node(11), "A1").get();
+    reviewer.judge(second, node(13), "Q16").get();
+    reviewer.judge(third, node(15), "D4").get();
+
+    List<MoveFeedback> worst = reviewer.worstMistakes(3);
+
+    assertEquals(List.of(11, 15), worst.stream().map(MoveFeedback::moveNumber).toList());
+    assertEquals(MoveVerdict.BLUNDER, worst.get(0).verdict());
+    assertEquals(
+        List.of(11), reviewer.worstMistakes(1).stream().map(MoveFeedback::moveNumber).toList());
+  }
+
+  @Test
   void anEngineFailureLeavesTheMoveUnrated() throws Exception {
     Optional<MoveFeedback> feedback = reviewer.judge(node(10), node(11), "D4").get();
 

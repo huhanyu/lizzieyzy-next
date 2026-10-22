@@ -194,6 +194,23 @@ final class MoveReviewer {
     return turn == position ? turnReview : null;
   }
 
+  /**
+   * The game's {@code count} biggest mistakes, worst rating and largest drop first when choosing,
+   * listed in the order they were played.
+   */
+  List<MoveFeedback> worstMistakes(int count) {
+    return judged.stream()
+        .map(Judged::feedback)
+        .filter(feedback -> feedback.verdict().isMistake())
+        .sorted(
+            java.util.Comparator.comparing(MoveFeedback::verdict)
+                .reversed()
+                .thenComparingDouble(MoveFeedback::winChange))
+        .limit(count)
+        .sorted(java.util.Comparator.comparingInt(MoveFeedback::moveNumber))
+        .toList();
+  }
+
   /** True from the player's move until its judgement arrives. */
   boolean isJudging() {
     return judging != null;

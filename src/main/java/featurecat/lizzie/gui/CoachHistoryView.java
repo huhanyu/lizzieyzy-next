@@ -20,9 +20,45 @@ final class CoachHistoryView extends JComponent {
 
   private final Supplier<CoachPanelState> state;
 
-  CoachHistoryView(Supplier<CoachPanelState> state) {
+  /**
+   * @param onPick receives the move number of a clicked row once the game is over
+   */
+  CoachHistoryView(Supplier<CoachPanelState> state, java.util.function.IntConsumer onPick) {
     this.state = state;
     setOpaque(false);
+    java.awt.event.MouseAdapter mouse =
+        new java.awt.event.MouseAdapter() {
+          @Override
+          public void mouseClicked(java.awt.event.MouseEvent e) {
+            CoachPanelState.Row row = rowAt(e.getY());
+            if (row != null) {
+              onPick.accept(row.moveNumber());
+            }
+          }
+
+          @Override
+          public void mouseMoved(java.awt.event.MouseEvent e) {
+            setCursor(
+                java.awt.Cursor.getPredefinedCursor(
+                    rowAt(e.getY()) == null
+                        ? java.awt.Cursor.DEFAULT_CURSOR
+                        : java.awt.Cursor.HAND_CURSOR));
+          }
+        };
+    addMouseListener(mouse);
+    addMouseMotionListener(mouse);
+  }
+
+  /** The clickable row at {@code y}, or null. */
+  CoachPanelState.Row rowAt(int y) {
+    CoachPanelState.History history = state.get().history();
+    if (history == null || !history.clickable()) {
+      return null;
+    }
+    int top = TALLY_HEIGHT + GAP + HEADING_HEIGHT;
+    int index = y < top ? -1 : (y - top) / ROW_HEIGHT;
+    int rows = rowsThatFit(getHeight(), history.recent().size());
+    return index >= 0 && index < rows ? history.recent().get(index) : null;
   }
 
   /** How many of the latest moves fit in {@code height}. */
@@ -49,7 +85,12 @@ final class CoachHistoryView extends JComponent {
         g.drawString(history.heading(), 2, y + 15);
         y += HEADING_HEIGHT;
         for (int i = 0; i < rows; i++) {
-          row(g, history.recent().get(i), y + i * ROW_HEIGHT, getWidth(), i == 0);
+          row(
+              g,
+              history.recent().get(i),
+              y + i * ROW_HEIGHT,
+              getWidth(),
+              i == 0 && !history.clickable());
         }
       }
     } finally {

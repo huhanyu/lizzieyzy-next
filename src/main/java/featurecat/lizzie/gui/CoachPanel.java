@@ -43,7 +43,9 @@ public final class CoachPanel extends JPanel {
   private final CoachFocusLayout focusLayout = new CoachFocusLayout();
   private final CoachSummaryView summary = new CoachSummaryView(this::state);
   private final CoachMoveCard moveCard = new CoachMoveCard(this::state, this::onPromptAction);
-  private final CoachHistoryView history = new CoachHistoryView(this::state);
+  private final CoachHistoryView history =
+      new CoachHistoryView(
+          this::state, moveNumber -> withController(active -> active.reviewFrom(moveNumber)));
   private final JPanel actions;
   private final JPanel grid = new JPanel(new GridLayout(0, 2, 8, 8));
   private final CoachButton hintButton = CoachButton.accent();
@@ -218,6 +220,10 @@ public final class CoachPanel extends JPanel {
       finishButton.setKind(CoachButton.Kind.QUIET);
     }
     finishButton.setEnabled(!active.isExitInProgress());
+    // After the game the summary card carries 开始复盘 and 再来一盘; the game's buttons are done.
+    boolean over = active.isGameOver();
+    grid.setVisible(!over);
+    finishButton.setVisible(!over || stopping || active.isExitRecoveryPending());
     int version = active.assist().marks().version();
     if (version != marksVersion) {
       marksVersion = version;
@@ -255,6 +261,19 @@ public final class CoachPanel extends JPanel {
         break;
       case MORE_HINT:
         withController(HumanSlGameController::hint);
+        break;
+      case REVIEW:
+        withController(HumanSlGameController::finishAndReturnToBoard);
+        break;
+      case PLAY_AGAIN:
+        withController(
+            active -> {
+              if (frame != null) {
+                active.abortAndThen(frame::handleAiCoachToolbarAction);
+              } else {
+                active.abort();
+              }
+            });
         break;
       case CLOSE_HINT:
       default:

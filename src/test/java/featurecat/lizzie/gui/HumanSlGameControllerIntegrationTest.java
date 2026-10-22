@@ -381,15 +381,24 @@ class HumanSlGameControllerIntegrationTest {
           playing.title());
       assertFalse(playing.aiPlaysBlack());
       assertEquals(0, playing.winChance().values().length, "nothing rated yet");
-      assertNull(playing.result());
+      assertNull(playing.summary());
 
       SwingUtilities.invokeAndWait(controller::resign);
       CoachPanelState over = CoachPanelState.of(controller, (key, fallback) -> text(key));
 
       assertEquals(text("CoachPanel.status.gameOver"), over.status());
       assertEquals(CoachPanelState.Tone.DONE, over.tone());
-      assertEquals(controller.resultText(), over.result());
-      assertEquals(text("CoachPanel.reviewHint"), over.resultHint());
+      assertEquals(text("CoachPanel.youLost"), over.summary().headline(), "the player resigned");
+      assertFalse(over.summary().won());
+      assertEquals(controller.resultText(), over.summary().result());
+      assertTrue(
+          over.summary()
+              .stats()
+              .contains(java.text.MessageFormat.format(text("CoachPanel.stat.takeBacks"), 0)));
+      assertEquals(text("CoachPanel.reviewHint"), over.summary().hint());
+      assertEquals(
+          List.of(CoachPanelState.Action.REVIEW, CoachPanelState.Action.PLAY_AGAIN),
+          over.summary().choices().stream().map(CoachPanelState.Choice::action).toList());
     }
   }
 
@@ -599,6 +608,73 @@ class HumanSlGameControllerIntegrationTest {
       SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(0, 2));
 
       assertTrue(onEventThread(() -> controller.assist().marks().isEmpty()));
+    }
+  }
+
+  @Test
+  void playAgainEndsTheGameThenOpensTheSetupAgain() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      HumanSlGameController controller = env.startCoach(new BlockingHumanSlRunner());
+      controller.setNotifierForTesting((message, seconds) -> {});
+      SwingUtilities.invokeAndWait(controller::resign);
+      SetupReopeningFrame frame = allocate(SetupReopeningFrame.class);
+      frame.game = controller;
+      CoachPanel[] panel = new CoachPanel[1];
+      SwingUtilities.invokeAndWait(
+          () -> {
+            panel[0] = new CoachPanel(frame, () -> null);
+            panel[0].attach(controller);
+            panel[0].setSize(CoachPanel.WIDTH, 900);
+            panel[0].doLayout();
+          });
+
+      SwingUtilities.invokeAndWait(
+          () ->
+              panel[0].buttons().stream()
+                  .filter(button -> button.isVisible())
+                  .filter(button -> text("CoachPanel.playAgain").equals(button.getText()))
+                  .findFirst()
+                  .orElseThrow()
+                  .doClick());
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertEquals(1, frame.setupRequests);
+      assertTrue(frame.gameClosedFirst, "the setup opens once the game is closed");
+      SwingUtilities.invokeAndWait(() -> panel[0].detach(controller));
+    }
+  }
+
+  @Test
+  void aKeyMistakeOpensTheReviewAtThePositionBeforeIt() throws Exception {
+    try (CoachEnvironment env = CoachEnvironment.open()) {
+      BlockingHumanSlRunner runner = new BlockingHumanSlRunner();
+      runner.reviewWith(blunderReview());
+      runner.replyWith(HumanMoveChoice.of("B2"));
+      env.allowStonePlacement();
+      HumanSlGameController controller = env.startCoach(runner);
+      controller.setThinkTimeForTesting(0L);
+      controller.setNotifierForTesting((message, seconds) -> {});
+      assertTrue(awaitCondition(() -> runner.reviewCount.get() >= 1, Duration.ofSeconds(5)));
+      BoardHistoryNode beforeMistake = Lizzie.board.getHistory().getCurrentHistoryNode();
+      SwingUtilities.invokeAndWait(() -> controller.onBoardClicked(2, 0));
+      runner.releaseResponse();
+      assertTrue(
+          awaitCondition(
+              () -> onEventThread(controller::isAwaitingDecision), Duration.ofSeconds(5)));
+      SwingUtilities.invokeAndWait(controller::resign);
+
+      CoachPanelState[] state = new CoachPanelState[1];
+      SwingUtilities.invokeAndWait(
+          () -> state[0] = CoachPanelState.of(controller, (key, fallback) -> text(key)));
+      assertTrue(state[0].history().clickable());
+      CoachPanelState.Row row = state[0].history().recent().get(0);
+      assertEquals(MoveVerdict.BLUNDER, row.verdict());
+
+      SwingUtilities.invokeAndWait(() -> controller.reviewFrom(row.moveNumber()));
+      SwingUtilities.invokeAndWait(() -> {});
+
+      assertTrue(controller.isFinished());
+      assertSame(beforeMistake, Lizzie.board.getHistory().getCurrentHistoryNode());
     }
   }
 
@@ -2345,6 +2421,19 @@ class HumanSlGameControllerIntegrationTest {
       analysisResumeRequests++;
       detachedWhenAnalysisResumed = humanSlGame == null;
       return true;
+    }
+  }
+
+  /** Records 再来一盘 asking for the setup sheet again. */
+  private static final class SetupReopeningFrame extends CoachFrame {
+    private HumanSlGameController game;
+    private int setupRequests;
+    private boolean gameClosedFirst;
+
+    @Override
+    public void handleAiCoachToolbarAction() {
+      setupRequests++;
+      gameClosedFirst = game.isFinished();
     }
   }
 

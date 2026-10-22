@@ -59,7 +59,11 @@ final class CoachMoveCard extends JPanel {
 
   /** 0 when there is nothing to show. Also places the prompt's buttons. */
   int heightFor() {
-    syncButtons(state.get().prompt());
+    CoachPanelState s = state.get();
+    syncButtons(
+        s.prompt() != null
+            ? s.prompt().choices()
+            : s.summary() != null ? s.summary().choices() : List.of());
     return layout(null, getWidth());
   }
 
@@ -74,8 +78,7 @@ final class CoachMoveCard extends JPanel {
     }
   }
 
-  private void syncButtons(CoachPanelState.Prompt prompt) {
-    List<CoachPanelState.Choice> choices = prompt == null ? List.of() : prompt.choices();
+  private void syncButtons(List<CoachPanelState.Choice> choices) {
     for (int i = 0; i < buttons.size(); i++) {
       CoachButton button = buttons.get(i);
       if (i < choices.size()) {
@@ -96,8 +99,8 @@ final class CoachMoveCard extends JPanel {
     if (s.prompt() != null) {
       return prompt(g, s.prompt(), width);
     }
-    if (s.result() != null) {
-      return result(g, s, width);
+    if (s.summary() != null) {
+      return summary(g, s.summary(), width);
     }
     CoachPanelState.MoveCard card = s.moveCard();
     if (card == null) {
@@ -275,28 +278,54 @@ final class CoachMoveCard extends JPanel {
     return height;
   }
 
-  private int result(Graphics2D g, CoachPanelState s, int width) {
-    Font hintFont = CoachPaint.font(s.resultHint(), Font.PLAIN, 12.5f);
-    List<String> hint = CoachPaint.wrap(s.resultHint(), getFontMetrics(hintFont), width - 32);
-    int height = 92 + hint.size() * LINE;
+  /** 你赢了 / 你输了, the result, a line of numbers, 开始复盘 and 再来一盘, then where review is. */
+  private int summary(Graphics2D g, CoachPanelState.Summary summary, int width) {
+    int inner = width - 2 * PROMPT_PADDING;
+    Font statsFont = CoachPaint.font(summary.stats(), Font.PLAIN, 12.5f);
+    List<String> stats = CoachPaint.wrap(summary.stats(), getFontMetrics(statsFont), inner);
+    Font hintFont = CoachPaint.font(summary.hint(), Font.PLAIN, 12.5f);
+    List<String> hint = CoachPaint.wrap(summary.hint(), getFontMetrics(hintFont), inner);
+    int y = PROMPT_PADDING;
     if (g != null) {
       g.setColor(CoachPanel.RAISED);
-      g.fillRoundRect(0, 0, width, height, 28, 28);
-      g.setColor(new Color(61, 190, 170, 90));
-      g.drawRoundRect(0, 0, width - 1, height - 1, 28, 28);
-      String label = CoachPanel.text("CoachPanel.gameOver", "Game over");
+      g.fillRoundRect(0, 0, width, getHeight(), 28, 28);
+      g.setColor(HINT_EDGE);
+      g.drawRoundRect(0, 0, width - 1, getHeight() - 1, 28, 28);
       g.setColor(CoachPanel.MUTED);
-      g.setFont(CoachPaint.font(label, Font.PLAIN, 12.5f));
-      g.drawString(label, 16, 26);
-      g.setColor(CoachPanel.TEXT);
-      g.setFont(CoachPaint.font(s.result(), Font.BOLD, 24f));
-      g.drawString(CoachPaint.fit(g.getFontMetrics(), s.result(), width - 32), 16, 60);
+      g.setFont(CoachPaint.font(summary.label(), Font.PLAIN, 12.5f));
+      g.drawString(summary.label(), PROMPT_PADDING, y + g.getFontMetrics().getAscent());
+    }
+    y += 20;
+    if (g != null) {
+      g.setFont(CoachPaint.font(summary.headline(), Font.BOLD, 26f));
+      FontMetrics headline = g.getFontMetrics();
+      g.setColor(summary.won() ? CoachPanel.ACCENT_TEXT : CoachPanel.TEXT);
+      g.drawString(summary.headline(), PROMPT_PADDING, y + headline.getAscent());
+      int resultX = PROMPT_PADDING + headline.stringWidth(summary.headline()) + 12;
+      g.setFont(CoachPaint.font(summary.result(), Font.PLAIN, 15f));
+      g.setColor(CoachPaint.BODY_TEXT);
+      g.drawString(
+          CoachPaint.fit(g.getFontMetrics(), summary.result(), width - PROMPT_PADDING - resultX),
+          resultX,
+          y + headline.getAscent());
+    }
+    y += 36;
+    if (g != null) {
+      g.setFont(statsFont);
       g.setColor(CoachPanel.MUTED);
-      g.setFont(hintFont);
-      for (int i = 0; i < hint.size(); i++) {
-        g.drawString(hint.get(i), 16, 86 + i * LINE);
+      for (int i = 0; i < stats.size(); i++) {
+        g.drawString(stats.get(i), PROMPT_PADDING, y + i * LINE + g.getFontMetrics().getAscent());
       }
     }
-    return height;
+    y += stats.size() * LINE;
+    y = placeButtons(y + GAP, inner, summary.choices().size()) + GAP;
+    if (g != null) {
+      g.setFont(hintFont);
+      g.setColor(CoachPanel.MUTED);
+      for (int i = 0; i < hint.size(); i++) {
+        g.drawString(hint.get(i), PROMPT_PADDING, y + i * LINE + g.getFontMetrics().getAscent());
+      }
+    }
+    return y + hint.size() * LINE + PROMPT_PADDING;
   }
 }

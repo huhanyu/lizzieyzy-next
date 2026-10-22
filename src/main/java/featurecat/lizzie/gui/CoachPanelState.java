@@ -1,5 +1,6 @@
 package featurecat.lizzie.gui;
 
+import featurecat.lizzie.training.GameResult;
 import featurecat.lizzie.training.MoveFeedback;
 import featurecat.lizzie.training.MoveVerdict;
 import java.text.MessageFormat;
@@ -24,8 +25,7 @@ record CoachPanelState(
     WinChance winChance,
     MoveCard moveCard,
     Prompt prompt,
-    String result,
-    String resultHint,
+    Summary summary,
     History history) {
 
   /** How the status pill is coloured. */
@@ -45,14 +45,31 @@ record CoachPanelState(
    */
   record WinChance(String caption, double[] values, double marked) {}
 
-  /** What a button on a {@link Prompt} does. */
+  /** What a button on a {@link Prompt} or the {@link Summary} does. */
   enum Action {
     RETRY,
     SHOW_BEST,
     CONTINUE,
     MORE_HINT,
-    CLOSE_HINT
+    CLOSE_HINT,
+    REVIEW,
+    PLAY_AGAIN
   }
+
+  /**
+   * The game's end: who won, by how much, a line of numbers, and the way on.
+   *
+   * @param won whether the player won, for the headline's colour
+   * @param stats such as "共 200 手 · 关键失误 3 处 · 提示 2 次 · 悔棋 1 次"
+   */
+  record Summary(
+      String label,
+      String headline,
+      boolean won,
+      String result,
+      String stats,
+      String hint,
+      List<Choice> choices) {}
 
   record Choice(Action action, String label, CoachButton.Kind kind) {}
 
@@ -90,16 +107,28 @@ record CoachPanelState(
       String explanation,
       boolean judging) {}
 
-  /** 边下边提醒's count of each rating, and the latest rated moves, newest first. */
-  record History(String heading, List<Tally> tallies, List<Row> recent) {}
+  /**
+   * 边下边提醒's count of each rating, and the latest rated moves, newest first; once the game is over,
+   * its biggest mistakes instead, which open the review at that move when clicked.
+   */
+  record History(String heading, List<Tally> tallies, List<Row> recent, boolean clickable) {}
 
   record Tally(MoveVerdict verdict, String label, int count) {}
 
-  record Row(String number, String move, MoveVerdict verdict, String label, String change) {}
+  record Row(
+      int moveNumber,
+      String number,
+      String move,
+      MoveVerdict verdict,
+      String label,
+      String change) {}
+
+  /** The biggest mistakes the summary lists. */
+  static final int KEY_MISTAKES = 3;
 
   static final CoachPanelState EMPTY =
       new CoachPanelState(
-          "", "", "", Tone.WAITING, false, "", "", "", "", "", null, null, null, null, null, null);
+          "", "", "", Tone.WAITING, false, "", "", "", "", "", null, null, null, null, null);
 
   /** Rows the history keeps; the panel shows as many as fit. */
   static final int RECENT_ROWS = 8;
@@ -168,14 +197,8 @@ record CoachPanelState(
         winChance(game, reviewer, opponent, text),
         moveCard(game, reviewer, opponent, text),
         reviewer == null ? null : prompt(game, opponent, text),
-        over ? game.resultText() : null,
-        over
-            ? text.apply(
-                "CoachPanel.reviewHint",
-                "Start review returns to the usual analysis, with every move's winrate and"
-                    + " suggestions.")
-            : null,
-        reviewer == null ? null : history(reviewer, text));
+        over ? summary(game, reviewer, text) : null,
+        reviewer == null ? null : history(reviewer, over, text));
   }
 
   private static WinChance winChance(
@@ -390,24 +413,89 @@ record CoachPanelState(
     }
   }
 
-  private static History history(MoveReviewer reviewer, BinaryOperator<String> text) {
+  private static Summary summary(
+      HumanSlGameController game, MoveReviewer reviewer, BinaryOperator<String> text) {
+    GameResult result = game.result();
+    String headline;
+    boolean won = false;
+    if (result == null || !result.isCounted()) {
+      headline = text.apply("CoachPanel.gameOver", "Game over");
+    } else if (result.isDraw()) {
+      headline = text.apply("HumanSlGame.draw", "Draw");
+    } else {
+      won = result.blackWins() == game.humanPlaysBlack();
+      headline =
+          won
+              ? text.apply("CoachPanel.youWon", "You won")
+              : text.apply("CoachPanel.youLost", "You lost");
+    }
+    List<String> stats = new ArrayList<>();
+    stats.add(
+        MessageFormat.format(text.apply("CoachPanel.stat.moves", "{0} moves"), game.movesPlayed()));
+    if (reviewer != null) {
+      stats.add(
+          MessageFormat.format(
+              text.apply("CoachPanel.stat.mistakes", "{0} key mistakes"),
+              reviewer.count(MoveVerdict.PROBLEM) + reviewer.count(MoveVerdict.BLUNDER)));
+      stats.add(
+          MessageFormat.format(
+              text.apply("CoachPanel.stat.hints", "{0} hints"), game.assist().hintsUsed()));
+    }
+    stats.add(
+        MessageFormat.format(
+            text.apply("CoachPanel.stat.takeBacks", "{0} take-backs"), game.takeBackCount()));
+    return new Summary(
+        text.apply("CoachPanel.gameOver", "Game over"),
+        headline,
+        won,
+        game.resultText(),
+        String.join(" · ", stats),
+        text.apply(
+            "CoachPanel.reviewHint",
+            "Start review returns to the usual analysis, with every move's winrate and"
+                + " suggestions."),
+        List.of(
+            new Choice(
+                Action.REVIEW,
+                text.apply("CoachPanel.review", "Start review"),
+                CoachButton.Kind.PRIMARY),
+            new Choice(
+                Action.PLAY_AGAIN,
+                text.apply("CoachPanel.playAgain", "Play again"),
+                CoachButton.Kind.SECONDARY)));
+  }
+
+  private static History history(MoveReviewer reviewer, boolean over, BinaryOperator<String> text) {
     List<Tally> tallies = new ArrayList<>();
     for (MoveVerdict verdict : MoveVerdict.values()) {
       tallies.add(new Tally(verdict, verdictLabel(verdict, text), reviewer.count(verdict)));
     }
-    List<MoveFeedback> moves = reviewer.feedback();
-    List<Row> recent = new ArrayList<>();
-    for (int i = moves.size() - 1; i >= 0 && recent.size() < RECENT_ROWS; i--) {
-      MoveFeedback move = moves.get(i);
-      recent.add(
+    List<MoveFeedback> moves;
+    if (over) {
+      moves = reviewer.worstMistakes(KEY_MISTAKES);
+    } else {
+      List<MoveFeedback> all = reviewer.feedback();
+      moves = new ArrayList<>();
+      for (int i = all.size() - 1; i >= 0 && moves.size() < RECENT_ROWS; i--) {
+        moves.add(all.get(i));
+      }
+    }
+    List<Row> rows = new ArrayList<>();
+    for (MoveFeedback move : moves) {
+      rows.add(
           new Row(
+              move.moveNumber(),
               "#" + move.moveNumber(),
               "pass".equals(move.move()) ? text.apply("HumanSlGame.btn.pass", "Pass") : move.move(),
               move.verdict(),
               verdictLabel(move.verdict(), text),
               change(move, text, false)));
     }
-    return new History(text.apply("CoachPanel.recentMoves", "Recent moves"), tallies, recent);
+    String heading =
+        over
+            ? text.apply("CoachPanel.keyMoves", "Worth a second look · click to go there")
+            : text.apply("CoachPanel.recentMoves", "Recent moves");
+    return new History(heading, tallies, rows, over && !rows.isEmpty());
   }
 
   static String verdictLabel(MoveVerdict verdict, BinaryOperator<String> text) {
