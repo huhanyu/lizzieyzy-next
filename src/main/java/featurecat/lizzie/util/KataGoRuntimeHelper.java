@@ -6429,6 +6429,8 @@ public final class KataGoRuntimeHelper {
         if (!Files.isRegularFile(stagingDir.resolve("katago.exe"))) {
           throw new IOException("KataGo TensorRT package did not contain katago.exe");
         }
+        keepPackagedRuntime(targetEngineDir, stagingDir);
+        session.throwIfCancelled();
         revalidateDirectedTensorRtTargetAtMutationBoundary(context);
         if (Files.exists(targetEngineDir)) {
           try {
@@ -6448,7 +6450,6 @@ public final class KataGoRuntimeHelper {
           }
           throw e;
         }
-        keepPackagedRuntime(backupDir, targetEngineDir);
         deleteRecursively(backupDir);
         recordTensorRt(
             MaintenanceObservation.STAGE_INSTALL,
@@ -6469,9 +6470,8 @@ public final class KataGoRuntimeHelper {
   }
 
   /**
-   * The TensorRT full package keeps the NVIDIA runtime in the engine's folder: its DLLs, its
-   * manifest and its licenses. A new engine package carries none of them, so they move over from
-   * the replaced folder instead of being deleted with it, which used to cost a 3.66 GB download.
+   * Stage the full package's runtime DLLs, manifest and licenses before swapping directories. A
+   * failed copy or promotion must leave the old engine and runtime together for recovery.
    */
   static void keepPackagedRuntime(Path replacedDir, Path engineDir) throws IOException {
     if (!Files.isDirectory(replacedDir)) {
@@ -6486,7 +6486,7 @@ public final class KataGoRuntimeHelper {
                 || name.equals("licenses");
         Path target = engineDir.resolve(name);
         if (runtime && !Files.exists(target)) {
-          Files.move(entry, target);
+          copyTensorRtDirectory(entry, target);
         }
       }
     }
