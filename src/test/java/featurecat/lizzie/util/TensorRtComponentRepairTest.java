@@ -358,6 +358,123 @@ public class TensorRtComponentRepairTest {
   }
 
   @Test
+  void failedRuntimeStagingCopyKeepsTheOldEngineAndAllRuntimeFiles() throws Exception {
+    assertPackagedRuntimeSurvivesFailedUpgrade(false);
+  }
+
+  @Test
+  void failedEnginePromotionRestoresTheOldEngineAndAllRuntimeFiles() throws Exception {
+    assertPackagedRuntimeSurvivesFailedUpgrade(true);
+  }
+
+  private void assertPackagedRuntimeSurvivesFailedUpgrade(boolean failPromotion) throws Exception {
+    withOsName(
+        WINDOWS_OS_NAME,
+        () -> {
+          Path tempRoot = Files.createTempDirectory("tensorrt-runtime-upgrade-rollback");
+          Path runtimeWorkDirectory = Files.createDirectories(tempRoot.resolve("runtime-root"));
+          SetupSnapshot snapshot = createDirectMlSnapshot(tempRoot);
+          RepairFixtures fixtures = createRepairFixtures(tempRoot);
+          Path engineDir = Files.createDirectories(tensorRtEngineDir(runtimeWorkDirectory));
+          Files.writeString(engineDir.resolve("katago.exe"), "last-known-good-engine");
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-engine-backend.txt"), "nvidia-tensorrt\n");
+          Files.writeString(
+              engineDir.resolve("lizzieyzy-next-katago-engine-manifest.txt"), "older-engine\n");
+          for (String dll : RUNTIME_DLLS) {
+            Files.writeString(engineDir.resolve(dll), "original-" + dll);
+          }
+          Path runtimeManifest = engineDir.resolve("lizzieyzy-next-nvidia-runtime-manifest.txt");
+          Files.writeString(
+              runtimeManifest,
+              "CUDA NVRTC: "
+                  + KataGoRuntimeHelper.CUDA_12_8_NVRTC_VERSION
+                  + "\nfixture\nSHA-256: "
+                  + KataGoRuntimeHelper.CUDA_12_8_NVRTC_SHA256
+                  + "\n");
+          String runtimeManifestBefore = Files.readString(runtimeManifest);
+          Path license = engineDir.resolve("licenses/nvidia-runtime/TensorRT.txt");
+          Files.createDirectories(license.getParent());
+          Files.writeString(license, "original-license");
+
+          withRepairFixtures(
+              fixtures,
+              false,
+              () ->
+                  withConfig(
+                      runtimeWorkDirectory,
+                      () -> {
+                        seedDirectMlProfiles(snapshot);
+                        String profilesBefore = profileFingerprint();
+                        AtomicInteger stagedEntries = new AtomicInteger();
+                        KataGoRuntimeHelper.setTensorRtDirectoryCopyForTests(
+                            (source, target) -> {
+                              copyFixtureTree(source, target);
+                              if (stagedEntries.incrementAndGet() == 2 && !failPromotion) {
+                                throw new IOException("injected runtime staging failure");
+                              }
+                            });
+                        KataGoRuntimeHelper.setTensorRtDirectoryMoveForTests(
+                            (source, target) -> {
+                              if (source.getFileName().toString().contains(".installing-")) {
+                                for (String dll : RUNTIME_DLLS) {
+                                  assertTrue(Files.isRegularFile(source.resolve(dll)), dll);
+                                }
+                                assertEquals(
+                                    "original-license",
+                                    Files.readString(
+                                        source.resolve(engineDir.relativize(license))));
+                                throw new IOException("injected engine promotion failure");
+                              }
+                              Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+                            });
+                        IOException failure =
+                            assertThrows(
+                                IOException.class,
+                                () ->
+                                    KataGoRuntimeHelper.repairTensorRtComponents(
+                                        snapshot, null, new DownloadSession()));
+
+                        assertEquals(
+                            failPromotion
+                                ? "injected engine promotion failure"
+                                : "injected runtime staging failure",
+                            failure.getMessage());
+                        assertTrue(stagedEntries.get() >= 2, "the failure follows partial staging");
+                        assertEquals(
+                            "last-known-good-engine",
+                            Files.readString(engineDir.resolve("katago.exe")));
+                        assertEquals(
+                            "older-engine\n",
+                            Files.readString(
+                                engineDir.resolve("lizzieyzy-next-katago-engine-manifest.txt")));
+                        for (String dll : RUNTIME_DLLS) {
+                          assertEquals("original-" + dll, Files.readString(engineDir.resolve(dll)));
+                        }
+                        assertEquals(runtimeManifestBefore, Files.readString(runtimeManifest));
+                        assertEquals("original-license", Files.readString(license));
+                        assertEquals(profilesBefore, profileFingerprint());
+                        try (var children = Files.list(engineDir.getParent())) {
+                          assertEquals(List.of(engineDir), children.toList(), "no partial install");
+                        }
+                      }));
+        });
+  }
+
+  private static void copyFixtureTree(Path source, Path target) throws IOException {
+    try (var paths = Files.walk(source)) {
+      for (Path entry : (Iterable<Path>) paths::iterator) {
+        Path destination = target.resolve(source.relativize(entry));
+        if (Files.isDirectory(entry)) {
+          Files.createDirectories(destination);
+        } else {
+          Files.copy(entry, destination, StandardCopyOption.REPLACE_EXISTING);
+        }
+      }
+    }
+  }
+
+  @Test
   void partialRuntimeStaysIncompleteUntilALaterRepairAndCompletedFilesAreReused() throws Exception {
     withOsName(
         WINDOWS_OS_NAME,

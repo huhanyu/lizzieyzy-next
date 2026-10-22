@@ -2513,19 +2513,19 @@ public final class KataGoRuntimeHelper {
         snapshot.withActiveWeight(snapshot.activeWeightPath), true);
   }
 
-  /**
-   * The setup with the bundled CUDA build in place of a TensorRT one. Once TensorRT is enabled, the
-   * setup the dialog holds runs the TensorRT build, and switching back must not keep it.
-   */
+  /** Replace the active TensorRT build with bundled CUDA, including full-package companions. */
   static SetupSnapshot withBundledCudaEngine(SetupSnapshot snapshot) throws IOException {
     if (!isTensorRtBackend(resolveNvidiaBackend(snapshot.enginePath))) {
       return snapshot;
     }
+    Path companion = packagedHumanSlCompanionPath(snapshot.enginePath);
+    if (isVerifiedPackagedHumanSlCompanion(companion)) {
+      return snapshot.withEnginePath(companion);
+    }
     for (Path root : new Path[] {snapshot.appRoot, snapshot.workingDir}) {
       for (Path base : root == null ? new Path[0] : new Path[] {root, root.resolve("app")}) {
         Path engines = base.resolve("engines").resolve("katago");
-        for (String dir :
-            new String[] {"windows-x64", NVIDIA_ENGINE_DIR, NVIDIA50_CUDA_ENGINE_DIR}) {
+        for (String dir : List.of("windows-x64", NVIDIA_ENGINE_DIR, NVIDIA50_CUDA_ENGINE_DIR)) {
           Path candidate = engines.resolve(dir).resolve("katago.exe");
           String backend = resolveNvidiaBackend(candidate);
           if (Files.isRegularFile(candidate)
@@ -6207,6 +6207,9 @@ public final class KataGoRuntimeHelper {
         && isTensorRtBackend(resolveNvidiaBackend(snapshot.enginePath))) {
       candidates.add(snapshot.enginePath);
     }
+    if (snapshot != null && isVerifiedPackagedHumanSlCompanion(snapshot.enginePath)) {
+      candidates.add(snapshot.enginePath.resolveSibling("katago.exe"));
+    }
     addTensorRtEngineCandidates(candidates, runtimeRoot);
     if (snapshot != null) {
       addTensorRtEngineCandidates(candidates, snapshot.appRoot);
@@ -6229,11 +6232,7 @@ public final class KataGoRuntimeHelper {
   }
 
   private static Path tensorRtEngineDir(Path root, String engineDirName) {
-    return root.toAbsolutePath()
-        .normalize()
-        .resolve("engines")
-        .resolve("katago")
-        .resolve(engineDirName);
+    return root.toAbsolutePath().normalize().resolve("engines/katago").resolve(engineDirName);
   }
 
   private static boolean isTensorRtSourceProfileAllowed(SetupSnapshot snapshot) {
@@ -6429,6 +6428,8 @@ public final class KataGoRuntimeHelper {
         if (!Files.isRegularFile(stagingDir.resolve("katago.exe"))) {
           throw new IOException("KataGo TensorRT package did not contain katago.exe");
         }
+        keepPackagedRuntime(targetEngineDir, stagingDir);
+        session.throwIfCancelled();
         revalidateDirectedTensorRtTargetAtMutationBoundary(context);
         if (Files.exists(targetEngineDir)) {
           try {
@@ -6448,7 +6449,6 @@ public final class KataGoRuntimeHelper {
           }
           throw e;
         }
-        keepPackagedRuntime(backupDir, targetEngineDir);
         deleteRecursively(backupDir);
         recordTensorRt(
             MaintenanceObservation.STAGE_INSTALL,
@@ -6469,9 +6469,8 @@ public final class KataGoRuntimeHelper {
   }
 
   /**
-   * The TensorRT full package keeps the NVIDIA runtime in the engine's folder: its DLLs, its
-   * manifest and its licenses. A new engine package carries none of them, so they move over from
-   * the replaced folder instead of being deleted with it, which used to cost a 3.66 GB download.
+   * Stage the full package's runtime DLLs, manifest and licenses before swapping directories. A
+   * failed copy or promotion must leave the old engine and runtime together for recovery.
    */
   static void keepPackagedRuntime(Path replacedDir, Path engineDir) throws IOException {
     if (!Files.isDirectory(replacedDir)) {
@@ -6486,7 +6485,7 @@ public final class KataGoRuntimeHelper {
                 || name.equals("licenses");
         Path target = engineDir.resolve(name);
         if (runtime && !Files.exists(target)) {
-          Files.move(entry, target);
+          copyTensorRtDirectory(entry, target);
         }
       }
     }
