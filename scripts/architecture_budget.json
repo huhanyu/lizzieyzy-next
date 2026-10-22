@@ -16,7 +16,7 @@
     "src/main/java/featurecat/lizzie/rules/SGFParser.java": 5113,
     "src/main/java/featurecat/lizzie/gui/BoardRenderer.java": 4764,
     "src/main/java/featurecat/lizzie/gui/OnlineDialog.java": 4565,
-    "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4193,
+    "src/main/java/featurecat/lizzie/util/KataGoAutoSetupHelper.java": 4083,
     "src/main/java/featurecat/lizzie/Config.java": 4031,
     "src/main/java/featurecat/lizzie/analysis/AnalysisEngine.java": 3273,
     "src/main/java/featurecat/lizzie/gui/WinrateGraph.java": 3189,
@@ -28,12 +28,12 @@
     "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 1654
   },
   "max_static_references": {
-    "Lizzie.config": 6905,
+    "Lizzie.config": 6899,
     "Lizzie.frame": 3226,
     "Lizzie.board": 1950,
     "Lizzie.leelaz": 1089,
     "Lizzie.leelaz2": 115,
-    "Lizzie.engineManager": 156
+    "Lizzie.engineManager": 155
   },
   "max_cross_package_references": {
     "featurecat.lizzie.analysis -> featurecat.lizzie.gui": 35,
