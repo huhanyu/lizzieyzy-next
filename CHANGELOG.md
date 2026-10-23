@@ -4,6 +4,9 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Windows installation and release guidance now distinguishes the NVIDIA full package's bundled
+  runtime from optional downloads, and explains reinstalling the full package when runtime files are missing.
+
 - AI Coach discards late review notifications after a game is closed, preventing the old session from refreshing a detached or replacement interface.
 
 - On Windows, opening the system window menu with Alt+Space no longer stops a live-analysis AI Coach game. The ordinary Space shortcut keeps its existing behavior.
