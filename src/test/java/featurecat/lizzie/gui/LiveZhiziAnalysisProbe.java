@@ -157,15 +157,21 @@ public final class LiveZhiziAnalysisProbe {
       record("checks=FAIL stage=" + stage + " type=" + failure.getClass().getSimpleName());
     } finally {
       try {
-        cleanup();
-        scanSecrets();
+        try {
+          cleanup();
+          scanSecrets();
+        } catch (Throwable failure) {
+          exit = 1;
+          record("cleanup=FAIL type=" + failure.getClass().getSimpleName());
+        }
+        record("result=" + (exit == 0 ? "PASS" : "FAIL"));
       } catch (Throwable failure) {
-        record("cleanup=FAIL type=" + failure.getClass().getSimpleName());
         exit = 1;
+        System.err.println("probe-finalization=FAIL type=" + failure.getClass().getSimpleName());
+      } finally {
+        finished = true;
+        System.exit(exit);
       }
-      record("result=" + (exit == 0 ? "PASS" : "FAIL"));
-      finished = true;
-      System.exit(exit);
     }
   }
 
@@ -198,6 +204,7 @@ public final class LiveZhiziAnalysisProbe {
           return null;
         });
     long start = System.nanoTime();
+    long startedEpochMillis = System.currentTimeMillis();
     boolean nativeClick = mode.equals("native-flash");
     if (nativeClick) record("ready-for-native-flash");
     else SwingUtilities.invokeLater(() -> Lizzie.frame.flashAnalyzeGame(true, false));
@@ -207,6 +214,7 @@ public final class LiveZhiziAnalysisProbe {
         "flash-start-" + run);
     if (nativeClick) {
       start = System.nanoTime();
+      startedEpochMillis = System.currentTimeMillis();
       record("native-flash timing=first-observed-active operator-wait-excluded");
     }
     check(!onEdt(this::modalErrorVisible), "Flash analysis opened a modal error");
@@ -215,16 +223,51 @@ public final class LiveZhiziAnalysisProbe {
         onEdt(() -> Lizzie.board.getHistory().getCurrentHistoryNode().getData().moveNumber)
             == Math.min(4, moves),
         "Flash changed selection");
+    long completedEpochMillis = System.currentTimeMillis();
+    long completeElapsedMillis = elapsed(start);
+    int[] actualVisits =
+        onEdt(
+            () -> {
+              int minimum = Integer.MAX_VALUE;
+              int maximum = 0;
+              BoardHistoryNode node = Lizzie.board.getHistory().getStart();
+              for (int index = 0; index < moves; index++) {
+                node = node.next().orElseThrow();
+                int count = node.getData().getPlayouts();
+                minimum = Math.min(minimum, count);
+                maximum = Math.max(maximum, count);
+              }
+              return new int[] {minimum, maximum};
+            });
     record(
         "flash run="
             + run
             + " elapsedMs="
-            + elapsed(start)
+            + completeElapsedMillis
             + " analyzed="
             + moves
             + " targetVisits="
             + visits);
     assertForeground();
+    JSONObject metrics =
+        new JSONObject()
+            .put("scenario", "flash")
+            .put("run", run)
+            .put("positions", moves)
+            .put("targetVisits", visits)
+            .put("model", RemoteComputeConfig.kataWeightForArgs(RemoteComputeConfig.VIP_ZHIZI_ARGS))
+            .put("startedEpochMillis", startedEpochMillis)
+            .put("completedEpochMillis", completedEpochMillis)
+            .put("foregroundReadyEpochMillis", System.currentTimeMillis())
+            .put("elapsedMillis", completeElapsedMillis)
+            .put("foregroundReadyElapsedMillis", elapsed(start))
+            .put("minimumActualVisits", actualVisits[0])
+            .put("maximumActualVisits", actualVisits[1]);
+    Files.writeString(
+        work.resolve("metrics.jsonl"),
+        metrics + "\n",
+        StandardOpenOption.CREATE,
+        StandardOpenOption.APPEND);
   }
 
   private void automatic(int run) throws Exception {
@@ -432,19 +475,24 @@ public final class LiveZhiziAnalysisProbe {
 
   private void cleanup() throws Exception {
     stage = "cleanup";
-    onEdt(
-        () -> {
-          if (Lizzie.frame != null) {
-            for (Window window : Window.getWindows())
-              if (window instanceof JDialog) window.dispose();
-            if (Lizzie.config.isAutoAna) LizzieFrame.toolbar.stopAutoAna(false, true);
-            AnalysisEngine secondary = Lizzie.frame.analysisEngine;
-            if (secondary != null) secondary.normalQuit();
-          }
-          if (Lizzie.leelaz != null) Lizzie.leelaz.normalQuit();
-          if (Lizzie.config != null) RemoteComputeConfig.clearZhiziToken();
-          return null;
-        });
+    Process clockHelper =
+        onEdt(
+            () -> {
+              Process ownedClockHelper = null;
+              if (Lizzie.frame != null) {
+                Object helper = field(Lizzie.frame, "processClockHelper");
+                if (helper instanceof Process) ownedClockHelper = (Process) helper;
+                Lizzie.frame.shutdownClockHelper();
+                for (Window window : Window.getWindows())
+                  if (window instanceof JDialog) window.dispose();
+                if (Lizzie.config.isAutoAna) LizzieFrame.toolbar.stopAutoAna(false, true);
+                AnalysisEngine secondary = Lizzie.frame.analysisEngine;
+                if (secondary != null) secondary.normalQuit();
+              }
+              if (Lizzie.leelaz != null) Lizzie.leelaz.normalQuit();
+              if (Lizzie.config != null) RemoteComputeConfig.clearZhiziToken();
+              return ownedClockHelper;
+            });
     rememberTransports();
     for (EngineTransport transport : transports) transport.abort();
     check(transports.stream().noneMatch(EngineTransport::isOpen), "Cloud transport still open");
@@ -452,6 +500,10 @@ public final class LiveZhiziAnalysisProbe {
         .ifPresent(runtime -> runtime.stopFullTrace());
     featurecat.lizzie.logging.LoggingRuntime.current().ifPresent(runtime -> runtime.shutdown());
     record("cloud-transports-closed PASS");
+    check(
+        clockHelper == null || clockHelper.waitFor(2, TimeUnit.SECONDS),
+        "Clock helper survived cleanup");
+    record("clock-helper-closed PASS");
   }
 
   private void startDeadlineGuard() {
