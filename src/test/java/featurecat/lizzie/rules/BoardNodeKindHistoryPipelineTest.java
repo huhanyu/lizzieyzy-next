@@ -90,6 +90,7 @@ class BoardNodeKindHistoryPipelineTest {
       move.coordinate = "A1";
       move.playouts = 100;
       move.winrate = 61.0;
+      move.isKataData = true;
 
       BoardData pdaRefresh = BoardData.empty(BOARD_SIZE, BOARD_SIZE);
       pdaRefresh.setPlayouts2(100);

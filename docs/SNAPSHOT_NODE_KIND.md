@@ -128,6 +128,9 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 - detached 与 live 导入都把 `RE` 保存为 `GameInfo.result`；不能将结果伪造成根或末节点注释，保存重开保持真实注释与对局结果。
 - `LZ` / `LZ2` / `LZOP` / `LZOP2` 单行 header-only analysis payload 视为完整 payload；缺少第二行 PV 时，`parseSgf(...)`、`setHistory(...)` adopt、`saveToString(...)` 与 round-trip 仍导出等价 payload。
 - header 内 `engineName`、`playouts`、`scoreMean`、`scoreStdev`、`pda`（双引擎槽位含 `engineName2`、`scoreMean2`、`scoreStdev2`、`pda2`）在 parse、`setHistory(...)` adopt、`saveToString(...)`、round-trip 全链路保留。
+- 每个分析槽位独立保存 `wrn/wrnKnown` 或 `wrn2/wrnKnown2`。只有整份有效 Kata 分析被采纳时才记录该来源引擎的普通分析广度；拒绝的输出与 ownership-only 补全不改写参数。clone、同步、restore 与 SNAPSHOT 转移保留数值及已知性，清空分析同时清空已知性；无法确定来源时不从当前工具栏补值。
+- `wrn=<有限数值>` 位于六个完整传统 header slots 之后，与 `rootVisits=` 并存，合法范围为 `[0,2]`。已知零值也写出；缺失或非法值保持 unknown。header-only、双槽及 detached parse/adopt/save 均遵守此规则，不改变 PV、order、edgeVisits 或 ownership 的语义。
+- 普通、人机、第二引擎和引擎对局摘要分别显示非零 PDA 与已知非零 WRN，二者互不遮蔽；小数广度不截断，unknown 不猜测。重新生成摘要替换旧摘要，保留用户注释。
 - `setHistory(...)` adopt detached history 时，board 级 Kata 状态从 adopted history 重新推导：
   - history 任意节点存在可靠 Kata analysis payload（`isKataData` / `isKataData2`，或 best-move 项带 `isKataData=true`）时，`isKataBoard=true`。
   - 残留 `scoreMean` / `scoreMean2` 数值本身不作为 Kata board 判定信号。
@@ -158,6 +161,7 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 - 普通 KataGo 启动的 PDA/WRN 回读由 `Leelaz` 持有独立轮次，绑定既有 numbered pending response 与 reader incarnation；规则 operation 的成功、失败和超时不结算参数轮次。startup-post 查询仍遵守原有实际写出／失败关闭边界。
 - PDA/WRN 仅在同一有效轮次两项有限数值均成功回读后，通过现有工具栏路径发布完整一对；回复次序不影响结果，合法零值不是空白。错误、格式错误、缺失或超时不以自动载入配置／默认零补齐成功。取消、替换及旧 timeout 不影响后继轮次；EDT 发布时复验原前台 generation、reader 与轮次，隔离启动不得更新全局显示。
 - 普通分析广度只依赖当前 KataGo 的可用性与普通操作资格，不要求快速分析独占租约的完整命令集。启动、切换和重启在最终 lifecycle endpoint 释放后刷新控件；EDT 执行时重新读取当前前台身份及门禁，不缓存旧的 enabled 值。刷新只投影 enabled 状态，保留勾选与数值，不写配置、不发参数命令、不启动分析；独占任务、未恢复状态、Fox 所有权及 genmove 禁用约束保持有效。
+- 普通工具栏编辑、勾选和高级设置共用有效 WRN 更新入口：未勾选时有效值为零，文本保留草稿。setter 仍经过既有普通队列；物理写出时更新运行时值并退休旧分析来源，入队但尚未写出的值不能标记旧搜索。setter ACK 不作为参数回读，启动参数回读和引擎对局协议保持独立。
 - 手动终止 genmove 对局后，空 numbered ACK 仍是非终态；迟到的合法 analyze `play` 只结清原 reader binding 的 pending handler，不追加应用的真实 `MOVE/PASS` 或比赛结果。缺失终态继续按既有五秒物理请求 watchdog 回收。
 - 已停止对局的前台引擎在物理请求退役后，由 `EngineManager` 异步冻结并执行当前应用盘面的 root/exact 恢复；退役屏障保留到既有稳定 board synchronization fence 完成。恢复命令仅获该 lifecycle owner 对原 binding 的写入授权，失败将原目标标为 unavailable，替换实例不受旧归还影响；手动停止不自动恢复 ponder。
 - 对局中所有贴目入口统一提交给当前 engine-game owner；界面区分已确认贴目与待应用目标，连续输入只保留最新目标，不修改 frozen opening plan 或后续批次默认值。GENMOVE 已发出的当前合法手须先完成并由对手接受，再开始贴目切换。

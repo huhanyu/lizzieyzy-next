@@ -5955,34 +5955,7 @@ public class Menu extends JMenuBar {
 
     chkWRN = new JFontCheckBox();
     chkWRN.setToolTipText(resourceBundle.getString("Menu.chkWRN.toolTopText"));
-    chkWRN.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            if (!breadthAdmissionAvailable()) return;
-            Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
-            if (chkWRN.isSelected()) {
-              txtWRN.setEnabled(true);
-              double wrn = 0;
-              try {
-                wrn = Double.parseDouble(txtWRN.getText());
-              } catch (NumberFormatException s) {
-                // TODO Auto-generated catch block
-              }
-              Lizzie.config.txtKataEngineWRN = String.valueOf(wrn);
-              Lizzie.leelaz.sendCommand("kata-set-param analysisWideRootNoise " + wrn);
-              if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
-            } else {
-              txtWRN.setEnabled(false);
-              if (txtWRN.getBackground() == Color.RED) {
-                txtWRN.setText("");
-                txtWRN.setBackground(AppleStyleSupport.validFieldBackground());
-              }
-              Lizzie.leelaz.sendCommand("kata-set-param analysisWideRootNoise 0");
-              if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
-            }
-            Lizzie.config.chkKataEngineWRN = chkWRN.isSelected();
-          }
-        });
+    chkWRN.addActionListener(e -> applyToolbarWrnSelection());
     // chkWRN.setSelected(Lizzie.config.autoLoadKataEngineWRN);
     lblWRN = new JFontLabel(resourceBundle.getString("Menu.lblWRN")); // ("分析广度拓展");
     txtWRN = new JFontTextField();
@@ -9560,20 +9533,33 @@ public class Menu extends JMenuBar {
         && engine.canSetAnalysisWideRootNoise();
   }
 
-  /** Applies the toolbar breadth field to the primary engine outside engine games. */
-  private void applyToolbarWrnText() {
-    if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
-    double wrn = 0;
-    boolean error = false;
-    try {
-      wrn = Double.parseDouble(txtWRN.getText());
-    } catch (NumberFormatException s) {
-      error = true;
+  /** Applies the toolbar breadth check box: the typed draft when selected, zero when cleared. */
+  void applyToolbarWrnSelection() {
+    if (!breadthAdmissionAvailable()) return;
+    Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
+    boolean enabled = chkWRN.isSelected();
+    txtWRN.setEnabled(enabled);
+    if (enabled) {
+      Lizzie.config.txtKataEngineWRN = String.valueOf(OrdinaryBreadth.draftValue(txtWRN.getText()));
+    } else if (txtWRN.getBackground() == Color.RED) {
+      txtWRN.setText("");
+      txtWRN.setBackground(AppleStyleSupport.validFieldBackground());
     }
-    if (error || wrn < 0 || wrn > 2) txtWRN.setBackground(AppleStyleSupport.errorFieldBackground());
-    else txtWRN.setBackground(AppleStyleSupport.validFieldBackground());
-    Lizzie.config.txtKataEngineWRN = String.valueOf(wrn);
-    Lizzie.leelaz.sendCommand("kata-set-param analysisWideRootNoise " + wrn);
+    OrdinaryBreadth.apply(Lizzie.leelaz, enabled, txtWRN.getText());
+    if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
+    Lizzie.config.chkKataEngineWRN = enabled;
+  }
+
+  /** Applies the toolbar breadth field; a cleared check box keeps the draft unapplied. */
+  void applyToolbarWrnText() {
+    if (ShouldIgnoreDtChange || !breadthAdmissionAvailable()) return;
+    String draft = txtWRN.getText();
+    txtWRN.setBackground(
+        OrdinaryBreadth.validDraft(draft)
+            ? AppleStyleSupport.validFieldBackground()
+            : AppleStyleSupport.errorFieldBackground());
+    Lizzie.config.txtKataEngineWRN = String.valueOf(OrdinaryBreadth.draftValue(draft));
+    OrdinaryBreadth.apply(Lizzie.leelaz, chkWRN.isSelected(), draft);
     Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
     if (Lizzie.leelaz.isPondering()) Lizzie.leelaz.ponder();
     Lizzie.config.uiConfig.put("txt-kata-engine-wrn", Lizzie.config.txtKataEngineWRN);

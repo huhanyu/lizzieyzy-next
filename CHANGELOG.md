@@ -4,6 +4,8 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Analysis comments now show PDA and known nonzero analysis breadth independently, including small breadth values. Both engine slots retain breadth metadata through SGF save/load and history copies; older records without that metadata remain unknown. Ordinary breadth edits, checkbox changes and advanced settings share the effective value without relabeling results from the previous search.
+
 - Built-in Zhizi whole-game overview with the default 500-visit budget reduces sequential network waits between positions and requests more frequent analysis reports. It keeps the same analysis command, model, requested visits and full candidate variations; errors and cancellation still restore the foreground position before reuse.
 
 - Opening a game record before starting any engine now allows clicking and dragging the winrate graph to navigate moves. Offline imports retain their rules without waiting for an engine reader; stale imports still cannot complete after the selected engine or game changes.

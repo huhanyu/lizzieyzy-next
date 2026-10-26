@@ -4,12 +4,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.Leelaz;
+import featurecat.lizzie.rules.SGFParser;
 import java.awt.Dialog;
 import java.awt.Robot;
 import java.awt.Window;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
@@ -128,11 +131,18 @@ public final class BreadthControlsAcceptanceIT {
             LizzieFrame.menu.txtWRN.setText("0.35");
           });
       assertParameter(engine, work, "0.35");
+      verifyRecordedBreadth(engine, work, "0.04");
+      verifyRecordedBreadth(engine, work, "0.1");
+      SwingUtilities.invokeAndWait(() -> LizzieFrame.menu.txtWRN.setText("0.35"));
       SwingUtilities.invokeAndWait(
           () -> {
             LizzieFrame.menu.chkWRN.doClick();
             assertFalse(LizzieFrame.menu.chkWRN.isSelected());
             assertFalse(LizzieFrame.menu.txtWRN.isEnabled());
+            Lizzie.frame.clearWRNforGame(true);
+            Lizzie.frame.restoreWRN(true);
+            assertFalse(LizzieFrame.menu.chkWRN.isSelected());
+            assertEquals("0.35", LizzieFrame.menu.txtWRN.getText());
           });
       assertParameter(engine, work, "0");
       SwingUtilities.invokeAndWait(
@@ -178,7 +188,7 @@ public final class BreadthControlsAcceptanceIT {
           result,
           "PASS initial="
               + args[2]
-              + " checked/edit=0.35 unchecked=0 rechecked=0.35 restart=0.4 switch=0.45\n");
+              + " checked/edit=0.35 recorded/saved/reopened=0.04,0.1 unchecked=0 rechecked=0.35 restart=0.4 switch=0.45\n");
       Lizzie.leelaz.sendCommand("quit");
       System.exit(0);
     } catch (Throwable failure) {
@@ -188,28 +198,99 @@ public final class BreadthControlsAcceptanceIT {
     }
   }
 
+  private static void verifyRecordedBreadth(Leelaz engine, Path work, String value)
+      throws Exception {
+    double expected = Double.parseDouble(value);
+    SwingUtilities.invokeAndWait(() -> LizzieFrame.menu.txtWRN.setText(value));
+    assertParameter(engine, work, value);
+    SwingUtilities.invokeAndWait(engine::ponder);
+    awaitEdt(
+        () ->
+            Lizzie.board.getData().getPlayouts() > 0
+                && Lizzie.board.getData().wrnKnown
+                && Lizzie.board.getData().wrn == expected,
+        "fresh analysis breadth=" + value);
+    SwingUtilities.invokeAndWait(
+        () -> {
+          if (engine.isPondering()) engine.togglePonder();
+          SGFParser.appendComment();
+          assertTrue(
+              Lizzie.board
+                  .getData()
+                  .comment
+                  .contains(Lizzie.resourceBundle.getString("SGFParse.wrn") + value));
+          Lizzie.frame.appendComment();
+          Lizzie.frame.refresh();
+        });
+    awaitEdt(
+        () ->
+            visibleCommentContains(
+                Lizzie.frame.getContentPane(),
+                Lizzie.resourceBundle.getString("SGFParse.wrn") + value),
+        "visible breadth=" + value);
+    new Robot().waitForIdle();
+    ImageIO.write(
+        new Robot().createScreenCapture(Lizzie.frame.getBounds()),
+        "png",
+        work.resolve("analysis-wrn-" + value + ".png").toFile());
+    Path saved = work.resolve("analysis-wrn-" + value + ".sgf");
+    SwingUtilities.invokeAndWait(
+        () -> {
+          try {
+            SGFParser.save(Lizzie.board, saved.toString());
+            assertTrue(SGFParser.load(saved.toString(), false));
+            assertTrue(Lizzie.board.getData().wrnKnown);
+            assertEquals(expected, Lizzie.board.getData().wrn);
+            SGFParser.appendComment();
+            assertTrue(
+                Lizzie.board
+                    .getData()
+                    .comment
+                    .contains(Lizzie.resourceBundle.getString("SGFParse.wrn") + value));
+          } catch (java.io.IOException failure) {
+            throw new java.io.UncheckedIOException(failure);
+          }
+        });
+    awaitEdt(() -> engine.canSetAnalysisWideRootNoise(), "reopened board ready");
+  }
+
   private static void assertParameter(Leelaz engine, Path work, String expected) throws Exception {
-    int before = gtp(work).length();
+    Map<Path, String> before = gtp(work);
     engine.sendCommand("kata-get-param analysisWideRootNoise");
     await(
         () ->
-            gtp(work)
-                .substring(before)
-                .matches(
-                    "(?s).*Controller: kata-get-param analysisWideRootNoise\\R[^\\n]*: = "
-                        + java.util.regex.Pattern.quote(expected)
-                        + "(?:\\.0+)?\\s.*"),
+            gtp(work).entrySet().stream()
+                .anyMatch(
+                    entry ->
+                        entry
+                            .getValue()
+                            .substring(before.getOrDefault(entry.getKey(), "").length())
+                            .matches(
+                                "(?s).*Controller: kata-get-param analysisWideRootNoise\\R[^\\n]*: = "
+                                    + java.util.regex.Pattern.quote(expected)
+                                    + "(?:\\.0+)?\\s.*")),
         "engine breadth=" + expected);
   }
 
-  private static String gtp(Path work) {
+  private static Map<Path, String> gtp(Path work) {
     try (var paths = Files.list(work.resolve("gtp-log"))) {
-      StringBuilder text = new StringBuilder();
-      for (Path path : paths.sorted().toList()) text.append(Files.readString(path));
-      return text.toString();
+      Map<Path, String> text = new HashMap<>();
+      for (Path path : paths.toList()) text.put(path, Files.readString(path));
+      return text;
     } catch (java.io.IOException failure) {
       throw new IllegalStateException(failure);
     }
+  }
+
+  private static boolean visibleCommentContains(java.awt.Container parent, String expected) {
+    for (java.awt.Component child : parent.getComponents()) {
+      if (child instanceof javax.swing.JTextPane pane
+          && pane.isShowing()
+          && pane.getText().contains(expected)) return true;
+      if (child instanceof java.awt.Container container
+          && visibleCommentContains(container, expected)) return true;
+    }
+    return false;
   }
 
   private static void awaitEdt(BooleanSupplier condition, String label) throws Exception {

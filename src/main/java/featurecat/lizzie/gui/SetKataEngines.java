@@ -898,7 +898,7 @@ public class SetKataEngines extends JDialog {
       loadedWrn = wrnDraft;
       Lizzie.config.chkKataEngineWRN = editWrn;
       Lizzie.config.txtKataEngineWRN = wrn;
-      engine.sendCommand("kata-set-param analysisWideRootNoise " + (editWrn ? wrn : "0"));
+      OrdinaryBreadth.apply(engine, editWrn, wrn);
       if (editWrn) Lizzie.board.clearBestMovesAfter(Lizzie.board.getHistory().getStart());
       LizzieFrame.menu.setUseWrn(editWrn, wrn);
     }

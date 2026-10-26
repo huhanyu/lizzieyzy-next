@@ -6863,38 +6863,8 @@ public class Leelaz {
         || normalized.startsWith("genmove ");
   }
 
-  private enum AnalysisStateMutation {
-    NONE,
-    RESET_PAYLOAD,
-    RESET_PAYLOAD_AND_SCORE,
-    RETAIN_PAYLOAD
-  }
-
-  /** Position mutations and the local payload policy linearized with their physical write. */
   private static AnalysisStateMutation analysisStateMutation(String command) {
-    if (command == null) {
-      return AnalysisStateMutation.NONE;
-    }
-    String normalized = command.trim().toLowerCase(Locale.ROOT);
-    if (normalized.equals("clear_board")) {
-      return AnalysisStateMutation.RESET_PAYLOAD_AND_SCORE;
-    }
-    if (normalized.startsWith("komi ")) {
-      return AnalysisStateMutation.RETAIN_PAYLOAD;
-    }
-    if (normalized.startsWith("play ")
-        || normalized.equals("undo")
-        || normalized.startsWith("loadsgf ")
-        || normalized.equals("set_position")
-        || normalized.startsWith("set_position ")
-        || normalized.startsWith("boardsize ")
-        || normalized.startsWith("rectangular_boardsize ")
-        || normalized.startsWith("fixed_handicap ")
-        || normalized.startsWith("place_free_handicap ")
-        || normalized.startsWith("set_free_handicap ")) {
-      return AnalysisStateMutation.RESET_PAYLOAD;
-    }
-    return AnalysisStateMutation.NONE;
+    return AnalysisStateMutation.forCommand(command);
   }
 
   /** Commands that fully replace the engine position and therefore start a clean dependency. */
@@ -10580,6 +10550,15 @@ public class Leelaz {
   //		      //			}
   //	}
 
+  /** Ordinary breadth metadata changes only when its admitted command is physically written. */
+  public void setOrdinaryWrn(double value) {
+    sendCommand(
+        "kata-set-param analysisWideRootNoise " + value,
+        new OrdinaryWrnCommand(value),
+        false,
+        false);
+  }
+
   public void setPda(String pda) {
     try {
       this.pda = Double.parseDouble(pda);
@@ -13147,7 +13126,10 @@ public class Leelaz {
     String commandLine = buildCommandLine(command, pendingHandler.responseCommandId);
     BufferedOutputStream currentOutputStream = outputStream;
     ReaderStreamBinding outputBinding = currentReaderStreamBinding();
-    AnalysisStateMutation stateMutation = analysisStateMutation(command);
+    AnalysisStateMutation stateMutation =
+        queuedCommand.onResponse instanceof OrdinaryWrnCommand
+            ? AnalysisStateMutation.RESET_PAYLOAD
+            : analysisStateMutation(command);
     AnalysisOutputOwnershipPublication analysisOutputPublication = null;
     EngineManager.TransactionlessAnalysisWriteLease transactionlessAnalysisWrite = null;
     EngineManager.EngineGameAnalysisWriteLease exactAnalysisWrite = null;
@@ -13294,6 +13276,8 @@ public class Leelaz {
                 // crossing this boundary, and caller-side cleanup cannot retire a queued successor.
                 bindAnalysisStateLineageAtPhysicalWrite(queuedCommand, outputBinding);
                 applyAnalysisStateMutation(stateMutation);
+                if (queuedCommand.onResponse instanceof OrdinaryWrnCommand update)
+                  wrn = update.value();
                 if (exactStateWrite != null) {
                   // Exact terminal cancellation must never wait for a blocked transport flush.
                   // Release binding before transaction: otherwise a parser can acquire the

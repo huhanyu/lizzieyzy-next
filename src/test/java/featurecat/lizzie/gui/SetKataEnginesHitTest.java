@@ -273,6 +273,7 @@ class SetKataEnginesHitTest {
       if (editWrn) {
         assertTrue(sent.contains("kata-set-param analysisWideRootNoise 0.6"), sent);
         assertEquals("0.6", Lizzie.config.txtKataEngineWRN);
+        assertEquals(0.6, engine.wrn, "later analysis records the breadth that was sent");
       } else {
         assertFalse(sent.contains("analysisWideRootNoise"), sent);
       }
@@ -304,6 +305,7 @@ class SetKataEnginesHitTest {
     var previousFrame = Lizzie.frame;
     var previousEngine = Lizzie.leelaz;
     var previousConsole = Lizzie.gtpConsole;
+    var previousMenu = LizzieFrame.menu;
     ResourceBundle previousBundle = Lizzie.resourceBundle;
     Leelaz engine = null;
     SetKataEngines[] dialog = new SetKataEngines[1];
@@ -316,6 +318,7 @@ class SetKataEnginesHitTest {
       sun.misc.Unsafe unsafe = (sun.misc.Unsafe) unsafeField.get(null);
       Lizzie.frame = (QuietFrame) unsafe.allocateInstance(QuietFrame.class);
       Lizzie.gtpConsole = (QuietConsole) unsafe.allocateInstance(QuietConsole.class);
+      LizzieFrame.menu = (QuietMenu) unsafe.allocateInstance(QuietMenu.class);
       engine = new Leelaz("katago gtp");
       ByteArrayOutputStream output = new ByteArrayOutputStream();
       engineHook(engine, "installFreshCommandOutputForTest", java.io.OutputStream.class, output);
@@ -375,6 +378,7 @@ class SetKataEnginesHitTest {
       Lizzie.frame = previousFrame;
       Lizzie.setPrimaryEngine(previousEngine);
       Lizzie.gtpConsole = previousConsole;
+      LizzieFrame.menu = previousMenu;
       Lizzie.resourceBundle = previousBundle;
     }
   }
