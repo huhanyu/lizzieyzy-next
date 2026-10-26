@@ -234,6 +234,8 @@ class SetKataEnginesHitTest {
       engine.started = true;
       engine.isLoaded = true;
       engine.isKatago = true;
+      engine.wrn = 0.3;
+      engine.pda = 0.5;
       Lizzie.setPrimaryEngine(engine);
       var set = engine.captureRuntimeSearchThreads().apply(10);
       engineHook(
@@ -489,6 +491,8 @@ class SetKataEnginesHitTest {
       engine.started = true;
       engine.isLoaded = true;
       engine.isKatago = true;
+      engine.wrn = 0.3;
+      engine.pda = 0.5;
       Lizzie.setPrimaryEngine(engine);
       SwingUtilities.invokeAndWait(
           () -> {

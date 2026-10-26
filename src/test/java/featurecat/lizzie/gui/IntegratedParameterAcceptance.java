@@ -175,6 +175,7 @@ final class IntegratedParameterAcceptance {
     Files.writeString(
         work.resolve("ordinary-preferences-after.json"), new JSONObject(preferences()).toString(2));
     screenshot("ordinary-restored");
+    verifyCurrentParameterDialog(wrn, pda, "restored-advanced-parameters");
     edt(
         () -> {
           Lizzie.frame.newEmptyBoard();
@@ -239,6 +240,65 @@ final class IntegratedParameterAcceptance {
     record(
         "ordinary-eligibility-values-preferences-restored=PASS\nproduction-sgf-save-open-summary-wrn-manual-comment=PASS\nsgf="
             + sgf);
+    int otherIndex = foreground.currentEngineN() == 0 ? 1 : 0;
+    Leelaz other = Lizzie.engineManager.engineList.get(otherIndex);
+    double otherWrn = other.wrn;
+    double otherPda = other.pda;
+    edt(
+        () -> {
+          Lizzie.engineManager.switchEngine(otherIndex, true);
+          return null;
+        });
+    await(
+        () ->
+            Lizzie.leelaz == other
+                && other.canSetAnalysisWideRootNoise()
+                && ordinaryValues(otherWrn, otherPda),
+        30,
+        "other restored engine selected");
+    ordinaryEngine = other;
+    verifyCurrentParameterDialog(otherWrn, otherPda, "switched-advanced-parameters");
+  }
+
+  private void verifyCurrentParameterDialog(double wrn, double pda, String label) throws Exception {
+    int[][] writes = parameterWrites();
+    Map<String, String> saved = preferences();
+    SetKataEngines dialog =
+        edt(
+            () -> {
+              SetKataEngines opened = new SetKataEngines();
+              opened.setVisible(true);
+              String[] names = {"WRN", "PDA"};
+              double[] values = {wrn, pda};
+              for (int i = 0; i < names.length; i++) {
+                Field checkField = SetKataEngines.class.getDeclaredField("chkEdit" + names[i]);
+                Field textField = SetKataEngines.class.getDeclaredField("txt" + names[i]);
+                checkField.setAccessible(true);
+                textField.setAccessible(true);
+                javax.swing.JCheckBox check = (javax.swing.JCheckBox) checkField.get(opened);
+                JTextField text = (JTextField) textField.get(opened);
+                assertEquals(values[i] != 0, check.isSelected(), names[i] + " enabled state");
+                assertEquals(values[i], Double.parseDouble(text.getText()), 1e-9, names[i]);
+              }
+              return opened;
+            });
+    screenshot(label);
+    edt(
+        () -> {
+          Field apply = SetKataEngines.class.getDeclaredField("btnApply");
+          apply.setAccessible(true);
+          ((javax.swing.JButton) apply.get(dialog)).doClick();
+          assertFalse(dialog.isVisible(), "Unedited save completes");
+          dialog.dispose();
+          return null;
+        });
+    assertEquals(wrn, EngineGameParametersAcceptanceIT.readParameter(ordinaryEngine, WRN), 1e-9);
+    assertEquals(pda, EngineGameParametersAcceptanceIT.readParameter(ordinaryEngine, PDA), 1e-9);
+    int[][] after = parameterWrites();
+    assertArrayEquals(writes[0], after[0], "Unedited dialog does not set first engine parameters");
+    assertArrayEquals(writes[1], after[1], "Unedited dialog does not set second engine parameters");
+    assertEquals(saved, preferences(), "Unedited dialog preserves ordinary preferences");
+    record(label + "=PASS wrn=" + wrn + " pda=" + pda + " setterDelta=0");
   }
 
   private String ordinaryAnalysis(double wrn, double pda, String label) throws Exception {
@@ -711,8 +771,9 @@ final class IntegratedParameterAcceptance {
             () -> {
               Rectangle frame = Lizzie.frame.getBounds();
               for (Window window : Window.getWindows())
-                if (window instanceof EngineGameParametersDialog && window.isShowing())
-                  frame = frame.union(window.getBounds());
+                if ((window instanceof EngineGameParametersDialog
+                        || window instanceof SetKataEngines)
+                    && window.isShowing()) frame = frame.union(window.getBounds());
               return frame;
             });
     Path file = Files.createDirectories(work.resolve("screenshots")).resolve(name + ".png");

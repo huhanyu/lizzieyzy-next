@@ -28,7 +28,7 @@
     "src/main/java/featurecat/lizzie/gui/NewHumanSlGameDialog.java": 1654
   },
   "max_static_references": {
-    "Lizzie.config": 6841,
+    "Lizzie.config": 6835,
     "Lizzie.frame": 3212,
     "Lizzie.board": 1946,
     "Lizzie.leelaz": 1059,
