@@ -12964,7 +12964,7 @@ public class LizzieFrame extends JFrame {
             ? null
             : "FunctionSearch.unavailable.game";
       case "engine.pda", "toolbar.wrn":
-        if (EngineGamePresentation.current().startingOrPlaying())
+        if (EngineGameParameterControls.ordinaryHidden())
           return "AnalysisSettings.reuseStatus.engine_game";
         if (!isRulesEngineReady(Lizzie.leelaz)) return "LizzieFrame.setParamNoEngineHint";
         return Lizzie.leelaz.isKatago ? null : "SetKataRules.notKataGoHint";

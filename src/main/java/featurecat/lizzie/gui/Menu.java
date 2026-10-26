@@ -5735,7 +5735,7 @@ public class Menu extends JMenuBar {
           public void keyReleased(KeyEvent e) {
             String text = txtPDA.getText().trim();
             if (featurecat.lizzie.fox.FoxLiveSession.submitPda(text)) return;
-            if (EngineGameDesktop.batchActive()) return;
+            if (EngineGameParameterControls.ordinaryHidden()) return;
             if (text.isEmpty() || text.equals("-") || text.equals(".")) return;
             try {
               double value = Double.parseDouble(text);
@@ -5886,14 +5886,9 @@ public class Menu extends JMenuBar {
     more2.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
-            if (setPda == null) {
-              setPda = new SetKataPDA();
-              setPda.setVisible(true);
-            } else {
-              setPda.dispose();
-              setPda = new SetKataPDA();
-              setPda.setVisible(true);
-            }
+            if (setPda != null) setPda.dispose();
+            setPda = new SetKataPDA();
+            setPda.setVisible(true);
           }
         });
 
@@ -5991,7 +5986,7 @@ public class Menu extends JMenuBar {
               txtGfPDA.setEnabled(chkPDA.isSelected());
               return;
             }
-            if (EngineGameDesktop.batchActive()) return;
+            if (EngineGameParameterControls.ordinaryHidden()) return;
             // Lizzie.board.clearbestmovesafter(Lizzie.board.getHistory().getStart());
             if (chkPDA.isSelected()) {
               txtGfPDA.setEnabled(true);
@@ -6573,6 +6568,7 @@ public class Menu extends JMenuBar {
   /** Reveals the original toolbar surface; the destination's value and action are untouched. */
   boolean locateTopFunction(String id) {
     if (!id.startsWith("toolbar.") && !"engine.pda".equals(id)) return false;
+    if (EngineGameParameterControls.blocksSearch(id)) return false;
     switch (id) {
       case "toolbar.force-allow",
           "toolbar.force-avoid",
@@ -6831,9 +6827,12 @@ public class Menu extends JMenuBar {
     saveLoad.setMargin(new Insets(0, 0, 0, 0));
     startPos =
         Lizzie.config.isFrameFontSmall() ? 83 : (Lizzie.config.isFrameFontMiddle() ? 98 : 113);
-    EngineGameSnapshot snapshot = EngineGamePresentation.current();
-    if (showPDA
-        || (snapshot.playing() && EngineGamePresentation.participantHasKataGoPda(snapshot))) {
+    boolean ordinaryVisible = !EngineGameParameterControls.ordinaryHidden();
+    boolean kataGo = Lizzie.leelaz != null && Lizzie.leelaz.isKatago;
+    lblPDASpinner.setVisible(false);
+    txtPDA.setVisible(false);
+    more2.setVisible(false);
+    if (ordinaryVisible && showPDA) {
       if (Lizzie.config.isChinese) {
         lblPDASpinner.setBounds(
             startPos,
@@ -6877,7 +6876,7 @@ public class Menu extends JMenuBar {
       txtGfPDA.setVisible(false);
       chkPDA.setVisible(false);
     } else {
-      if (Lizzie.config.showPDAInMenu && Lizzie.leelaz != null && Lizzie.leelaz.isKatago) {
+      if (ordinaryVisible && Lizzie.config.showPDAInMenu && kataGo) {
         chkPDA.setBounds(
             startPos,
             Lizzie.config.isFrameFontSmall() ? 0 : (Lizzie.config.isFrameFontMiddle() ? 1 : 2),
@@ -6926,7 +6925,7 @@ public class Menu extends JMenuBar {
       }
     }
 
-    if (Lizzie.config.showWRNInMenu && Lizzie.leelaz != null && Lizzie.leelaz.isKatago) {
+    if (ordinaryVisible && Lizzie.config.showWRNInMenu && kataGo) {
       chkWRN.setBounds(
           startPos,
           Lizzie.config.isFrameFontSmall() ? 0 : (Lizzie.config.isFrameFontMiddle() ? 1 : 2),
@@ -6960,15 +6959,14 @@ public class Menu extends JMenuBar {
 
   public void updateMenuStatusForEngine() {
     SwingUtilities.invokeLater(
-        new Thread() {
-          public void run() {
-            if (Lizzie.config.showDoubleMenu && Lizzie.frame != null) {
-              setPdaAndWrnByEngineForDouble();
-              setBtnRankMark();
-              return;
-            }
-            updateSingleMenu();
+        () -> {
+          if (komiPanel == null) return;
+          if (Lizzie.config.showDoubleMenu && Lizzie.frame != null) {
+            setPdaAndWrnByEngineForDouble();
+            setBtnRankMark();
+            return;
           }
+          updateSingleMenu();
         });
   }
 
@@ -9527,7 +9525,7 @@ public class Menu extends JMenuBar {
     LizzieFrame frame = Lizzie.frame;
     Leelaz engine = Lizzie.leelaz;
     return !featurecat.lizzie.fox.FoxLiveSession.ownsEngine()
-        && !EngineGameDesktop.batchActive()
+        && !EngineGameParameterControls.ordinaryHidden()
         && (frame == null || !frame.isPlayingAgainstLeelaz)
         && engine != null
         && engine.canSetAnalysisWideRootNoise();
@@ -9569,7 +9567,7 @@ public class Menu extends JMenuBar {
   private void applyToolbarPdaText() {
     if (ShouldIgnoreDtChange) return;
     if (featurecat.lizzie.fox.FoxLiveSession.submitPda(txtGfPDA.getText())) return;
-    if (EngineGameDesktop.batchActive()) return;
+    if (EngineGameParameterControls.ordinaryHidden()) return;
     double pda = 0;
     boolean error = false;
     try {
@@ -9596,7 +9594,10 @@ public class Menu extends JMenuBar {
     SwingUtilities.invokeLater(
         () -> {
           Menu menu = LizzieFrame.menu;
-          if (menu != null) menu.refreshBreadthAdmission();
+          if (menu != null) {
+            menu.refreshBreadthAdmission();
+            menu.updateMenuStatusForEngine();
+          }
         });
   }
 
@@ -9606,23 +9607,16 @@ public class Menu extends JMenuBar {
       return;
     }
     if (chkWRN == null || txtWRN == null) return;
-    boolean available = breadthAdmissionAvailable();
-    chkWRN.setEnabled(available);
-    txtWRN.setEnabled(available && chkWRN.isSelected());
-    // An engine game keeps these controls in place but locked: its participants take parameters
-    // only from the game panel.
-    boolean engineGame = EngineGameDesktop.batchActive();
-    if (chkPDA == null || txtGfPDA == null || txtPDA == null) return;
-    Leelaz engine = Lizzie.leelaz;
-    boolean pdaUsable =
-        !engineGame
-            && (!Lizzie.config.showDoubleMenu
-                || (engine != null && engine.isLoaded() && engine.isKatago));
-    chkPDA.setEnabled(pdaUsable);
-    txtGfPDA.setEnabled(pdaUsable && chkPDA.isSelected());
-    txtPDA.setEnabled(!engineGame);
-    EngineGameParameterControls.explainToolbarLock(
-        engineGame, chkWRN, txtWRN, chkPDA, txtGfPDA, txtPDA);
+    EngineGameParameterControls.refreshToolbarAdmission(
+        breadthAdmissionAvailable(),
+        Lizzie.config.showDoubleMenu,
+        Lizzie.leelaz,
+        chkWRN,
+        txtWRN,
+        chkPDA,
+        txtGfPDA,
+        txtPDA,
+        more2);
   }
 
   public void setPdaAndWrn(double pda, double wrn) {
@@ -9650,12 +9644,12 @@ public class Menu extends JMenuBar {
   }
 
   public void setPdaAndWrnByEngineForDouble() {
+    lblPDASpinner.setVisible(false);
     boolean loaded = Lizzie.leelaz != null && Lizzie.leelaz.isLoaded();
     boolean kataGo = Lizzie.leelaz != null && Lizzie.leelaz.isKatago;
     boolean needRemoveS = true;
-    EngineGameSnapshot snapshot = EngineGamePresentation.current();
-    if (showPDA
-        || (snapshot.playing() && EngineGamePresentation.participantHasKataGoPda(snapshot))) {
+    boolean ordinaryVisible = !EngineGameParameterControls.ordinaryHidden();
+    if (ordinaryVisible && showPDA) {
       lblCustomPda.setVisible(true);
       txtPDA.setVisible(true);
       more2.setVisible(true);
@@ -9669,13 +9663,16 @@ public class Menu extends JMenuBar {
       customPDAMorePanel.setVisible(false);
       boolean showPda =
           ToolbarSizing.showsKataGoFields(
-              Lizzie.config.showPDAInMenu, EngineManager.isEmpty, loaded, kataGo);
+              ordinaryVisible && Lizzie.config.showPDAInMenu,
+              EngineManager.isEmpty,
+              loaded,
+              kataGo);
       ToolbarSizing.showFieldGroup(showPda, pdaFieldPanel, chkPDA, txtGfPDA);
       if (showPda) needRemoveS = false;
     }
     boolean showWrn =
         ToolbarSizing.showsKataGoFields(
-            Lizzie.config.showWRNInMenu, EngineManager.isEmpty, loaded, kataGo);
+            ordinaryVisible && Lizzie.config.showWRNInMenu, EngineManager.isEmpty, loaded, kataGo);
     ToolbarSizing.showFieldGroup(showWrn, wrnFieldPanel, chkWRN, txtWRN);
     if (showWrn) needRemoveS = false;
     // Usable once the engine is KataGo; until then the fields only keep the row's width.
@@ -10640,13 +10637,9 @@ public class Menu extends JMenuBar {
 
   public void showPda(boolean show) {
     SwingUtilities.invokeLater(
-        new Runnable() {
-          public void run() {
-            showPDA = show;
-            if (lblPDASpinner != null) lblPDASpinner.setVisible(show);
-            if (more2 != null) more2.setVisible(show);
-            if (txtPDA != null) txtPDA.setVisible(show);
-          }
+        () -> {
+          showPDA = show;
+          updateMenuStatusForEngine();
         });
   }
 
@@ -10667,9 +10660,7 @@ public class Menu extends JMenuBar {
             return;
           }
           showPDA = show;
-          if (lblPDASpinner != null) lblPDASpinner.setVisible(show);
-          if (more2 != null) more2.setVisible(show);
-          if (txtPDA != null) txtPDA.setVisible(show);
+          updateMenuStatusForEngine();
         });
   }
 
