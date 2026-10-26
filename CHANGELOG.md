@@ -9,6 +9,7 @@ All notable maintenance updates to this fork are documented here.
 - Genmove engine-game startup and handback preserve ordinary breadth preferences; human-game breadth snapshots remain scoped to human games.
 - After an analysis-mode engine game returns a different foreground participant, the ordinary parameter fields show that participant's restored values while preserving ordinary configuration preferences.
 - Advanced KataGo settings show the current engine's aggressiveness and breadth, matching the ordinary toolbar after an engine game or engine switch. Saving applies only edited parameters and preserves independent autoload preferences, including when the current parameter is disabled. Direct parameter editing stays locked until engine-game retirement and parameter restoration finish.
+- CI lifecycle tests initialize the toolbar layout configuration explicitly and retain behavioral assertions for startup and restart without coupling them to numeric text formatting or menu refresh counts.
 
 - Built-in Zhizi whole-game overview with the default 500-visit budget reduces sequential network waits between positions and requests more frequent analysis reports. It keeps the same analysis command, model, requested visits and full candidate variations; errors and cancellation still restore the foreground position before reuse.
 

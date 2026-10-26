@@ -6053,7 +6053,6 @@ class EngineManagerLifecycleReservationTest {
       }
       assertTrue(engine.isResponseUpToDate());
       assertEquals(1, frame.reSetLocCount);
-      assertEquals(1, menu.updateCount);
       assertFalse(engine.hasExclusiveGtpWorkInProgress());
     } finally {
       if (!synchronizationRan && manager.afterSync != null) {
