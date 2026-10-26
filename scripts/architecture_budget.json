@@ -4,8 +4,8 @@
   "max_lines": {
     "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25575,
     "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18529,
-    "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15764,
-    "src/main/java/featurecat/lizzie/gui/Menu.java": 10960,
+    "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15763,
+    "src/main/java/featurecat/lizzie/gui/Menu.java": 10951,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
     "src/main/java/featurecat/lizzie/gui/KataGoAutoSetupDialog.java": 8248,
     "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 7610,
@@ -31,7 +31,7 @@
     "Lizzie.config": 6841,
     "Lizzie.frame": 3214,
     "Lizzie.board": 1947,
-    "Lizzie.leelaz": 1068,
+    "Lizzie.leelaz": 1066,
     "Lizzie.leelaz2": 115,
     "Lizzie.engineManager": 153
   },

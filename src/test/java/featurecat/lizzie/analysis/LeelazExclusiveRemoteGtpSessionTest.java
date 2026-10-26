@@ -2355,12 +2355,18 @@ class LeelazExclusiveRemoteGtpSessionTest {
     javax.swing.JTextField input =
         (javax.swing.JTextField) text.getType().getConstructor().newInstance();
     text.set(menu, input);
-    javax.swing.SwingUtilities.invokeAndWait(
-        () -> {
-          menu.refreshBreadthAdmission();
-          assertEquals(expected, selected.isEnabled());
-          assertEquals(expected, input.isEnabled());
-        });
+    Config previousConfig = Lizzie.config;
+    try {
+      if (Lizzie.config == null) Lizzie.config = allocate(Config.class);
+      javax.swing.SwingUtilities.invokeAndWait(
+          () -> {
+            menu.refreshBreadthAdmission();
+            assertEquals(expected, selected.isEnabled());
+            assertEquals(expected, input.isEnabled());
+          });
+    } finally {
+      Lizzie.config = previousConfig;
+    }
   }
 
   @Test

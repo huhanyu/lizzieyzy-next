@@ -4,6 +4,8 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Engine games hide the ordinary breadth and aggressiveness toolbar groups from preparation through final restoration, including pauses and batch intervals. Layout changes and function search preserve the override without changing display preferences; analysis-mode games retain their game-parameter controls. Failed restoration ends the override while leaving unavailable engines non-editable.
+
 - Built-in Zhizi whole-game overview with the default 500-visit budget reduces sequential network waits between positions and requests more frequent analysis reports. It keeps the same analysis command, model, requested visits and full candidate variations; errors and cancellation still restore the foreground position before reuse.
 
 - Opening a game record before starting any engine now allows clicking and dragging the winrate graph to navigate moves. Offline imports retain their rules without waiting for an engine reader; stale imports still cannot complete after the selected engine or game changes.

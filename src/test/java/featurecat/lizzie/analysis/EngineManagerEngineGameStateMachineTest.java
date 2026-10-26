@@ -64,6 +64,7 @@ class EngineManagerEngineGameStateMachineTest {
   private GtpConsolePane previousGtpConsole;
   private boolean previousEmpty;
   private int previousEngineNo;
+  private String previousParameterRestoreFailure;
 
   private StateMachineLeelaz black;
   private StateMachineLeelaz white;
@@ -86,6 +87,7 @@ class EngineManagerEngineGameStateMachineTest {
     previousGtpConsole = Lizzie.gtpConsole;
     previousEmpty = EngineManager.isEmpty;
     previousEngineNo = EngineManager.currentEngineNo;
+    previousParameterRestoreFailure = Lizzie.engineGame.parameterRestoreFailure();
 
     EngineManager.resetEngineGameTransactionStateForTest();
     Config config = allocate(Config.class);
@@ -113,12 +115,15 @@ class EngineManagerEngineGameStateMachineTest {
     Lizzie.gtpConsole = allocate(SilentGtpConsole.class);
     EngineManager.isEmpty = false;
     EngineManager.currentEngineNo = 0;
+    Lizzie.engineGame.reportParameterRestoreFailure(null);
   }
 
   @AfterEach
   void restoreStateMachineFixture() throws Exception {
     SwingUtilities.invokeAndWait(() -> {});
     EngineManager.resetEngineGameTransactionStateForTest();
+    Lizzie.engineGame.reportParameterRestoreFailure(previousParameterRestoreFailure);
+    SwingUtilities.invokeAndWait(() -> {});
     black.leela0110StopPonder();
     white.leela0110StopPonder();
     preload.leela0110StopPonder();
@@ -796,6 +801,100 @@ class EngineManagerEngineGameStateMachineTest {
     }
   }
 
+  @Test
+  void ordinaryParametersStayHiddenUntilBatchParameterRestoreCompletes() throws Exception {
+    ImmediateUiEngineManager manager = installManager();
+    EngineGameParameterSession session = parameterSession(0.5, 1.0, 1.5, -2.0);
+    try (FakeKataParameters kata = new FakeKataParameters(0.3, 0.7, 0.25, -0.75)) {
+      assertFalse(Lizzie.engineGame.ordinaryParametersHidden());
+      EngineManager.EngineGameOwnerTransaction owner =
+          activeTransaction(manager, parameterPlan(0, 1, 0.5, 1.0, 1.5, -2.0), black, 0);
+      session.applyOpening(owner);
+      assertTrue(Lizzie.engineGame.ordinaryParametersHidden());
+
+      kata.hold();
+      try {
+        manager.clearEngineGame();
+        awaitCondition(owner::retirementFinishedForTest);
+        awaitCondition(() -> black.commandText().contains("kata-set-param " + WRN + " 0.3"));
+        assertFalse(EngineManager.hasUnsettledEngineGame());
+        assertTrue(
+            Lizzie.engineGame.ordinaryParametersHidden(),
+            "retired participants do not expose ordinary values before parameter handback");
+        assertEquals(0.5, kata.of(black));
+        assertEquals(1.0, kata.of(white));
+      } finally {
+        kata.release();
+        awaitCondition(() -> !Lizzie.engineGame.ordinaryParametersHidden());
+        SwingUtilities.invokeAndWait(() -> {});
+      }
+
+      assertEquals(0.3, kata.of(black));
+      assertEquals(0.7, kata.of(white));
+      assertEquals(0.25, kata.pda(black));
+      assertEquals(-0.75, kata.pda(white));
+      assertTrue(black.isLoaded());
+      assertTrue(white.isLoaded());
+      assertNull(Lizzie.engineGame.parameterRestoreFailure());
+    }
+  }
+
+  @Test
+  void predecessorRestoreCannotUncoverANewerParameterSession() throws Exception {
+    ImmediateUiEngineManager manager = installManager();
+    EngineGamePlan plan = parameterPlan(0, 1, 0.5, 1.0, 1.5, -2.0);
+    EngineGameParameterSession first = parameterSession(0.5, 1.0, 1.5, -2.0);
+    try (FakeKataParameters kata = new FakeKataParameters(0.3, 0.7, 0.25, -0.75)) {
+      EngineManager.EngineGameOwnerTransaction oldOwner =
+          activeTransaction(manager, plan, black, 0);
+      first.applyOpening(oldOwner);
+      kata.hold();
+      try {
+        manager.clearEngineGame();
+        awaitCondition(oldOwner::retirementFinishedForTest);
+        awaitCondition(() -> black.commandText().contains("kata-set-param " + WRN + " 0.3"));
+        assertTrue(Lizzie.engineGame.ordinaryParametersHidden());
+
+        EngineGameParameterSession next =
+            EngineGameParameterSession.forBatch(plan, Lizzie.board, first);
+        EngineManager.EngineGameOwnerTransaction newOwner =
+            activeTransaction(manager, plan, black, 0);
+        kata.release();
+        next.applyOpening(newOwner);
+        SwingUtilities.invokeAndWait(() -> {});
+        assertTrue(EngineManager.isCurrentEngineGameTransaction(newOwner));
+        assertTrue(
+            Lizzie.engineGame.ordinaryParametersHidden(),
+            "the predecessor's actual completion must not uncover its successor");
+        assertEquals(0.5, kata.of(black));
+        assertEquals(1.0, kata.of(white));
+
+        int restores = commandLineCount(black.commandText(), "kata-set-param " + WRN + " 0.3");
+        kata.hold();
+        manager.clearEngineGame();
+        awaitCondition(newOwner::retirementFinishedForTest);
+        awaitCondition(
+            () ->
+                commandLineCount(black.commandText(), "kata-set-param " + WRN + " 0.3") > restores);
+        assertFalse(EngineManager.hasUnsettledEngineGame());
+        assertTrue(
+            Lizzie.engineGame.ordinaryParametersHidden(),
+            "the newer session retains its own pending handback after the old one completed");
+      } finally {
+        kata.release();
+        manager.clearEngineGame();
+        awaitCondition(() -> !Lizzie.engineGame.ordinaryParametersHidden());
+        SwingUtilities.invokeAndWait(() -> {});
+      }
+
+      assertEquals(0.3, kata.of(black));
+      assertEquals(0.7, kata.of(white));
+      assertEquals(0.25, kata.pda(black));
+      assertEquals(-0.75, kata.pda(white));
+      assertNull(Lizzie.engineGame.parameterRestoreFailure());
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"reject", "rejectPda", "replacement"})
   void batchRestoreNeverTouchesAReplacementAndStopsAnUnrestoredProcess(String failure)
@@ -810,7 +909,6 @@ class EngineManagerEngineGameStateMachineTest {
       EngineManager.EngineGameOwnerTransaction owner =
           activeTransaction(manager, parameterPlan(0, 1, 0.5, 1.0, 0.0, 2.0), black, 0);
       session.applyOpening(owner);
-      EngineManager.resetEngineGameTransactionStateForTest();
       if (failure.equals("reject")) {
         kata.rejectSets(white, WRN);
       } else if (failure.equals("rejectPda")) {
@@ -820,7 +918,20 @@ class EngineManagerEngineGameStateMachineTest {
       }
       Lizzie.engineGame.reportParameterRestoreFailure(null);
       String whiteBefore = white.commandText();
-      session.restoreOnce();
+      kata.hold();
+      try {
+        manager.clearEngineGame();
+        awaitCondition(owner::retirementFinishedForTest);
+        awaitCondition(() -> black.commandText().contains("kata-set-param " + WRN + " 0.3"));
+        assertFalse(EngineManager.hasUnsettledEngineGame());
+        assertTrue(
+            Lizzie.engineGame.ordinaryParametersHidden(),
+            "restore rejection and replacement must retain coverage until their terminal result");
+      } finally {
+        kata.release();
+        awaitCondition(() -> !Lizzie.engineGame.ordinaryParametersHidden());
+        SwingUtilities.invokeAndWait(() -> {});
+      }
       assertEquals(0.3, kata.of(black));
       assertTrue(black.isLoaded());
       if (failure.equals("replacement")) {
@@ -857,6 +968,9 @@ class EngineManagerEngineGameStateMachineTest {
         assertTrue(reported.startsWith(engine2 + ": " + reason[0]), reported);
         assertTrue(reported.endsWith(" unsupported" + (reason.length > 1 ? reason[1] : "")));
       }
+      assertFalse(
+          Lizzie.engineGame.ordinaryParametersHidden(),
+          "a reported restore failure must not leave the batch permanently hidden");
     } finally {
       Lizzie.resourceBundle = previousBundle;
     }
@@ -2044,7 +2158,9 @@ class EngineManagerEngineGameStateMachineTest {
     EngineManager.EngineGameOwnerTransaction transaction =
         activeTransaction(manager, EngineGamePlans.harness(0, 1, true), black, 0);
     assertTrue(black.genmoveForPk("B", transaction));
+    assertTrue(Lizzie.engineGame.ordinaryParametersHidden());
     manager.stopEngineGame(0, true);
+    assertTrue(Lizzie.engineGame.ordinaryParametersHidden());
     engineHasLateStone.set(true);
     engineBlackToPlay.set(false);
     black.parseEngineGameLineForTest("play D4");
@@ -2056,9 +2172,17 @@ class EngineManagerEngineGameStateMachineTest {
     assertFalse(black.isPondering());
     assertNull(EngineManager.beginEngineGameTransaction(manager, gameInfo(), null, true));
     assertNull(black.beginExclusiveGtpLifecycleReservation());
+    assertTrue(
+        Lizzie.engineGame.ordinaryParametersHidden(),
+        "genmove handback remains covered while its final foreground fence is pending");
     List<String> commands = protocol.rawCommands();
     int fenceId = firstCommandId(commands.get(commands.size() - 1));
     black.processCommandResponseLineForTest((failFence ? "?" : "=") + fenceId);
+    awaitCondition(transaction::retirementFinishedForTest);
+    SwingUtilities.invokeAndWait(() -> {});
+    assertFalse(
+        Lizzie.engineGame.ordinaryParametersHidden(),
+        "both successful and failed foreground handback end the visibility override");
     assertEquals(!failFence, black.isLoaded());
     assertTrue(black.isStarted());
     assertFalse(black.isPondering());

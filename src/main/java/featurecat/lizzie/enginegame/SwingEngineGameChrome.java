@@ -65,7 +65,11 @@ public class SwingEngineGameChrome implements EngineGameChrome {
           showMessage(
               "EngineGameParameters.restoreFailed", Lizzie.engineGame.parameterRestoreFailure());
     }
-    if (menu != null) menu.refreshEngineGameKomi();
+    if (menu != null) {
+      menu.refreshEngineGameKomi();
+      menu.refreshBreadthAdmission();
+      menu.updateMenuStatusForEngine();
+    }
     EngineGameParametersDialog.refreshIfOpen();
     SetKataEngines.refreshOpenDialogs();
     showParameterFailureOnce();

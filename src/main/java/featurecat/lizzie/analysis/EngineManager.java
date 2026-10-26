@@ -1390,9 +1390,7 @@ public class EngineManager {
   }
 
   public boolean startEngineGame(EngineGamePlan plan, boolean firstGame) {
-    if (plan == null) {
-      return false;
-    }
+    if (plan == null) return false;
     int engineBlack = plan.blackIndex();
     int engineWhite = plan.whiteIndex();
     if (isBenchmarkParticipant(engineBlack) || isBenchmarkParticipant(engineWhite)) {
@@ -1411,17 +1409,12 @@ public class EngineManager {
       }
       return false;
     }
-    if (engineBlack == engineWhite) {
-      return false;
-    }
-    if (firstGame) {
+    if (engineBlack == engineWhite) return false;
+    if (firstGame)
       engineGameParameterSession =
           EngineGameParameterSession.forBatch(plan, Lizzie.board, engineGameParameterSession);
-    }
     EngineGameOwnerTransaction gameTransaction = startNewEngineGame(firstGame, plan, null, true);
-    if (gameTransaction == null || !isCurrentEngineGameTransaction(gameTransaction)) {
-      return false;
-    }
+    if (gameTransaction == null || !isCurrentEngineGameTransaction(gameTransaction)) return false;
     captureEngineGameOutputIdentity(gameTransaction);
     fillEngineGameSettingStrings(gameTransaction);
     publishEngineGamePreparingUi(gameTransaction);
@@ -8124,6 +8117,15 @@ public class EngineManager {
     }
   }
 
+  /** Includes handback, but not terminal failed-instance quarantine. */
+  public static boolean hasUnsettledEngineGame() {
+    synchronized (ENGINE_SELECTION_STATE_LOCK) {
+      return activeEngineGameTransaction != null
+          || retiringEngineGameTransaction != null
+          || activeEngineGameRecoveryBatch != null;
+    }
+  }
+
   private static boolean hasEngineGameAnalysisOutputBarrierLocked() {
     EngineManager manager = Lizzie.engineManager;
     return activeEngineGameTransaction != null
@@ -8797,9 +8799,7 @@ public class EngineManager {
     if (recoveryBatch != null) {
       dispatchNextDeferredEngineGameRecovery(recoveryBatch);
     } else {
-      // Publish completion only after endpoint cleanup and the retiring barrier are gone. A
-      // continuation may use this bit as its release/acquire handoff and must not cross either
-      // operation.
+      // Publish only after endpoint cleanup and the retiring barrier are gone.
       transaction.retirementFinished.set(true);
       dispatchEngineGameRetirementContinuation(transaction);
     }
@@ -9276,11 +9276,10 @@ public class EngineManager {
         return;
       }
     }
+    EngineGameParameterSession.refreshPresentation();
     EngineGameRetirementContinuation continuation =
         transaction.retirementContinuation.getAndSet(null);
-    if (continuation == null) {
-      return;
-    }
+    if (continuation == null) return;
     EngineManager manager = transaction.manager;
     AtomicInteger owner = new AtomicInteger();
     Runnable guarded =
