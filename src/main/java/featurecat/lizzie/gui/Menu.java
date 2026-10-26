@@ -6960,8 +6960,8 @@ public class Menu extends JMenuBar {
   public void updateMenuStatusForEngine() {
     SwingUtilities.invokeLater(
         () -> {
-          if (komiPanel == null) return;
-          if (Lizzie.config.showDoubleMenu && Lizzie.frame != null) {
+          if (komiPanel == null || Lizzie.frame == null) return;
+          if (Lizzie.config.showDoubleMenu) {
             setPdaAndWrnByEngineForDouble();
             setBtnRankMark();
             return;
@@ -9620,27 +9620,17 @@ public class Menu extends JMenuBar {
   }
 
   public void setPdaAndWrn(double pda, double wrn) {
-    ShouldIgnoreDtChange = true;
-    if (pda == 0) {
-      chkPDA.setSelected(false);
-      txtGfPDA.setText("0");
-      txtGfPDA.setEnabled(false);
-    } else {
-      chkPDA.setSelected(true);
-      txtGfPDA.setText(String.valueOf(pda));
-      txtGfPDA.setEnabled(true);
-    }
-    if (wrn == 0) {
-      chkWRN.setSelected(false);
-      txtWRN.setText("0");
-      txtWRN.setEnabled(false);
-    } else {
-      chkWRN.setSelected(true);
-      txtWRN.setText(String.valueOf(wrn));
-      txtWRN.setEnabled(true);
-    }
-    ShouldIgnoreDtChange = false;
-    refreshBreadthAdmission();
+    setUseGfPda(pda != 0, String.valueOf(pda));
+    setUseWrn(wrn != 0, String.valueOf(wrn));
+  }
+
+  /** Projects restored values without changing configuration or an unchanged disabled draft. */
+  public void refreshRestoredParameters(Leelaz engine) {
+    if (engine == null || !engine.canSetAnalysisWideRootNoise() || chkPDA == null) return;
+    if (!EngineGameParameterControls.matchesEffectiveValue(chkWRN, txtWRN, engine.wrn))
+      setUseWrn(engine.wrn != 0, String.valueOf(engine.wrn));
+    if (!EngineGameParameterControls.matchesEffectiveValue(chkPDA, txtGfPDA, engine.pda))
+      setUseGfPda(engine.pda != 0, String.valueOf(engine.pda));
   }
 
   public void setPdaAndWrnByEngineForDouble() {

@@ -138,6 +138,22 @@ class MenuOrdinaryBreadthTest {
       primary.output.reset();
       edt(
           () -> {
+            menu.chkPDA = new JFontCheckBox();
+            menu.txtGfPDA = new JFontTextField("-0.25");
+            menu.chkPDA.setSelected(true);
+            primary.pda = 0.75;
+            menu.refreshRestoredParameters(primary);
+          });
+      primary.fence();
+      assertEquals("0.3", menu.txtWRN.getText(), "unchanged disabled breadth keeps its draft");
+      assertFalse(menu.chkWRN.isSelected());
+      assertEquals("0.75", menu.txtGfPDA.getText(), "changed restored PDA is projected");
+      assertEquals("0.3", Lizzie.config.txtKataEngineWRN);
+      assertFalse(Lizzie.config.chkKataEngineWRN);
+      assertFalse(primary.sent().contains("kata-set-param"), primary.sent());
+      primary.output.reset();
+      edt(
+          () -> {
             menu.chkWRN.setSelected(true);
             menu.applyToolbarWrnSelection();
           });

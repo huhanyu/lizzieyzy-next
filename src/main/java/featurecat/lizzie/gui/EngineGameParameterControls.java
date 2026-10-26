@@ -116,6 +116,16 @@ final class EngineGameParameterControls {
     if (customEntry != null) customEntry.setEnabled(available);
   }
 
+  static boolean matchesEffectiveValue(
+      AbstractButton selected, javax.swing.JTextField field, double value) {
+    if (!selected.isSelected()) return value == 0;
+    try {
+      return Double.parseDouble(field.getText()) == value;
+    } catch (NumberFormatException invalidDraft) {
+      return false;
+    }
+  }
+
   /**
    * Points the advanced-parameter dialog's breadth/aggressiveness editors at the game panel while
    * an engine game locks them, and clears that explanation afterwards. Enabled state is the

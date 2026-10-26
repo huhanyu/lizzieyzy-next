@@ -172,6 +172,7 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 - 批次正常结束或用户终止后才恢复各位置两项原值（批次间隔不恢复）；恢复只写原 incarnation，逐项设值并回读，任一项失败时强制退出该进程并报告；原进程已被替换或退出时不向替换进程重放旧恢复，但同样报告该位置未能恢复。
 - 普通 WRN、PDA 和自定义 PDA 工具栏整组从对局准备起隐藏，覆盖运行、暂停、批次间隔及既有 owner 的异步退役与参数恢复；单／双菜单切换和功能搜索不能绕过覆盖或修改显示偏好。旧 completion 不解除新批次的覆盖。恢复终态后按原偏好与当前引擎资格重新投影；失败仍报告并退役原实例，不永久隐藏当前合格实例，不使不可用实例可编辑。分析模式保留原“对局参数”入口，genmove 不新增该入口；高级参数窗口保持直接修改锁定，不隐藏内容。不再存在引擎对局专用的“关闭广度”。
 - genmove 引擎对局的启动与归还不捕获或重放人机对局的普通 WRN 快照，也不修改普通 WRN 勾选或草稿；工具栏资格由既有 owner 退役后的投影恢复。人机对局仍使用自己的 WRN 快照恢复入口。
+- 分析模式对局参数恢复完成后，普通工具栏按当前可用前台实例的已恢复值投影，不继续显示原前台实例的数值。该投影不写普通配置或发送 setter；有效值相同的禁用草稿保留，恢复失败或新批次仍占用时不发布成功值。
 - `PreparedRestore` 可在首次 `execute()` 前由捕获它的 owner 调用 one-shot `discard()` 释放 captured admission；`discard()` 不写临时 SGF、不发任何命令。首次 `execute()` 或 `discard()` 后，另一操作必须以既有 `Exact snapshot restore has already been executed` 失败；一旦 execute 开始，所有失败仍按 owner 的既有 fail-closed 语义处理。
 - 没有可用静态锚点时，调用方保留既有 root replay；默认空 root 不是 exact 锚点。exact 一旦开始，`loadsgf`、tail 或 arbitration 失败都原样失败，禁止猜测性 root fallback。
 - lifecycle exact/root 抛错时，owner 将 frozen target 标为 unavailable，并在既有 completion boundary 释放 reservation；该路径不引入 `ENGINE_STATE_UNRESTORED` 或通用 retry。ReadBoard GMA 固定点既有 quarantine/retirement 行为保持独立。

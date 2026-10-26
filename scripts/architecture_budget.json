@@ -5,7 +5,7 @@
     "src/main/java/featurecat/lizzie/analysis/Leelaz.java": 25559,
     "src/main/java/featurecat/lizzie/gui/LizzieFrame.java": 18527,
     "src/main/java/featurecat/lizzie/analysis/EngineManager.java": 15759,
-    "src/main/java/featurecat/lizzie/gui/Menu.java": 10937,
+    "src/main/java/featurecat/lizzie/gui/Menu.java": 10927,
     "src/main/java/featurecat/lizzie/gui/MoveListFrame.java": 8313,
     "src/main/java/featurecat/lizzie/gui/KataGoAutoSetupDialog.java": 8248,
     "src/main/java/featurecat/lizzie/util/KataGoRuntimeHelper.java": 7610,
@@ -31,7 +31,7 @@
     "Lizzie.config": 6841,
     "Lizzie.frame": 3212,
     "Lizzie.board": 1946,
-    "Lizzie.leelaz": 1061,
+    "Lizzie.leelaz": 1059,
     "Lizzie.leelaz2": 115,
     "Lizzie.engineManager": 153
   },

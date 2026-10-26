@@ -598,7 +598,16 @@ public final class EngineGameToolbarIsolationAcceptanceIT {
       assertNoSettersOrAnalysis(settledMark, "settled layout switches and refresh");
       Map<String, String> after = preferences();
       write("config-after.json", after);
-      assertPreferences(before, after, label, true);
+      assertPreferences(before, after, label, false);
+      edt(
+          () -> {
+            assertEquals(
+                Lizzie.leelaz.wrn, Double.parseDouble(LizzieFrame.menu.txtWRN.getText()), 1e-9);
+            if (!Lizzie.leelaz.isKataGoPda)
+              assertEquals(
+                  Lizzie.leelaz.pda, Double.parseDouble(LizzieFrame.menu.txtGfPDA.getText()), 1e-9);
+            return null;
+          });
       screenshot("settled");
       record("settled-visibility-refresh-silent=PASS");
     }
@@ -1127,8 +1136,8 @@ public final class EngineGameToolbarIsolationAcceptanceIT {
     }
 
     /**
-     * Fields are the ordinary inputs' shown values; they are compared once the game has settled on
-     * the original process, and otherwise only preferences and configuration are.
+     * Fields are compared while the foreground identity is unchanged. After handback, configuration
+     * remains invariant and displayed values are checked against the actual foreground participant.
      */
     private void assertPreferences(
         Map<String, String> before, Map<String, String> after, String when, boolean fields)
