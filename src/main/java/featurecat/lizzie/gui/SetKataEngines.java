@@ -616,10 +616,9 @@ public class SetKataEngines extends JDialog {
 
   private void confirmSettings() {
     if (applyingThreads) return;
-    // Outside an engine game, saving also writes breadth and aggressiveness to the engine the
-    // dialog opened on, so that engine must still be the current one. An engine game takes only
-    // the preferences, which do not depend on it.
-    if (!EngineGameDesktop.batchActive() && staleThreads()) return;
+    // While the engine game owns parameters (including recovery), saving takes only preferences.
+    // Otherwise it also writes edited parameters to the engine the dialog opened on.
+    if (!EngineGameParameterControls.ordinaryHidden() && staleThreads()) return;
     Leelaz.RuntimeThreadOverrideState state =
         runtimeThreads == null
             ? Leelaz.RuntimeThreadOverrideState.OFF
@@ -702,11 +701,11 @@ public class SetKataEngines extends JDialog {
   }
 
   /**
-   * Breadth and aggressiveness are edited here only outside an engine game, which takes them from
-   * its game panel; a human game also owns breadth. Each value field follows its own checkbox.
+   * Breadth and aggressiveness stay locked until the engine game releases its parameters, including
+   * recovery; a human game also owns breadth. Each value field follows its own checkbox.
    */
   private void refreshParameterEditors() {
-    boolean engineGame = EngineGameDesktop.batchActive();
+    boolean engineGame = EngineGameParameterControls.ordinaryHidden();
     boolean wrnOwned =
         engineGame
             || Lizzie.frame.isPlayingAgainstLeelaz
@@ -847,8 +846,8 @@ public class SetKataEngines extends JDialog {
    * Saves only edited parameters; unedited copies never overwrite newer runtime or startup values.
    */
   private void applyExistingSettings(Leelaz engine, boolean resume) {
-    // An engine game owns its participants' runtime parameters: keep only the preferences.
-    boolean engineGame = EngineGameDesktop.batchActive();
+    // Keep only preferences until the engine game has finished restoring its runtime parameters.
+    boolean engineGame = EngineGameParameterControls.ordinaryHidden();
     String pdaDraft = draft(chkEditPDA, txtPDA);
     String wrnDraft = draft(chkEditWRN, txtWRN);
     boolean applyPda = !engineGame && !pdaDraft.equals(loadedPda);

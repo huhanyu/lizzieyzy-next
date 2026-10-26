@@ -200,6 +200,15 @@ public final class EngineGameToolbarIsolationAcceptanceIT {
           List.of("lblCustomPda", "txtPDA", "customPDAMorePanel"));
       Map<String, String> before = preferences();
       write("config-before.json", before);
+      SetKataEngines draft =
+          edt(
+              () -> {
+                SetKataEngines dialog = new SetKataEngines();
+                dialog.setVisible(true);
+                ((JTextField) field(SetKataEngines.class, "txtPDA", dialog)).setText("1.25");
+                ((JTextField) field(SetKataEngines.class, "txtWRN", dialog)).setText("0.27");
+                return dialog;
+              });
 
       arm(0, "get-param");
       AtomicReference<StartFailure> failure = new AtomicReference<>();
@@ -284,12 +293,55 @@ public final class EngineGameToolbarIsolationAcceptanceIT {
       awaitHidden("restoring");
       denySearch("restoring", before);
       assertEntry("restoring", false, false);
+      SetKataEngines parameters =
+          edt(
+              () -> {
+                SetKataEngines dialog = new SetKataEngines();
+                dialog.setVisible(true);
+                return dialog;
+              });
+      assertParameterEditors(parameters, false);
+      assertParameterEditors(draft, false);
+      int[] restoreMark = mark();
+      edt(
+          () -> {
+            ((AbstractButton) field(SetKataEngines.class, "btnApply", draft)).doClick();
+            draft.dispose();
+            return null;
+          });
+      waitQuiet();
+      assertNoSettersOrAnalysis(restoreMark, "advanced-save-during-restoration");
+      assertPreferences(before, preferences(), "advanced-save-during-restoration", false);
       screenshot("restoring");
       release(0, "param-restore");
 
       awaitShown("restored");
       assertNull(edt(() -> Lizzie.engineGame.parameterRestoreFailure()));
+      assertParameterEditors(parameters, true);
+      edt(
+          () -> {
+            parameters.dispose();
+            return null;
+          });
       afterSettlement(before, "ordinary-batch");
+    }
+
+    private void assertParameterEditors(SetKataEngines dialog, boolean enabled) throws Exception {
+      edt(
+          () -> {
+            for (String name : List.of("chkEditPDA", "chkEditWRN")) {
+              assertEquals(
+                  enabled,
+                  ((AbstractButton) field(SetKataEngines.class, name, dialog)).isEnabled(),
+                  name + " must follow ordinary parameter ownership through restoration");
+            }
+            for (String name : List.of("txtPDA", "txtWRN")) {
+              JComponent input = (JComponent) field(SetKataEngines.class, name, dialog);
+              if (!enabled) assertFalse(input.isEnabled(), name + " remains locked during restore");
+            }
+            return null;
+          });
+      record("advanced-parameter-editors.enabled=" + enabled);
     }
 
     /**
