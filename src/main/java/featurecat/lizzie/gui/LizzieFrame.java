@@ -12964,7 +12964,7 @@ public class LizzieFrame extends JFrame {
             ? null
             : "FunctionSearch.unavailable.game";
       case "engine.pda", "toolbar.wrn":
-        if (EngineGamePresentation.current().startingOrPlaying())
+        if (EngineGameParameterControls.ordinaryHidden())
           return "AnalysisSettings.reuseStatus.engine_game";
         if (!isRulesEngineReady(Lizzie.leelaz)) return "LizzieFrame.setParamNoEngineHint";
         return Lizzie.leelaz.isKatago ? null : "SetKataRules.notKataGoHint";
@@ -17517,8 +17517,7 @@ public class LizzieFrame extends JFrame {
       menu.txtWRN.setEnabled(false);
       Lizzie.config.chkKataEngineWRN = false;
       if (Lizzie.leelaz.isKatago) {
-        Lizzie.leelaz.wrn = 0;
-        Lizzie.leelaz.sendCommand("kata-set-param analysisWideRootNoise 0");
+        Lizzie.leelaz.setOrdinaryWrn(0);
       }
     }
   }
@@ -17534,13 +17533,12 @@ public class LizzieFrame extends JFrame {
       menu.chkWRN.setSelected(WRNSelectedBeforeGenmove);
       menu.setWrnText(WRNValueBeforeGenmove);
       Lizzie.config.chkKataEngineWRN = WRNSelectedBeforeGenmove;
-      Lizzie.leelaz.sendCommand("kata-set-param analysisWideRootNoise " + WRNValueBeforeGenmove);
+      Lizzie.leelaz.setOrdinaryWrn(WRNSelectedBeforeGenmove ? WRNValueBeforeGenmove : 0);
     } else if (WRNStatusBeforeGame) {
       try {
         double wrn = Double.parseDouble(LizzieFrame.menu.txtWRN.getText());
         if (Lizzie.leelaz.isKatago) {
-          Lizzie.leelaz.sendCommand("kata-set-param analysisWideRootNoise " + wrn);
-          Lizzie.leelaz.wrn = wrn;
+          Lizzie.leelaz.setOrdinaryWrn(wrn);
         }
         menu.setWrnText(wrn);
         Lizzie.config.txtKataEngineWRN = String.valueOf(wrn);

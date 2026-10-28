@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import featurecat.lizzie.Config;
 import featurecat.lizzie.Lizzie;
 import featurecat.lizzie.analysis.EngineManager;
 import featurecat.lizzie.analysis.Leelaz;
@@ -276,6 +277,7 @@ class MenuEngineSwitchUiStateTest {
   @Test
   void queuedBreadthRefreshUsesCurrentEngineAndPreservesUserValue() throws Exception {
     Leelaz previous = Lizzie.leelaz;
+    Config previousConfig = Lizzie.config;
     Menu menu = allocate(Menu.class);
     menu.chkWRN = new JFontCheckBox();
     menu.chkWRN.setSelected(true);
@@ -289,6 +291,7 @@ class MenuEngineSwitchUiStateTest {
           }
         };
     try {
+      Lizzie.config = allocate(Config.class);
       EngineGameSnapshotFixtures.publishIdle();
       SwingUtilities.invokeAndWait(
           () -> {
@@ -314,12 +317,14 @@ class MenuEngineSwitchUiStateTest {
           });
     } finally {
       Lizzie.setPrimaryEngine(previous);
+      Lizzie.config = previousConfig;
     }
   }
 
   @Test
-  void engineGameKeepsToolbarBreadthVisibleButLockedUntilTheBatchEnds() throws Exception {
+  void engineGameLocksToolbarBreadthUntilTheBatchEnds() throws Exception {
     Leelaz previous = Lizzie.leelaz;
+    Config previousConfig = Lizzie.config;
     Menu menu = allocate(Menu.class);
     menu.chkWRN = new JFontCheckBox();
     menu.chkWRN.setSelected(true);
@@ -333,6 +338,7 @@ class MenuEngineSwitchUiStateTest {
           }
         };
     try {
+      Lizzie.config = allocate(Config.class);
       Lizzie.setPrimaryEngine(ready);
       EngineGameSnapshotFixtures.publishPlaying();
       SwingUtilities.invokeAndWait(
@@ -353,6 +359,7 @@ class MenuEngineSwitchUiStateTest {
     } finally {
       EngineGameSnapshotFixtures.publishIdle();
       Lizzie.setPrimaryEngine(previous);
+      Lizzie.config = previousConfig;
     }
   }
 

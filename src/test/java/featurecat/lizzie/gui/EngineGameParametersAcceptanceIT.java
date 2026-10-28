@@ -62,6 +62,11 @@ public final class EngineGameParametersAcceptanceIT {
     run("batch");
   }
 
+  @Test
+  void realCombinedAnalysisMatchRestoresOrdinaryParametersAndSgfSummary() throws Exception {
+    run("combined");
+  }
+
   private void run(String mode) throws Exception {
     assumeTrue(Boolean.getBoolean("lizzie.acceptance.engineGameParameters"));
     DesktopProbeProcess.requireDisplay();
@@ -75,7 +80,7 @@ public final class EngineGameParametersAcceptanceIT {
             "engine-game-parameters-" + mode,
             List.of(),
             List.of(mode, engine, model),
-            240);
+            mode.equals("combined") ? 300 : 240);
     assertTrue(Files.readString(result).contains("result=PASS"));
     assertTrue(Files.readString(result).contains("clock-helper-closed=PASS"));
   }
@@ -116,6 +121,7 @@ public final class EngineGameParametersAcceptanceIT {
   private static void probe(String mode, Path engine, Path model, Path work, Path result)
       throws Exception {
     boolean batch = mode.equals("batch");
+    boolean combined = mode.equals("combined");
     JSONArray entries = new JSONArray();
     double[] originalWrn = {0.05, 0.15};
     double[] originalPda = {-0.25, 0.75};
@@ -163,8 +169,16 @@ public final class EngineGameParametersAcceptanceIT {
             .put("not-start-pondering", true)
             .put("autoload-kata-engine-wrn", false)
             .put("autoload-kata-engine-pda", false)
-            .put("engine-pk-ponder", !batch)
+            .put("engine-pk-ponder", !batch && !combined)
             .put("play-sound", false);
+    if (combined) {
+      ui.put("show-double-menu", true)
+          .put("show-wrn-in-menu", true)
+          .put("show-pda-in-menu", true)
+          .put("show-comment", true)
+          .put("show-new-board-hint", false)
+          .put("append-winrate-to-comment", true);
+    }
     Files.writeString(
         work.resolve("config.txt"),
         new JSONObject()
@@ -191,6 +205,9 @@ public final class EngineGameParametersAcceptanceIT {
       assertEquals(originalPda[index], readParameter(participants.get(index), PDA), 0.000001);
     }
     record(result, "pre-batch-distinct-values=PASS");
+    IntegratedParameterAcceptance combinedProbe =
+        combined ? new IntegratedParameterAcceptance(work, result, participants.get(0)) : null;
+    if (combinedProbe != null) combinedProbe.beforeGame(originalWrn[0], originalPda[0]);
     AtomicReference<StartFailure> startFailure = new AtomicReference<>();
     edt(
         () -> {
@@ -216,7 +233,7 @@ public final class EngineGameParametersAcceptanceIT {
                   batch,
                   batch ? 2 : 1,
                   true,
-                  batch ? 6 : 200,
+                  batch ? 6 : combined ? 12 : 200,
                   new EngineGameOutputChoices(false, false, "parameter-acceptance"),
                   KataGoRules.parse("chinese").orElseThrow(),
                   new EngineGameOpeningParameters(0.2, 0.4, 0.5, -0.5));
@@ -256,7 +273,17 @@ public final class EngineGameParametersAcceptanceIT {
               return (CompletableFuture<?>) restoredField.get(session);
             });
 
-    if (batch) {
+    if (combinedProbe != null) {
+      combinedProbe.observeGame();
+      await(
+          () ->
+              !Lizzie.engineGame.current().startingOrPlaying()
+                  && !Lizzie.engineGame.current().betweenGames(),
+          60,
+          "combined match natural completion");
+      assertEquals(1, edt(() -> Lizzie.engineGame.lastSummary().maxMoveGames()));
+      record(result, "combined-match-natural-max-moves-completion=PASS");
+    } else if (batch) {
       applyPanel(0.7, null, null, null);
       awaitParameters(0.7, 0.4, 0.5, -0.5);
       await(
@@ -333,6 +360,12 @@ public final class EngineGameParametersAcceptanceIT {
       assertEquals(originalPda[index], readParameter(participant, PDA), 0.000001);
     }
     assertNull(edt(() -> Lizzie.engineGame.parameterRestoreFailure()));
+    if (combinedProbe != null) {
+      Leelaz foreground = edt(() -> Lizzie.leelaz);
+      int index = participants.indexOf(foreground);
+      assertTrue(index >= 0, "Handback selects an original participant");
+      combinedProbe.afterGame(foreground, originalWrn[index], originalPda[index]);
+    }
     record(result, "same-process-original-values-restored=PASS\nmode=" + mode + "\nresult=PASS");
   }
 
@@ -402,7 +435,7 @@ public final class EngineGameParametersAcceptanceIT {
   }
 
   /** Query the actual idle engine, using the existing exact-incarnation response callback seam. */
-  private static double readParameter(Leelaz engine, String name) throws Exception {
+  static double readParameter(Leelaz engine, String name) throws Exception {
     Method confirm = null;
     for (Method method : Leelaz.class.getDeclaredMethods()) {
       if (method.getName().equals("confirmEngineGameCommand")) confirm = method;

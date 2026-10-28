@@ -1,12 +1,14 @@
 package featurecat.lizzie.gui;
 
 import featurecat.lizzie.Lizzie;
+import featurecat.lizzie.analysis.Leelaz;
 import featurecat.lizzie.enginegame.EngineGameSnapshot;
 import featurecat.lizzie.enginegame.EngineGameView;
 import java.awt.Component;
 import java.awt.Insets;
 import java.awt.Window;
 import java.util.function.Supplier;
+import javax.swing.AbstractButton;
 import javax.swing.JComponent;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
@@ -16,13 +18,19 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 
 /**
- * The views of the engine-game parameters outside the panel: the "game parameters" button next to
- * pause, the same entry in the game menu (the way in when the top toolbar is hidden or combined
- * into the menu bar), and the explanation on the ordinary breadth/aggressiveness controls, which a
- * running engine game locks because its participants take parameters only through the game panel.
+ * The engine-game parameter entry and the ordinary parameter toolbar's lifecycle projection.
+ * Visibility never changes ordinary parameter preferences or sends engine commands.
  */
 final class EngineGameParameterControls {
   private EngineGameParameterControls() {}
+
+  static boolean ordinaryHidden() {
+    return Lizzie.engineGame != null && Lizzie.engineGame.ordinaryParametersHidden();
+  }
+
+  static boolean blocksSearch(String id) {
+    return ("engine.pda".equals(id) || "toolbar.wrn".equals(id)) && ordinaryHidden();
+  }
 
   /** The "game parameters" button; hidden until {@link #refreshEntry} sees an analysis game. */
   static JFontButton createEntry() {
@@ -85,26 +93,37 @@ final class EngineGameParameterControls {
     button.setEnabled(button.isVisible() && snapshot.playing());
   }
 
-  /**
-   * Points the toolbar's breadth and aggressiveness controls at the game panel while an engine game
-   * locks them, and restores their own tooltips afterwards. Enabled state is the caller's.
-   */
-  static void explainToolbarLock(
-      boolean locked,
-      JComponent chkWrn,
+  /** Operation eligibility stays separate from hiding the ordinary controls. */
+  static void refreshToolbarAdmission(
+      boolean breadthAvailable,
+      boolean doubleMenu,
+      Leelaz engine,
+      AbstractButton chkWrn,
       JComponent txtWrn,
-      JComponent chkPda,
+      AbstractButton chkPda,
       JComponent txtPda,
-      JComponent customPda) {
-    String lockedTip =
-        locked ? Lizzie.resourceBundle.getString("EngineGameParameters.useGamePanel") : null;
-    String wrnTip = locked ? lockedTip : Lizzie.resourceBundle.getString("Menu.chkWRN.toolTopText");
-    String pdaTip = locked ? lockedTip : Lizzie.resourceBundle.getString("Menu.chkPDA.toolTopText");
-    chkWrn.setToolTipText(wrnTip);
-    txtWrn.setToolTipText(wrnTip);
-    chkPda.setToolTipText(pdaTip);
-    txtPda.setToolTipText(pdaTip);
-    customPda.setToolTipText(lockedTip);
+      JComponent customPda,
+      JComponent customEntry) {
+    if (chkWrn == null || txtWrn == null) return;
+    chkWrn.setEnabled(breadthAvailable);
+    txtWrn.setEnabled(breadthAvailable && chkWrn.isSelected());
+    if (chkPda == null || txtPda == null || customPda == null) return;
+    boolean available = !ordinaryHidden() && engine != null && engine.isLoaded();
+    boolean pdaAvailable = available && (!doubleMenu || engine.isKatago);
+    chkPda.setEnabled(pdaAvailable);
+    txtPda.setEnabled(pdaAvailable && chkPda.isSelected());
+    customPda.setEnabled(available);
+    if (customEntry != null) customEntry.setEnabled(available);
+  }
+
+  static boolean matchesEffectiveValue(
+      AbstractButton selected, javax.swing.JTextField field, double value) {
+    if (!selected.isSelected()) return value == 0;
+    try {
+      return Double.parseDouble(field.getText()) == value;
+    } catch (NumberFormatException invalidDraft) {
+      return false;
+    }
   }
 
   /**

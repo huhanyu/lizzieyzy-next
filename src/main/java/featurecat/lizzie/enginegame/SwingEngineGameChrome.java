@@ -58,14 +58,21 @@ public class SwingEngineGameChrome implements EngineGameChrome {
       }
       case START_FAILED, USER_STOPPED, BATCH_ENDED, LATER_GAME_FAILED -> applyIdle(toolbar, menu);
       case PARAMETERS_CHANGED -> {
-        // The panel refresh and failure notice below cover it.
+        if (menu != null
+            && !Lizzie.engineGame.ordinaryParametersHidden()
+            && Lizzie.engineGame.parameterRestoreFailure() == null)
+          menu.refreshRestoredParameters(Lizzie.leelaz);
       }
       case PARAMETERS_RESUME_BLOCKED -> showMessage("EngineGameParameters.resumeBlocked", null);
       case PARAMETERS_RESTORE_FAILED ->
           showMessage(
               "EngineGameParameters.restoreFailed", Lizzie.engineGame.parameterRestoreFailure());
     }
-    if (menu != null) menu.refreshEngineGameKomi();
+    if (menu != null) {
+      menu.refreshEngineGameKomi();
+      menu.refreshBreadthAdmission();
+      menu.updateMenuStatusForEngine();
+    }
     EngineGameParametersDialog.refreshIfOpen();
     SetKataEngines.refreshOpenDialogs();
     showParameterFailureOnce();
@@ -148,14 +155,15 @@ public class SwingEngineGameChrome implements EngineGameChrome {
   }
 
   private static void restoreEngineMenuTitle() {
-    if (EngineManager.isEmpty || Lizzie.leelaz == null) {
+    var engine = Lizzie.leelaz;
+    if (EngineManager.isEmpty || engine == null) {
       Menu.engineMenu.setText(text("Menu.noEngine", "无引擎"));
       return;
     }
-    int number = Lizzie.leelaz.currentEngineN() + 1;
-    String name = Lizzie.leelaz.oriEnginename;
+    int number = engine.currentEngineN() + 1;
+    String name = engine.oriEnginename;
     if (name == null || name.isEmpty()) {
-      name = Lizzie.leelaz.currentEnginename;
+      name = engine.currentEnginename;
     }
     if (name == null) {
       name = "";

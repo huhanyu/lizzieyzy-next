@@ -1558,9 +1558,7 @@ public class SGFParser {
           if (!engineGameHistory && !Lizzie.board.isPkBoard) {
             BoardData data = curNode.getData();
             if (Lizzie.board.isGameBoard) {
-              if (data.getPlayouts() > 0 && curNode.next().isPresent())
-                curNode.next().get().getData().comment = formatCommentForGame(curNode);
-              else if (curNode.next().isPresent()) curNode.next().get().getData().comment = "";
+              updateGameComment(curNode, data);
             }
           }
         } catch (Exception e) {
@@ -1630,8 +1628,9 @@ public class SGFParser {
       }
     } else if (Lizzie.board.getHistory().getCurrentHistoryNode().getData().getPlayouts() > 0) {
       if (Lizzie.board.isGameBoard) {
-        Lizzie.board.getHistory().getData().comment =
-            formatCommentForGame(Lizzie.board.getHistory().getCurrentHistoryNode());
+        BoardHistoryNode node = Lizzie.board.getHistory().getCurrentHistoryNode();
+        node.getData().comment =
+            mergeAnalysisComment(node.getData().comment, formatCommentForGame(node));
       } else {
         Lizzie.board.getHistory().getData().comment =
             formatComment(Lizzie.board.getHistory().getCurrentHistoryNode());
@@ -1994,11 +1993,11 @@ public class SGFParser {
   }
 
   private static void updateGameComment(BoardHistoryNode node, BoardData data) throws IOException {
-    if (data.getPlayouts() > 0 && node.next().isPresent()) {
-      node.next().get().getData().comment = formatCommentForGame(node);
-    } else if (node.next().isPresent()) {
-      node.next().get().getData().comment = "";
-    }
+    if (!node.next().isPresent()) return;
+    BoardData destination = node.next().get().getData();
+    destination.comment =
+        mergeAnalysisComment(
+            destination.comment, data.getPlayouts() > 0 ? formatCommentForGame(node) : "");
   }
 
   private static String getSerializedComment(BoardHistoryNode node) throws IOException {
@@ -2008,10 +2007,10 @@ public class SGFParser {
     if (node.getData().isSnapshotNode()) {
       return node.getData().comment;
     }
-    if (!node.previous().get().previous().isPresent()) {
-      return formatCommentPk(node.previous().get());
-    }
-    return node.previous().get().getData().comment;
+    BoardHistoryNode previous = node.previous().get();
+    String source =
+        previous.previous().isEmpty() ? formatCommentPk(previous) : previous.getData().comment;
+    return mergeAnalysisComment(node.getData().comment, splitWinrateComment(source).matchInfo);
   }
 
   private static boolean shouldFormatSnapshotCommentForSave(BoardHistoryNode node) {
@@ -2103,22 +2102,22 @@ public class SGFParser {
     boolean[][] variants = {{true, false}, {true, true}, {false, false}};
     for (boolean[] variant : variants) {
       String wp = winrateCommentRegex(variant[0], variant[1]);
-      if (comment.matches("(?s).*" + wp + "(?s).*")) {
-        Matcher matcher = Pattern.compile(wp).matcher(comment);
-        if (matcher.find()) {
-          return new WinrateCommentSplit(comment.replaceAll(wp, "").trim(), matcher.group().trim());
-        }
+      Matcher matcher = Pattern.compile(wp).matcher(comment);
+      if (matcher.find()) {
+        return new WinrateCommentSplit(comment.replaceAll(wp, "").trim(), matcher.group().trim());
       }
     }
     return new WinrateCommentSplit(comment, "");
   }
 
   private static String winrateCommentRegex(boolean isKataData, boolean isSaiData) {
-    boolean leadWithKomi = Lizzie.config != null && Lizzie.config.showKataGoScoreLeadWithKomi;
+    // Stored summaries keep their original score label when the display preference changes.
     String lead =
-        leadWithKomi
-            ? Lizzie.resourceBundle.getString("SGFParse.leadWithKomi")
-            : Lizzie.resourceBundle.getString("SGFParse.leadJustScore");
+        "(?:"
+            + Pattern.quote(Lizzie.resourceBundle.getString("SGFParse.leadWithKomi"))
+            + "|"
+            + Pattern.quote(Lizzie.resourceBundle.getString("SGFParse.leadJustScore"))
+            + ")";
     if (!isKataData) {
       return "("
           + Lizzie.resourceBundle.getString("SGFParse.black")
@@ -2318,12 +2317,8 @@ public class SGFParser {
                 String.format(Locale.ENGLISH, "%.1f", scoreStdev),
                 engine,
                 playouts,
-                data.pda != 0
-                    ? String.format(Locale.ENGLISH, "%.1f", data.getKomi())
-                        + " "
-                        + Lizzie.resourceBundle.getString("SGFParse.pda")
-                        + data.pda
-                    : String.format(Locale.ENGLISH, "%.1f", data.getKomi()));
+                String.format(Locale.ENGLISH, "%.1f", data.getKomi())
+                    + getPdaWrnString(data.pda, data.wrn, data.wrnKnown));
       }
     } else {
       String wf =
@@ -2348,16 +2343,7 @@ public class SGFParser {
               String.format(Locale.ENGLISH, "%.1f", data.getKomi()));
     }
 
-    if (!data.comment.isEmpty()) {
-      String wp = winrateCommentRegex(data.isKataData, data.isSaiData);
-      // if (Lizzie.leelaz.isKatago) wp = wp + "\n.*";
-      if (data.comment.matches("(?s).*" + wp + "(?s).*")) {
-        nc = data.comment.replaceAll(wp, nc);
-      } else {
-        nc = String.format(Locale.ENGLISH, "%s\n\n%s", data.comment, nc);
-      }
-    }
-    return nc;
+    return mergeAnalysisComment(data.comment, nc);
   }
 
   private static String formatCommentForGame(BoardHistoryNode node) {
@@ -2513,12 +2499,8 @@ public class SGFParser {
                 String.format(Locale.ENGLISH, "%.1f", scoreStdev),
                 engine,
                 playouts,
-                data.pda != 0
-                    ? String.format(Locale.ENGLISH, "%.1f", data.getKomi())
-                        + " "
-                        + Lizzie.resourceBundle.getString("SGFParse.pda")
-                        + data.pda
-                    : String.format(Locale.ENGLISH, "%.1f", data.getKomi()));
+                String.format(Locale.ENGLISH, "%.1f", data.getKomi())
+                    + getPdaWrnString(data.pda, data.wrn, data.wrnKnown));
       }
     } else {
       String wf =
@@ -2654,7 +2636,7 @@ public class SGFParser {
                 engine,
                 playouts,
                 String.format(Locale.ENGLISH, "%.1f", data.getKomi())
-                    + getPdaWrnString(data.pda, data.wrn));
+                    + getPdaWrnString(data.pda, data.wrn, data.wrnKnown));
       }
     } else {
       String wf =
@@ -2679,22 +2661,12 @@ public class SGFParser {
               String.format(Locale.ENGLISH, "%.1f", data.getKomi()));
     }
 
-    if (!data.comment.isEmpty() && !isEngineGameHistory()) {
-      String wp = winrateCommentRegex(data.isKataData, data.isSaiData);
-      // if (Lizzie.leelaz.isKatago) wp = wp + "\n.*";
-      if (data.comment.matches("(?s).*" + wp + "(?s).*")) {
-        nc = data.comment.replaceAll(wp, nc);
-      } else {
-        nc = String.format(Locale.ENGLISH, "%s\n\n%s", data.comment, nc);
-      }
-    }
-    return nc;
+    return mergeAnalysisComment(data.comment, nc);
   }
 
-  private static String getPdaWrnString(double pda, double wrn) {
-    // TODO Auto-generated method stub
+  private static String getPdaWrnString(double pda, double wrn, boolean wrnKnown) {
     String line = pda != 0 ? " " + Lizzie.resourceBundle.getString("SGFParse.pda") + pda : "";
-    line += wrn != 0 ? " " + Lizzie.resourceBundle.getString("SGFParse.wrn") + wrn : "";
+    line += wrnKnown && wrn != 0 ? " " + Lizzie.resourceBundle.getString("SGFParse.wrn") + wrn : "";
     return line;
   }
 
@@ -2830,12 +2802,8 @@ public class SGFParser {
                 String.format(Locale.ENGLISH, "%.1f", scoreStdev),
                 engine,
                 playouts,
-                data.pda2 != 0
-                    ? String.format(Locale.ENGLISH, "%.1f", data.getKomi())
-                        + " "
-                        + Lizzie.resourceBundle.getString("SGFParse.pda")
-                        + data.pda2
-                    : String.format(Locale.ENGLISH, "%.1f", data.getKomi()));
+                String.format(Locale.ENGLISH, "%.1f", data.getKomi())
+                    + getPdaWrnString(data.pda2, data.wrn2, data.wrnKnown2));
       }
     } else {
       String wf =
@@ -2860,16 +2828,14 @@ public class SGFParser {
               String.format(Locale.ENGLISH, "%.1f", data.getKomi()));
     }
 
-    if (!data.comment.isEmpty()) {
-      String wp = winrateCommentRegex(data.isKataData, data.isSaiData);
-      // if (Lizzie.leelaz.isKatago) wp = wp + "\n.*";
-      if (data.comment.matches("(?s).*" + wp + "(?s).*")) {
-        nc = data.comment.replaceAll(wp, nc);
-      } else {
-        nc = String.format(Locale.ENGLISH, "%s\n\n%s", data.comment, nc);
-      }
-    }
-    return nc;
+    return mergeAnalysisComment(data.comment, nc);
+  }
+
+  private static String mergeAnalysisComment(String comment, String summary) {
+    WinrateCommentSplit split = splitWinrateComment(comment);
+    if (!split.matchInfo.isEmpty()) return comment.replace(split.matchInfo, summary);
+    if (summary.isEmpty()) return comment;
+    return comment.isEmpty() ? summary : comment + "\n\n" + summary;
   }
 
   /** Format Comment with following format: <Winrate> <Playouts> */
@@ -2890,18 +2856,7 @@ public class SGFParser {
     String curWinrate = "";
     curWinrate = String.format(Locale.ENGLISH, "%.1f", 100 - curWR);
 
-    return formatAnalysisPayload(
-        data.engineName,
-        curWinrate,
-        playouts,
-        data.isKataData,
-        data.analysisHeaderSlots,
-        data.scoreMean,
-        data.scoreStdev,
-        data.pda,
-        data.bestMovesToString(),
-        data.estimateArray,
-        data.rootVisits);
+    return SgfAnalysisPayloadWriter.format(data, false, curWinrate, playouts);
   }
 
   private static String formatNodeData2(BoardHistoryNode node) {
@@ -2921,73 +2876,7 @@ public class SGFParser {
     String curWinrate = "";
     curWinrate = String.format(Locale.ENGLISH, "%.1f", 100 - curWR);
 
-    return formatAnalysisPayload(
-        data.engineName2,
-        curWinrate,
-        playouts,
-        data.isKataData2,
-        data.analysisHeaderSlots2,
-        data.scoreMean2,
-        data.scoreStdev2,
-        data.pda2,
-        data.bestMovesToString2(),
-        data.estimateArray2,
-        data.rootVisits2);
-  }
-
-  private static String formatAnalysisPayload(
-      String engineName,
-      String curWinrate,
-      String playouts,
-      boolean kataData,
-      int headerSlots,
-      double scoreMean,
-      double scoreStdev,
-      double pda,
-      String bestMoves,
-      List<Double> estimateArray,
-      int rootVisits) {
-    StringBuilder header = new StringBuilder();
-    header.append(engineName).append(" ").append(curWinrate).append(" ").append(playouts);
-    if (kataData || rootVisits >= 0) {
-      boolean hasExplicitHeaderSlots = rootVisits < 0 && headerSlots > 0;
-      boolean includeScoreStdev = !hasExplicitHeaderSlots || headerSlots >= 5;
-      boolean includePda =
-          rootVisits >= 0
-              || (hasExplicitHeaderSlots ? headerSlots >= 6 : Double.compare(pda, 0) != 0);
-      header.append(" ").append(formatAnalysisScalar(scoreMean));
-      if (includeScoreStdev) {
-        header.append(" ").append(formatAnalysisScalar(scoreStdev));
-      }
-      if (includePda) {
-        header.append(" ").append(formatAnalysisScalar(pda));
-      }
-    }
-    if (rootVisits >= 0) header.append(" rootVisits=").append(rootVisits);
-
-    String detailLine = formatAnalysisDetailLine(bestMoves, estimateArray);
-    if (Utils.isBlank(detailLine)) {
-      return header.toString();
-    }
-    return header.append('\n').append(detailLine).toString();
-  }
-
-  private static String formatAnalysisDetailLine(String bestMoves, List<Double> estimateArray) {
-    StringBuilder detailLine = new StringBuilder();
-    if (!Utils.isBlank(bestMoves)) {
-      detailLine.append(bestMoves);
-    }
-    if (estimateArray != null && !estimateArray.isEmpty()) {
-      detailLine.append(" ownership");
-      for (Double value : estimateArray) {
-        detailLine.append(" ").append(value);
-      }
-    }
-    return detailLine.toString();
-  }
-
-  private static String formatAnalysisScalar(double value) {
-    return Double.toString(value);
+    return SgfAnalysisPayloadWriter.format(data, true, curWinrate, playouts);
   }
 
   public static boolean isListProperty(String key) {
@@ -3325,6 +3214,8 @@ public class SGFParser {
     snapshotData.scoreMean = moveData.scoreMean;
     snapshotData.scoreStdev = moveData.scoreStdev;
     snapshotData.pda = moveData.pda;
+    snapshotData.wrn = moveData.wrn;
+    snapshotData.wrnKnown = moveData.wrnKnown;
     clearPrimaryAnalysisPayload(moveData);
   }
 
@@ -3347,6 +3238,8 @@ public class SGFParser {
     snapshotData.scoreMean2 = moveData.scoreMean2;
     snapshotData.scoreStdev2 = moveData.scoreStdev2;
     snapshotData.pda2 = moveData.pda2;
+    snapshotData.wrn2 = moveData.wrn2;
+    snapshotData.wrnKnown2 = moveData.wrnKnown2;
     clearSecondaryAnalysisPayload(moveData);
   }
 
@@ -3381,6 +3274,8 @@ public class SGFParser {
     data.scoreMean = 0;
     data.scoreStdev = 0;
     data.pda = 0;
+    data.wrn = 0;
+    data.wrnKnown = false;
   }
 
   private static void clearSecondaryAnalysisPayload(BoardData data) {
@@ -3397,6 +3292,8 @@ public class SGFParser {
     data.scoreMean2 = 0;
     data.scoreStdev2 = 0;
     data.pda2 = 0;
+    data.wrn2 = 0;
+    data.wrnKnown2 = false;
   }
 
   private static List<MoveData> copyMoveDataListAllowNull(List<MoveData> values) {
@@ -4730,6 +4627,7 @@ public class SGFParser {
     int headerPlayouts = parseAnalysisPlayouts(line1[2]);
     int headerSlots = Math.min(6, line1.length);
     int rootVisits = -1;
+    double wrn = Double.NaN;
     for (int i = 6; i < line1.length; i++) {
       if (line1[i].startsWith("rootVisits=")) {
         try {
@@ -4738,13 +4636,19 @@ public class SGFParser {
           rootVisits = -1;
         }
       }
+      if (line1[i].startsWith("wrn=")) {
+        wrn = parseDoubleOrDefault(line1[i].substring("wrn=".length()), Double.NaN);
+      }
     }
+    boolean wrnKnown = Double.isFinite(wrn) && wrn >= 0 && wrn <= 2;
     if (rootVisits >= 0) headerPlayouts = rootVisits;
     if (secondaryEngineTag) {
       target.engineName2 = line1[0];
       target.winrate2 = 100 - parseDoubleOrDefault(line1[1], 50);
       target.setPlayouts2(headerPlayouts);
       target.rootVisits2 = rootVisits;
+      target.wrnKnown2 = wrnKnown;
+      target.wrn2 = wrnKnown ? wrn : 0;
       target.isKataData2 = false;
       target.analysisHeaderSlots2 = headerSlots;
       target.scoreMean2 = 0;
@@ -4766,6 +4670,8 @@ public class SGFParser {
     target.winrate = 100 - parseDoubleOrDefault(line1[1], 50);
     target.setPlayouts(headerPlayouts);
     target.rootVisits = rootVisits;
+    target.wrnKnown = wrnKnown;
+    target.wrn = wrnKnown ? wrn : 0;
     target.isKataData = false;
     target.analysisHeaderSlots = headerSlots;
     target.scoreMean = 0;

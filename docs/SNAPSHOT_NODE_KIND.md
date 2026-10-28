@@ -128,6 +128,9 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 - detached 与 live 导入都把 `RE` 保存为 `GameInfo.result`；不能将结果伪造成根或末节点注释，保存重开保持真实注释与对局结果。
 - `LZ` / `LZ2` / `LZOP` / `LZOP2` 单行 header-only analysis payload 视为完整 payload；缺少第二行 PV 时，`parseSgf(...)`、`setHistory(...)` adopt、`saveToString(...)` 与 round-trip 仍导出等价 payload。
 - header 内 `engineName`、`playouts`、`scoreMean`、`scoreStdev`、`pda`（双引擎槽位含 `engineName2`、`scoreMean2`、`scoreStdev2`、`pda2`）在 parse、`setHistory(...)` adopt、`saveToString(...)`、round-trip 全链路保留。
+- 每个分析槽位独立保存 `wrn/wrnKnown` 或 `wrn2/wrnKnown2`。只有整份有效 Kata 分析被采纳时才记录该来源引擎的普通分析广度；拒绝的输出与 ownership-only 补全不改写参数。clone、同步、restore 与 SNAPSHOT 转移保留数值及已知性，清空分析同时清空已知性；无法确定来源时不从当前工具栏补值。
+- `wrn=<有限数值>` 位于六个完整传统 header slots 之后，与 `rootVisits=` 并存，合法范围为 `[0,2]`。已知零值也写出；缺失或非法值保持 unknown。header-only、双槽及 detached parse/adopt/save 均遵守此规则，不改变 PV、order、edgeVisits 或 ownership 的语义。
+- 普通、人机、第二引擎和引擎对局摘要分别显示非零 PDA 与已知非零 WRN，二者互不遮蔽；小数广度不截断，unknown 不猜测。重新生成摘要替换旧摘要，保留用户注释。
 - `setHistory(...)` adopt detached history 时，board 级 Kata 状态从 adopted history 重新推导：
   - history 任意节点存在可靠 Kata analysis payload（`isKataData` / `isKataData2`，或 best-move 项带 `isKataData=true`）时，`isKataBoard=true`。
   - 残留 `scoreMean` / `scoreMean2` 数值本身不作为 Kata board 判定信号。
@@ -157,7 +160,8 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 - `Leelaz` 继续唯一拥有 ordinary command queue、response handler、timeout、late-response retirement、output-stream invalidation 与 engine arbitration；exact module 只通过窄 admission-aware seam 使用这些能力。
 - 普通 KataGo 启动的 PDA/WRN 回读由 `Leelaz` 持有独立轮次，绑定既有 numbered pending response 与 reader incarnation；规则 operation 的成功、失败和超时不结算参数轮次。startup-post 查询仍遵守原有实际写出／失败关闭边界。
 - PDA/WRN 仅在同一有效轮次两项有限数值均成功回读后，通过现有工具栏路径发布完整一对；回复次序不影响结果，合法零值不是空白。错误、格式错误、缺失或超时不以自动载入配置／默认零补齐成功。取消、替换及旧 timeout 不影响后继轮次；EDT 发布时复验原前台 generation、reader 与轮次，隔离启动不得更新全局显示。
-- 普通分析广度只依赖当前 KataGo 的可用性与普通操作资格，不要求快速分析独占租约的完整命令集。启动、切换和重启在最终 lifecycle endpoint 释放后刷新控件；EDT 执行时重新读取当前前台身份及门禁，不缓存旧的 enabled 值。刷新只投影 enabled 状态，保留勾选与数值，不写配置、不发参数命令、不启动分析；独占任务、未恢复状态、Fox 所有权及 genmove 禁用约束保持有效。
+- 普通工具栏编辑、勾选和高级设置共用有效 WRN 更新入口：未勾选时有效值为零，文本保留草稿。setter 仍经过既有普通队列；物理写出时更新运行时值并退休旧分析来源，入队但尚未写出的值不能标记旧搜索。setter ACK 不作为参数回读，启动参数回读和引擎对局协议保持独立。
+- 普通分析广度只依赖当前 KataGo 的可用性与普通操作资格，不要求快速分析独占租约的完整命令集。启动、切换和重启在最终 lifecycle endpoint 释放后刷新控件；EDT 执行时重新读取当前前台身份及门禁，不缓存旧的 enabled 值。刷新只投影可见性与 enabled 状态，保留勾选与数值，不写配置、不发参数命令、不启动分析；独占任务、未恢复状态、Fox 所有权及 genmove 禁用约束保持有效。
 - 手动终止 genmove 对局后，空 numbered ACK 仍是非终态；迟到的合法 analyze `play` 只结清原 reader binding 的 pending handler，不追加应用的真实 `MOVE/PASS` 或比赛结果。缺失终态继续按既有五秒物理请求 watchdog 回收。
 - 已停止对局的前台引擎在物理请求退役后，由 `EngineManager` 异步冻结并执行当前应用盘面的 root/exact 恢复；退役屏障保留到既有稳定 board synchronization fence 完成。恢复命令仅获该 lifecycle owner 对原 binding 的写入授权，失败将原目标标为 unavailable，替换实例不受旧归还影响；手动停止不自动恢复 ponder。
 - 对局中所有贴目入口统一提交给当前 engine-game owner；界面区分已确认贴目与待应用目标，连续输入只保留最新目标，不修改 frozen opening plan 或后续批次默认值。GENMOVE 已发出的当前合法手须先完成并由对手接受，再开始贴目切换。
@@ -165,7 +169,11 @@ SGF `DD[true]` 恢复独立的 dummy PASS 占位节点，包括保存器输出�
 - 任一贴目确认拒绝、发送失败、超时或实例丢失均 fail-closed 结束当前批次，保留最后确认贴目，不制造结果或 successor。部分写入后失败或取消须退役可能持有未确认贴目的原实例；旧实例确认不得影响替换实例或新对局。
 - 分析模式 KataGo 引擎对局的广度（`analysisWideRootNoise`）与激进度（`playoutDoublingAdvantage`）由 `EngineGameParameterSession` 按批次持有，按引擎 1／引擎 2 位置而非颜色绑定。首局覆盖前按 exact engine + reader incarnation 读取双方两项实际值作为不可变的批次前恢复值，全部读取完成后才开始写入；每局应用批次冻结的两项开局值并逐项回读确认，局中“对局参数”修改只影响本局，不写配置、不改冻结开局值或恢复值。
 - 局中修改经当前 engine-game owner 与落子提交、runtime komi 串行：runtime komi 与参数更新由同一 `EngineGameSearchUpdates` worker 按提交顺序逐个执行，排队中的更新以自身 pending 状态阻止中途恢复搜索。每次更新先停止并排空已准入的落子操作，再递增 search revision 使旧搜索结果失去落子资格，然后只为目标与已确认值不同的位置/参数设值、回读（只改 PDA 不重发 WRN，反之亦然），全部所改项确认后才按最新暂停/终止意图恢复搜索，不重置本手计时；部分确认不算成功。确认失败暂停对局，未解决的参数不一致阻止普通继续。一次请求中任一所选位置不支持所改参数时，在任何写入前整体拒绝。非 KataGo 参赛方不支持两项，专用 PDA 引擎（`KataGoPda`、报告动态 PDA 的引擎）不支持激进度，不通过 `kata-set-param` 覆盖其策略，也不读取或恢复其 PDA：开局值 0 视为不改并跳过，非零则拒绝开局。不改写 `playoutDoublingAdvantagePla` 等颜色/动态配置。
-- 批次正常结束或用户终止后才恢复各位置两项原值（批次间隔不恢复）；恢复只写原 incarnation，逐项设值并回读，任一项失败时强制退出该进程并报告；原进程已被替换或退出时不向替换进程重放旧恢复，但同样报告该位置未能恢复。对局期间普通工具栏与高级参数的 WRN/PDA 直接修改禁用，不再存在引擎对局专用的“关闭广度”。
+- 批次正常结束或用户终止后才恢复各位置两项原值（批次间隔不恢复）；恢复只写原 incarnation，逐项设值并回读，任一项失败时强制退出该进程并报告；原进程已被替换或退出时不向替换进程重放旧恢复，但同样报告该位置未能恢复。
+- 普通 WRN、PDA 和自定义 PDA 工具栏整组从对局准备起隐藏，覆盖运行、暂停、批次间隔及既有 owner 的异步退役与参数恢复；单／双菜单切换和功能搜索不能绕过覆盖或修改显示偏好。旧 completion 不解除新批次的覆盖。恢复终态后按原偏好与当前引擎资格重新投影；失败仍报告并退役原实例，不永久隐藏当前合格实例，不使不可用实例可编辑。分析模式保留原“对局参数”入口，genmove 不新增该入口；高级参数窗口保持直接修改锁定，不隐藏内容。不再存在引擎对局专用的“关闭广度”。
+- genmove 引擎对局的启动与归还不捕获或重放人机对局的普通 WRN 快照，也不修改普通 WRN 勾选或草稿；工具栏资格由既有 owner 退役后的投影恢复。人机对局仍使用自己的 WRN 快照恢复入口。
+- 分析模式对局参数恢复完成后，普通工具栏按当前可用前台实例的已恢复值投影，不继续显示原前台实例的数值。该投影不写普通配置或发送 setter；有效值相同的禁用草稿保留，恢复失败或新批次仍占用时不发布成功值。
+- 普通高级参数窗口打开时按可用当前实例的 PDA/WRN 初始化，与有效值一致的工具栏禁用草稿保留；自动加载勾选不推导当前启用状态。普通确定与线程回调均只提交窗口打开后编辑过的参数，各项独立；未编辑保存不重放参数、不写入普通参数配置。自动加载标志/数值与当前启停独立，只有明确修改自动加载勾选或该行数值才保存对应偏好；取消当前启用不清除自动加载。旧窗口仍受原实例/reader 校验和对局操作门禁约束。高级窗口的编辑锁定与普通参数提交共用完整的对局占用判定，覆盖 Idle 后仍未完成的退役与参数恢复；此期间仅保存偏好，不提交普通参数草稿，恢复终态后才按现有资格解锁。
 - `PreparedRestore` 可在首次 `execute()` 前由捕获它的 owner 调用 one-shot `discard()` 释放 captured admission；`discard()` 不写临时 SGF、不发任何命令。首次 `execute()` 或 `discard()` 后，另一操作必须以既有 `Exact snapshot restore has already been executed` 失败；一旦 execute 开始，所有失败仍按 owner 的既有 fail-closed 语义处理。
 - 没有可用静态锚点时，调用方保留既有 root replay；默认空 root 不是 exact 锚点。exact 一旦开始，`loadsgf`、tail 或 arbitration 失败都原样失败，禁止猜测性 root fallback。
 - lifecycle exact/root 抛错时，owner 将 frozen target 标为 unavailable，并在既有 completion boundary 释放 reservation；该路径不引入 `ENGINE_STATE_UNRESTORED` 或通用 retry。ReadBoard GMA 固定点既有 quarantine/retirement 行为保持独立。
