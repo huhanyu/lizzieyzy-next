@@ -706,13 +706,7 @@ public class Board {
     stack.push(node);
     while (!stack.isEmpty()) {
       BoardHistoryNode cur = stack.pop();
-      if (cur.getData().getPlayouts() > 0) {
-        cur.getData().bestMoves = new ArrayList<>();
-        cur.getData().winrate = 50;
-        cur.getData().setPlayouts(0);
-        cur.getData().scoreMean = 0;
-        cur.nodeInfo = new NodeInfo();
-      }
+      if (cur.getData().getPlayouts() > 0 || cur.getData().wrnKnown) clearBestMovesInfomation(cur);
       if (cur.numberOfChildren() >= 1) {
         for (int i = cur.numberOfChildren() - 1; i >= 0; i--)
           stack.push(cur.getVariations().get(i));
@@ -725,13 +719,8 @@ public class Board {
     stack.push(node);
     while (!stack.isEmpty()) {
       BoardHistoryNode cur = stack.pop();
-      if (cur.getData().getPlayouts2() > 0) {
-        cur.getData().bestMoves2 = new ArrayList<>();
-        cur.getData().winrate2 = 50;
-        cur.getData().setPlayouts2(0);
-        cur.getData().scoreMean2 = 0;
-        cur.nodeInfo2 = new NodeInfo();
-      }
+      if (cur.getData().getPlayouts2() > 0 || cur.getData().wrnKnown2)
+        clearbestmovesInfomation2(cur);
       if (cur.numberOfChildren() >= 1) {
         for (int i = cur.numberOfChildren() - 1; i >= 0; i--)
           stack.push(cur.getVariations().get(i));
@@ -744,6 +733,8 @@ public class Board {
     node.getData().winrate = 50;
     node.getData().setPlayouts(0);
     node.getData().scoreMean = 0;
+    node.getData().wrn = 0;
+    node.getData().wrnKnown = false;
     node.nodeInfo = new NodeInfo();
   }
 
@@ -752,6 +743,8 @@ public class Board {
     node.getData().winrate2 = 50;
     node.getData().setPlayouts2(0);
     node.getData().scoreMean2 = 0;
+    node.getData().wrn2 = 0;
+    node.getData().wrnKnown2 = false;
     node.nodeInfo2 = new NodeInfo();
   }
 

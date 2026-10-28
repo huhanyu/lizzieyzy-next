@@ -121,6 +121,14 @@ public final class EngineGameParameterSession {
     return new EngineGameParameterSession(plan.openingParameters(), board, predecessor);
   }
 
+  private static void trackRestoration(EngineGameParameterSession session) {
+    if (Lizzie.engineGame != null) Lizzie.engineGame.trackParameterRestoration(session.restored);
+  }
+
+  static void refreshPresentation() {
+    if (Lizzie.engineGame != null) Lizzie.engineGame.refreshParameterPresentation();
+  }
+
   /**
    * Restores the batch's processes once a retired game leaves the batch idle. The stop path calls
    * this before releasing the participants; retirement completion and the successor continuation
@@ -256,6 +264,7 @@ public final class EngineGameParameterSession {
   void applyOpening(EngineGameOwnerTransaction owner) throws InterruptedException {
     finishPredecessor(owner.manager.engineGameStartupTimeoutMillis());
     owner.parameters = this;
+    trackRestoration(this);
     Game next = new Game(owner);
     boolean[] capturing = new boolean[2];
     for (int p = 0; p < 2; p++) {

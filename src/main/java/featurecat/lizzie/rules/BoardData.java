@@ -148,6 +148,9 @@ public class BoardData {
   public double pda2 = 0;
   public double komi = -999;
   public double wrn = 0;
+  public double wrn2 = 0;
+  public boolean wrnKnown;
+  public boolean wrnKnown2;
   public List<Double> estimateArray;
   public List<Double> estimateArray2;
   public boolean playoutsChanged;
@@ -564,9 +567,8 @@ public class BoardData {
         pda = sourceEngine.pda;
       } else pda = 0;
     }
-    if (!Lizzie.engineGame.current().playingGenmove() && metadataEngine != null) {
-      wrn = metadataEngine.wrn;
-    }
+    wrnKnown = isKataData && sourceEngine != null && !Lizzie.engineGame.current().playingGenmove();
+    wrn = wrnKnown ? sourceEngine.wrn : 0;
     analysisHeaderSlots = 0;
     // 排序
     Collections.sort(
@@ -776,6 +778,9 @@ public class BoardData {
         pda2 = metadataEngine.pda;
       } else pda2 = 0;
     }
+    wrnKnown2 =
+        isKataData2 && metadataEngine != null && !Lizzie.engineGame.current().playingGenmove();
+    wrn2 = wrnKnown2 ? metadataEngine.wrn : 0;
     analysisHeaderSlots2 = 0;
     Collections.sort(
         moves,
@@ -1099,6 +1104,8 @@ public class BoardData {
     scoreMean = 0;
     scoreStdev = 0;
     pda = 0;
+    wrn = 0;
+    wrnKnown = false;
   }
 
   private void clearSecondaryAnalysisPayloadState() {
@@ -1116,6 +1123,8 @@ public class BoardData {
     scoreMean2 = 0;
     scoreStdev2 = 0;
     pda2 = 0;
+    wrn2 = 0;
+    wrnKnown2 = false;
   }
 
   private static void validateNodeKind(BoardNodeKind nodeKind, Optional<int[]> lastMove) {
@@ -1180,6 +1189,9 @@ public class BoardData {
     this.pda2 = data.pda2;
     this.komi = data.komi;
     this.wrn = data.wrn;
+    this.wrn2 = data.wrn2;
+    this.wrnKnown = data.wrnKnown;
+    this.wrnKnown2 = data.wrnKnown2;
     this.estimateArray = copyDoubleList(data.estimateArray);
     this.estimateArray2 = copyDoubleList(data.estimateArray2);
     this.playoutsChanged = data.playoutsChanged;

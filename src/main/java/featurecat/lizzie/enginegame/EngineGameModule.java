@@ -17,6 +17,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Owns product batch admission, GamePlan, product transaction identity, BatchState statistics,
@@ -37,6 +38,7 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
   private MatchRulesSnapshot matchRulesSnapshot;
   private EngineGameKomiState komiState;
   private String parameterRestoreFailure;
+  private CompletableFuture<Void> parameterRestoration = CompletableFuture.completedFuture(null);
   private MatchRulesAdmission.ConsentKey grantedMatchRulesConsent;
   private MatchRulesConsent matchRulesConsent =
       featurecat.lizzie.gui.SwingMatchRulesConsent.INSTANCE;
@@ -276,6 +278,29 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
     synchronized (lock) {
       return parameterRestoreFailure;
     }
+  }
+
+  /** Ordinary parameter presentation stays covered until the current batch has handed back. */
+  public boolean ordinaryParametersHidden() {
+    synchronized (lock) {
+      if (!(snapshot instanceof EngineGameSnapshot.Idle) || !parameterRestoration.isDone()) {
+        return true;
+      }
+    }
+    return EngineManager.hasUnsettledEngineGame();
+  }
+
+  /** Tracks the existing parameter owner's completion, not a second parameter session. */
+  public void trackParameterRestoration(CompletableFuture<Void> completion) {
+    synchronized (lock) {
+      if (parameterRestoration == completion) return;
+      parameterRestoration = completion;
+    }
+    completion.whenComplete((ignored, failure) -> refreshParameterPresentation());
+  }
+
+  public void refreshParameterPresentation() {
+    publishChrome(EngineGameChromeTransition.Kind.PARAMETERS_CHANGED);
   }
 
   public void reportParameterRestoreFailure(String detail) {
@@ -596,6 +621,7 @@ public final class EngineGameModule implements EngineGameControl, EngineGameStat
       matchRulesConsent = featurecat.lizzie.gui.SwingMatchRulesConsent.INSTANCE;
       matchRulesSnapshot = null;
       grantedMatchRulesConsent = null;
+      parameterRestoration = CompletableFuture.completedFuture(null);
       clearAcceptedLocked();
       snapshot = new EngineGameSnapshot.Idle();
     }

@@ -1153,7 +1153,6 @@ class EngineManagerInitialStartupSynchronizationTest {
             assertTrue(checkbox.isEnabled());
             assertEquals(selected, checkbox.isSelected());
             assertEquals(selected, menu.txtWRN.isEnabled());
-            assertEquals(selected ? "0.2" : "0", menu.txtWRN.getText());
           });
     }
   }
