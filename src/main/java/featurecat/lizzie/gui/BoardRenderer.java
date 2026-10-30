@@ -91,6 +91,7 @@ public class BoardRenderer {
   private VariationPreviewGenerator.Style publishedStyle;
 
   private BufferedImage cachedBackgroundImage = emptyImage;
+  private BufferedImage coordinateFreeBackground;
   private boolean cachedIsBigMargin = false;
   private int cachedBoardWidth = 0, cachedBoardHeight = 0;
   private BufferedImage cachedStonesImage = emptyImage;
@@ -692,15 +693,6 @@ public class BoardRenderer {
   }
 
   /** Calculate good values for boardLength, scaledMargin, availableLength, and squareLength */
-  //  public int[] availableLength(int boardWidth, int boardHeight, boolean showCoordinates) {
-  //    int[] calculatedPixelMargins = calculatePixelMargins(boardWidth, boardHeight,
-  // showCoordinates);
-  //    return (calculatedPixelMargins != null && calculatedPixelMargins.length >= 6)
-  //        ? calculatedPixelMargins
-  //        : new int[] {boardWidth, 0, boardWidth, boardHeight, 0, boardHeight};
-  //  }
-
-  /** Calculate good values for boardLength, scaledMargin, availableLength, and squareLength */
   public void setupSizeParameters(boolean isBigMargin) {
     int boardWidth0 = boardWidth;
     int boardHeight0 = boardHeight;
@@ -897,11 +889,6 @@ public class BoardRenderer {
 
       // Draw the wooden background
       drawWoodenBoard(g);
-      //      g.setColor(new Color(0,0,0,52));
-      //      g.fillRect(x, y+stoneRadius/5, stoneRadius/5, boardHeight-stoneRadius/5);
-      //      g.fillRect(x, y, boardWidth-stoneRadius/5,  stoneRadius/5);
-      //      g.fillRect(x+boardWidth-stoneRadius/5, y, stoneRadius/5, boardHeight-stoneRadius/5);
-      //      g.fillRect(x+stoneRadius/5, y+boardHeight-stoneRadius/5, boardWidth,  stoneRadius/5);
       // Draw the lines
       g.setColor(Color.BLACK);
       BasicStroke borderStroke =
@@ -947,6 +934,8 @@ public class BoardRenderer {
       // Draw the star points
       drawStarPoints(g);
 
+      coordinateFreeBackground =
+          BoardScreenshotAction.copy(new Rectangle(0, 0, width, height), cachedBackgroundImage);
       // Draw coordinates if enabled
       if (showCoordinates()) {
         g.setColor(Color.BLACK);
@@ -1341,9 +1330,6 @@ public class BoardRenderer {
       Graphics2D gShadow = cachedStonesShadowImage.createGraphics();
       gShadow.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
-      // we need antialiasing to make the stones pretty. Java is a bit slow at
-      // antialiasing; that's
-      // why we want the cache
       g.setRenderingHint(KEY_ANTIALIASING, VALUE_ANTIALIAS_ON);
       gShadow.setRenderingHint(KEY_ANTIALIASING, VALUE_ANTIALIAS_ON);
       drawShadowCache();
@@ -1361,9 +1347,7 @@ public class BoardRenderer {
       cachedDisplayedBranchLength = displayedBranchLength;
       g.dispose();
       gShadow.dispose();
-      // lastInScoreMode = false;
     }
-    //   if (Lizzie.board.inScoreMode()) lastInScoreMode = true;
   }
 
   private void drawSetupStones(Graphics2D g) {
@@ -4361,14 +4345,7 @@ public class BoardRenderer {
    */
   public Optional<int[]> convertScreenToCoordinates(int x, int y) {
     int marginWidth; // the pixel width of the margins
-    //   int boardWidthWithoutMargins; // the pixel width of the game board without margins
     int marginHeight; // the pixel height of the margins
-    //  int boardHeightWithoutMargins; // the pixel height of the game board without margins
-
-    // calculate a good set of boardLength, scaledMargin, and
-    // boardLengthWithoutMargins to use
-    // int[] calculatedPixelMargins = calculatePixelMargins();
-    // setBoardLength(calculatedPixelMargins[0], calculatedPixelMargins[3]);
     marginWidth = this.scaledMarginWidth;
     marginHeight = this.scaledMarginHeight;
     int oriX = x;
@@ -4391,19 +4368,12 @@ public class BoardRenderer {
         return LizzieFrame.boardRenderer2.convertScreenToCoordinates(oriX, oriY);
       else return Optional.empty();
     }
-    // return Board.isValid(x, y) ? Optional.of(new int[] {x, y}) : Optional.empty();
   }
 
   public Optional<int[]> convertScreenToCoordinatesForSelect(int x, int y) {
     int marginWidth; // the pixel width of the margins
-    //  int boardWidthWithoutMargins; // the pixel width of the game board without margins
     int marginHeight; // the pixel height of the margins
-    //   int boardHeightWithoutMargins; // the pixel height of the game board without margins
 
-    // calculate a good set of boardLength, scaledMargin, and
-    // boardLengthWithoutMargins to use
-    // int[] calculatedPixelMargins = calculatePixelMargins();
-    // setBoardLength(calculatedPixelMargins[0], calculatedPixelMargins[3]);
     marginWidth = this.scaledMarginWidth;
     marginHeight = this.scaledMarginHeight;
     if (x > this.x + boardWidth - marginHeight) x = this.x + boardWidth - marginHeight;
@@ -4652,6 +4622,26 @@ public class BoardRenderer {
 
   public boolean isInside(int x1, int y1) {
     return x <= x1 && x1 < x + boardWidth && y <= y1 && y1 < y + boardHeight;
+  }
+
+  BufferedImage captureScreenshot(BufferedImage... layers) {
+    return BoardScreenshotAction.copyWithoutCoordinates(
+        getScreenshotBounds(),
+        getBoardBounds(),
+        cachedBackgroundImage,
+        coordinateFreeBackground,
+        new BufferedImage[] {cachedStonesImage, branchStonesImage, cachedStonesImagedraged},
+        layers);
+  }
+
+  Rectangle getScreenshotBounds() {
+    int pad = stoneRadius + 1;
+    return new Rectangle(
+            x + scaledMarginWidth - pad,
+            y + scaledMarginHeight - pad,
+            (boardWSize - 1) * squareWidth + 2 * pad + 1,
+            (boardHSize - 1) * squareHeight + 2 * pad + 1)
+        .intersection(getBoardBounds());
   }
 
   Rectangle getBoardBounds() {

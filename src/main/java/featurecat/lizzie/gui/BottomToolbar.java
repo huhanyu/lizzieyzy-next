@@ -85,6 +85,7 @@ public class BottomToolbar extends JPanel {
   JButton backward1;
   JButton openfile;
   JButton savefile;
+  JButton screenshot;
   public JButton analyse;
   JButton kataEstimate;
   JButton heatMap;
@@ -530,13 +531,7 @@ public class BottomToolbar extends JPanel {
       }
       JFontMenuItem item = new JFontMenuItem(label);
       item.putClientProperty("BottomToolbar.originalButton", button);
-      item.addActionListener(
-          new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-              button.doClick();
-            }
-          });
+      item.addActionListener(e -> button.doClick());
       moreActionsPopup.add(item);
     }
     AppleStyleSupport.installPopupStyle(moreActionsPopup);
@@ -706,6 +701,7 @@ public class BottomToolbar extends JPanel {
   }
 
   public BottomToolbar() {
+    screenshot = new JFontButton(resourceBundle.getString("BoardScreenshot.button"));
     this.setBackground(
         Lizzie.config.useMorandiColors ? MorandiPalette.TOOLBAR_BG : new Color(232, 232, 232));
     this.setOpaque(false);
@@ -846,6 +842,7 @@ public class BottomToolbar extends JPanel {
     buttonPane.add(finalScore);
     buttonPane.add(forward10);
     buttonPane.add(savefile);
+    buttonPane.add(screenshot);
     buttonPane.add(backward10);
     buttonPane.add(gotomove);
     buttonPane.add(backward1);
@@ -955,6 +952,7 @@ public class BottomToolbar extends JPanel {
     setButtonSize(batchOpen, false);
     setButtonSize(openfile, true);
     setButtonSize(savefile, true);
+    setButtonSize(screenshot, true);
     setButtonSize(analyzeList, false);
     setButtonSize(refresh, true);
     setAnalyseButtonSize();
@@ -1354,18 +1352,14 @@ public class BottomToolbar extends JPanel {
     // }
     // });
     openfile.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            Lizzie.frame.openFile();
-            setTxtUnfocuse();
-          }
+        e -> {
+          Lizzie.frame.openFile();
+          setTxtUnfocuse();
         });
     savefile.addActionListener(
-        new ActionListener() {
-          public void actionPerformed(ActionEvent e) {
-            Lizzie.frame.saveOriFile();
-            setTxtUnfocuse();
-          }
+        e -> {
+          Lizzie.frame.saveOriFile();
+          setTxtUnfocuse();
         });
     clearButton.addActionListener(
         new ActionListener() {
@@ -5039,6 +5033,7 @@ public class BottomToolbar extends JPanel {
 
   public void reSetButtonLocation() {
     setButtonVisiable();
+    if (screenshot != null) screenshot.setVisible(true);
     int w = Math.max(getWidth(), Lizzie.frame.getWidth());
     if (Lizzie.leelaz == null || !Lizzie.leelaz.isKatago) {
       kataEstimate.setVisible(false);
@@ -5057,7 +5052,7 @@ public class BottomToolbar extends JPanel {
     buttonPane.setOpaque(false);
 
     // Build layout lists BEFORE hiding — visibleButtons checks isVisible()
-    List<JButton> leftPrimary = visibleButtons(analyse, batchOpen);
+    List<JButton> leftPrimary = visibleButtons(screenshot, analyse, batchOpen);
     List<JButton> leftOptional =
         visibleButtons(
             openfile,
@@ -5083,6 +5078,7 @@ public class BottomToolbar extends JPanel {
       boolean reserveOverflow = pass == 1;
       overflowButtons.clear();
       hideButtons(
+          screenshot,
           remoteComputeButton,
           downloadWeightButton,
           liveButton,
