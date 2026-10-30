@@ -659,7 +659,17 @@ public class LizzieFrame extends JFrame {
     subBoardRenderer = new SubBoardRenderer(false);
     variationTree = new VariationTree();
     winrateGraph = new WinrateGraph();
+    Config config = Lizzie.config;
+    java.util.function.Supplier<Board> currentBoard = () -> Lizzie.board;
     toolbar = new BottomToolbar();
+    new BoardScreenshotAction(
+            this,
+            config,
+            currentBoard,
+            () -> isTrying,
+            () -> captureMainBoardScreenshot(config),
+            Lizzie.resourceBundle)
+        .install(toolbar.screenshot);
     topPanel = new TopHeaderPanel();
     menu = new Menu();
     coachPanel = new CoachPanel(this);
@@ -672,8 +682,8 @@ public class LizzieFrame extends JFrame {
     // add(menu);
     // this.setJMenuBar(menu);
     // this.setVisible(true);
-    this.setAlwaysOnTop(Lizzie.config.mainsalwaysontop);
-    if (Lizzie.config.extraMode == ExtraMode.Float_Board) setMinimumSize(new Dimension(0, 0));
+    this.setAlwaysOnTop(config.mainsalwaysontop);
+    if (config.extraMode == ExtraMode.Float_Board) setMinimumSize(new Dimension(0, 0));
     else setMinimumSize(new Dimension(520, 400));
     if (Lizzie.config.isFourSubMode()) {
       subBoardRenderer2 = new SubBoardRenderer(false);
@@ -692,7 +702,7 @@ public class LizzieFrame extends JFrame {
     }
     for (int i = 0; i < visitsCount; i++) {
       visitsTemp[i] = new VisitsTemp();
-      visitsTemp[i].node = Lizzie.board.getHistory().getCurrentHistoryNode();
+      visitsTemp[i].node = currentBoard.get().getHistory().getCurrentHistoryNode();
     }
 
     gtpShortKey =
@@ -12266,35 +12276,16 @@ public class LizzieFrame extends JFrame {
   }
 
   private void saveIndependMainBoardToClipboard() {
-    if (Config.isScaled || Lizzie.isMultiScreen) {
-      int width = this.independentMainBoard.cachedImage.getWidth();
-      int height = this.independentMainBoard.cachedImage.getHeight();
-      Rectangle rect = new Rectangle(0, 0, width, height);
-      BufferedImage areaImage =
-          this.independentMainBoard.cachedImage.getSubimage(
-              rect.x, rect.y, rect.width, rect.height);
-      BufferedImage buffImg = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-      buffImg
-          .getGraphics()
-          .drawImage(
-              areaImage.getScaledInstance(width, height, java.awt.Image.SCALE_SMOOTH), 0, 0, null);
-      setClipboardImage(buffImg);
-    } else {
-      int width = this.independentMainBoard.getWidth();
-      int height = this.independentMainBoard.getHeight();
-      BufferedImage bImg = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-      Graphics2D cg = bImg.createGraphics();
-      this.independentMainBoard.paintAll(cg);
-      cg.dispose();
-      Rectangle rect = new Rectangle(0, 0, width, height);
-      BufferedImage areaImage = bImg.getSubimage(rect.x, rect.y, rect.width, rect.height);
-      BufferedImage buffImg = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-      buffImg
-          .getGraphics()
-          .drawImage(
-              areaImage.getScaledInstance(width, height, java.awt.Image.SCALE_SMOOTH), 0, 0, null);
-      setClipboardImage(buffImg);
+    setClipboardImage(getIndependMainBoardToClipboard());
+  }
+
+  private BufferedImage captureMainBoardScreenshot(Config config) {
+    if (config.isFloatBoardMode() && independentMainBoard != null) {
+      BufferedImage image = independentMainBoard.cachedImage;
+      if (image == null) throw new IllegalStateException("Board has not painted yet");
+      return independentMainBoard.boardRenderer.captureScreenshot(image);
     }
+    return boardRenderer.captureScreenshot(cachedBackground, cachedImage);
   }
 
   private BufferedImage getIndependMainBoardToClipboard() {

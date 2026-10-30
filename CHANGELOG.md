@@ -4,6 +4,10 @@ All notable maintenance updates to this fork are documented here.
 
 ## Unreleased
 
+- Board exports now omit outer coordinate labels. A monochrome winrate mode prints a configurable five to ten evaluated candidates from the captured position, with small, thin circular rank markers that avoid stones and teaching annotations. Winrates appear inside each circle with small upper-right rank superscripts; exports omit footer text and mark the last played stone with a contrasting triangle (a small triangle above numbered stones).
+
+- Added a bottom-toolbar Capture button for the main board, with a 3600-pixel, 300-DPI black-and-white teaching diagram (played trial moves and SGF marks) or a native-pixel image of the displayed board. Export snapshots are taken before the save dialog opens.
+
 - Invalid ordinary breadth drafts no longer overwrite effective engine values or persisted analysis metadata. Saving engine-game records after changing score-display mode preserves move-attributed summaries and personal notes; already-open custom-PDA editors also respect pending parameter restoration and current-engine eligibility.
 
 - Analysis comments now show PDA and known nonzero analysis breadth independently, including small breadth values. Both engine slots retain breadth metadata through SGF save/load and history copies; older records without that metadata remain unknown. Ordinary breadth edits, checkbox changes and advanced settings share the effective value without relabeling results from the previous search.
